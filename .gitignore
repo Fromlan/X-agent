@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+release
+.DS_Store
+*.log
+apps/desktop/node_modules
+apps/desktop/out
+apps/desktop/dist
+apps/desktop/release

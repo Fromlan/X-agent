@@ -1,0 +1,13 @@
+{
+  "name": "x-agent",
+  "private": true,
+  "description": "Pi-based agent tools workspace (Godot-focused roadmap)",
+  "scripts": {
+    "desktop:dev": "npm run dev --prefix apps/desktop",
+    "desktop:build": "npm run build --prefix apps/desktop",
+    "desktop:test": "npm test --prefix apps/desktop",
+    "desktop:typecheck": "npm run typecheck --prefix apps/desktop",
+    "desktop:dist": "npm run dist --prefix apps/desktop",
+    "desktop:smoke": "npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "name": "x-agent-desktop",
+  "version": "0.1.0",
+  "description": "Pi Agent desktop client (X-agent)",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "tsx scripts/test-history-mapper.ts && tsx scripts/test-session-paths.ts && tsx --tsconfig tsconfig.web.json scripts/test-chat-store.ts && tsx scripts/test-fleet-registry.ts && tsx scripts/test-plugin-host.ts && tsx scripts/test-provider-store.ts && tsx scripts/test-model-fetch.ts && tsx scripts/test-godot-rpc-bridge.ts",
+    "dist": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@fontsource/geist-mono": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "lucide-react": "^1.25.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^35.2.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^3.1.0",
+    "tsx": "^4.23.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.2"
+  },
+  "build": {
+    "appId": "works.earendil.x-agent",
+    "productName": "X-agent",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

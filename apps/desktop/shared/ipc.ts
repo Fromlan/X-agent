@@ -1,0 +1,454 @@
+/** Shared IPC types between main and renderer. */
+
+import type {
+  GodotRpcBridgeStatus,
+  GodotRpcCall,
+} from "./godot-rpc";
+
+export type AgentStatus = "idle" | "streaming" | "retrying" | "error";
+
+export type ThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
+
+export interface ModelInfo {
+  provider: string;
+  id: string;
+  name: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  name: string;
+  path: string;
+  cwd: string;
+  updatedAt: string;
+}
+
+export interface BashCheckResult {
+  ok: boolean;
+  shellPath: string | null;
+  message: string;
+  /** Detected candidate that can be written to settings.json */
+  suggestedShellPath?: string | null;
+}
+
+export interface AuthStatus {
+  ok: boolean;
+  message: string;
+  authPath: string;
+}
+
+export const AVAILABLE_TOOLS = [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "grep",
+  "find",
+  "ls",
+] as const;
+
+export type BuiltinToolName = (typeof AVAILABLE_TOOLS)[number];
+
+/** Godot editor RPC tools (opt-in via settings; not in DEFAULT_PREFS). */
+export const GODOT_TOOLS = [
+  "godot_editor_info",
+  "godot_open_scenes",
+  "godot_edited_scene",
+  "godot_open_scene",
+  "godot_reload_scene",
+  "godot_run_scene",
+  "godot_play_errors",
+  "godot_stop_scene",
+] as const;
+
+export type GodotToolName = (typeof GODOT_TOOLS)[number];
+
+export const ALL_TOGGLEABLE_TOOLS = [
+  ...AVAILABLE_TOOLS,
+  ...GODOT_TOOLS,
+] as const;
+
+export interface ClientPrefs {
+  theme: "light" | "dark";
+  language: "zh" | "en";
+  showThinking: boolean;
+  lastProjectPath: string | null;
+  lastSessionPath: string | null;
+  provider: string | null;
+  model: string | null;
+  thinkingLevel: ThinkingLevel;
+  tools: string[];
+  /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
+  godotEditorPath: string | null;
+}
+
+export const DEFAULT_PREFS: ClientPrefs = {
+  theme: "dark",
+  language: "zh",
+  showThinking: true,
+  lastProjectPath: null,
+  lastSessionPath: null,
+  provider: "deepseek",
+  model: "deepseek-v4-flash",
+  thinkingLevel: "medium",
+  tools: [...AVAILABLE_TOOLS],
+  godotEditorPath: null,
+};
+
+export interface OpenProjectResult {
+  ok: boolean;
+  cwd: string;
+  sessionId: string;
+  model: ModelInfo | null;
+  thinkingLevel: ThinkingLevel;
+  /** @deprecated Prefer history_replace events; kept for callers that need a snapshot. */
+  history?: HistoryItem[];
+  warning?: string;
+  error?: string;
+}
+
+export interface PromptResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Serializable chat history item shared by main ↔ renderer. */
+export type HistoryItem =
+  | { kind: "user"; id: string; text: string }
+  | {
+      kind: "assistant";
+      id: string;
+      text: string;
+      thinking: string;
+      done: boolean;
+      isError?: boolean;
+    }
+  | {
+      kind: "tool";
+      id: string;
+      toolName: string;
+      args: unknown;
+      result?: unknown;
+      isError?: boolean;
+      done: boolean;
+    }
+  | {
+      kind: "system";
+      id: string;
+      text: string;
+      level?: "info" | "warn" | "error";
+    };
+
+/** Simplified events pushed to the renderer for UI rendering. */
+export type UiAgentEvent =
+  | { type: "agent_start" }
+  | { type: "agent_end"; willRetry?: boolean }
+  | { type: "turn_start" }
+  | { type: "turn_end" }
+  | {
+      type: "user_message";
+      text: string;
+      id?: string;
+    }
+  | {
+      type: "assistant_start";
+      messageId: string;
+    }
+  | {
+      type: "text_delta";
+      messageId: string;
+      delta: string;
+    }
+  | {
+      type: "thinking_delta";
+      messageId: string;
+      delta: string;
+    }
+  | {
+      type: "assistant_end";
+      messageId: string;
+      isError?: boolean;
+      errorMessage?: string;
+    }
+  | {
+      type: "tool_start";
+      toolCallId: string;
+      toolName: string;
+      args: unknown;
+    }
+  | {
+      type: "tool_update";
+      toolCallId: string;
+      partialResult: unknown;
+    }
+  | {
+      type: "tool_end";
+      toolCallId: string;
+      toolName: string;
+      result: unknown;
+      isError: boolean;
+    }
+  | {
+      type: "status";
+      status: AgentStatus;
+      error?: string;
+    }
+  | {
+      type: "session_info";
+      sessionId: string;
+      cwd: string;
+      model: ModelInfo | null;
+      thinkingLevel: ThinkingLevel;
+      sessionPath?: string | null;
+    }
+  | {
+      type: "history_replace";
+      items: HistoryItem[];
+    }
+  | {
+      type: "queue_update";
+      steering: string[];
+      followUp: string[];
+    }
+  | {
+      type: "auto_retry";
+      phase: "start" | "end";
+      attempt: number;
+      maxAttempts?: number;
+      delayMs?: number;
+      success?: boolean;
+      message?: string;
+    }
+  | {
+      type: "notice";
+      text: string;
+      level?: "info" | "warn" | "error";
+    };
+
+export interface HostStatus {
+  status: AgentStatus;
+  cwd: string | null;
+  sessionId: string | null;
+  sessionPath: string | null;
+  model: ModelInfo | null;
+  thinkingLevel: ThinkingLevel;
+  error?: string;
+  hasSession: boolean;
+}
+
+export interface FleetSlotInfo {
+  id: string;
+  label: string;
+  cwd: string | null;
+  sessionId: string | null;
+  role: "primary" | "worker" | "reviewer";
+  createdAt: string;
+}
+
+/** Bridge status for renderer (same shape as main-process bridge status). */
+export type GodotRpcStatusDto = GodotRpcBridgeStatus;
+
+/** Godot RPC call from renderer (id assigned in main). */
+export type GodotRpcCallDto = GodotRpcCall;
+
+export interface GodotRpcRequestResult {
+  ok: boolean;
+  error?: string;
+  result?: unknown;
+}
+
+export interface InstallGodotRpcAddonResult {
+  ok: boolean;
+  projectPath?: string;
+  installed?: boolean;
+  enabled?: boolean;
+  error?: string;
+  hint?: string;
+}
+
+export type PluginKind = "prompt" | "skill" | "extension";
+export type PluginScope = "global" | "project";
+
+export interface PluginItem {
+  kind: PluginKind;
+  scope: PluginScope;
+  id: string;
+  name: string;
+  path: string;
+  description?: string;
+  editable: true;
+}
+
+export interface PluginCreateInput {
+  kind: PluginKind;
+  scope: PluginScope;
+  name: string;
+  cwd?: string | null;
+}
+
+export interface PluginReadResult {
+  ok: boolean;
+  content?: string;
+  warnings?: string[];
+  error?: string;
+}
+
+export interface PluginWriteResult {
+  ok: boolean;
+  warnings?: string[];
+  error?: string;
+}
+
+export interface PluginMutateResult {
+  ok: boolean;
+  item?: PluginItem;
+  error?: string;
+}
+
+export type ProviderApiKind =
+  | "openai-completions"
+  | "openai-responses"
+  | "anthropic-messages"
+  | "google-generative-ai";
+
+export interface ProviderModelEntry {
+  id: string;
+  name?: string;
+}
+
+export interface ProviderProfile {
+  id: string;
+  name: string;
+  providerId: string;
+  api: ProviderApiKind;
+  baseUrl: string;
+  apiKey: string;
+  models: ProviderModelEntry[];
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface ProviderProfileSummary {
+  id: string;
+  name: string;
+  providerId: string;
+  api: ProviderApiKind;
+  baseUrl: string;
+  modelCount: number;
+  active: boolean;
+  updatedAt: string;
+  /** Masked key hint for UI, e.g. sk-…xxxx */
+  apiKeyHint: string;
+}
+
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  providerId: string;
+  api: ProviderApiKind;
+  baseUrl: string;
+  models: ProviderModelEntry[];
+  notes?: string;
+}
+
+export interface ProviderUpsertInput {
+  id?: string;
+  name: string;
+  providerId: string;
+  api: ProviderApiKind;
+  baseUrl: string;
+  apiKey: string;
+  models: ProviderModelEntry[];
+  notes?: string;
+}
+
+export interface ProviderActivateResult {
+  ok: boolean;
+  error?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface FetchedProviderModel {
+  id: string;
+  ownedBy?: string;
+}
+
+export interface FetchProviderModelsResult {
+  ok: boolean;
+  models?: FetchedProviderModel[];
+  error?: string;
+  tried?: string[];
+}
+
+export interface XAgentApi {
+  openProject: (path?: string) => Promise<OpenProjectResult>;
+  prompt: (text: string) => Promise<PromptResult>;
+  abort: () => Promise<{ ok: boolean }>;
+  newSession: () => Promise<OpenProjectResult>;
+  setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
+  setThinkingLevel: (level: ThinkingLevel) => Promise<{ ok: boolean }>;
+  listModels: () => Promise<ModelInfo[]>;
+  listSessions: () => Promise<SessionInfo[]>;
+  resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;
+  deleteSession: (sessionPath: string) => Promise<{ ok: boolean; error?: string }>;
+  renameSession: (
+    sessionPath: string,
+    name: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  getPrefs: () => Promise<ClientPrefs>;
+  setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
+  checkBash: () => Promise<BashCheckResult>;
+  applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
+  checkAuth: () => Promise<AuthStatus>;
+  getStatus: () => Promise<HostStatus>;
+  fleetList: () => Promise<FleetSlotInfo[]>;
+  fleetCreate: (label: string, role?: FleetSlotInfo["role"]) => Promise<FleetSlotInfo>;
+  fleetSetActive: (id: string) => Promise<{ ok: boolean }>;
+  godotRpcStatus: () => Promise<GodotRpcStatusDto>;
+  godotRpcStart: () => Promise<GodotRpcStatusDto>;
+  godotRpcStop: () => Promise<{ ok: boolean }>;
+  godotRpcPing: () => Promise<GodotRpcRequestResult>;
+  godotRpcRequest: (call: GodotRpcCallDto) => Promise<GodotRpcRequestResult>;
+  pickGodotEditor: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
+  launchGodotEditor: () => Promise<{
+    ok: boolean;
+    error?: string;
+    port?: number;
+    hint?: string;
+  }>;
+  installGodotRpcAddon: () => Promise<InstallGodotRpcAddonResult>;
+  pickGodotScene: () => Promise<{
+    ok: boolean;
+    path?: string;
+    canceled?: boolean;
+    error?: string;
+  }>;
+  listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
+  readPlugin: (path: string) => Promise<PluginReadResult>;
+  writePlugin: (path: string, content: string) => Promise<PluginWriteResult>;
+  createPlugin: (input: PluginCreateInput) => Promise<PluginMutateResult>;
+  deletePlugin: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  revealPlugin: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  reloadResources: () => Promise<{ ok: boolean; reloaded: boolean; error?: string }>;
+  listProviderProfiles: () => Promise<ProviderProfileSummary[]>;
+  getProviderProfile: (id: string) => Promise<ProviderProfile | null>;
+  upsertProviderProfile: (
+    input: ProviderUpsertInput,
+  ) => Promise<{ ok: boolean; profile?: ProviderProfile; error?: string }>;
+  deleteProviderProfile: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  activateProviderProfile: (id: string) => Promise<ProviderActivateResult>;
+  listProviderPresets: () => Promise<ProviderPreset[]>;
+  fetchProviderModels: (input: {
+    baseUrl: string;
+    apiKey: string;
+  }) => Promise<FetchProviderModelsResult>;
+  onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
+}
