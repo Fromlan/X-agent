@@ -11,7 +11,7 @@ export function checkAuth(): AuthStatus {
       ok: false,
       authPath,
       message:
-        "未找到 Pi 认证文件。请安装 Pi CLI 后运行 `pi` 执行 /login，或配置 API Key。",
+        "未找到 Pi 认证文件。请在设置 → 供应商中配置 API Key，或使用 Pi CLI 执行 /login。",
     };
   }
   try {
@@ -24,7 +24,8 @@ export function checkAuth(): AuthStatus {
       return {
         ok: false,
         authPath,
-        message: "auth.json 为空。请在 Pi CLI 中登录或写入 API Key。",
+        message:
+          "auth.json 为空。请在设置 → 供应商中配置 API Key，或使用 Pi CLI 登录。",
       };
     }
     return {

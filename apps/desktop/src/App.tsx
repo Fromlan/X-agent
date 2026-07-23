@@ -6,6 +6,7 @@ import type {
   BashCheckResult,
   ClientPrefs,
   ModelInfo,
+  PiCliStatus,
   SessionInfo,
   ThinkingLevel,
   UiAgentEvent,
@@ -16,6 +17,8 @@ import { TopBar } from "./components/TopBar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginsPage } from "./components/PluginsPage";
 import { ChatItem, applyAgentEvent } from "./stores/chat-store";
+
+type SettingsTab = "general" | "providers" | "tools" | "godot";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -41,10 +44,15 @@ export default function App() {
   const [prefs, setPrefs] = useState<ClientPrefs | null>(null);
   const [bash, setBash] = useState<BashCheckResult | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [piCli, setPiCli] = useState<PiCliStatus | null>(null);
+  const [piCliInstalling, setPiCliInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
+    undefined,
+  );
   const [view, setView] = useState<"chat" | "plugins">("chat");
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -137,6 +145,7 @@ export default function App() {
       applyTheme(p.theme);
       setBash(await window.xAgent.checkBash());
       setAuth(await window.xAgent.checkAuth());
+      setPiCli(await window.xAgent.checkPiCli());
       if (cancelled) return;
       await refreshModels();
       if (cancelled) return;
@@ -327,6 +336,28 @@ export default function App() {
     else setError(null);
   };
 
+  const openProviderSettings = () => {
+    setSettingsTab("providers");
+    setSettingsOpen(true);
+  };
+
+  const openSettings = () => {
+    setSettingsTab(undefined);
+    setSettingsOpen(true);
+  };
+
+  const installPi = async () => {
+    setPiCliInstalling(true);
+    setError(null);
+    try {
+      const result = await window.xAgent.installPiCli();
+      setPiCli(result);
+      if (!result.ok) setError(result.message);
+    } finally {
+      setPiCliInstalling(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       {view === "plugins" ? (
@@ -348,20 +379,50 @@ export default function App() {
         onThinkingChange={onThinkingChange}
         onToggleThinking={toggleThinking}
         onToggleTheme={toggleTheme}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettings}
         onOpenPlugins={() => setView("plugins")}
         busy={busy}
       />
+      {piCli && !piCli.ok && (
+        <div className="banner warn">
+          <AlertTriangle size={14} />
+          <span>{piCliInstalling ? "正在安装 Pi CLI…" : piCli.message}</span>
+          {piCli.canInstall && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={installPi}
+              disabled={piCliInstalling}
+            >
+              {piCliInstalling ? "安装中…" : "安装 Pi CLI"}
+            </button>
+          )}
+        </div>
+      )}
       {auth && !auth.ok && (
         <div className="banner warn">
           <AlertTriangle size={14} />
-          {auth.message}
+          <span>{auth.message}</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={openProviderSettings}
+          >
+            配置供应商
+          </button>
         </div>
       )}
       {models.length === 0 && auth?.ok && (
         <div className="banner warn">
           <AlertTriangle size={14} />
-          无可用模型。请检查 ~/.pi/agent/models.json 与认证配置。
+          <span>无可用模型。请检查 ~/.pi/agent/models.json 与认证配置。</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={openProviderSettings}
+          >
+            配置供应商
+          </button>
         </div>
       )}
       {!bash?.ok && bash && (
@@ -425,7 +486,11 @@ export default function App() {
         <SettingsPanel
           open={settingsOpen}
           prefs={prefs}
-          onClose={() => setSettingsOpen(false)}
+          initialTab={settingsTab}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsTab(undefined);
+          }}
           onToggleTool={toggleTool}
           onPrefsChanged={(p) => {
             setPrefs(p);
@@ -436,6 +501,7 @@ export default function App() {
             await refreshModels();
             const p = await window.xAgent.getPrefs();
             setPrefs(p);
+            setAuth(await window.xAgent.checkAuth());
           }}
         />
       )}

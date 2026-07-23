@@ -44,6 +44,14 @@ export interface AuthStatus {
   authPath: string;
 }
 
+export interface PiCliStatus {
+  ok: boolean;
+  piPath: string | null;
+  message: string;
+  /** True when npm is available for a global install */
+  canInstall: boolean;
+}
+
 export const AVAILABLE_TOOLS = [
   "read",
   "bash",
@@ -418,6 +426,8 @@ export interface XAgentApi {
   applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
   pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
   checkAuth: () => Promise<AuthStatus>;
+  checkPiCli: () => Promise<PiCliStatus>;
+  installPiCli: () => Promise<PiCliStatus>;
   getStatus: () => Promise<HostStatus>;
   fleetList: () => Promise<FleetSlotInfo[]>;
   fleetCreate: (label: string, role?: FleetSlotInfo["role"]) => Promise<FleetSlotInfo>;

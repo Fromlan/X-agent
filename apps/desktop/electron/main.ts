@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { SessionHost } from "./agent/session-host";
 import { applyBashShellPath, checkBash } from "./agent/bash-check";
 import { checkAuth } from "./agent/auth-check";
+import { checkPiCli, installPiCli } from "./agent/pi-cli";
 import { loadPrefs, patchPrefs } from "./agent/prefs";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
 import { FleetRegistry } from "./agent/fleet-registry";
@@ -153,6 +154,8 @@ function registerIpc(): void {
     return { ok: true, path: result.filePaths[0]! };
   });
   ipcMain.handle("checkAuth", async () => checkAuth());
+  ipcMain.handle("checkPiCli", async () => checkPiCli());
+  ipcMain.handle("installPiCli", async () => installPiCli());
   ipcMain.handle("getStatus", async () => host.getStatus());
 
   ipcMain.handle("fleetList", async () => fleet.list());

@@ -45,6 +45,8 @@ interface Props {
   onProvidersChanged?: () => void;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onBashChanged?: (bash: BashCheckResult) => void;
+  /** When set, switch to this tab when the panel opens */
+  initialTab?: SettingsTab;
 }
 
 const API_OPTIONS: { value: ProviderApiKind; label: string }[] = [
@@ -72,8 +74,9 @@ export function SettingsPanel({
   onProvidersChanged,
   onPrefsChanged,
   onBashChanged,
+  initialTab,
 }: Props) {
-  const [tab, setTab] = useState<SettingsTab>("providers");
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? "providers");
   const [rpc, setRpc] = useState<GodotRpcStatusDto | null>(null);
   const [rpcMsg, setRpcMsg] = useState<string | null>(null);
   const [scenePath, setScenePath] = useState("res://");
@@ -123,6 +126,10 @@ export function SettingsPanel({
       cancelled = true;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (open && initialTab) setTab(initialTab);
+  }, [open, initialTab]);
 
   if (!open) return null;
 
