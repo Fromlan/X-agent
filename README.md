@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-- Node.js 20+
+- Node.js 22+（CI / Release 与 Electron 运行时一致；`node:sqlite` 用于 cc-switch 导入）
 - 模型认证二选一：
   - 已有 Pi CLI：`npm i -g @earendil-works/pi-coding-agent` 后运行 `pi`，执行 `/login` 或配置 API Key
   - 或在本应用 **设置 → 供应商** 中新建订阅档案并「保存并启用」（会写入 `~/.pi/agent/auth.json` 与 `models.json`）

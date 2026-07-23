@@ -8,7 +8,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent 客户端。当前仓库只�
 
 当前能力：通用 Pi Agent GUI、会话管理、插件管理页、供应商订阅（cc-switch 风格档案 + 拉取 `/models`）、工具白名单、Godot RPC 编辑器控制面（重载/运行场景 + Agent 工具）。Godot Pi 包深化与多 Agent Fleet UI 仍属后续规划。
 
-运行环境要求：Node.js 20+。Windows 上 Pi 的 `bash` 工具需要 Git for Windows，或在 `~/.pi/agent/settings.json` 中配置 `shellPath`。模型与认证复用 `~/.pi/agent/auth.json` 和 `models.json`；本应用可通过「设置 → 供应商」写入这两份文件。
+运行环境要求：Node.js 22+。Windows 上 Pi 的 `bash` 工具需要 Git for Windows，或在 `~/.pi/agent/settings.json` 中配置 `shellPath`。模型与认证复用 `~/.pi/agent/auth.json` 和 `models.json`；本应用可通过「设置 → 供应商」写入这两份文件。
 
 ## 常用命令
 
