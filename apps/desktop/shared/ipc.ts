@@ -416,6 +416,7 @@ export interface XAgentApi {
   setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
   checkBash: () => Promise<BashCheckResult>;
   applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
+  pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
   checkAuth: () => Promise<AuthStatus>;
   getStatus: () => Promise<HostStatus>;
   fleetList: () => Promise<FleetSlotInfo[]>;

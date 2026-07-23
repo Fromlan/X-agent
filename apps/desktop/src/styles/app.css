@@ -1281,6 +1281,53 @@ button:disabled {
   color: var(--text-secondary);
 }
 
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0;
+  min-height: 28px;
+}
+
+.settings-row-label {
+  color: var(--text-primary);
+  font-size: 13px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-row-check {
+  justify-content: flex-start;
+}
+
+.settings-row-check input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent-blue);
+}
+
+.settings-select {
+  appearance: none;
+  background: var(--bg-input);
+  border: 0.5px solid var(--border-input);
+  border-radius: var(--radius-md);
+  padding: 5px 28px 5px 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  min-width: 120px;
+}
+
+.settings-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px oklch(from var(--accent-blue) l c h / 0.35);
+  border-color: var(--border-focus);
+}
+
 .godot-rpc-path-row {
   display: flex;
   flex-wrap: wrap;

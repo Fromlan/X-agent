@@ -1,6 +1,6 @@
 {
   "name": "x-agent-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi Agent desktop client (X-agent)",
   "main": "./out/main/index.js",
   "type": "module",
@@ -44,6 +44,12 @@
     "files": [
       "out/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../packages/godot-editor-rpc/addons/x_agent_rpc",
+        "to": "godot-addons/x_agent_rpc"
+      }
     ],
     "win": {
       "target": [

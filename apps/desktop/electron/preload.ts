@@ -30,6 +30,7 @@ const api: XAgentApi = {
   checkBash: () => ipcRenderer.invoke("checkBash"),
   applyBashShellPath: (shellPath?: string) =>
     ipcRenderer.invoke("applyBashShellPath", shellPath),
+  pickBashShell: () => ipcRenderer.invoke("pickBashShell"),
   checkAuth: () => ipcRenderer.invoke("checkAuth"),
   getStatus: () => ipcRenderer.invoke("getStatus"),
   fleetList: () => ipcRenderer.invoke("fleetList"),

@@ -26,6 +26,9 @@ function repoRoot(): string {
 
 function findSourceAddonDir(): string | null {
   const candidates = [
+    // Packaged app: electron-builder extraResources
+    join(process.resourcesPath, "godot-addons", "x_agent_rpc"),
+    // Dev / monorepo: packages next to apps/desktop
     join(
       repoRoot(),
       "packages",
@@ -134,8 +137,7 @@ export function installGodotRpcAddon(
     return {
       ok: false,
       projectPath,
-      error:
-        "找不到 packages/godot-editor-rpc/addons/x_agent_rpc 源目录（请确认该包已在仓库内）。",
+      error: "找不到内置的 x_agent_rpc 插件资源（开发环境请确认仓库含 packages/godot-editor-rpc）。",
       hint: "可先手动把 addons/x_agent_rpc 复制到项目 addons/ 下。",
     };
   }

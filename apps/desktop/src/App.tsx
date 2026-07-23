@@ -427,7 +427,11 @@ export default function App() {
           prefs={prefs}
           onClose={() => setSettingsOpen(false)}
           onToggleTool={toggleTool}
-          onPrefsChanged={setPrefs}
+          onPrefsChanged={(p) => {
+            setPrefs(p);
+            applyTheme(p.theme);
+          }}
+          onBashChanged={setBash}
           onProvidersChanged={async () => {
             await refreshModels();
             const p = await window.xAgent.getPrefs();

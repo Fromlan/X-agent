@@ -132,6 +132,26 @@ function registerIpc(): void {
   ipcMain.handle("applyBashShellPath", async (_e, shellPath?: string) =>
     applyBashShellPath(shellPath),
   );
+  ipcMain.handle("pickBashShell", async () => {
+    const current = checkBash();
+    const result = await dialog.showOpenDialog({
+      title: "选择 bash 可执行文件",
+      defaultPath:
+        current.shellPath ?? current.suggestedShellPath ?? undefined,
+      properties: ["openFile"],
+      filters:
+        process.platform === "win32"
+          ? [
+              { name: "bash", extensions: ["exe"] },
+              { name: "所有文件", extensions: ["*"] },
+            ]
+          : [{ name: "bash", extensions: ["*"] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true };
+    }
+    return { ok: true, path: result.filePaths[0]! };
+  });
   ipcMain.handle("checkAuth", async () => checkAuth());
   ipcMain.handle("getStatus", async () => host.getStatus());
 

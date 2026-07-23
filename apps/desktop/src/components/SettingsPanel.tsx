@@ -11,6 +11,7 @@ import {
 import {
   AVAILABLE_TOOLS,
   GODOT_TOOLS,
+  type BashCheckResult,
   type ClientPrefs,
   type FetchedProviderModel,
   type GodotRpcCallDto,
@@ -20,10 +21,21 @@ import {
   type ProviderPreset,
   type ProviderProfileSummary,
   type ProviderUpsertInput,
+  type ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
 
 type SettingsTab = "general" | "providers" | "tools" | "godot";
+
+const THINKING_LEVELS: ThinkingLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
 interface Props {
   open: boolean;
@@ -32,6 +44,7 @@ interface Props {
   onToggleTool: (tool: string) => void;
   onProvidersChanged?: () => void;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
+  onBashChanged?: (bash: BashCheckResult) => void;
 }
 
 const API_OPTIONS: { value: ProviderApiKind; label: string }[] = [
@@ -58,6 +71,7 @@ export function SettingsPanel({
   onToggleTool,
   onProvidersChanged,
   onPrefsChanged,
+  onBashChanged,
 }: Props) {
   const [tab, setTab] = useState<SettingsTab>("providers");
   const [rpc, setRpc] = useState<GodotRpcStatusDto | null>(null);
@@ -77,6 +91,8 @@ export function SettingsPanel({
     () => new Set(),
   );
   const [showFetchPanel, setShowFetchPanel] = useState(false);
+  const [bash, setBash] = useState<BashCheckResult | null>(null);
+  const [generalMsg, setGeneralMsg] = useState<string | null>(null);
 
   const refreshProfiles = useCallback(async () => {
     setProfiles(await window.xAgent.listProviderProfiles());
@@ -91,15 +107,17 @@ export function SettingsPanel({
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [status, list, presetList] = await Promise.all([
+      const [status, list, presetList, bashStatus] = await Promise.all([
         window.xAgent.godotRpcStatus(),
         window.xAgent.listProviderProfiles(),
         window.xAgent.listProviderPresets(),
+        window.xAgent.checkBash(),
       ]);
       if (cancelled) return;
       setRpc(status);
       setProfiles(list);
       setPresets(presetList);
+      setBash(bashStatus);
     })();
     return () => {
       cancelled = true;
@@ -443,14 +461,137 @@ export function SettingsPanel({
             {tab === "general" && (
               <section>
                 <h3>通用</h3>
+
+                <h4 className="settings-subhead">外观</h4>
+                <label className="settings-row">
+                  <span className="settings-row-label">主题</span>
+                  <select
+                    className="settings-select"
+                    value={prefs.theme}
+                    onChange={async (e) => {
+                      const theme = e.target.value as "light" | "dark";
+                      const next = await window.xAgent.setPrefs({ theme });
+                      onPrefsChanged?.(next);
+                    }}
+                    aria-label="主题"
+                  >
+                    <option value="dark">深色</option>
+                    <option value="light">浅色</option>
+                  </select>
+                </label>
+
+                <h4 className="settings-subhead">对话</h4>
+                <label className="settings-row settings-row-check">
+                  <span className="settings-row-label">显示思考过程</span>
+                  <input
+                    type="checkbox"
+                    checked={prefs.showThinking}
+                    onChange={async (e) => {
+                      const next = await window.xAgent.setPrefs({
+                        showThinking: e.target.checked,
+                      });
+                      onPrefsChanged?.(next);
+                    }}
+                  />
+                </label>
+                <label className="settings-row">
+                  <span className="settings-row-label">默认 Thinking</span>
+                  <select
+                    className="settings-select"
+                    value={prefs.thinkingLevel}
+                    onChange={async (e) => {
+                      const level = e.target.value as ThinkingLevel;
+                      const applied =
+                        await window.xAgent.setThinkingLevel(level);
+                      if (applied.ok) {
+                        const next = await window.xAgent.getPrefs();
+                        onPrefsChanged?.(next);
+                        setGeneralMsg(null);
+                        return;
+                      }
+                      const next = await window.xAgent.setPrefs({
+                        thinkingLevel: level,
+                      });
+                      onPrefsChanged?.(next);
+                      setGeneralMsg(
+                        "已保存默认 Thinking；打开项目后对当前会话生效。",
+                      );
+                    }}
+                    aria-label="默认 Thinking 级别"
+                  >
+                    {THINKING_LEVELS.map((level) => (
+                      <option key={level} value={level}>
+                        {level}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <h4 className="settings-subhead">Shell</h4>
                 <p className="modal-hint">
-                  主题与 Thinking 显示开关在顶栏；当前主题：
-                  {prefs.theme === "dark" ? "深色" : "浅色"}。供应商订阅启用后会写入
-                  ~/.pi/agent/auth.json 与 models.json。
+                  Pi 的 bash 工具需要可用的 bash（Windows 上多为 Git Bash）。路径写入
+                  ~/.pi/agent/settings.json。
                 </p>
-                <p className="modal-hint">
-                  当前偏好模型：{prefs.provider ?? "—"}/{prefs.model ?? "—"}
-                </p>
+                <div className="godot-rpc-path-row">
+                  <input
+                    type="text"
+                    className="input"
+                    readOnly
+                    value={bash?.shellPath ?? ""}
+                    placeholder="尚未配置 shellPath…"
+                    aria-label="当前 shellPath"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={async () => {
+                      const status = await window.xAgent.checkBash();
+                      setBash(status);
+                      onBashChanged?.(status);
+                      setGeneralMsg(status.message);
+                    }}
+                  >
+                    检测
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!bash?.suggestedShellPath}
+                    onClick={async () => {
+                      const status = await window.xAgent.applyBashShellPath(
+                        bash?.suggestedShellPath ?? undefined,
+                      );
+                      setBash(status);
+                      onBashChanged?.(status);
+                      setGeneralMsg(status.message);
+                    }}
+                  >
+                    写入建议路径
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={async () => {
+                      const picked = await window.xAgent.pickBashShell();
+                      if (picked.canceled || !picked.path) return;
+                      const status = await window.xAgent.applyBashShellPath(
+                        picked.path,
+                      );
+                      setBash(status);
+                      onBashChanged?.(status);
+                      setGeneralMsg(status.message);
+                    }}
+                  >
+                    浏览…
+                  </button>
+                </div>
+                {bash?.suggestedShellPath &&
+                  bash.suggestedShellPath !== bash.shellPath && (
+                    <p className="modal-hint">
+                      建议路径：{bash.suggestedShellPath}
+                    </p>
+                  )}
+                {generalMsg && <p className="modal-hint">{generalMsg}</p>}
               </section>
             )}
 
@@ -560,7 +701,7 @@ export function SettingsPanel({
                 <div className="modal-actions">
                   <button
                     type="button"
-                    className="btn btn-ghost btn-sm"
+                    className="btn btn-secondary btn-sm"
                     onClick={async () => {
                       const res = await window.xAgent.installGodotRpcAddon();
                       setRpcMsg(
