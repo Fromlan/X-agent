@@ -61,6 +61,8 @@ const api: XAgentApi = {
   activateProviderProfile: (id) =>
     ipcRenderer.invoke("activateProviderProfile", id),
   listProviderPresets: () => ipcRenderer.invoke("listProviderPresets"),
+  importExistingProviderProfiles: () =>
+    ipcRenderer.invoke("importExistingProviderProfiles"),
   fetchProviderModels: (input) => ipcRenderer.invoke("fetchProviderModels", input),
   onEvent: (handler: (event: UiAgentEvent) => void) => {
     const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {

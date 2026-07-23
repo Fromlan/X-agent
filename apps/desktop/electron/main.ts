@@ -22,6 +22,7 @@ import {
   activateProviderProfile,
   deleteProviderProfile,
   getProviderProfile,
+  importExistingProviderProfiles,
   listProviderPresets,
   listProviderProfiles,
   upsertProviderProfile,
@@ -374,6 +375,9 @@ function registerIpc(): void {
     return result;
   });
   ipcMain.handle("listProviderPresets", async () => listProviderPresets());
+  ipcMain.handle("importExistingProviderProfiles", async () =>
+    importExistingProviderProfiles(),
+  );
   ipcMain.handle(
     "fetchProviderModels",
     async (_e, input: { baseUrl: string; apiKey: string }) =>

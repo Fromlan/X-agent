@@ -388,6 +388,15 @@ export interface FetchProviderModelsResult {
   tried?: string[];
 }
 
+export interface ProviderImportResult {
+  ok: boolean;
+  imported: number;
+  skipped: number;
+  /** Sources that contributed candidates, e.g. "pi", "cc-switch" */
+  sources: string[];
+  error?: string;
+}
+
 export interface XAgentApi {
   openProject: (path?: string) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
@@ -446,6 +455,7 @@ export interface XAgentApi {
   deleteProviderProfile: (id: string) => Promise<{ ok: boolean; error?: string }>;
   activateProviderProfile: (id: string) => Promise<ProviderActivateResult>;
   listProviderPresets: () => Promise<ProviderPreset[]>;
+  importExistingProviderProfiles: () => Promise<ProviderImportResult>;
   fetchProviderModels: (input: {
     baseUrl: string;
     apiKey: string;

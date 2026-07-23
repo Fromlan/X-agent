@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
   Download,
+  Import,
   Pencil,
   Plus,
   Trash2,
@@ -341,6 +342,36 @@ export function SettingsPanel({
         return;
       }
       await refreshProfiles();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importExisting = async () => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await window.xAgent.importExistingProviderProfiles();
+      if (!result.ok) {
+        setError(result.error ?? "导入失败");
+        return;
+      }
+      await refreshProfiles();
+      const sourceLabel = result.sources.length
+        ? `（来源：${result.sources.join("、")}）`
+        : "";
+      if (result.imported === 0) {
+        setMessage(
+          result.skipped > 0
+            ? `没有新订阅可导入，已跳过 ${result.skipped} 条重复项${sourceLabel}`
+            : "未在 Pi auth/models 或 cc-switch 中发现可导入的订阅",
+        );
+      } else {
+        setMessage(
+          `已导入 ${result.imported} 条订阅，跳过 ${result.skipped} 条${sourceLabel}`,
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -719,10 +750,20 @@ export function SettingsPanel({
                   <div>
                     <h3>供应商 / 订阅</h3>
                     <p className="modal-hint">
-                      类似 cc-switch：保存多份档案，启用时写入 Pi 认证与 models.json。
+                      首次打开会自动从 Pi 认证与 cc-switch 导入已有订阅；也可随时手动同步。
                     </p>
                   </div>
                   <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={busy}
+                      onClick={() => void importExisting()}
+                      title="从 Pi auth.json / models.json 与 cc-switch 导入"
+                    >
+                      <Import size={13} />
+                      导入已有
+                    </button>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
@@ -760,7 +801,7 @@ export function SettingsPanel({
                 <div className="provider-list">
                   {profiles.length === 0 && (
                     <div className="session-empty">
-                      暂无订阅档案，请新建或从预设添加。
+                      暂无订阅档案。可点击「导入已有」从 Pi / cc-switch 同步，或新建 / 从预设添加。
                     </div>
                   )}
                   {profiles.map((p) => (

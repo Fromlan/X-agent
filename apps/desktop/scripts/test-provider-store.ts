@@ -1,14 +1,18 @@
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   activateProviderProfile,
   deleteProviderProfile,
+  importExistingProviderProfiles,
   listProviderPresets,
   listProviderProfiles,
   type ProviderPaths,
   upsertProviderProfile,
 } from "../electron/agent/provider-store";
+
+const nodeRequire = createRequire(import.meta.url);
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -97,6 +101,135 @@ try {
     "activate other",
   );
   assert(deleteProviderProfile(created.profile!.id, paths).ok, "delete inactive");
+
+  // --- import from Pi auth/models ---
+  const importRoot = mkdtempSync(join(tmpdir(), "alpha-providers-import-"));
+  const importPaths: ProviderPaths = {
+    agentDir: importRoot,
+    storePath: join(importRoot, "x-agent-providers.json"),
+    authPath: join(importRoot, "auth.json"),
+    modelsPath: join(importRoot, "models.json"),
+  };
+  writeFileSync(
+    importPaths.authPath,
+    JSON.stringify({
+      deepseek: { type: "api_key", key: "sk-deepseek-import-test" },
+      anthropic: { type: "api_key", key: "sk-anthropic-import-test" },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    importPaths.modelsPath,
+    JSON.stringify({
+      providers: {
+        anthropic: {
+          baseUrl: "https://api.deepseek.com/anthropic",
+          api: "anthropic-messages",
+          models: [{ id: "deepseek-v4-pro" }],
+        },
+      },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    join(importRoot, "settings.json"),
+    JSON.stringify({
+      defaultProvider: "deepseek",
+      defaultModel: "deepseek-v4-pro",
+    }),
+    "utf8",
+  );
+
+  const imported = importExistingProviderProfiles(importPaths, {
+    ccSwitchDbPath: join(importRoot, "missing-cc-switch.db"),
+  });
+  assert(imported.ok, "import ok");
+  assert(imported.imported === 2, `imported 2 got ${imported.imported}`);
+  assert(imported.sources.includes("pi"), "source pi");
+
+  const afterImport = listProviderProfiles(importPaths);
+  assert(afterImport.length === 2, "listed imported");
+  assert(
+    afterImport.some((p) => p.providerId === "deepseek"),
+    "deepseek present",
+  );
+  assert(
+    afterImport.some((p) => p.providerId === "anthropic"),
+    "anthropic present",
+  );
+
+  const again = importExistingProviderProfiles(importPaths, {
+    ccSwitchDbPath: join(importRoot, "missing-cc-switch.db"),
+  });
+  assert(again.imported === 0 && again.skipped === 2, "dedupe on reimport");
+
+  // --- import from cc-switch sqlite ---
+  const { DatabaseSync } = nodeRequire("node:sqlite") as {
+    DatabaseSync: new (path: string) => {
+      exec: (sql: string) => void;
+      prepare: (sql: string) => { run: (...params: unknown[]) => void };
+      close: () => void;
+    };
+  };
+  const ccDb = join(importRoot, "cc-switch.db");
+  const db = new DatabaseSync(ccDb);
+  db.exec(`
+    CREATE TABLE providers (
+      id TEXT PRIMARY KEY,
+      app_type TEXT,
+      name TEXT,
+      settings_config TEXT,
+      is_current BOOLEAN,
+      icon TEXT
+    );
+  `);
+  db.prepare(
+    `INSERT INTO providers (id, app_type, name, settings_config, is_current, icon)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "cc-1",
+    "claude",
+    "Lingya",
+    JSON.stringify({
+      env: {
+        ANTHROPIC_AUTH_TOKEN: "sk-lingya-from-cc",
+        ANTHROPIC_BASE_URL: "https://api.lingyaai.cn",
+        ANTHROPIC_MODEL: "claude-sonnet",
+      },
+    }),
+    1,
+    "lingya",
+  );
+  db.prepare(
+    `INSERT INTO providers (id, app_type, name, settings_config, is_current, icon)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "cc-2",
+    "claude-desktop",
+    "Lingya",
+    JSON.stringify({
+      env: {
+        ANTHROPIC_AUTH_TOKEN: "sk-lingya-from-cc",
+        ANTHROPIC_BASE_URL: "https://api.lingyaai.cn",
+      },
+    }),
+    0,
+    "lingya",
+  );
+  db.close();
+
+  const fromCc = importExistingProviderProfiles(importPaths, {
+    ccSwitchDbPath: ccDb,
+  });
+  assert(fromCc.ok, "cc import ok");
+  assert(fromCc.imported === 1, `cc imported 1 got ${fromCc.imported}`);
+  assert(fromCc.sources.includes("cc-switch"), "source cc-switch");
+  assert(
+    listProviderProfiles(importPaths).some((p) => p.name === "Lingya"),
+    "lingya listed",
+  );
+
+  rmSync(importRoot, { recursive: true, force: true });
 
   console.log("test-provider-store: ok");
 } finally {
