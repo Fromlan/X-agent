@@ -47,7 +47,7 @@ jobs:
 
       - name: Sync package.json version
         shell: bash
-        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+        run: npm pkg set "version=${{ steps.version.outputs.version }}"
 
       - run: npm run typecheck
       - run: npm test
