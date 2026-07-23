@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.1.0 or v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Sync package.json version
+        shell: bash
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run dist
+
+      - name: Upload GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: X-agent ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*.yml

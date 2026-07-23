@@ -75,6 +75,19 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\path\to\proje
 
 CI：`.github/workflows/ci.yml`（typecheck + test + build）。
 
+## 发布
+
+推送 `v*` tag 后，[`.github/workflows/release.yml`](.github/workflows/release.yml) 会在 Windows runner 上构建 NSIS / portable 安装包，并自动创建 GitHub Release。
+
+```bash
+# 1. 将 apps/desktop/package.json 的 version  bump 到目标版本（建议与 tag 一致）
+# 2. 提交后打 tag 并推送
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+也可在 Actions → Release → Run workflow 手动触发（需填写版本号）。产物可在仓库 Releases 页下载。
+
 ## 架构简述
 
 - **Electron 主进程**：`SessionHost`、供应商档案（`provider-store`）、模型拉取（`model-fetch`）、插件管理（`plugin-host`）、Godot RPC bridge / tools / addon install、Fleet registry
