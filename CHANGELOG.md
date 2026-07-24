@@ -6,6 +6,18 @@
 
 ## Unreleased
 
+### 功能
+
+- **Fleet 并行编排**：`fleetStartPair` / `fleetAbortPair`；worker+reviewer 双波次（Wave1 并行实现与风险清单，Wave2 基于 git diff / staged / status / 会话摘录审阅）；**完成 = Wave2 审阅结束**；`beginPrompt` 避免整轮阻塞 UI
+- **分槽独立对话**：`agent:event` 带 `slotId`；renderer `itemsBySlot`；存在实现+审阅且非主会话时左右双栏展示（优先绑定 pair 槽）
+- **Fleet 条**：添加审阅、移除槽、每槽 busy、编排相位与中止
+- **会话自动标题**：首轮结束后由 [`session-title.ts`](apps/desktop/electron/agent/session-title.ts) 派生可读名称（剥离 Fleet 角色包装）
+- **Godot Pi**：领域 skills 扩展（架构 / 玩法 / 导航 / 着色器等）；见 [`packages/godot-pi/README.md`](packages/godot-pi/README.md)
+
+### 文档
+
+- 同步 README / CLAUDE / [`packages/fleet/README.md`](packages/fleet/README.md)
+
 ## 0.1.3
 
 ### 功能

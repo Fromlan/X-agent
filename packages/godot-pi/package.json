@@ -1,7 +1,7 @@
 {
   "name": "@x-agent/godot-pi",
   "version": "0.1.0",
-  "description": "Godot-focused Pi package for X-agent (skills + extensions)",
+  "description": "Godot-focused Pi package for X-agent (workflow + Godot 4 domain skills + extensions)",
   "keywords": ["pi-package", "godot", "x-agent"],
   "license": "MIT",
   "pi": {

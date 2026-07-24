@@ -174,6 +174,10 @@ function registerIpc(): void {
   );
   ipcMain.handle("fleetSetActive", async (_e, id: string) => fleet.setActive(id));
   ipcMain.handle("fleetRemove", async (_e, id: string) => fleet.removeSlot(id));
+  ipcMain.handle("fleetStartPair", async (_e, task: string) =>
+    fleet.startPair(task),
+  );
+  ipcMain.handle("fleetAbortPair", async () => fleet.abortPair());
 
   ipcMain.handle("godotRpcStatus", async () => godotRpc.getStatus());
   ipcMain.handle("godotRpcStart", async () => {

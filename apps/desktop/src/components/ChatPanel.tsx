@@ -1,11 +1,12 @@
-import { useEffect, useState, type KeyboardEvent, type RefObject } from "react";
-import { Brain, Send, Square } from "lucide-react";
 import type { AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
-import { MarkdownBody } from "./MarkdownBody";
-import { ToolCard } from "./ToolCard";
+import { ChatTranscript } from "./ChatTranscript";
+import { GitBranchPlus, Send, Square } from "lucide-react";
+import { type KeyboardEvent, type RefObject } from "react";
 
 interface Props {
+  title?: string;
+  roleHint?: string;
   items: ChatItem[];
   showThinking: boolean;
   status: AgentStatus;
@@ -13,42 +14,11 @@ interface Props {
   setInput: (v: string) => void;
   onSend: () => void;
   onAbort: () => void;
+  onStartPair?: () => void;
+  pairActive?: boolean;
   disabled: boolean;
   queuedSteering?: string[];
   bottomRef: RefObject<HTMLDivElement | null>;
-}
-
-function ThinkingBlock({ thinking, done }: { thinking: string; done: boolean }) {
-  // Streaming: keep expanded. After done, leave user control (history starts collapsed).
-  const [open, setOpen] = useState(!done);
-
-  useEffect(() => {
-    if (!done) setOpen(true);
-  }, [done]);
-
-  return (
-    <details
-      className="bubble-thinking"
-      open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
-    >
-      <summary>
-        <Brain size={12} />
-        思考过程
-      </summary>
-      <pre>{thinking}</pre>
-    </details>
-  );
-}
-
-function formatMaybeJson(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 export function ChatPanel(props: Props) {
@@ -64,64 +34,16 @@ export function ChatPanel(props: Props) {
 
   return (
     <section className="chat-panel">
-      <div className="message-stream">
-        {props.items.length === 0 && (
-          <div className="empty-state">
-            {props.disabled
-              ? "请先打开一个项目文件夹，然后开始对话。"
-              : "向 Agent 发送指令。运行中可继续发送（steer），或中止。"}
-          </div>
-        )}
-
-        {props.items.map((item) => {
-          if (item.kind === "user") {
-            return (
-              <div key={item.id} className="bubble bubble-user">
-                <div className="bubble-label">你</div>
-                <pre>{item.text}</pre>
-              </div>
-            );
-          }
-
-          if (item.kind === "system") {
-            return (
-              <div
-                key={item.id}
-                className={`bubble bubble-system level-${item.level ?? "info"}`}
-              >
-                {item.text}
-              </div>
-            );
-          }
-
-          if (item.kind === "assistant") {
-            return (
-              <div
-                key={item.id}
-                className={`bubble bubble-text${item.isError ? " is-error" : ""}`}
-              >
-                <div className="bubble-label">Agent</div>
-                {props.showThinking && item.thinking && (
-                  <ThinkingBlock thinking={item.thinking} done={item.done} />
-                )}
-                <MarkdownBody content={item.text} streaming={!item.done} />
-              </div>
-            );
-          }
-
-          return (
-            <ToolCard
-              key={item.id}
-              toolName={item.toolName}
-              args={formatMaybeJson(item.args)}
-              result={formatMaybeJson(item.result)}
-              isError={item.isError}
-              done={item.done}
-            />
-          );
-        })}
-        <div ref={props.bottomRef} />
-      </div>
+      <ChatTranscript
+        title={props.title}
+        roleHint={props.roleHint}
+        items={props.items}
+        showThinking={props.showThinking}
+        status={props.status}
+        focused
+        disabledEmpty={props.disabled}
+        bottomRef={props.bottomRef}
+      />
 
       {props.queuedSteering && props.queuedSteering.length > 0 && (
         <div className="queue-banner">
@@ -149,6 +71,150 @@ export function ChatPanel(props: Props) {
             <button type="button" className="btn btn-danger" onClick={props.onAbort}>
               <Square size={14} />
               中止
+            </button>
+          )}
+          {props.onStartPair && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={props.onStartPair}
+              disabled={
+                props.disabled ||
+                !props.input.trim() ||
+                props.pairActive ||
+                streaming
+              }
+              title="用当前输入启动 worker+reviewer 并行编排"
+            >
+              <GitBranchPlus size={14} />
+              并行实现+审阅
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={props.onSend}
+            disabled={props.disabled || !props.input.trim()}
+          >
+            <Send size={14} />
+            {streaming ? "Steer" : "发送"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Dual-pane layout: worker | reviewer transcripts + shared composer. */
+interface DualProps {
+  workerTitle: string;
+  reviewerTitle: string;
+  workerItems: ChatItem[];
+  reviewerItems: ChatItem[];
+  workerStatus: AgentStatus;
+  reviewerStatus: AgentStatus;
+  activeRole: "worker" | "reviewer";
+  showThinking: boolean;
+  input: string;
+  setInput: (v: string) => void;
+  onSend: () => void;
+  onAbort: () => void;
+  onStartPair?: () => void;
+  pairActive?: boolean;
+  disabled: boolean;
+  queuedSteering?: string[];
+  onFocusWorker: () => void;
+  onFocusReviewer: () => void;
+  workerBottomRef: RefObject<HTMLDivElement | null>;
+  reviewerBottomRef: RefObject<HTMLDivElement | null>;
+}
+
+export function DualChatPanel(props: DualProps) {
+  const activeStatus =
+    props.activeRole === "worker" ? props.workerStatus : props.reviewerStatus;
+  const streaming =
+    activeStatus === "streaming" || activeStatus === "retrying";
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (props.input.trim()) props.onSend();
+    }
+  };
+
+  return (
+    <section className="chat-panel chat-panel-dual">
+      <div className="chat-dual-panes">
+        <ChatTranscript
+          title={props.workerTitle}
+          roleHint="工"
+          items={props.workerItems}
+          showThinking={props.showThinking}
+          status={props.workerStatus}
+          focused={props.activeRole === "worker"}
+          disabledEmpty={props.disabled}
+          onFocus={props.onFocusWorker}
+          bottomRef={props.workerBottomRef}
+        />
+        <ChatTranscript
+          title={props.reviewerTitle}
+          roleHint="审"
+          items={props.reviewerItems}
+          showThinking={props.showThinking}
+          status={props.reviewerStatus}
+          focused={props.activeRole === "reviewer"}
+          disabledEmpty={props.disabled}
+          onFocus={props.onFocusReviewer}
+          bottomRef={props.reviewerBottomRef}
+        />
+      </div>
+
+      {props.queuedSteering && props.queuedSteering.length > 0 && (
+        <div className="queue-banner">
+          已排队 steer：{props.queuedSteering.map((t) => `"${t.slice(0, 40)}"`).join(" · ")}
+        </div>
+      )}
+
+      <div className="composer">
+        <div className="composer-target-hint">
+          发送到：{props.activeRole === "worker" ? props.workerTitle : props.reviewerTitle}
+        </div>
+        <textarea
+          value={props.input}
+          onChange={(e) => props.setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={
+            props.disabled
+              ? "请先打开项目…"
+              : streaming
+                ? "运行中：Enter 发送 steer，Shift+Enter 换行"
+                : "输入消息，Enter 发送，Shift+Enter 换行"
+          }
+          disabled={props.disabled}
+          rows={3}
+        />
+        <div className="composer-actions">
+          {streaming && (
+            <button type="button" className="btn btn-danger" onClick={props.onAbort}>
+              <Square size={14} />
+              中止
+            </button>
+          )}
+          {props.onStartPair && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={props.onStartPair}
+              disabled={
+                props.disabled ||
+                !props.input.trim() ||
+                props.pairActive ||
+                streaming
+              }
+              title="用当前输入启动 worker+reviewer 并行编排"
+            >
+              <GitBranchPlus size={14} />
+              并行实现+审阅
             </button>
           )}
           <button

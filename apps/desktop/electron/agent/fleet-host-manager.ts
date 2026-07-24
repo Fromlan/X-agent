@@ -1,20 +1,35 @@
 /**
  * Multi-SessionHost Fleet: one live host per registry slot, shared Godot RPC.
+ * Owns codegen-review pair orchestration.
  */
 
 import type { BrowserWindow } from "electron";
-import type { FleetSlotInfo, FleetState } from "../../shared/ipc";
+import type {
+  FleetPairState,
+  FleetSlotInfo,
+  FleetState,
+  FleetUiEvent,
+} from "../../shared/ipc";
+import { FleetOrchestrator } from "./fleet-orchestrator";
 import { FleetRegistry, type FleetSlotId } from "./fleet-registry";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { SessionHost } from "./session-host";
 
 export type { FleetState };
 
+function hostBusy(host: SessionHost | undefined): boolean {
+  if (!host) return false;
+  const s = host.getStatus().status;
+  return s === "streaming" || s === "retrying";
+}
+
 export class FleetHostManager {
   private readonly registry = new FleetRegistry();
   private readonly hosts = new Map<FleetSlotId, SessionHost>();
+  private readonly hostUnsubs = new Map<FleetSlotId, () => void>();
   private readonly getWindow: () => BrowserWindow | null;
   private readonly godotRpc: GodotRpcBridge | null;
+  private readonly orchestrator: FleetOrchestrator;
 
   constructor(
     getWindow: () => BrowserWindow | null,
@@ -22,6 +37,11 @@ export class FleetHostManager {
   ) {
     this.getWindow = getWindow;
     this.godotRpc = godotRpc;
+    this.orchestrator = new FleetOrchestrator({
+      getPrimaryCwd: () => this.hosts.get("primary")?.getStatus().cwd ?? null,
+      ensureRoleSlot: (role, label) => this.ensureRoleSlot(role, label),
+      emitFleet: (event) => this.emitFleet(event),
+    });
     this.bootPrimary();
   }
 
@@ -34,10 +54,47 @@ export class FleetHostManager {
     this.attachHost(slot.id);
   }
 
+  private emitFleet(event: FleetUiEvent): void {
+    const win = this.getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("fleet:event", event);
+    }
+  }
+
+  private pushSlotStatus(slotId: FleetSlotId): void {
+    const host = this.hosts.get(slotId);
+    if (!host) return;
+    const status = host.getStatus().status;
+    this.emitFleet({
+      type: "slot_status",
+      slotId,
+      busy: status === "streaming" || status === "retrying",
+      status,
+    });
+  }
+
   private attachHost(slotId: FleetSlotId): SessionHost {
     const host = new SessionHost(this.getWindow, this.godotRpc);
-    host.setEmitEnabled(() => this.registry.getActiveId() === slotId);
+    host.setActiveSlotCheck(() => this.registry.getActiveId() === slotId);
+    host.setEventSink((event) => {
+      const win = this.getWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("agent:event", { slotId, event });
+      }
+    });
+    const unsub = host.onStatusChange(() => {
+      this.pushSlotStatus(slotId);
+    });
+    this.hostUnsubs.set(slotId, unsub);
     this.hosts.set(slotId, host);
+    return host;
+  }
+
+  private detachHost(slotId: FleetSlotId): SessionHost | undefined {
+    this.hostUnsubs.get(slotId)?.();
+    this.hostUnsubs.delete(slotId);
+    const host = this.hosts.get(slotId);
+    this.hosts.delete(slotId);
     return host;
   }
 
@@ -49,6 +106,24 @@ export class FleetHostManager {
       cwd: status.cwd,
       sessionId: status.sessionId,
     });
+  }
+
+  private toSlotInfo(slot: {
+    id: string;
+    label: string;
+    cwd: string | null;
+    sessionId: string | null;
+    role: FleetSlotInfo["role"];
+    createdAt: string;
+  }): FleetSlotInfo {
+    return {
+      ...slot,
+      busy: hostBusy(this.hosts.get(slot.id)),
+    };
+  }
+
+  getHost(id: FleetSlotId): SessionHost | undefined {
+    return this.hosts.get(id);
   }
 
   getActiveHost(): SessionHost {
@@ -71,13 +146,14 @@ export class FleetHostManager {
     for (const id of this.hosts.keys()) {
       this.syncSlotFromHost(id);
     }
-    return this.registry.list();
+    return this.registry.list().map((s) => this.toSlotInfo(s));
   }
 
   state(): FleetState {
     return {
       slots: this.list(),
       activeId: this.registry.getActiveId(),
+      pair: this.orchestrator.getPairState(),
     };
   }
 
@@ -108,7 +184,51 @@ export class FleetHostManager {
       }
     }
 
-    return this.registry.get(slot.id) ?? slot;
+    const info = this.toSlotInfo(this.registry.get(slot.id) ?? slot);
+    this.emitFleet({ type: "state", state: this.state() });
+    return info;
+  }
+
+  /**
+   * Reuse an existing worker/reviewer slot, or create one with the given label.
+   */
+  async ensureRoleSlot(
+    role: "worker" | "reviewer",
+    label: string,
+  ): Promise<{ id: string; host: SessionHost }> {
+    const existing = this.registry.list().find((s) => s.role === role);
+    if (existing) {
+      const host = this.hosts.get(existing.id);
+      if (!host) {
+        throw new Error(`槽位缺少 SessionHost: ${existing.id}`);
+      }
+      const status = host.getStatus();
+      if (!status.hasSession) {
+        const cwd = this.hosts.get("primary")?.getStatus().cwd;
+        if (!cwd) {
+          throw new Error("请先在主会话打开项目");
+        }
+        const result = await host.openProject(cwd, "new");
+        if (!result.ok) {
+          throw new Error(result.error ?? "无法为编排槽打开项目");
+        }
+        this.registry.update(existing.id, {
+          cwd: result.cwd,
+          sessionId: result.sessionId,
+        });
+      }
+      return { id: existing.id, host };
+    }
+
+    const created = await this.createSlot(label, role);
+    const host = this.hosts.get(created.id);
+    if (!host) {
+      throw new Error(`槽位缺少 SessionHost: ${created.id}`);
+    }
+    if (!host.getStatus().hasSession) {
+      throw new Error("编排槽未能打开项目会话");
+    }
+    return { id: created.id, host };
   }
 
   async setActive(id: FleetSlotId): Promise<{ ok: boolean; error?: string }> {
@@ -120,6 +240,7 @@ export class FleetHostManager {
     }
     this.syncSlotFromHost(id);
     this.hosts.get(id)?.resyncUi();
+    this.emitFleet({ type: "state", state: this.state() });
     return { ok: true };
   }
 
@@ -136,11 +257,22 @@ export class FleetHostManager {
       return { ok: false, error: "槽位不存在" };
     }
 
+    if (hostBusy(this.hosts.get(id))) {
+      return { ok: false, error: "槽位忙碌中，请先中止后再移除" };
+    }
+
+    const pair = this.orchestrator.getPairState();
+    if (
+      (pair.phase === "wave1" || pair.phase === "wave2") &&
+      (pair.workerSlotId === id || pair.reviewerSlotId === id)
+    ) {
+      return { ok: false, error: "槽位参与并行编排中，请先中止编排" };
+    }
+
     const wasActive = this.registry.getActiveId() === id;
-    const host = this.hosts.get(id);
+    const host = this.detachHost(id);
     if (host) {
       await host.dispose();
-      this.hosts.delete(id);
     }
     this.registry.remove(id);
 
@@ -151,10 +283,36 @@ export class FleetHostManager {
         this.hosts.get(nextId)?.resyncUi();
       }
     }
+    this.emitFleet({ type: "state", state: this.state() });
     return { ok: true };
   }
 
+  async startPair(
+    task: string,
+  ): Promise<{ ok: boolean; error?: string; pair?: FleetPairState }> {
+    const result = await this.orchestrator.startPair(task);
+    this.emitFleet({ type: "state", state: this.state() });
+    return result;
+  }
+
+  async abortPair(): Promise<{
+    ok: boolean;
+    error?: string;
+    pair?: FleetPairState;
+  }> {
+    const result = await this.orchestrator.abortPair();
+    if (result.ok) {
+      await this.orchestrator.abortPairHosts((id) => this.hosts.get(id));
+    }
+    this.emitFleet({ type: "state", state: this.state() });
+    return result;
+  }
+
   async dispose(): Promise<void> {
+    for (const unsub of this.hostUnsubs.values()) {
+      unsub();
+    }
+    this.hostUnsubs.clear();
     const hosts = [...this.hosts.values()];
     this.hosts.clear();
     await Promise.all(hosts.map((h) => h.dispose()));

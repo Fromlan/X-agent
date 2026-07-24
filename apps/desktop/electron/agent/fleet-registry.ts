@@ -1,18 +1,13 @@
 /**
  * Multi-agent Fleet foundation: registry of named session slots.
- * Phase C scaffold — UI orchestration comes after single-session stability.
  */
+
+import type { FleetSlotInfo as IpcFleetSlotInfo } from "../../shared/ipc";
 
 export type FleetSlotId = string;
 
-export interface FleetSlotInfo {
-  id: FleetSlotId;
-  label: string;
-  cwd: string | null;
-  sessionId: string | null;
-  role: "primary" | "worker" | "reviewer";
-  createdAt: string;
-}
+/** Registry slot metadata; `busy` is computed by FleetHostManager for IPC. */
+export type FleetSlotInfo = Omit<IpcFleetSlotInfo, "busy">;
 
 export class FleetRegistry {
   private slots = new Map<FleetSlotId, FleetSlotInfo>();

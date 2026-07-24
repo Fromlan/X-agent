@@ -240,7 +240,19 @@ export type UiAgentEvent =
       type: "notice";
       text: string;
       level?: "info" | "warn" | "error";
+    }
+  | {
+      type: "session_title";
+      sessionId: string;
+      name: string;
+      sessionPath?: string | null;
     };
+
+/** Agent UI event tagged with Fleet slot (all slots stream independently). */
+export type SlotAgentEvent = {
+  slotId: string;
+  event: UiAgentEvent;
+};
 
 export interface HostStatus {
   status: AgentStatus;
@@ -260,12 +272,42 @@ export interface FleetSlotInfo {
   sessionId: string | null;
   role: "primary" | "worker" | "reviewer";
   createdAt: string;
+  /** True while the slot's SessionHost is streaming or retrying. */
+  busy: boolean;
+}
+
+export type FleetPairPhase =
+  | "idle"
+  | "wave1"
+  | "wave2"
+  | "done"
+  | "aborted"
+  | "error";
+
+export interface FleetPairState {
+  phase: FleetPairPhase;
+  task?: string;
+  workerSlotId?: string;
+  reviewerSlotId?: string;
+  message?: string;
 }
 
 export interface FleetState {
   slots: FleetSlotInfo[];
   activeId: string | null;
+  pair: FleetPairState;
 }
+
+/** Lightweight Fleet UI channel (inactive slots / pair progress). */
+export type FleetUiEvent =
+  | {
+      type: "slot_status";
+      slotId: string;
+      busy: boolean;
+      status: AgentStatus;
+    }
+  | { type: "pair_progress"; pair: FleetPairState }
+  | { type: "state"; state: FleetState };
 
 /** Bridge status for renderer (same shape as main-process bridge status). */
 export type GodotRpcStatusDto = GodotRpcBridgeStatus;
@@ -467,6 +509,10 @@ export interface XAgentApi {
   fleetCreate: (label: string, role?: FleetSlotInfo["role"]) => Promise<FleetSlotInfo>;
   fleetSetActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
   fleetRemove: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  fleetStartPair: (
+    task: string,
+  ) => Promise<{ ok: boolean; error?: string; pair?: FleetPairState }>;
+  fleetAbortPair: () => Promise<{ ok: boolean; error?: string; pair?: FleetPairState }>;
   godotRpcStatus: () => Promise<GodotRpcStatusDto>;
   godotRpcStart: () => Promise<GodotRpcStatusDto>;
   godotRpcStop: () => Promise<{ ok: boolean }>;
@@ -521,6 +567,7 @@ export interface XAgentApi {
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;
   installUpdate: () => Promise<{ ok: boolean; error?: string }>;
-  onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
+  onEvent: (handler: (payload: SlotAgentEvent) => void) => () => void;
+  onFleetEvent: (handler: (event: FleetUiEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
 }
