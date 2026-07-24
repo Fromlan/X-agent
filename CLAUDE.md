@@ -60,6 +60,8 @@ Electron 三进程边界：
 
 流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。
 
+上下文组装细节（Pi system 分层、白名单、Godot、Fleet 用户 prompt 注入、隔离边界）：见 [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)。
+
 ### Fleet
 
 - [`fleet-host-manager.ts`](apps/desktop/electron/agent/fleet-host-manager.ts) + [`fleet-registry.ts`](apps/desktop/electron/agent/fleet-registry.ts) + [`fleet-orchestrator.ts`](apps/desktop/electron/agent/fleet-orchestrator.ts)（handoff：[`fleet-handoff.ts`](apps/desktop/electron/agent/fleet-handoff.ts)、prompts：[`fleet-pair-prompts.ts`](apps/desktop/electron/agent/fleet-pair-prompts.ts)）

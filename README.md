@@ -69,6 +69,8 @@ npm run dev
 
 **会话隔离**：只读写 `~/.pi/agent/x-agent/sessions/`，不读写 Pi CLI 的 `~/.pi/agent/sessions/`。
 
+**Agent 上下文**：模型实际看到的 system / 技能 / 工具 / 会话 / Fleet 注入如何组织，见 [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)。
+
 ## 质量门禁
 
 ```bash
