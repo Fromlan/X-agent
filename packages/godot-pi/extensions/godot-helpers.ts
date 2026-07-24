@@ -7,12 +7,15 @@ import { Type } from "typebox";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+const RPC_METHODS =
+  "ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, run_current_scene, play_main_scene, import_resources, get_play_errors, stop_scene";
+
 export default function godotHelpersExtension(pi: ExtensionAPI): void {
   pi.registerCommand("godot-rpc-status", {
     description: "Show how to connect X-agent Godot editor RPC",
     handler: async (_args, ctx) => {
       ctx.ui.notify(
-        "Godot RPC: enable X-agent RPC addon → connect 127.0.0.1:8765 (TCP JSON-lines). Methods: ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, run_current_scene, stop_scene. In X-agent, enable Godot tools under Settings → Tools.",
+        `Godot RPC: enable X-agent RPC addon → connect via ~/.pi/agent/x-agent-godot-rpc.json (default 127.0.0.1:8765). Methods: ${RPC_METHODS}. In X-agent, enable Godot tools under Settings → Tools. Multi-editor: pick the active client in Settings → Godot RPC.`,
         "info",
       );
     },
@@ -22,7 +25,7 @@ export default function godotHelpersExtension(pi: ExtensionAPI): void {
     name: "godot_detect_project",
     label: "Detect Godot project",
     description:
-      "Detect whether cwd (or a given path) is a Godot project and report config_version / name.",
+      "Detect whether cwd (or a given path) is a Godot project and report config_version / name / main scene.",
     parameters: Type.Object({
       path: Type.Optional(
         Type.String({ description: "Project root; defaults to session cwd" }),
@@ -45,13 +48,17 @@ export default function godotHelpersExtension(pi: ExtensionAPI): void {
       const text = readFileSync(projectFile, "utf8");
       const nameMatch = text.match(/config\/name\s*=\s*"([^"]+)"/);
       const versionMatch = text.match(/config_version\s*=\s*(\d+)/);
+      const mainMatch = text.match(/run\/main_scene\s*=\s*"([^"]+)"/);
       const name = nameMatch?.[1] ?? "(unnamed)";
       const configVersion = versionMatch?.[1] ?? "?";
+      const mainScene = mainMatch?.[1] ?? "";
       return {
         content: [
           {
             type: "text" as const,
-            text: `Godot project "${name}" (config_version=${configVersion}) at ${root}`,
+            text: `Godot project "${name}" (config_version=${configVersion}) at ${root}${
+              mainScene ? `; main_scene=${mainScene}` : ""
+            }`,
           },
         ],
         details: {
@@ -59,6 +66,7 @@ export default function godotHelpersExtension(pi: ExtensionAPI): void {
           root,
           name,
           configVersion,
+          mainScene: mainScene || null,
         },
       };
     },

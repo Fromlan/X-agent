@@ -80,9 +80,21 @@ try {
   assert(ext.ok && ext.item, `create ext: ${ext.error}`);
   assert(existsSync(ext.item!.path), "ext file exists");
 
+  const theme = createPlugin({
+    kind: "theme",
+    scope: "project",
+    name: "unit-theme",
+    cwd,
+  });
+  assert(theme.ok && theme.item, `create theme: ${theme.error}`);
+  assert(existsSync(theme.item!.path), "theme file exists");
+  const themeRead = readPlugin(theme.item!.path, cwd);
+  assert(themeRead.ok && (themeRead.content ?? "").includes('"name"'), "read theme");
+
   assert(deletePlugin(created.item!.path, cwd).ok, "delete prompt");
   assert(deletePlugin(skill.item!.path, cwd).ok, "delete skill");
   assert(deletePlugin(ext.item!.path, cwd).ok, "delete ext");
+  assert(deletePlugin(theme.item!.path, cwd).ok, "delete theme");
   assert(!existsSync(created.item!.path), "prompt gone");
 } finally {
   rmSync(cwd, { recursive: true, force: true });

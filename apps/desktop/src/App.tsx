@@ -5,6 +5,7 @@ import type {
   AuthStatus,
   BashCheckResult,
   ClientPrefs,
+  FleetSlotInfo,
   ModelInfo,
   PiCliStatus,
   SessionInfo,
@@ -14,11 +15,11 @@ import type {
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
 import { TopBar } from "./components/TopBar";
+import { FleetStrip } from "./components/FleetStrip";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { PluginsPage } from "./components/PluginsPage";
 import { ChatItem, applyAgentEvent } from "./stores/chat-store";
 
-type SettingsTab = "general" | "providers" | "tools" | "godot";
+type SettingsTab = "general" | "providers" | "tools" | "plugins" | "godot";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -53,8 +54,9 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
     undefined,
   );
-  const [view, setView] = useState<"chat" | "plugins">("chat");
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
+  const [fleetSlots, setFleetSlots] = useState<FleetSlotInfo[]>([]);
+  const [fleetActiveId, setFleetActiveId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const currentModelKey = useMemo(() => {
@@ -66,6 +68,12 @@ export default function App() {
   const refreshSessions = useCallback(async () => {
     const list = await window.xAgent.listSessions();
     setSessions(list);
+  }, []);
+
+  const refreshFleet = useCallback(async () => {
+    const state = await window.xAgent.fleetState();
+    setFleetSlots(state.slots);
+    setFleetActiveId(state.activeId);
   }, []);
 
   const refreshModels = useCallback(async () => {
@@ -151,6 +159,8 @@ export default function App() {
       if (cancelled) return;
       await refreshSessions();
       if (cancelled) return;
+      await refreshFleet();
+      if (cancelled) return;
 
       let restored = false;
       if (p.lastSessionPath) {
@@ -176,12 +186,13 @@ export default function App() {
         }
       }
       await refreshSessions();
+      await refreshFleet();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [refreshModels, refreshSessions, syncFromHost]);
+  }, [refreshFleet, refreshModels, refreshSessions, syncFromHost]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -203,6 +214,7 @@ export default function App() {
       setSessionId(result.sessionId);
       if (result.warning) setError(result.warning);
       await refreshSessions();
+      await refreshFleet();
     } finally {
       setBusy(false);
     }
@@ -346,6 +358,19 @@ export default function App() {
     setSettingsOpen(true);
   };
 
+  const openPiLogin = async () => {
+    setError(null);
+    const result = await window.xAgent.openPiLogin();
+    if (!result.ok) {
+      setError(
+        [result.error, result.hint].filter(Boolean).join(" — ") ||
+          "无法打开 Pi 登录",
+      );
+      return;
+    }
+    if (result.hint) setError(result.hint);
+  };
+
   const installPi = async () => {
     setPiCliInstalling(true);
     setError(null);
@@ -358,12 +383,39 @@ export default function App() {
     }
   };
 
+  const switchFleetSlot = async (id: string) => {
+    if (id === fleetActiveId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.xAgent.fleetSetActive(id);
+      if (!result.ok) {
+        setError(result.error ?? "切换 Fleet 槽位失败");
+        return;
+      }
+      await refreshFleet();
+      await syncFromHost();
+      await refreshSessions();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addFleetWorker = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const n = fleetSlots.filter((s) => s.role !== "primary").length + 1;
+      await window.xAgent.fleetCreate(`工作区 ${n}`, "worker");
+      await refreshFleet();
+      await refreshSessions();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="app-shell">
-      {view === "plugins" ? (
-        <PluginsPage cwd={cwd} onBack={() => setView("chat")} />
-      ) : (
-        <>
       <TopBar
         cwd={cwd}
         status={status}
@@ -380,8 +432,14 @@ export default function App() {
         onToggleThinking={toggleThinking}
         onToggleTheme={toggleTheme}
         onOpenSettings={openSettings}
-        onOpenPlugins={() => setView("plugins")}
         busy={busy}
+      />
+      <FleetStrip
+        slots={fleetSlots}
+        activeId={fleetActiveId}
+        busy={busy}
+        onSelect={switchFleetSlot}
+        onAdd={addFleetWorker}
       />
       {piCli && !piCli.ok && (
         <div className="banner warn">
@@ -403,6 +461,13 @@ export default function App() {
         <div className="banner warn">
           <AlertTriangle size={14} />
           <span>{auth.message}</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void openPiLogin()}
+          >
+            打开 Pi 登录
+          </button>
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -486,6 +551,7 @@ export default function App() {
         <SettingsPanel
           open={settingsOpen}
           prefs={prefs}
+          cwd={cwd}
           initialTab={settingsTab}
           onClose={() => {
             setSettingsOpen(false);
@@ -504,8 +570,6 @@ export default function App() {
             setAuth(await window.xAgent.checkAuth());
           }}
         />
-      )}
-        </>
       )}
     </div>
   );

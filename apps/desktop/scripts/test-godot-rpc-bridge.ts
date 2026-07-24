@@ -106,6 +106,46 @@ await withBridge(18765, async (bridge) => {
   assert(bridge.getStatus().lastEvent?.type === "disconnected", "disconnected event");
 });
 
+// Multi-client routing: request goes to the selected active client only
+await withBridge(18767, async (bridge) => {
+  const seen: string[] = [];
+  const mockA = await connectMockClient(18767, (line, write) => {
+    const msg = JSON.parse(line) as { id: string; method: string };
+    seen.push(`A:${msg.method}`);
+    write({ id: msg.id, ok: true, result: { from: "A" } });
+  });
+  await new Promise((r) => setTimeout(r, 40));
+  const idA = bridge.listClients()[0]?.id;
+  assert(Boolean(idA), "client A id");
+
+  const mockB = await connectMockClient(18767, (line, write) => {
+    const msg = JSON.parse(line) as { id: string; method: string };
+    seen.push(`B:${msg.method}`);
+    write({ id: msg.id, ok: true, result: { from: "B" } });
+  });
+  await new Promise((r) => setTimeout(r, 40));
+  assert(bridge.getStatus().clients === 2, "two clients");
+  const idB = bridge.listClients().find((c) => c.id !== idA)?.id;
+  assert(Boolean(idB), "client B id");
+
+  assert(bridge.setActiveClient(idB!), "set active B");
+  const pingB = await bridge.request({ id: "pb", method: "ping" }, 2000);
+  assert(pingB.ok === true, "ping B ok");
+  assert((pingB as { result: { from: string } }).result.from === "B", "routed to B");
+
+  const pingA = await bridge.request(
+    { id: "pa", method: "ping" },
+    2000,
+    { clientId: idA },
+  );
+  assert(pingA.ok === true, "explicit A ok");
+  assert((pingA as { result: { from: string } }).result.from === "A", "routed to A");
+
+  mockA.close();
+  mockB.close();
+  await new Promise((r) => setTimeout(r, 40));
+});
+
 // EADDRINUSE with fallbackPorts:0 → soft error; with default fallback → next port
 {
   const a = new GodotRpcBridge();

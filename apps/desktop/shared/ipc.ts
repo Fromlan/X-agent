@@ -72,6 +72,8 @@ export const GODOT_TOOLS = [
   "godot_open_scene",
   "godot_reload_scene",
   "godot_run_scene",
+  "godot_run_main_scene",
+  "godot_import_resources",
   "godot_play_errors",
   "godot_stop_scene",
 ] as const;
@@ -260,6 +262,11 @@ export interface FleetSlotInfo {
   createdAt: string;
 }
 
+export interface FleetState {
+  slots: FleetSlotInfo[];
+  activeId: string | null;
+}
+
 /** Bridge status for renderer (same shape as main-process bridge status). */
 export type GodotRpcStatusDto = GodotRpcBridgeStatus;
 
@@ -281,7 +288,7 @@ export interface InstallGodotRpcAddonResult {
   hint?: string;
 }
 
-export type PluginKind = "prompt" | "skill" | "extension";
+export type PluginKind = "prompt" | "skill" | "extension" | "theme";
 export type PluginScope = "global" | "project";
 
 export interface PluginItem {
@@ -405,6 +412,32 @@ export interface ProviderImportResult {
   error?: string;
 }
 
+export interface InstalledPackageInfo {
+  name: string;
+  source: string;
+  installedAt: string;
+  path?: string;
+}
+
+export interface PackageInstallResult {
+  ok: boolean;
+  error?: string;
+  package?: InstalledPackageInfo;
+  output?: string;
+}
+
+export interface AppUpdateStatus {
+  supported: boolean;
+  checking: boolean;
+  available: boolean;
+  downloading: boolean;
+  downloaded: boolean;
+  version?: string;
+  progress?: number;
+  error?: string;
+  message?: string;
+}
+
 export interface XAgentApi {
   openProject: (path?: string) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
@@ -430,13 +463,21 @@ export interface XAgentApi {
   installPiCli: () => Promise<PiCliStatus>;
   getStatus: () => Promise<HostStatus>;
   fleetList: () => Promise<FleetSlotInfo[]>;
+  fleetState: () => Promise<FleetState>;
   fleetCreate: (label: string, role?: FleetSlotInfo["role"]) => Promise<FleetSlotInfo>;
-  fleetSetActive: (id: string) => Promise<{ ok: boolean }>;
+  fleetSetActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  fleetRemove: (id: string) => Promise<{ ok: boolean; error?: string }>;
   godotRpcStatus: () => Promise<GodotRpcStatusDto>;
   godotRpcStart: () => Promise<GodotRpcStatusDto>;
   godotRpcStop: () => Promise<{ ok: boolean }>;
   godotRpcPing: () => Promise<GodotRpcRequestResult>;
-  godotRpcRequest: (call: GodotRpcCallDto) => Promise<GodotRpcRequestResult>;
+  godotRpcRequest: (
+    call: GodotRpcCallDto,
+    options?: { clientId?: string | null },
+  ) => Promise<GodotRpcRequestResult>;
+  godotRpcSetActiveClient: (
+    clientId: string | null,
+  ) => Promise<{ ok: boolean; status: GodotRpcStatusDto }>;
   pickGodotEditor: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
   launchGodotEditor: () => Promise<{
     ok: boolean;
@@ -471,5 +512,15 @@ export interface XAgentApi {
     baseUrl: string;
     apiKey: string;
   }) => Promise<FetchProviderModelsResult>;
+  listInstalledPackages: () => Promise<InstalledPackageInfo[]>;
+  installPackage: (source: string) => Promise<PackageInstallResult>;
+  removePackageRecord: (name: string) => Promise<{ ok: boolean; error?: string }>;
+  installGodotPiPackage: () => Promise<PackageInstallResult>;
+  openPiLogin: () => Promise<{ ok: boolean; error?: string; hint?: string }>;
+  getUpdateStatus: () => Promise<AppUpdateStatus>;
+  checkForUpdates: () => Promise<AppUpdateStatus>;
+  downloadUpdate: () => Promise<AppUpdateStatus>;
+  installUpdate: () => Promise<{ ok: boolean; error?: string }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
+  onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
 }

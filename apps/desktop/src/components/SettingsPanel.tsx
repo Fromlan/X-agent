@@ -11,6 +11,7 @@ import {
 import {
   AVAILABLE_TOOLS,
   GODOT_TOOLS,
+  type AppUpdateStatus,
   type BashCheckResult,
   type ClientPrefs,
   type FetchedProviderModel,
@@ -24,8 +25,9 @@ import {
   type ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
+import { PluginsPage } from "./PluginsPage";
 
-type SettingsTab = "general" | "providers" | "tools" | "godot";
+type SettingsTab = "general" | "providers" | "tools" | "plugins" | "godot";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -40,6 +42,7 @@ const THINKING_LEVELS: ThinkingLevel[] = [
 interface Props {
   open: boolean;
   prefs: ClientPrefs;
+  cwd: string | null;
   onClose: () => void;
   onToggleTool: (tool: string) => void;
   onProvidersChanged?: () => void;
@@ -69,6 +72,7 @@ const emptyForm = (): ProviderUpsertInput => ({
 export function SettingsPanel({
   open,
   prefs,
+  cwd,
   onClose,
   onToggleTool,
   onProvidersChanged,
@@ -80,6 +84,7 @@ export function SettingsPanel({
   const [rpc, setRpc] = useState<GodotRpcStatusDto | null>(null);
   const [rpcMsg, setRpcMsg] = useState<string | null>(null);
   const [scenePath, setScenePath] = useState("res://");
+  const [importPaths, setImportPaths] = useState("res://");
   const [profiles, setProfiles] = useState<ProviderProfileSummary[]>([]);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +101,12 @@ export function SettingsPanel({
   const [showFetchPanel, setShowFetchPanel] = useState(false);
   const [bash, setBash] = useState<BashCheckResult | null>(null);
   const [generalMsg, setGeneralMsg] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(
+    null,
+  );
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [authHint, setAuthHint] = useState<string | null>(null);
+  const [piLoginBusy, setPiLoginBusy] = useState(false);
 
   const refreshProfiles = useCallback(async () => {
     setProfiles(await window.xAgent.listProviderProfiles());
@@ -110,20 +121,26 @@ export function SettingsPanel({
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [status, list, presetList, bashStatus] = await Promise.all([
+      const [status, list, presetList, bashStatus, update] = await Promise.all([
         window.xAgent.godotRpcStatus(),
         window.xAgent.listProviderProfiles(),
         window.xAgent.listProviderPresets(),
         window.xAgent.checkBash(),
+        window.xAgent.getUpdateStatus(),
       ]);
       if (cancelled) return;
       setRpc(status);
       setProfiles(list);
       setPresets(presetList);
       setBash(bashStatus);
+      setUpdateStatus(update);
     })();
+    const unsub = window.xAgent.onUpdateStatus((status) => {
+      if (!cancelled) setUpdateStatus(status);
+    });
     return () => {
       cancelled = true;
+      unsub();
     };
   }, [open]);
 
@@ -406,6 +423,7 @@ export function SettingsPanel({
     { id: "general", label: "通用" },
     { id: "providers", label: "供应商" },
     { id: "tools", label: "工具" },
+    { id: "plugins", label: "插件" },
     { id: "godot", label: "Godot RPC" },
   ];
 
@@ -458,7 +476,13 @@ export function SettingsPanel({
             ))}
           </nav>
 
-          <div className="settings-content">
+          <div
+            className={
+              tab === "plugins"
+                ? "settings-content settings-content--plugins"
+                : "settings-content"
+            }
+          >
             {(error || message) && (
               <div className={`banner ${error ? "error" : "warn"}`}>
                 {error ?? message}
@@ -598,6 +622,127 @@ export function SettingsPanel({
                       建议路径：{bash.suggestedShellPath}
                     </p>
                   )}
+
+                <h4 className="settings-subhead">认证</h4>
+                <p className="modal-hint">
+                  可用 Pi CLI 的 /login，或在「供应商」页配置 API Key。
+                </p>
+                <div className="godot-rpc-path-row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={piLoginBusy}
+                    onClick={async () => {
+                      setPiLoginBusy(true);
+                      setAuthHint(null);
+                      try {
+                        const result = await window.xAgent.openPiLogin();
+                        setAuthHint(
+                          result.hint ??
+                            (result.ok
+                              ? "已打开终端"
+                              : result.error ?? "无法打开 Pi 登录"),
+                        );
+                        if (!result.ok && result.error) {
+                          setGeneralMsg(result.error);
+                        }
+                      } finally {
+                        setPiLoginBusy(false);
+                      }
+                    }}
+                  >
+                    {piLoginBusy ? "打开中…" : "打开 Pi 登录"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setTab("providers")}
+                  >
+                    前往供应商
+                  </button>
+                </div>
+                {authHint && <p className="modal-hint">{authHint}</p>}
+
+                <h4 className="settings-subhead">更新</h4>
+                <p className="modal-hint">
+                  {updateStatus?.message ??
+                    "检查 GitHub Releases 上的新版本。"}
+                  {updateStatus?.version
+                    ? `（当前目标：${updateStatus.version}）`
+                    : ""}
+                  {typeof updateStatus?.progress === "number" &&
+                  updateStatus.downloading
+                    ? ` ${updateStatus.progress}%`
+                    : ""}
+                </p>
+                <div className="godot-rpc-path-row">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={
+                      updateBusy ||
+                      updateStatus?.checking ||
+                      updateStatus?.downloading
+                    }
+                    onClick={async () => {
+                      setUpdateBusy(true);
+                      try {
+                        setUpdateStatus(await window.xAgent.checkForUpdates());
+                      } finally {
+                        setUpdateBusy(false);
+                      }
+                    }}
+                  >
+                    {updateStatus?.checking ? "检查中…" : "检查更新"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={
+                      updateBusy ||
+                      !updateStatus?.available ||
+                      updateStatus.downloaded ||
+                      updateStatus.downloading ||
+                      !updateStatus.supported
+                    }
+                    onClick={async () => {
+                      setUpdateBusy(true);
+                      try {
+                        setUpdateStatus(await window.xAgent.downloadUpdate());
+                      } finally {
+                        setUpdateBusy(false);
+                      }
+                    }}
+                  >
+                    {updateStatus?.downloading ? "下载中…" : "下载更新"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={
+                      updateBusy ||
+                      !updateStatus?.downloaded ||
+                      !updateStatus.supported
+                    }
+                    onClick={async () => {
+                      setUpdateBusy(true);
+                      try {
+                        const result = await window.xAgent.installUpdate();
+                        if (!result.ok) {
+                          setGeneralMsg(result.error ?? "安装失败");
+                        }
+                      } finally {
+                        setUpdateBusy(false);
+                      }
+                    }}
+                  >
+                    安装并重启
+                  </button>
+                </div>
+                {updateStatus?.error && (
+                  <p className="modal-hint">{updateStatus.error}</p>
+                )}
+
                 {generalMsg && <p className="modal-hint">{generalMsg}</p>}
               </section>
             )}
@@ -705,6 +850,34 @@ export function SettingsPanel({
                       ? `已连接 Godot（${rpc.clients} 客户端）`
                       : "桥接运行中 · 等待 Godot 连接"}
                 </p>
+                {(rpc?.clientInfos?.length ?? 0) > 0 && (
+                  <label className="field">
+                    <span>活动编辑器客户端</span>
+                    <select
+                      className="select"
+                      value={rpc?.activeClientId ?? ""}
+                      onChange={async (e) => {
+                        const id = e.target.value || null;
+                        const res = await window.xAgent.godotRpcSetActiveClient(
+                          id,
+                        );
+                        setRpc(res.status);
+                        setRpcMsg(
+                          id
+                            ? `已切换活动客户端：${id.slice(0, 8)}…`
+                            : "已清除活动客户端（将使用首个连接）",
+                        );
+                      }}
+                    >
+                      {rpc!.clientInfos.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {(c.projectPath || "unknown project").slice(-48)} ·{" "}
+                          {c.godotVersion ?? "?"} · {c.id.slice(0, 8)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="modal-actions">
                   <button
                     type="button"
@@ -828,6 +1001,18 @@ export function SettingsPanel({
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
+                    onClick={() =>
+                      runRpc({
+                        method: "play_main_scene",
+                        wait_ms: GODOT_RPC_DEFAULT_WAIT_MS,
+                      })
+                    }
+                  >
+                    Run main
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
                     onClick={() => runRpc({ method: "get_play_errors" })}
                   >
                     Errors
@@ -886,11 +1071,41 @@ export function SettingsPanel({
                     重载场景
                   </button>
                 </div>
+
+                <h4 className="settings-subhead">资源导入</h4>
+                <div className="godot-rpc-path-row">
+                  <input
+                    type="text"
+                    className="input"
+                    value={importPaths}
+                    onChange={(e) => setImportPaths(e.target.value)}
+                    placeholder="res://icon.svg（空则全量 scan；多路径用逗号分隔）"
+                    aria-label="Import paths"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      const paths = importPaths
+                        .split(/[,;\n]/)
+                        .map((p) => p.trim())
+                        .filter(Boolean);
+                      void runRpc({
+                        method: "import_resources",
+                        paths,
+                      });
+                    }}
+                  >
+                    导入/扫描
+                  </button>
+                </div>
                 {rpcMsg && (
                   <pre className="godot-rpc-result modal-hint">{rpcMsg}</pre>
                 )}
               </section>
             )}
+
+            {tab === "plugins" && <PluginsPage cwd={cwd} />}
 
             {tab === "providers" && !editing && (
               <section>

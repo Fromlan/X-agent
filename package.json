@@ -1,13 +1,15 @@
 {
   "name": "x-agent",
   "private": true,
-  "description": "Pi-based agent tools workspace (Godot-focused roadmap)",
+  "description": "Pi-based Electron agent desktop (Godot RPC + Fleet)",
   "scripts": {
     "desktop:dev": "npm run dev --prefix apps/desktop",
     "desktop:build": "npm run build --prefix apps/desktop",
     "desktop:test": "npm test --prefix apps/desktop",
     "desktop:typecheck": "npm run typecheck --prefix apps/desktop",
     "desktop:dist": "npm run dist --prefix apps/desktop",
-    "desktop:smoke": "npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts"
+    "desktop:smoke": "npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:notes": "node scripts/extract-changelog.mjs"
   }
 }

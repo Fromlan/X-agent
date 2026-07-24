@@ -75,6 +75,8 @@ export class SessionHost {
   private lastError: string | undefined;
   private getWindow: () => BrowserWindow | null;
   private godotRpc: GodotRpcBridge | null;
+  /** When false, UI events are suppressed (inactive fleet slot). */
+  private emitEnabled: () => boolean = () => true;
   /** Serializes session create/replace/dispose only — not prompt/abort. */
   private replaceChain: Promise<void> = Promise.resolve();
   private messageSeq = 0;
@@ -88,6 +90,37 @@ export class SessionHost {
     this.godotRpc = godotRpc;
   }
 
+  /** Fleet: only the active slot should push UI events. */
+  setEmitEnabled(fn: () => boolean): void {
+    this.emitEnabled = fn;
+  }
+
+  getHistorySnapshot(): HistoryItem[] {
+    if (!this.bundle) return [];
+    return messagesToHistory(this.bundle.session.messages);
+  }
+
+  /** Push current history + session_info + status to the renderer (active slot). */
+  resyncUi(): void {
+    const status = this.getStatus();
+    if (this.bundle) {
+      this.emit({
+        type: "session_info",
+        sessionId: this.bundle.session.sessionId,
+        cwd: this.bundle.cwd,
+        model: modelFromSession(this.bundle.session),
+        thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
+        sessionPath: this.bundle.sessionPath,
+      });
+    }
+    this.emit({ type: "history_replace", items: this.getHistorySnapshot() });
+    this.emit({
+      type: "status",
+      status: status.status,
+      ...(status.error ? { error: status.error } : {}),
+    });
+  }
+
   private runReplaceExclusive<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.replaceChain.then(fn, fn);
     this.replaceChain = next.then(
@@ -98,6 +131,7 @@ export class SessionHost {
   }
 
   private emit(event: UiAgentEvent): void {
+    if (!this.emitEnabled()) return;
     const win = this.getWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send("agent:event", event);
@@ -447,10 +481,13 @@ export class SessionHost {
     }
 
     const sessionPath = this.sessionFileOf(session);
-    patchPrefs({
-      lastProjectPath: cwd,
-      lastSessionPath: sessionPath,
-    });
+    // Inactive fleet slots must not overwrite the launcher's last-session prefs.
+    if (this.emitEnabled()) {
+      patchPrefs({
+        lastProjectPath: cwd,
+        lastSessionPath: sessionPath,
+      });
+    }
     this.bundle.sessionPath = sessionPath;
 
     const history: HistoryItem[] = messagesToHistory(session.messages);

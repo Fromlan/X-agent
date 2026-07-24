@@ -2,16 +2,27 @@ import { createServer, type Server, type Socket } from "node:net";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 import type {
   GodotRpcBridgeStatus,
+  GodotRpcClientInfo,
   GodotRpcEvent,
   GodotRpcRequest,
+  GodotRpcRequestOptions,
   GodotRpcResponse,
 } from "../../shared/godot-rpc";
 import { GODOT_RPC_BASE_TIMEOUT_MS, GODOT_RPC_DEFAULT_PORT } from "../../shared/godot-rpc";
 import { ensureAgentDir } from "./prefs";
 
 type Listener = (status: GodotRpcBridgeStatus) => void;
+
+type ClientState = {
+  id: string;
+  socket: Socket;
+  projectPath?: string;
+  godotVersion?: string;
+  connectedAt: string;
+};
 
 export type GodotRpcStartOptions = {
   /** Extra ports to try after preferred (preferred+1 …). Default 9 → 10 attempts. */
@@ -44,11 +55,13 @@ export function godotRpcEndpointPath(): string {
 
 /**
  * JSON-lines TCP RPC bridge for the Godot editor addon.
- * One request/response or event object per line.
+ * Supports multiple editor clients with explicit routing by client id.
  */
 export class GodotRpcBridge {
   private server: Server | null = null;
-  private clients = new Set<Socket>();
+  private clients = new Map<string, ClientState>();
+  private socketToId = new WeakMap<Socket, string>();
+  private activeClientId: string | null = null;
   private port = GODOT_RPC_DEFAULT_PORT;
   private lastEvent: GodotRpcEvent | undefined;
   private lastError: string | undefined;
@@ -70,10 +83,35 @@ export class GodotRpcBridge {
       running: Boolean(this.server?.listening),
       port: this.port,
       clients: this.clients.size,
+      clientInfos: this.listClients(),
+      activeClientId: this.activeClientId,
       lastEvent: this.lastEvent,
       ...(this.lastError ? { error: this.lastError } : {}),
       ...(this.lastWarning ? { warning: this.lastWarning } : {}),
     };
+  }
+
+  listClients(): GodotRpcClientInfo[] {
+    return [...this.clients.values()]
+      .map((c) => ({
+        id: c.id,
+        projectPath: c.projectPath,
+        godotVersion: c.godotVersion,
+        connectedAt: c.connectedAt,
+      }))
+      .sort((a, b) => a.connectedAt.localeCompare(b.connectedAt));
+  }
+
+  setActiveClient(clientId: string | null): boolean {
+    if (clientId === null) {
+      this.activeClientId = null;
+      this.emitStatus();
+      return true;
+    }
+    if (!this.clients.has(clientId)) return false;
+    this.activeClientId = clientId;
+    this.emitStatus();
+    return true;
   }
 
   private emitStatus(): void {
@@ -119,24 +157,38 @@ export class GodotRpcBridge {
     }
   }
 
+  private removeClient(socket: Socket): void {
+    const id = this.socketToId.get(socket);
+    if (!id) return;
+    this.clients.delete(id);
+    this.socketToId.delete(socket);
+    if (this.activeClientId === id) {
+      this.activeClientId = this.clients.keys().next().value ?? null;
+    }
+    this.lastEvent = { type: "disconnected", clientId: id };
+    this.emitStatus();
+  }
+
   private async tryListen(port: number): Promise<{ ok: true } | { ok: false; err: unknown }> {
     this.discardServer();
     this.port = port;
 
     const server = createServer((socket) => {
-      this.clients.add(socket);
+      const id = randomUUID();
+      const state: ClientState = {
+        id,
+        socket,
+        connectedAt: new Date().toISOString(),
+      };
+      this.clients.set(id, state);
+      this.socketToId.set(socket, id);
+      if (!this.activeClientId) this.activeClientId = id;
       this.buffers.set(socket, "");
       this.emitStatus();
       socket.setEncoding("utf8");
       socket.on("data", (chunk) => this.onData(socket, String(chunk)));
-      socket.on("close", () => {
-        this.clients.delete(socket);
-        this.lastEvent = { type: "disconnected" };
-        this.emitStatus();
-      });
-      socket.on("error", () => {
-        this.clients.delete(socket);
-      });
+      socket.on("close", () => this.removeClient(socket));
+      socket.on("error", () => this.removeClient(socket));
     });
     this.server = server;
 
@@ -211,8 +263,9 @@ export class GodotRpcBridge {
       pending.resolve({ id: "stopped", ok: false, error: "bridge stopped" });
     }
     this.pending.clear();
-    for (const client of this.clients) client.destroy();
+    for (const client of this.clients.values()) client.socket.destroy();
     this.clients.clear();
+    this.activeClientId = null;
     this.lastError = undefined;
     this.lastWarning = undefined;
     await new Promise<void>((resolve) => {
@@ -236,11 +289,11 @@ export class GodotRpcBridge {
     for (const line of parts) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      this.onMessage(trimmed);
+      this.onMessage(socket, trimmed);
     }
   }
 
-  private onMessage(raw: string): void {
+  private onMessage(socket: Socket, raw: string): void {
     try {
       const msg = JSON.parse(raw) as GodotRpcResponse | GodotRpcEvent | { type?: string };
       if ("id" in msg && typeof (msg as GodotRpcResponse).id === "string") {
@@ -254,7 +307,16 @@ export class GodotRpcBridge {
         return;
       }
       if ("type" in msg && typeof msg.type === "string") {
-        this.lastEvent = msg as GodotRpcEvent;
+        const clientId = this.socketToId.get(socket);
+        const event = { ...(msg as GodotRpcEvent), ...(clientId ? { clientId } : {}) };
+        if (event.type === "editor_ready" && clientId) {
+          const state = this.clients.get(clientId);
+          if (state) {
+            state.projectPath = event.projectPath;
+            state.godotVersion = event.godotVersion;
+          }
+        }
+        this.lastEvent = event;
         this.emitStatus();
       }
     } catch {
@@ -262,20 +324,39 @@ export class GodotRpcBridge {
     }
   }
 
+  private resolveClient(
+    options?: GodotRpcRequestOptions,
+  ): ClientState | null {
+    if (this.clients.size === 0) return null;
+    const preferred = options?.clientId ?? this.activeClientId;
+    if (preferred) {
+      const hit = this.clients.get(preferred);
+      if (hit && !hit.socket.destroyed) return hit;
+    }
+    for (const client of this.clients.values()) {
+      if (!client.socket.destroyed) return client;
+    }
+    return null;
+  }
+
   async request(
     req: GodotRpcRequest,
     timeoutMs = GODOT_RPC_BASE_TIMEOUT_MS,
+    options?: GodotRpcRequestOptions,
   ): Promise<GodotRpcResponse> {
-    if (this.clients.size === 0) {
+    const client = this.resolveClient(options);
+    if (!client) {
       return { id: req.id, ok: false, error: "no Godot editor connected" };
     }
-    const payload = `${JSON.stringify(req)}\n`;
-    for (const client of this.clients) {
-      if (!client.destroyed) {
-        client.write(payload);
-        break;
-      }
+    if (options?.clientId && !this.clients.has(options.clientId)) {
+      return {
+        id: req.id,
+        ok: false,
+        error: `Godot client not found: ${options.clientId}`,
+      };
     }
+    const payload = `${JSON.stringify(req)}\n`;
+    client.socket.write(payload);
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(req.id);

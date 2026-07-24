@@ -125,6 +125,89 @@ function runNpmInstall(npmPath: string): Promise<{ code: number | null; output: 
   });
 }
 
+const SETTINGS_PROVIDER_HINT =
+  "也可在设置 → 供应商中配置 API Key（无需 Pi CLI 登录）。";
+
+/**
+ * Open an interactive terminal running `pi` so the user can `/login`.
+ * Falls back to a manual hint when spawn fails or Pi CLI is missing.
+ */
+export async function openPiLogin(): Promise<{
+  ok: boolean;
+  error?: string;
+  hint?: string;
+}> {
+  const status = checkPiCli();
+  const hint = SETTINGS_PROVIDER_HINT;
+
+  if (!status.ok || !status.piPath) {
+    return {
+      ok: false,
+      error: status.message,
+      hint: `请先安装 Pi CLI，然后在终端运行 pi 并输入 /login。${hint}`,
+    };
+  }
+
+  try {
+    if (process.platform === "win32") {
+      // Open a visible cmd window that stays open with `pi` on PATH.
+      const child = spawn(
+        "cmd",
+        ["/c", "start", "cmd", "/k", "pi"],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: false,
+          env: process.env,
+        },
+      );
+      child.unref();
+    } else if (process.platform === "darwin") {
+      const child = spawn(
+        "osascript",
+        [
+          "-e",
+          'tell application "Terminal" to do script "pi"',
+          "-e",
+          'tell application "Terminal" to activate',
+        ],
+        { detached: true, stdio: "ignore", env: process.env },
+      );
+      child.unref();
+    } else {
+      const term =
+        resolveBinaryFromPathEnv("x-terminal-emulator", process.env.PATH ?? "") ??
+        resolveBinaryFromPathEnv("gnome-terminal", process.env.PATH ?? "") ??
+        resolveBinaryFromPathEnv("xterm", process.env.PATH ?? "");
+      if (!term) {
+        return {
+          ok: false,
+          error: "未找到可用终端模拟器",
+          hint: `请手动在终端运行 pi，进入后输入 /login。${hint}`,
+        };
+      }
+      const child = spawn(term, ["-e", "pi"], {
+        detached: true,
+        stdio: "ignore",
+        env: process.env,
+      });
+      child.unref();
+    }
+
+    return {
+      ok: true,
+      hint: `已打开终端。在 Pi 中输入 /login 完成认证。${hint}`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      error: `无法打开终端：${message}`,
+      hint: `请手动运行 pi，进入后输入 /login。${hint}`,
+    };
+  }
+}
+
 /** Install global Pi CLI via npm; re-check PATH afterward. */
 export async function installPiCli(): Promise<PiCliStatus> {
   const pathEnv = process.env.PATH ?? "";

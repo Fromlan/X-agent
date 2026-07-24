@@ -56,11 +56,12 @@ function formatRunResult(result: unknown): string {
     started?: boolean;
     playing?: boolean;
     waitMs?: number;
+    playMethod?: string;
     errors?: PlayErrorEntry[];
   };
   const errors = Array.isArray(r.errors) ? r.errors : [];
   const lines: string[] = [
-    `Scene play requested (waitMs=${r.waitMs ?? "?"}).`,
+    `Scene play requested via ${r.playMethod ?? "play"} (waitMs=${r.waitMs ?? "?"}).`,
     `stillPlaying=${Boolean(r.playing)}.`,
   ];
   if (errors.length === 0) {
@@ -77,6 +78,33 @@ function formatRunResult(result: unknown): string {
   return lines.join("\n");
 }
 
+async function executePlay(
+  bridge: GodotRpcBridge,
+  method: "run_current_scene" | "play_main_scene",
+  waitMs: number,
+) {
+  const res = await callBridge(bridge, {
+    method,
+    wait_ms: waitMs,
+  });
+  if (!res.ok) {
+    return textResult(`Godot RPC error: ${res.error}`, {
+      ok: false,
+      error: res.error,
+    });
+  }
+  const text = formatRunResult(res.result);
+  const errors = Array.isArray((res.result as { errors?: unknown })?.errors)
+    ? ((res.result as { errors: PlayErrorEntry[] }).errors ?? [])
+    : [];
+  const hasError = errors.some((e) => e.severity === "error");
+  return textResult(hasError ? `Play finished with errors.\n${text}` : text, {
+    ok: true,
+    result: res.result,
+    hasError,
+  });
+}
+
 const emptyParams = Type.Object({});
 
 const pathParams = Type.Object({
@@ -90,6 +118,15 @@ const runParams = Type.Object({
     Type.Number({
       description:
         "How long to collect debugger/output errors after play (ms). Default 3000, max 15000.",
+    }),
+  ),
+});
+
+const importParams = Type.Object({
+  paths: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "res:// paths to reimport. Omit or pass [] to trigger a full EditorFileSystem.scan().",
     }),
   ),
 });
@@ -190,27 +227,49 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       ],
       parameters: runParams,
       async execute(_id, params) {
-        const waitMs = clampGodotRunWaitMs(params.wait_ms);
-        const res = await callBridge(bridge, {
-          method: "run_current_scene",
-          wait_ms: waitMs,
-        });
-        if (!res.ok) {
-          return textResult(`Godot RPC error: ${res.error}`, {
-            ok: false,
-            error: res.error,
-          });
-        }
-        const text = formatRunResult(res.result);
-        const errors = Array.isArray(
-          (res.result as { errors?: unknown })?.errors,
-        )
-          ? ((res.result as { errors: PlayErrorEntry[] }).errors ?? [])
-          : [];
-        const hasError = errors.some((e) => e.severity === "error");
-        return textResult(
-          hasError ? `Play finished with errors.\n${text}` : text,
-          { ok: true, result: res.result, hasError },
+        return executePlay(
+          bridge,
+          "run_current_scene",
+          clampGodotRunWaitMs(params.wait_ms),
+        );
+      },
+    }),
+    defineTool({
+      name: "godot_run_main_scene",
+      label: "Godot run main scene",
+      description:
+        "Play the project's main scene (like F5), wait briefly, and return debugger/output errors.",
+      promptSnippet:
+        "godot_run_main_scene: play project main scene (F5) and collect errors",
+      promptGuidelines: [
+        "Prefer godot_run_main_scene when validating the full game boot path; use godot_run_scene for the currently edited scene.",
+      ],
+      parameters: runParams,
+      async execute(_id, params) {
+        return executePlay(
+          bridge,
+          "play_main_scene",
+          clampGodotRunWaitMs(params.wait_ms),
+        );
+      },
+    }),
+    defineTool({
+      name: "godot_import_resources",
+      label: "Godot import resources",
+      description:
+        "Trigger Godot EditorFileSystem import: full scan when paths omitted, or reimport specific res:// paths after writing assets on disk.",
+      promptSnippet:
+        "godot_import_resources: scan or reimport assets in the editor",
+      promptGuidelines: [
+        "After writing/replacing textures, audio, or other importable assets, call godot_import_resources with those res:// paths (or omit paths for a full scan).",
+      ],
+      parameters: importParams,
+      async execute(_id, params) {
+        return formatResponse(
+          await callBridge(bridge, {
+            method: "import_resources",
+            paths: Array.isArray(params.paths) ? params.paths : [],
+          }),
         );
       },
     }),

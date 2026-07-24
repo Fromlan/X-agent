@@ -17,4 +17,8 @@ assert(fleet.remove(worker.id), "remove worker");
 assert(fleet.getActiveId() === primary.id, "fallback active");
 assert(fleet.list().length === 1, "one left");
 
+// remove last leaves active null — FleetHostManager refuses this path in UI/IPC
+assert(fleet.remove(primary.id), "registry can remove last");
+assert(fleet.getActiveId() === null, "no active after empty");
+
 console.log("test-fleet-registry: ok");

@@ -1,15 +1,19 @@
 {
   "name": "x-agent-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Pi Agent desktop client (X-agent)",
   "main": "./out/main/index.js",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fromlan/X-agent.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "tsx scripts/test-history-mapper.ts && tsx scripts/test-session-paths.ts && tsx --tsconfig tsconfig.web.json scripts/test-chat-store.ts && tsx scripts/test-fleet-registry.ts && tsx scripts/test-plugin-host.ts && tsx scripts/test-provider-store.ts && tsx scripts/test-model-fetch.ts && tsx scripts/test-godot-rpc-bridge.ts && tsx scripts/test-pi-cli.ts",
+    "test": "tsx scripts/test-history-mapper.ts && tsx scripts/test-session-paths.ts && tsx --tsconfig tsconfig.web.json scripts/test-chat-store.ts && tsx scripts/test-fleet-registry.ts && tsx scripts/test-fleet-host-manager.ts && tsx scripts/test-plugin-host.ts && tsx scripts/test-provider-store.ts && tsx scripts/test-model-fetch.ts && tsx scripts/test-godot-rpc-bridge.ts && tsx scripts/test-pi-cli.ts",
     "dist": "npm run build && electron-builder --win",
     "dist:dir": "npm run build && electron-builder --win --dir"
   },
@@ -17,6 +21,7 @@
     "@earendil-works/pi-coding-agent": "^0.80.6",
     "@fontsource/geist-mono": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.25.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -49,6 +54,17 @@
       {
         "from": "../../packages/godot-editor-rpc/addons/x_agent_rpc",
         "to": "godot-addons/x_agent_rpc"
+      },
+      {
+        "from": "../../packages/godot-pi",
+        "to": "godot-pi"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Fromlan",
+        "repo": "X-agent"
       }
     ],
     "win": {

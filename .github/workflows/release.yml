@@ -49,6 +49,16 @@ jobs:
         shell: bash
         run: npm pkg set "version=${{ steps.version.outputs.version }}"
 
+      - name: Build release notes from CHANGELOG
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          node scripts/extract-changelog.mjs "${{ steps.version.outputs.version }}" \
+            --fail-empty \
+            --out "$RUNNER_TEMP/release-notes.md"
+          echo "---- release notes ----"
+          cat "$RUNNER_TEMP/release-notes.md"
+
       - run: npm run typecheck
       - run: npm test
       - run: npm run dist
@@ -58,7 +68,8 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: X-agent ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
+          body_path: ${{ runner.temp }}/release-notes.md
+          generate_release_notes: false
           files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap

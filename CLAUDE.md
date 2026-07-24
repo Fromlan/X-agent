@@ -1,128 +1,126 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+给在本仓库工作的编码助手（含 Claude Code）的项目指引。
 
 ## 项目概览
 
-X-agent 是基于 Pi SDK 的 Electron 桌面 Agent 客户端。当前仓库只有一个实际应用 `apps/desktop`；根 `package.json` 不是 npm workspace，仅提供转发到该应用的便捷脚本。
+X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。
 
-当前能力：通用 Pi Agent GUI、会话管理、插件管理页、供应商订阅（cc-switch 风格档案 + 拉取 `/models`）、工具白名单、Godot RPC 编辑器控制面（重载/运行场景 + Agent 工具）。Godot Pi 包深化与多 Agent Fleet UI 仍属后续规划。
+**当前能力**：Agent GUI 与会话隔离、供应商订阅、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单、Godot RPC（含主场景运行 / 资源导入 / 多客户端路由）、Fleet 多 `SessionHost`、应用内 Pi 登录引导与打包版自动更新。
 
-运行环境要求：Node.js 22+。Windows 上 Pi 的 `bash` 工具需要 Git for Windows，或在 `~/.pi/agent/settings.json` 中配置 `shellPath`。模型与认证复用 `~/.pi/agent/auth.json` 和 `models.json`；本应用可通过「设置 → 供应商」写入这两份文件。
+运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
 ## 常用命令
 
-依赖锁文件位于 `apps/desktop/package-lock.json`，因此安装命令应在该目录执行：
+锁文件在 `apps/desktop/package-lock.json`，安装在该目录执行：
 
 ```bash
 cd apps/desktop
 npm install
 ```
 
-也可在仓库根目录运行：
+根目录便捷脚本：
 
 ```bash
-npm run desktop:dev        # Electron 开发模式
-npm run desktop:build      # 构建 main、preload、renderer
-npm run desktop:typecheck  # Node + Web 类型检查
-npm run desktop:test       # 离线断言脚本套件
-npm run desktop:smoke      # 真实模型请求冒烟
-npm run desktop:dist       # electron-builder 打包（需先 build）
+npm run desktop:dev        # Electron 开发
+npm run desktop:build
+npm run desktop:typecheck
+npm run desktop:test       # 离线断言脚本
+npm run desktop:smoke      # 真实模型冒烟
+npm run desktop:dist       # electron-builder（Windows）
 ```
 
-应用目录等价命令：`npm run typecheck` / `npm test` / `npm run preview`（`--prefix apps/desktop`）。
+`npm test`（在 `apps/desktop`）串联：`test-history-mapper`、`test-session-paths`、`test-chat-store`、`test-fleet-registry`、`test-fleet-host-manager`、`test-plugin-host`、`test-provider-store`、`test-model-fetch`、`test-godot-rpc-bridge`、`test-pi-cli`。
 
-`npm test` 串联：`test-history-mapper`、`test-session-paths`、`test-chat-store`、`test-fleet-registry`、`test-plugin-host`、`test-provider-store`、`test-model-fetch`、`test-godot-rpc-bridge`。
-
-冒烟脚本可传入工作目录：
+冒烟（需本机认证）：
 
 ```bash
 npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\path\to\project"
 ```
 
-该冒烟会读取本机 Pi 认证并调用真实模型，不是离线单元测试。
-
 ## 架构
 
-应用遵循 Electron 的三进程边界：
+Electron 三进程边界：
 
-- `electron/main.ts` 创建窗口并注册所有 IPC handler。主进程持有唯一 `SessionHost`，所有 Pi SDK、文件系统、会话、模型、供应商与插件操作都留在此侧。
-- `electron/preload.ts` 通过 `contextBridge` 暴露窄接口 `window.xAgent`。Renderer 启用了 `contextIsolation`，且关闭 `nodeIntegration`；新增跨进程能力时应同步修改 IPC 类型、主进程 handler 和 preload API。
-- `src/` 是 React renderer。`App.tsx` 负责初始化偏好、模型和会话，订阅主进程推送事件，并组合顶栏、会话侧栏、聊天区、插件页与设置弹窗。Renderer 不直接依赖 Pi SDK。
-- `shared/ipc.ts` 是主进程、preload、renderer 共同的协议源。
+- `electron/main.ts`：注册 IPC；持有 `FleetHostManager`（多 `SessionHost`）、`GodotRpcBridge`、`AppAutoUpdater`。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件均在主进程。
+- `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关；新增能力需同步改 `shared/ipc.ts`、main handler、preload。
+- `src/`：React renderer。`App.tsx` 组合顶栏、Fleet 条、侧栏、聊天、设置弹窗（含插件分页）。不直接依赖 Pi SDK。
+- `shared/ipc.ts`：跨进程协议源；`shared/godot-rpc.ts`：Godot TCP 协议。
 
-### Agent 与事件数据流
+### Agent 与事件
 
-`electron/agent/session-host.ts` 是核心编排层：
+[`session-host.ts`](apps/desktop/electron/agent/session-host.ts) 为单槽编排：
 
-1. `ModelRuntime` 从 `~/.pi/agent/auth.json` 和 `models.json` 初始化可用模型。
-2. `DefaultResourceLoader` 以用户选定的项目目录为 `cwd`，加载 Pi 的 skills、extensions 等资源。
-3. `createAgentSession` 创建或恢复 `AgentSession`，工具白名单、模型和 thinking level 来自客户端偏好。
-4. Pi 的消息增量和工具执行事件被转换为 `UiAgentEvent`，经 `agent:event` IPC 推送到 renderer。
-5. `src/stores/chat-store.ts` 将流式事件归并为 assistant/tool 聊天项；恢复旧会话时，`electron/agent/history.ts` 将 Pi 的完整消息历史转换成同一种 `HistoryItem` 结构。
+1. `ModelRuntime` 从 auth / models 初始化模型。
+2. `DefaultResourceLoader` 以项目 `cwd` 加载 skills / extensions 等。
+3. `createAgentSession` 创建或恢复会话；工具白名单、模型、thinking 来自偏好。
+4. Pi 事件转为 `UiAgentEvent`，经 `agent:event` 推送到 renderer（仅 **活动** Fleet 槽位 `emit`）。
+5. `chat-store.ts` 归并流式项；恢复时 `history.ts` 映射为同一 `HistoryItem` 结构。
 
-当会话正在流式输出时，再次发送 prompt 使用 Pi 的 `streamingBehavior: "steer"`，而不是并行创建另一轮请求。切换项目、新建会话或恢复会话前，`SessionHost` 会释放当前 session。
+流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。
 
-### 供应商订阅
+### Fleet
 
-- `electron/agent/provider-store.ts`：档案 CRUD，持久化到 `~/.pi/agent/x-agent-providers.json`。
-- 启用档案时写入 Pi `auth.json`（api_key）与 `models.json.providers[id]`，再经 `SessionHost.applyActivatedProvider` / `reloadRuntime` 刷新模型列表。
-- `electron/agent/model-fetch.ts`：按 cc-switch 风格探测候选 URL（如 `/v1/models`、剥离 `/anthropic` 等后缀），主进程代发 HTTP，经 IPC `fetchProviderModels` 返回。
-- UI：`SettingsPanel` 供应商页用表格编辑模型；支持「拉取模型」勾选后合并/替换。
+- [`fleet-host-manager.ts`](apps/desktop/electron/agent/fleet-host-manager.ts) + [`fleet-registry.ts`](apps/desktop/electron/agent/fleet-registry.ts)
+- 启动创建 `primary`；「添加工作区」创建 worker Host；切换时 `resyncUi`
+- UI：[`FleetStrip.tsx`](apps/desktop/src/components/FleetStrip.tsx)；说明见 [`packages/fleet/README.md`](packages/fleet/README.md)
 
-### 插件管理
+### 供应商
 
-- `electron/agent/plugin-host.ts`：枚举 / 读写全局与项目侧 Prompt Templates、Skills、Extensions。
-- UI：独立「插件」页（`PluginsPage`），与聊天视图切换；不要把插件逻辑塞进 renderer 直连磁盘。
+- `provider-store.ts` → `~/.pi/agent/x-agent-providers.json`；启用时写 Pi auth / models
+- `model-fetch.ts`：探测 `/v1/models` 等；IPC `fetchProviderModels`
+- UI：设置 → 供应商
 
-### Godot 编辑器 RPC
+### 插件与 Packages
 
-本地 TCP JSON-lines 桥：桌面为主机，Godot 插件为客户端。
+- `plugin-host.ts`：Prompt / Skill / Extension / **Theme**（全局与项目 `.pi`）
+- `package-manager.ts`：`pi install` 封装 + `x-agent-packages.json` 记录；一键安装 `godot-pi`
+- UI：设置 → 插件（[`PluginsPage.tsx`](apps/desktop/src/components/PluginsPage.tsx) 嵌入设置）
+
+### Godot RPC
 
 | 组件 | 路径 |
 |---|---|
-| 协议 / 超时常量 | `apps/desktop/shared/godot-rpc.ts` |
-| 桥接服务 | `electron/agent/godot-rpc-bridge.ts` |
-| Agent 工具 | `electron/agent/godot-tools.ts`（经 `SessionHost` `customTools`；白名单 `GODOT_TOOLS`，默认关） |
-| 插件安装 | `electron/agent/godot-addon-install.ts` → 拷贝 `packages/godot-editor-rpc/addons/x_agent_rpc` |
-| Godot 插件 | `packages/godot-editor-rpc`（`plugin.gd` + `rpc_debugger.gd`） |
+| 协议 | `apps/desktop/shared/godot-rpc.ts` |
+| 桥接 | `electron/agent/godot-rpc-bridge.ts`（多客户端 id / 活动选路） |
+| 工具 | `electron/agent/godot-tools.ts`（白名单 `GODOT_TOOLS`，默认关） |
+| 安装 | `electron/agent/godot-addon-install.ts` |
+| Addon | `packages/godot-editor-rpc` |
 
-要点：
+要点：默认端口 `8765`（回退 `8765–8774`），endpoint 写入 `x-agent-godot-rpc.json`；`run_current_scene` / `play_main_scene` 短时收集报错；`import_resources` 扫描或按路径 reimport。详见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
 
-- 端口默认 `8765`，占用时回退 `8765–8774`，并写入 `~/.pi/agent/x-agent-godot-rpc.json`。
-- `run_current_scene` / `godot_run_scene` 会短时收集 Output + 调试器 Errors 页签报错后回传。
-- UI：设置 → Godot RPC；详细说明见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
+### 认证与自动更新
+
+- `auth-check.ts` / `pi-cli.ts`（含 `openPiLogin`）
+- `auto-updater.ts`：仅打包版启用 `electron-updater`（GitHub Releases）
+- UI：设置 → 通用
 
 ### 持久化与隔离
 
-| 文件 / 目录 | 用途 |
+| 路径 | 用途 |
 |---|---|
 | `~/.pi/agent/x-agent.json` | 客户端偏好 |
 | `~/.pi/agent/x-agent-providers.json` | 供应商档案 |
-| `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC 当前 endpoint（host/port） |
+| `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint |
+| `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent/sessions/` | 本应用会话 |
-| `~/.pi/agent/auth.json` / `models.json` | Pi 认证与模型（启用订阅时写入） |
+| `auth.json` / `models.json` | Pi 认证与模型 |
 
-会话列表只读取 X-agent 专用会话目录，恢复操作拒绝目录外路径；修改会话逻辑时必须保持这一隔离约束。
+会话列表只读 X-agent 会话目录；恢复须拒绝目录外路径。
 
-### 构建配置
+### 构建
 
-`electron.vite.config.ts` 分别构建：
-
-- main 入口：`electron/main.ts`
-- preload 入口：`electron/preload.ts`
-- renderer 入口：`index.html`
-
-`tsconfig.node.json` 检查 Electron、shared 和构建配置；`tsconfig.web.json` 检查 React 与 shared。Renderer 支持 `@/` 和 `@shared/` 别名，Node 侧仅配置 `@shared/`。
+`electron.vite.config.ts`：main `electron/main.ts`、preload `electron/preload.ts`、renderer `index.html`。  
+`tsconfig.node.json` 查 Electron / shared；`tsconfig.web.json` 查 React / shared。别名：`@/`、`@shared/`（Node 侧仅 `@shared/`）。  
+打包 `extraResources`：Godot addon + `godot-pi`。
 
 ## UI 约束
 
-视觉规范集中在 `DESIGN.md`，修改界面前应以该文件为准。关键约束是：
+以 [`DESIGN.md`](DESIGN.md) 为准：
 
-- 深色为默认主题，浅色通过 `body[data-theme="light"]` 覆盖。
-- 颜色、圆角和阴影必须使用 CSS token；颜色使用 OKLCH，组件与 JavaScript 中不要硬编码色值。
-- 使用 Inter 与 Geist Mono，保持约 13px 的紧凑开发工具密度、0.5px 半透明边框和克制阴影。
-- 图标使用矢量图标（当前为 `lucide-react`），不要用 emoji 充当 UI 图标。
-- hover、focus、active 优先从现有 token 派生相对色；focus 使用 accent `box-shadow`，不使用默认 outline。
-- 动效需尊重 `prefers-reduced-motion`。
-- 设置弹窗为宽面板 + 左侧分页；内容区需可滚动，底部操作栏避免被裁切（`min-height: 0` + `overflow-y: auto`）。
+- 深色默认；浅色 `body[data-theme="light"]`
+- 颜色 / 圆角 / 阴影用 CSS token（OKLCH）；组件与 JS 不硬编码色值
+- Inter + Geist Mono，约 13px 密度、0.5px 边框、克制阴影
+- 图标用 `lucide-react`，不用 emoji 充当 UI 图标
+- focus 用 accent `box-shadow`；尊重 `prefers-reduced-motion`
+- 设置：左侧分页 + 可滚动内容区（`min-height: 0` + `overflow-y: auto`）

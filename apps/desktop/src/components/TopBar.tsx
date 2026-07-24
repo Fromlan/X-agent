@@ -3,7 +3,6 @@ import {
   FolderOpen,
   MessageSquarePlus,
   Moon,
-  Puzzle,
   Settings2,
   Sun,
 } from "lucide-react";
@@ -27,7 +26,6 @@ interface Props {
   onToggleThinking: () => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
-  onOpenPlugins: () => void;
 }
 
 function statusLabel(status: AgentStatus): string {
@@ -124,16 +122,6 @@ export function TopBar(props: Props) {
         >
           <Brain size={14} />
           {props.showThinking ? "隐藏思考" : "显示思考"}
-        </button>
-
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={props.onOpenPlugins}
-          title="插件 / 技能 / 提示词"
-        >
-          <Puzzle size={14} />
-          插件
         </button>
 
         <button

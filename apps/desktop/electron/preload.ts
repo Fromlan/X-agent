@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppUpdateStatus,
   XAgentApi,
   ClientPrefs,
   PluginCreateInput,
@@ -36,13 +37,18 @@ const api: XAgentApi = {
   installPiCli: () => ipcRenderer.invoke("installPiCli"),
   getStatus: () => ipcRenderer.invoke("getStatus"),
   fleetList: () => ipcRenderer.invoke("fleetList"),
+  fleetState: () => ipcRenderer.invoke("fleetState"),
   fleetCreate: (label, role) => ipcRenderer.invoke("fleetCreate", label, role),
   fleetSetActive: (id) => ipcRenderer.invoke("fleetSetActive", id),
+  fleetRemove: (id) => ipcRenderer.invoke("fleetRemove", id),
   godotRpcStatus: () => ipcRenderer.invoke("godotRpcStatus"),
   godotRpcStart: () => ipcRenderer.invoke("godotRpcStart"),
   godotRpcStop: () => ipcRenderer.invoke("godotRpcStop"),
   godotRpcPing: () => ipcRenderer.invoke("godotRpcPing"),
-  godotRpcRequest: (call) => ipcRenderer.invoke("godotRpcRequest", call),
+  godotRpcRequest: (call, options) =>
+    ipcRenderer.invoke("godotRpcRequest", call, options),
+  godotRpcSetActiveClient: (clientId) =>
+    ipcRenderer.invoke("godotRpcSetActiveClient", clientId),
   pickGodotEditor: () => ipcRenderer.invoke("pickGodotEditor"),
   launchGodotEditor: () => ipcRenderer.invoke("launchGodotEditor"),
   installGodotRpcAddon: () =>
@@ -67,6 +73,16 @@ const api: XAgentApi = {
   importExistingProviderProfiles: () =>
     ipcRenderer.invoke("importExistingProviderProfiles"),
   fetchProviderModels: (input) => ipcRenderer.invoke("fetchProviderModels", input),
+  listInstalledPackages: () => ipcRenderer.invoke("listInstalledPackages"),
+  installPackage: (source: string) => ipcRenderer.invoke("installPackage", source),
+  removePackageRecord: (name: string) =>
+    ipcRenderer.invoke("removePackageRecord", name),
+  installGodotPiPackage: () => ipcRenderer.invoke("installGodotPiPackage"),
+  openPiLogin: () => ipcRenderer.invoke("openPiLogin"),
+  getUpdateStatus: () => ipcRenderer.invoke("getUpdateStatus"),
+  checkForUpdates: () => ipcRenderer.invoke("checkForUpdates"),
+  downloadUpdate: () => ipcRenderer.invoke("downloadUpdate"),
+  installUpdate: () => ipcRenderer.invoke("installUpdate"),
   onEvent: (handler: (event: UiAgentEvent) => void) => {
     const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
       handler(event);
@@ -74,6 +90,15 @@ const api: XAgentApi = {
     ipcRenderer.on("agent:event", listener);
     return () => {
       ipcRenderer.removeListener("agent:event", listener);
+    };
+  },
+  onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, status: AppUpdateStatus) => {
+      handler(status);
+    };
+    ipcRenderer.on("update:status", listener);
+    return () => {
+      ipcRenderer.removeListener("update:status", listener);
     };
   },
 };

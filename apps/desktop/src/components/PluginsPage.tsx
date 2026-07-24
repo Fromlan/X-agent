@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft,
   FilePlus2,
   FolderOpen,
   Puzzle,
@@ -9,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type {
+  InstalledPackageInfo,
   PluginItem,
   PluginKind,
   PluginScope,
@@ -16,21 +16,31 @@ import type {
 
 interface Props {
   cwd: string | null;
-  onBack: () => void;
 }
 
 type ScopeFilter = "all" | PluginScope;
+type PageKind = PluginKind | "package";
 
-const KIND_TABS: { kind: PluginKind; label: string }[] = [
+const KIND_TABS: { kind: PageKind; label: string }[] = [
   { kind: "prompt", label: "提示词" },
   { kind: "skill", label: "技能" },
   { kind: "extension", label: "扩展" },
+  { kind: "theme", label: "主题" },
+  { kind: "package", label: "Packages" },
 ];
 
-export function PluginsPage({ cwd, onBack }: Props) {
-  const [kind, setKind] = useState<PluginKind>("prompt");
+function kindLabel(kind: PluginKind): string {
+  if (kind === "prompt") return "提示词";
+  if (kind === "skill") return "技能";
+  if (kind === "extension") return "扩展";
+  return "主题";
+}
+
+export function PluginsPage({ cwd }: Props) {
+  const [kind, setKind] = useState<PageKind>("prompt");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [items, setItems] = useState<PluginItem[]>([]);
+  const [packages, setPackages] = useState<InstalledPackageInfo[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [baseline, setBaseline] = useState("");
@@ -41,16 +51,19 @@ export function PluginsPage({ cwd, onBack }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createScope, setCreateScope] = useState<PluginScope>("global");
+  const [packageSource, setPackageSource] = useState("");
 
   const dirty = content !== baseline;
+  const isPackageTab = kind === "package";
 
   const filtered = useMemo(() => {
+    if (isPackageTab) return [];
     return items.filter((item) => {
       if (item.kind !== kind) return false;
       if (scopeFilter === "all") return true;
       return item.scope === scopeFilter;
     });
-  }, [items, kind, scopeFilter]);
+  }, [items, kind, scopeFilter, isPackageTab]);
 
   const selected = useMemo(
     () => items.find((i) => i.path === selectedPath) ?? null,
@@ -58,8 +71,12 @@ export function PluginsPage({ cwd, onBack }: Props) {
   );
 
   const refresh = useCallback(async () => {
-    const list = await window.xAgent.listPlugins(cwd);
+    const [list, pkgs] = await Promise.all([
+      window.xAgent.listPlugins(cwd),
+      window.xAgent.listInstalledPackages(),
+    ]);
     setItems(list);
+    setPackages(pkgs);
   }, [cwd]);
 
   const openItem = useCallback(async (item: PluginItem) => {
@@ -84,6 +101,13 @@ export function PluginsPage({ cwd, onBack }: Props) {
   }, [refresh]);
 
   useEffect(() => {
+    if (isPackageTab) {
+      setSelectedPath(null);
+      setContent("");
+      setBaseline("");
+      setWarnings([]);
+      return;
+    }
     const first = filtered[0];
     if (!first) {
       setSelectedPath(null);
@@ -95,110 +119,128 @@ export function PluginsPage({ cwd, onBack }: Props) {
     if (!selectedPath || !filtered.some((i) => i.path === selectedPath)) {
       void openItem(first);
     }
-  }, [filtered, openItem, selectedPath]);
+  }, [filtered, openItem, selectedPath, isPackageTab]);
 
   const save = async () => {
-    if (!selected) return;
+    if (!selectedPath) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await window.xAgent.writePlugin(selected.path, content);
-      if (!result.ok) {
-        setError(result.error ?? "保存失败");
-        return;
-      }
-      setBaseline(content);
-      setWarnings(result.warnings ?? []);
-      setMessage(
-        result.warnings?.length
-          ? `已保存（警告：${result.warnings.join("；")}）`
-          : "已保存并尝试重载资源",
-      );
-      await refresh();
-    } finally {
-      setBusy(false);
+    const result = await window.xAgent.writePlugin(selectedPath, content);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error ?? "保存失败");
+      return;
     }
+    setBaseline(content);
+    setWarnings(result.warnings ?? []);
+    setMessage("已保存");
+    await refresh();
+    await window.xAgent.reloadResources();
+  };
+
+  const create = async () => {
+    if (isPackageTab) return;
+    setBusy(true);
+    setError(null);
+    const result = await window.xAgent.createPlugin({
+      kind: kind as PluginKind,
+      scope: createScope,
+      name: createName.trim(),
+      cwd,
+    });
+    setBusy(false);
+    if (!result.ok || !result.item) {
+      setError(result.error ?? "创建失败");
+      return;
+    }
+    setCreateOpen(false);
+    setCreateName("");
+    setMessage(`已创建 ${result.item.name}`);
+    await refresh();
+    await openItem(result.item);
+    await window.xAgent.reloadResources();
   };
 
   const remove = async () => {
     if (!selected) return;
-    if (!window.confirm(`删除「${selected.name}」？此操作不可撤销。`)) return;
+    if (!confirm(`删除 ${selected.name}？此操作不可撤销。`)) return;
     setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.deletePlugin(selected.path);
-      if (!result.ok) {
-        setError(result.error ?? "删除失败");
-        return;
-      }
-      setSelectedPath(null);
-      setContent("");
-      setBaseline("");
-      setMessage("已删除");
-      await refresh();
-    } finally {
-      setBusy(false);
+    const result = await window.xAgent.deletePlugin(selected.path);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error ?? "删除失败");
+      return;
     }
+    setMessage("已删除");
+    setSelectedPath(null);
+    await refresh();
+    await window.xAgent.reloadResources();
   };
 
-  const create = async () => {
+  const installPkg = async (source: string) => {
     setBusy(true);
     setError(null);
-    try {
-      const result = await window.xAgent.createPlugin({
-        kind,
-        scope: createScope,
-        name: createName.trim(),
-        cwd,
-      });
-      if (!result.ok || !result.item) {
-        setError(result.error ?? "创建失败");
-        return;
-      }
-      setCreateOpen(false);
-      setCreateName("");
-      setMessage(`已创建 ${result.item.name}`);
-      await refresh();
-      await openItem(result.item);
-    } finally {
-      setBusy(false);
+    const result = await window.xAgent.installPackage(source);
+    setBusy(false);
+    if (!result.ok) {
+      setError(
+        [result.error, result.output].filter(Boolean).join("\n") || "安装失败",
+      );
+      return;
     }
+    setMessage(`已安装 ${result.package?.name ?? source}`);
+    setPackageSource("");
+    await refresh();
+    await window.xAgent.reloadResources();
+  };
+
+  const installGodotPi = async () => {
+    setBusy(true);
+    setError(null);
+    const result = await window.xAgent.installGodotPiPackage();
+    setBusy(false);
+    if (!result.ok) {
+      setError(
+        [result.error, result.output].filter(Boolean).join("\n") || "安装失败",
+      );
+      return;
+    }
+    setMessage(`已安装 Godot Pi 包：${result.package?.name ?? ""}`);
+    await refresh();
+    await window.xAgent.reloadResources();
   };
 
   return (
-    <div className="plugins-page">
+    <div className="plugins-page plugins-page--embedded">
       <header className="plugins-toolbar">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
-          <ArrowLeft size={14} />
-          返回聊天
-        </button>
         <div className="plugins-title">
-          <Puzzle size={14} />
-          插件管理
+          <Puzzle size={16} />
+          <span>Pi 插件</span>
         </div>
         <div className="plugins-toolbar-right">
-          <label className="field">
-            作用域
-            <select
-              value={scopeFilter}
-              onChange={(e) => setScopeFilter(e.target.value as ScopeFilter)}
-            >
-              <option value="all">全部</option>
-              <option value="global">全局</option>
-              <option value="project" disabled={!cwd}>
-                项目{!cwd ? "（先打开项目）" : ""}
-              </option>
-            </select>
-          </label>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
+            disabled={busy}
             onClick={() => void refresh()}
-            title="刷新"
           >
-            <RefreshCw size={13} />
+            <RefreshCw size={14} />
             刷新
           </button>
+          {!isPackageTab && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() => {
+                setCreateScope(cwd ? "project" : "global");
+                setCreateOpen(true);
+              }}
+            >
+              <FilePlus2 size={14} />
+              新建
+            </button>
+          )}
         </div>
       </header>
 
@@ -207,130 +249,210 @@ export function PluginsPage({ cwd, onBack }: Props) {
           <button
             key={tab.kind}
             type="button"
-            className={
-              kind === tab.kind ? "plugins-tab active" : "plugins-tab"
-            }
+            className={`plugins-tab${kind === tab.kind ? " active" : ""}`}
             onClick={() => setKind(tab.kind)}
           >
             {tab.label}
           </button>
         ))}
+        {!isPackageTab && (
+          <div className="plugins-scope">
+            <button
+              type="button"
+              className={scopeFilter === "all" ? "active" : ""}
+              onClick={() => setScopeFilter("all")}
+            >
+              全部
+            </button>
+            <button
+              type="button"
+              className={scopeFilter === "global" ? "active" : ""}
+              onClick={() => setScopeFilter("global")}
+            >
+              全局
+            </button>
+            <button
+              type="button"
+              className={scopeFilter === "project" ? "active" : ""}
+              onClick={() => setScopeFilter("project")}
+              disabled={!cwd}
+            >
+              项目
+            </button>
+          </div>
+        )}
       </div>
 
-      {(error || message) && (
-        <div className={`banner ${error ? "error" : "warn"}`}>
+      {(message || error) && (
+        <div className={`banner ${error ? "warn" : ""}`}>
           {error ?? message}
         </div>
       )}
 
       <div className="plugins-body">
-        <aside className="plugins-list-pane">
-          <div className="plugins-list-head">
-            <span>
-              {kind === "prompt"
-                ? "提示词模板"
-                : kind === "skill"
-                  ? "Skills"
-                  : "Extensions"}
-            </span>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                setCreateScope(cwd ? "project" : "global");
-                setCreateOpen(true);
-              }}
-            >
-              <FilePlus2 size={13} />
-              新建
-            </button>
-          </div>
-          <ul className="plugins-list">
-            {filtered.length === 0 && (
-              <li className="session-empty">暂无条目</li>
-            )}
-            {filtered.map((item) => (
-              <li key={item.path}>
+        {isPackageTab ? (
+          <>
+            <aside className="plugins-list-pane">
+              {packages.length === 0 ? (
+                <p className="empty-state">尚无已记录的 Packages</p>
+              ) : (
+                <div className="plugins-list">
+                {packages.map((pkg) => (
+                  <div key={`${pkg.name}-${pkg.installedAt}`} className="plugin-item">
+                    <div className="plugin-item-title">{pkg.name}</div>
+                    <div className="plugin-item-meta">{pkg.source}</div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={busy}
+                      onClick={async () => {
+                        if (!confirm(`从本机记录中移除 ${pkg.name}？不会卸载 Pi 侧文件。`)) {
+                          return;
+                        }
+                        setBusy(true);
+                        const res = await window.xAgent.removePackageRecord(pkg.name);
+                        setBusy(false);
+                        if (!res.ok) setError(res.error ?? "移除失败");
+                        else {
+                          setMessage("已移除记录");
+                          await refresh();
+                        }
+                      }}
+                    >
+                      移除记录
+                    </button>
+                  </div>
+                ))}
+                </div>
+              )}
+            </aside>
+            <section className="plugins-editor-pane">
+              <h3>安装 Package</h3>
+              <p className="modal-hint">
+                通过全局 Pi CLI 执行 <code>pi install &lt;source&gt;</code>
+                。支持本地路径、npm: 与 git: 源。
+              </p>
+              <div className="modal-actions" style={{ marginBottom: 12 }}>
                 <button
                   type="button"
-                  className={
-                    item.path === selectedPath
-                      ? "plugin-item active"
-                      : "plugin-item"
-                  }
-                  onClick={() => void openItem(item)}
+                  className="btn btn-primary btn-sm"
+                  disabled={busy}
+                  onClick={() => void installGodotPi()}
                 >
-                  <div className="plugin-item-title">{item.name}</div>
-                  <div className="plugin-item-meta">
-                    {item.scope === "global" ? "全局" : "项目"}
-                    {item.description ? ` · ${item.description}` : ""}
-                  </div>
+                  一键安装 Godot Pi 包
                 </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        <section className="plugins-editor-pane">
-          {!selected ? (
-            <div className="empty-state">选择左侧条目进行编辑，或新建一个。</div>
-          ) : (
-            <>
-              <div className="plugins-editor-meta">
-                <div>
-                  <div className="plugins-editor-name">{selected.name}</div>
-                  <div className="plugins-editor-path" title={selected.path}>
-                    {selected.path}
-                  </div>
-                </div>
-                <div className="plugins-editor-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => void window.xAgent.revealPlugin(selected.path)}
-                  >
-                    <FolderOpen size={13} />
-                    打开目录
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    disabled={busy}
-                    onClick={() => void remove()}
-                  >
-                    <Trash2 size={13} />
-                    删除
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={busy || !dirty}
-                    onClick={() => void save()}
-                  >
-                    <Save size={13} />
-                    保存
-                  </button>
-                </div>
               </div>
-              {warnings.length > 0 && (
-                <div className="banner warn">Frontmatter 警告：{warnings.join("；")}</div>
+              <label className="field block-field">
+                安装源
+                <input
+                  value={packageSource}
+                  onChange={(e) => setPackageSource(e.target.value)}
+                  placeholder="D:/path/to/pkg 或 npm:@scope/name"
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busy || !packageSource.trim()}
+                  onClick={() => void installPkg(packageSource.trim())}
+                >
+                  安装
+                </button>
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
+            <aside className="plugins-list-pane">
+              {filtered.length === 0 ? (
+                <p className="empty-state">暂无{kindLabel(kind)}插件</p>
+              ) : (
+                <div className="plugins-list">
+                {filtered.map((item) => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    className={`plugin-item${
+                      selectedPath === item.path ? " active" : ""
+                    }`}
+                    onClick={() => void openItem(item)}
+                  >
+                    <div className="plugin-item-title">{item.name}</div>
+                    <div className="plugin-item-meta">
+                      {item.scope === "global" ? "全局" : "项目"}
+                      {item.description ? ` · ${item.description}` : ""}
+                    </div>
+                  </button>
+                ))}
+                </div>
               )}
-              <textarea
-                className="plugins-editor"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                spellCheck={false}
-              />
-            </>
-          )}
-        </section>
+            </aside>
+
+            <section className="plugins-editor-pane">
+              {!selected ? (
+                <p className="empty-state">选择左侧插件进行编辑</p>
+              ) : (
+                <>
+                  <div className="plugins-editor-meta">
+                    <div>
+                      <h2>{selected.name}</h2>
+                      <p className="plugins-editor-path" title={selected.path}>
+                        {selected.path}
+                      </p>
+                    </div>
+                    <div className="plugins-editor-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => void window.xAgent.revealPlugin(selected.path)}
+                      >
+                        <FolderOpen size={13} />
+                        打开位置
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={busy}
+                        onClick={() => void remove()}
+                      >
+                        <Trash2 size={13} />
+                        删除
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={busy || !dirty}
+                        onClick={() => void save()}
+                      >
+                        <Save size={13} />
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                  {warnings.length > 0 && (
+                    <div className="banner warn">
+                      校验警告：{warnings.join("；")}
+                    </div>
+                  )}
+                  <textarea
+                    className="plugins-editor"
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    spellCheck={false}
+                  />
+                </>
+              )}
+            </section>
+          </>
+        )}
       </div>
 
       <footer className="plugins-footer">
-        Themes / Packages 管理尚未接入。文档：pi.dev/docs/latest · 仓库 Pi插件指导文档.md
+        文档：pi.dev/docs/latest · 仓库 Pi插件指导文档.md
       </footer>
 
-      {createOpen && (
+      {createOpen && !isPackageTab && (
         <div
           className="modal-backdrop"
           role="presentation"
@@ -343,14 +465,7 @@ export function PluginsPage({ cwd, onBack }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-head">
-              <h2>
-                新建
-                {kind === "prompt"
-                  ? "提示词"
-                  : kind === "skill"
-                    ? "技能"
-                    : "扩展"}
-              </h2>
+              <h2>新建{kindLabel(kind)}</h2>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"

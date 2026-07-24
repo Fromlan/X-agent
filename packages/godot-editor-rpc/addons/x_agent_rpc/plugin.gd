@@ -148,14 +148,16 @@ func _clamp_wait_ms(raw) -> int:
 		n = int(raw)
 	return clampi(n, 0, MAX_RUN_WAIT_MS)
 
-func _start_run_collect(id: String, wait_ms: int) -> void:
+func _start_run_collect(id: String, wait_ms: int, play_method: String = "play_current_scene") -> void:
 	clear_play_errors()
-	EditorInterface.call_deferred("play_current_scene")
+	var method := play_method if play_method in ["play_current_scene", "play_main_scene"] else "play_current_scene"
+	EditorInterface.call_deferred(method)
 	_pending_run = {
 		"id": id,
 		"wait_ms": wait_ms,
 		"start_ms": Time.get_ticks_msec() + 50, # allow deferred play to start
 		"was_playing": false,
+		"play_method": method,
 	}
 
 func _tick_pending_run() -> void:
@@ -187,6 +189,7 @@ func _tick_pending_run() -> void:
 	if not done:
 		return
 
+	var play_method := str(_pending_run.get("play_method", "play_current_scene"))
 	var id := str(_pending_run.get("id", ""))
 	_pending_run = {}
 	_send({
@@ -196,6 +199,7 @@ func _tick_pending_run() -> void:
 			"started": true,
 			"playing": playing,
 			"waitMs": wait_ms,
+			"playMethod": play_method,
 			"errors": errors,
 		},
 	})
@@ -307,6 +311,26 @@ func _edited_scene_path() -> String:
 		return ""
 	return root.scene_file_path
 
+func _import_resources(raw_paths) -> Dictionary:
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs == null:
+		return {"ok": false, "error": "EditorFileSystem unavailable"}
+	var paths: Array[String] = []
+	if typeof(raw_paths) == TYPE_ARRAY:
+		for p in raw_paths:
+			var s := str(p).strip_edges()
+			if s != "":
+				paths.append(s)
+	if paths.is_empty():
+		fs.scan()
+		return {"ok": true, "mode": "scan", "paths": []}
+	var packed := PackedStringArray()
+	for p in paths:
+		packed.append(p)
+		fs.update_file(p)
+	fs.reimport_files(packed)
+	return {"ok": true, "mode": "reimport", "paths": paths}
+
 func _handle_line(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -368,8 +392,19 @@ func _handle_line(raw: String) -> void:
 				response = {"id": id, "ok": false, "error": "run already in progress"}
 			else:
 				var wait_ms := _clamp_wait_ms(data.get("wait_ms", DEFAULT_RUN_WAIT_MS))
-				_start_run_collect(id, wait_ms)
+				_start_run_collect(id, wait_ms, "play_current_scene")
 				return # async — response sent from _tick_pending_run
+
+		"play_main_scene":
+			if not _pending_run.is_empty():
+				response = {"id": id, "ok": false, "error": "run already in progress"}
+			else:
+				var main_wait := _clamp_wait_ms(data.get("wait_ms", DEFAULT_RUN_WAIT_MS))
+				_start_run_collect(id, main_wait, "play_main_scene")
+				return # async — response sent from _tick_pending_run
+
+		"import_resources":
+			response["result"] = _import_resources(data.get("paths", []))
 
 		"get_play_errors":
 			var clear_after := bool(data.get("clear", false))

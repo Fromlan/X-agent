@@ -9,14 +9,16 @@ You are helping with a **Godot 4** project inside X-agent.
 
 ## Steps
 
-1. Locate `project.godot` from the cwd (or ask the user for the project root).
+1. Locate `project.godot` from the cwd (or ask the user for the project root). Prefer `godot_detect_project` when the Godot Pi package extension is loaded.
 2. List top-level folders (`scenes/`, `scripts/`, `assets/`, `addons/`) and note missing conventions.
 3. Check for common issues:
    - Orphan `.tscn` / `.gd` without references
    - Autoload names that collide
    - `config_version` / feature tags incompatible with Godot 4.x
+   - Missing or broken `run/main_scene`
 4. Prefer GDScript idioms from Godot 4 (`@onready`, signals, typed arrays).
-5. Summarize findings as a short checklist with actionable edits.
+5. If the editor RPC is connected, optionally verify with `godot_run_main_scene` / `godot_run_scene` after proposing fixes.
+6. Summarize findings as a short checklist with actionable edits.
 
 ## Constraints
 

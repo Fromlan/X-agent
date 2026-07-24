@@ -39,13 +39,25 @@ function agentRoot(): string {
 
 function globalDir(kind: PluginKind): string {
   const folder =
-    kind === "prompt" ? "prompts" : kind === "skill" ? "skills" : "extensions";
+    kind === "prompt"
+      ? "prompts"
+      : kind === "skill"
+        ? "skills"
+        : kind === "extension"
+          ? "extensions"
+          : "themes";
   return join(agentRoot(), folder);
 }
 
 function projectDir(cwd: string, kind: PluginKind): string {
   const folder =
-    kind === "prompt" ? "prompts" : kind === "skill" ? "skills" : "extensions";
+    kind === "prompt"
+      ? "prompts"
+      : kind === "skill"
+        ? "skills"
+        : kind === "extension"
+          ? "extensions"
+          : "themes";
   return join(cwd, ".pi", folder);
 }
 
@@ -69,12 +81,14 @@ export function getAllowedPluginRoots(cwd?: string | null): string[] {
     globalDir("prompt"),
     globalDir("skill"),
     globalDir("extension"),
+    globalDir("theme"),
   ];
   if (cwd) {
     roots.push(
       projectDir(cwd, "prompt"),
       projectDir(cwd, "skill"),
       projectDir(cwd, "extension"),
+      projectDir(cwd, "theme"),
     );
   }
   return roots.map((r) => resolve(r));
@@ -164,6 +178,45 @@ export default function (pi: ExtensionAPI): void {
 `;
 }
 
+function themeScaffold(name: string): string {
+  return `${JSON.stringify(
+    {
+      name,
+      description: `${name} theme`,
+      type: "dark",
+      colors: {
+        background: "#1e1e24",
+        foreground: "#e8e8ed",
+        primary: "#7aa2f7",
+        secondary: "#9ece6a",
+        accent: "#bb9af7",
+        muted: "#6c7086",
+        border: "#2a2a35",
+        error: "#f7768e",
+        warning: "#e0af68",
+        success: "#9ece6a",
+      },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function themeWarnings(content: string): string[] {
+  const warnings: string[] = [];
+  try {
+    const data = JSON.parse(content) as { name?: unknown };
+    if (!data || typeof data !== "object") {
+      warnings.push("主题须为 JSON 对象");
+    } else if (typeof data.name !== "string" || !data.name.trim()) {
+      warnings.push("缺少 name 字段");
+    }
+  } catch {
+    warnings.push("JSON 无法解析");
+  }
+  return warnings;
+}
+
 function listPrompts(dir: string, scope: PluginScope): PluginItem[] {
   if (!existsSync(dir)) return [];
   const items: PluginItem[] = [];
@@ -244,6 +297,40 @@ function listExtensions(dir: string, scope: PluginScope): PluginItem[] {
   return items;
 }
 
+function listThemes(dir: string, scope: PluginScope): PluginItem[] {
+  if (!existsSync(dir)) return [];
+  const items: PluginItem[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith(".json")) continue;
+    const path = join(dir, entry);
+    if (!statSync(path).isFile()) continue;
+    let description: string | undefined;
+    let displayName = basename(entry, ".json");
+    try {
+      const data = JSON.parse(readFileSync(path, "utf8")) as {
+        name?: string;
+        description?: string;
+      };
+      if (typeof data.name === "string" && data.name.trim()) {
+        displayName = data.name.trim();
+      }
+      if (typeof data.description === "string") description = data.description;
+    } catch {
+      // keep defaults
+    }
+    items.push({
+      kind: "theme",
+      scope,
+      id: basename(entry, ".json"),
+      name: displayName,
+      path,
+      description,
+      editable: true,
+    });
+  }
+  return items;
+}
+
 function detectKind(absPath: string): PluginKind | null {
   const posix = toPosixLower(absPath);
   if (posix.includes("/prompts/") && posix.endsWith(".md")) return "prompt";
@@ -252,6 +339,7 @@ function detectKind(absPath: string): PluginKind | null {
   if (posix.includes("/extensions/") && (posix.endsWith(".ts") || posix.endsWith("/index.ts"))) {
     return "extension";
   }
+  if (posix.includes("/themes/") && posix.endsWith(".json")) return "theme";
   return null;
 }
 
@@ -268,12 +356,14 @@ export function listPlugins(cwd?: string | null): PluginItem[] {
     ...listPrompts(globalDir("prompt"), "global"),
     ...listSkills(globalDir("skill"), "global"),
     ...listExtensions(globalDir("extension"), "global"),
+    ...listThemes(globalDir("theme"), "global"),
   ];
   if (cwd) {
     items.push(
       ...listPrompts(projectDir(cwd, "prompt"), "project"),
       ...listSkills(projectDir(cwd, "skill"), "project"),
       ...listExtensions(projectDir(cwd, "extension"), "project"),
+      ...listThemes(projectDir(cwd, "theme"), "project"),
     );
   }
   return items.sort((a, b) => {
@@ -301,7 +391,12 @@ export function readPlugin(
     return {
       ok: true,
       content,
-      warnings: kind === "skill" ? skillWarnings(content) : undefined,
+      warnings:
+        kind === "skill"
+          ? skillWarnings(content)
+          : kind === "theme"
+            ? themeWarnings(content)
+            : undefined,
     };
   } catch (err) {
     return {
@@ -329,7 +424,12 @@ export function writePlugin(
     writeFileSync(file, content, "utf8");
     return {
       ok: true,
-      warnings: kind === "skill" ? skillWarnings(content) : undefined,
+      warnings:
+        kind === "skill"
+          ? skillWarnings(content)
+          : kind === "theme"
+            ? themeWarnings(content)
+            : undefined,
     };
   } catch (err) {
     return {
@@ -390,6 +490,24 @@ export function createPlugin(input: PluginCreateInput): PluginMutateResult {
           name,
           path: skillDir,
           description: `Describe when to use the ${name} skill (1–1024 chars).`,
+          editable: true,
+        },
+      };
+    }
+
+    if (input.kind === "theme") {
+      const path = join(base, `${name}.json`);
+      if (existsSync(path)) return { ok: false, error: "同名主题已存在" };
+      writeFileSync(path, themeScaffold(name), "utf8");
+      return {
+        ok: true,
+        item: {
+          kind: "theme",
+          scope: input.scope,
+          id: name,
+          name,
+          path,
+          description: `${name} theme`,
           editable: true,
         },
       };
