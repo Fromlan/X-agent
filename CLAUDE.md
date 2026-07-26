@@ -121,11 +121,12 @@ Electron 三进程边界：
 
 ## UI 约束
 
-以 [`DESIGN.md`](DESIGN.md) 为准：
+以 [`DESIGN.md`](DESIGN.md) 为准（Cindy 近单色扁平语言）：
 
 - 深色默认；浅色 `body[data-theme="light"]`
-- 颜色 / 圆角 / 阴影用 CSS token（OKLCH）；组件与 JS 不硬编码色值
-- Inter + Geist Mono，约 13px 密度、0.5px 边框、克制阴影
+- Surface / Card / Board + 语义色 token；组件与 JS 不硬编码色值
+- Inter + JetBrains Mono，约 13px；1px Board 边框；页面内无阴影（modal 除外）
+- Pill 交互几何（按钮 / chip / 单行 input）；容器 12px；多行 8px
 - 图标用 `lucide-react`，不用 emoji 充当 UI 图标
-- focus 用 accent `box-shadow`；尊重 `prefers-reduced-motion`
+- focus 用 `--focus-ring-soft`；尊重 `prefers-reduced-motion`
 - 设置：左侧分页 + 可滚动内容区（`min-height: 0` + `overflow-y: auto`）

@@ -97,6 +97,12 @@ export interface ClientPrefs {
   tools: string[];
   /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
   godotEditorPath: string | null;
+  /** Whether the right tool panel skeleton is open. */
+  rightPanelOpen: boolean;
+  /** Left session sidebar width in px. */
+  sidebarWidth: number;
+  /** Right tool panel width in px. */
+  rightPanelWidth: number;
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -110,6 +116,9 @@ export const DEFAULT_PREFS: ClientPrefs = {
   thinkingLevel: "medium",
   tools: [...AVAILABLE_TOOLS],
   godotEditorPath: null,
+  rightPanelOpen: false,
+  sidebarWidth: 260,
+  rightPanelWidth: 360,
 };
 
 export interface OpenProjectResult {
@@ -321,6 +330,35 @@ export interface GodotRpcRequestResult {
   result?: unknown;
 }
 
+export interface ToolDetailDto {
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  result?: unknown;
+  isError?: boolean;
+  done: boolean;
+  truncated?: boolean;
+}
+
+export interface ProjectDirEntryDto {
+  name: string;
+  isDir: boolean;
+}
+
+export interface ListProjectDirResult {
+  ok: boolean;
+  entries?: ProjectDirEntryDto[];
+  error?: string;
+}
+
+export interface ReadProjectFileResult {
+  ok: boolean;
+  path?: string;
+  content?: string;
+  truncated?: boolean;
+  error?: string;
+}
+
 export interface InstallGodotRpcAddonResult {
   ok: boolean;
   projectPath?: string;
@@ -504,6 +542,10 @@ export interface XAgentApi {
   checkPiCli: () => Promise<PiCliStatus>;
   installPiCli: () => Promise<PiCliStatus>;
   getStatus: () => Promise<HostStatus>;
+  getToolDetail: (toolCallId: string) => Promise<ToolDetailDto | null>;
+  listProjectDir: (relPath?: string) => Promise<ListProjectDirResult>;
+  readProjectFile: (relPath: string) => Promise<ReadProjectFileResult>;
+  revealInFolder: (relPath: string) => Promise<{ ok: boolean; error?: string }>;
   fleetList: () => Promise<FleetSlotInfo[]>;
   fleetState: () => Promise<FleetState>;
   fleetCreate: (label: string, role?: FleetSlotInfo["role"]) => Promise<FleetSlotInfo>;

@@ -37,6 +37,14 @@ const api: XAgentApi = {
   checkPiCli: () => ipcRenderer.invoke("checkPiCli"),
   installPiCli: () => ipcRenderer.invoke("installPiCli"),
   getStatus: () => ipcRenderer.invoke("getStatus"),
+  getToolDetail: (toolCallId: string) =>
+    ipcRenderer.invoke("getToolDetail", toolCallId),
+  listProjectDir: (relPath?: string) =>
+    ipcRenderer.invoke("listProjectDir", relPath),
+  readProjectFile: (relPath: string) =>
+    ipcRenderer.invoke("readProjectFile", relPath),
+  revealInFolder: (relPath: string) =>
+    ipcRenderer.invoke("revealInFolder", relPath),
   fleetList: () => ipcRenderer.invoke("fleetList"),
   fleetState: () => ipcRenderer.invoke("fleetState"),
   fleetCreate: (label, role) => ipcRenderer.invoke("fleetCreate", label, role),

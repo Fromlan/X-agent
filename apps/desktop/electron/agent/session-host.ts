@@ -34,6 +34,18 @@ type SessionBundle = {
   sessionPath: string | null;
 };
 
+const TOOL_DETAIL_MAX_CHARS = 256 * 1024;
+
+export type ToolDetailRecord = {
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  result?: unknown;
+  isError?: boolean;
+  done: boolean;
+  truncated?: boolean;
+};
+
 function truncate(value: unknown, max = 4000): unknown {
   try {
     const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -42,6 +54,23 @@ function truncate(value: unknown, max = 4000): unknown {
     return `${text.slice(0, max)}\n…(截断 ${text.length - max} 字符)`;
   } catch {
     return String(value);
+  }
+}
+
+function serializeForDetail(value: unknown): { value: unknown; truncated: boolean } {
+  try {
+    const text =
+      typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    if (!text) return { value, truncated: false };
+    if (text.length <= TOOL_DETAIL_MAX_CHARS) {
+      return { value, truncated: false };
+    }
+    return {
+      value: `${text.slice(0, TOOL_DETAIL_MAX_CHARS)}\n…(截断 ${text.length - TOOL_DETAIL_MAX_CHARS} 字符)`,
+      truncated: true,
+    };
+  } catch {
+    return { value: String(value), truncated: false };
   }
 }
 
@@ -90,6 +119,8 @@ export class SessionHost {
   private replaceChain: Promise<void> = Promise.resolve();
   private messageSeq = 0;
   private idCache = new WeakMap<object, string>();
+  /** Untruncated (capped) tool payloads for right-panel detail view. */
+  private toolDetails = new Map<string, ToolDetailRecord>();
 
   constructor(
     getWindow: () => BrowserWindow | null,
@@ -97,6 +128,10 @@ export class SessionHost {
   ) {
     this.getWindow = getWindow;
     this.godotRpc = godotRpc;
+  }
+
+  getToolDetail(toolCallId: string): ToolDetailRecord | null {
+    return this.toolDetails.get(toolCallId) ?? null;
   }
 
   /** Fleet: route all UI events through the manager (tagged with slotId). */
@@ -321,7 +356,15 @@ export class SessionHost {
           }
           break;
         }
-        case "tool_execution_start":
+        case "tool_execution_start": {
+          const argsPack = serializeForDetail(event.args);
+          this.toolDetails.set(event.toolCallId, {
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            args: argsPack.value,
+            done: false,
+            truncated: argsPack.truncated,
+          });
           this.emit({
             type: "tool_start",
             toolCallId: event.toolCallId,
@@ -329,14 +372,37 @@ export class SessionHost {
             args: truncate(event.args, 2000),
           });
           break;
-        case "tool_execution_update":
+        }
+        case "tool_execution_update": {
+          const prev = this.toolDetails.get(event.toolCallId);
+          if (prev) {
+            const pack = serializeForDetail(event.partialResult);
+            this.toolDetails.set(event.toolCallId, {
+              ...prev,
+              result: pack.value,
+              truncated: prev.truncated || pack.truncated,
+            });
+          }
           this.emit({
             type: "tool_update",
             toolCallId: event.toolCallId,
             partialResult: truncate(event.partialResult, 2000),
           });
           break;
-        case "tool_execution_end":
+        }
+        case "tool_execution_end": {
+          const prevDetail = this.toolDetails.get(event.toolCallId);
+          const argsPack = serializeForDetail(prevDetail?.args);
+          const resultPack = serializeForDetail(event.result);
+          this.toolDetails.set(event.toolCallId, {
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            args: argsPack.value,
+            result: resultPack.value,
+            isError: event.isError,
+            done: true,
+            truncated: Boolean(prevDetail?.truncated) || resultPack.truncated,
+          });
           this.emit({
             type: "tool_end",
             toolCallId: event.toolCallId,
@@ -345,6 +411,7 @@ export class SessionHost {
             isError: event.isError,
           });
           break;
+        }
         case "queue_update":
           this.emit({
             type: "queue_update",
@@ -519,6 +586,8 @@ export class SessionHost {
     } catch {
       // ignore
     }
+    // Drop tool detail cache so IDs from a prior session cannot leak into the panel.
+    this.toolDetails.clear();
   }
 
   private async createSession(

@@ -19,6 +19,7 @@ interface Props {
   disabled: boolean;
   queuedSteering?: string[];
   bottomRef: RefObject<HTMLDivElement | null>;
+  onOpenToolInPanel?: (toolId: string, args: unknown) => void;
 }
 
 export function ChatPanel(props: Props) {
@@ -43,6 +44,7 @@ export function ChatPanel(props: Props) {
         focused
         disabledEmpty={props.disabled}
         bottomRef={props.bottomRef}
+        onOpenToolInPanel={props.onOpenToolInPanel}
       />
 
       {props.queuedSteering && props.queuedSteering.length > 0 && (
@@ -92,7 +94,7 @@ export function ChatPanel(props: Props) {
           )}
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-cta"
             onClick={props.onSend}
             disabled={props.disabled || !props.input.trim()}
           >
@@ -127,6 +129,8 @@ interface DualProps {
   onFocusReviewer: () => void;
   workerBottomRef: RefObject<HTMLDivElement | null>;
   reviewerBottomRef: RefObject<HTMLDivElement | null>;
+  onOpenToolInPanelWorker?: (toolId: string, args: unknown) => void;
+  onOpenToolInPanelReviewer?: (toolId: string, args: unknown) => void;
 }
 
 export function DualChatPanel(props: DualProps) {
@@ -155,6 +159,7 @@ export function DualChatPanel(props: DualProps) {
           disabledEmpty={props.disabled}
           onFocus={props.onFocusWorker}
           bottomRef={props.workerBottomRef}
+          onOpenToolInPanel={props.onOpenToolInPanelWorker}
         />
         <ChatTranscript
           title={props.reviewerTitle}
@@ -166,6 +171,7 @@ export function DualChatPanel(props: DualProps) {
           disabledEmpty={props.disabled}
           onFocus={props.onFocusReviewer}
           bottomRef={props.reviewerBottomRef}
+          onOpenToolInPanel={props.onOpenToolInPanelReviewer}
         />
       </div>
 
@@ -219,7 +225,7 @@ export function DualChatPanel(props: DualProps) {
           )}
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-cta"
             onClick={props.onSend}
             disabled={props.disabled || !props.input.trim()}
           >

@@ -47,6 +47,7 @@ export interface ChatTranscriptProps {
   disabledEmpty?: boolean;
   onFocus?: () => void;
   bottomRef?: RefObject<HTMLDivElement | null>;
+  onOpenToolInPanel?: (toolId: string, args: unknown) => void;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
@@ -137,11 +138,17 @@ export function ChatTranscript(props: ChatTranscriptProps) {
           return (
             <ToolCard
               key={item.id}
+              toolCallId={item.id}
               toolName={item.toolName}
               args={formatMaybeJson(item.args)}
               result={formatMaybeJson(item.result)}
               isError={item.isError}
               done={item.done}
+              onOpenInPanel={
+                props.onOpenToolInPanel
+                  ? () => props.onOpenToolInPanel?.(item.id, item.args)
+                  : undefined
+              }
             />
           );
         })}

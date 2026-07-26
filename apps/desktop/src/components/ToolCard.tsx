@@ -1,15 +1,32 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, ChevronRight, Loader2, Wrench, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
+  PanelRight,
+  Wrench,
+  XCircle,
+} from "lucide-react";
 
 interface Props {
+  toolCallId: string;
   toolName: string;
   args: string;
   result: string;
   isError?: boolean;
   done: boolean;
+  onOpenInPanel?: () => void;
 }
 
-export function ToolCard({ toolName, args, result, isError, done }: Props) {
+export function ToolCard({
+  toolCallId,
+  toolName,
+  args,
+  result,
+  isError,
+  done,
+  onOpenInPanel,
+}: Props) {
   // Running: keep expanded and show body. After done: auto-collapse; user can re-open.
   const [open, setOpen] = useState(!done);
 
@@ -39,6 +56,7 @@ export function ToolCard({ toolName, args, result, isError, done }: Props) {
         .join(" ")}
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
+      data-tool-call-id={toolCallId}
     >
       <summary className="tool-head">
         <span className="tool-name">
@@ -49,6 +67,21 @@ export function ToolCard({ toolName, args, result, isError, done }: Props) {
           {toolName}
         </span>
         <span className="tool-state">
+          {onOpenInPanel && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm btn-icon tool-open-panel"
+              title="在工具面板中打开"
+              aria-label="在工具面板中打开"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenInPanel();
+              }}
+            >
+              <PanelRight size={13} />
+            </button>
+          )}
           {stateIcon}
           {stateText}
         </span>

@@ -126,6 +126,14 @@ export class FleetHostManager {
     return this.hosts.get(id);
   }
 
+  getToolDetail(toolCallId: string) {
+    for (const host of this.hosts.values()) {
+      const detail = host.getToolDetail(toolCallId);
+      if (detail) return detail;
+    }
+    return null;
+  }
+
   getActiveHost(): SessionHost {
     const id = this.registry.getActiveId();
     if (!id) {

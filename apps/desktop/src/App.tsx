@@ -1,5 +1,12 @@
 import { AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type {
   AgentStatus,
   AuthStatus,
@@ -16,7 +23,17 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatPanel, DualChatPanel } from "./components/ChatPanel";
 import { TopBar } from "./components/TopBar";
 import { FleetStrip } from "./components/FleetStrip";
+import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  RIGHT_PANEL_WIDTH_DEFAULT,
+  RIGHT_PANEL_WIDTH_MAX,
+  RIGHT_PANEL_WIDTH_MIN,
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+  useColumnResize,
+} from "./hooks/useColumnResize";
 import {
   applySlotAgentEvent,
   createEmptyState,
@@ -456,6 +473,76 @@ export default function App() {
     applyTheme(next.theme);
   };
 
+  const commitSidebarWidth = useCallback(async (sidebarWidth: number) => {
+    setPrefs((prev) => (prev ? { ...prev, sidebarWidth } : prev));
+    const next = await window.xAgent.setPrefs({ sidebarWidth });
+    setPrefs(next);
+  }, []);
+
+  const commitRightPanelWidth = useCallback(async (rightPanelWidth: number) => {
+    setPrefs((prev) => (prev ? { ...prev, rightPanelWidth } : prev));
+    const next = await window.xAgent.setPrefs({ rightPanelWidth });
+    setPrefs(next);
+  }, []);
+
+  const {
+    width: sidebarWidth,
+    dragging: sidebarResizing,
+    onResizePointerDown: onSidebarResizePointerDown,
+    onResizeDoubleClick: onSidebarResizeDoubleClick,
+  } = useColumnResize({
+    initialWidth: prefs?.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT,
+    min: SIDEBAR_WIDTH_MIN,
+    max: SIDEBAR_WIDTH_MAX,
+    defaultWidth: SIDEBAR_WIDTH_DEFAULT,
+    axis: "grow-right",
+    onCommit: (w) => {
+      void commitSidebarWidth(w);
+    },
+  });
+
+  const {
+    width: rightPanelWidth,
+    dragging: rightPanelResizing,
+    onResizePointerDown: onRightPanelResizePointerDown,
+    onResizeDoubleClick: onRightPanelResizeDoubleClick,
+  } = useColumnResize({
+    initialWidth: prefs?.rightPanelWidth ?? RIGHT_PANEL_WIDTH_DEFAULT,
+    min: RIGHT_PANEL_WIDTH_MIN,
+    max: RIGHT_PANEL_WIDTH_MAX,
+    defaultWidth: RIGHT_PANEL_WIDTH_DEFAULT,
+    axis: "grow-left",
+    onCommit: (w) => {
+      void commitRightPanelWidth(w);
+    },
+  });
+
+  const toggleRightPanel = async () => {
+    if (!prefs) return;
+    const rightPanelOpen = !prefs.rightPanelOpen;
+    setPrefs({ ...prefs, rightPanelOpen });
+    const next = await window.xAgent.setPrefs({ rightPanelOpen });
+    setPrefs(next);
+  };
+
+  const ensureRightPanelOpen = async () => {
+    if (!prefs || prefs.rightPanelOpen) return;
+    setPrefs({ ...prefs, rightPanelOpen: true });
+    const next = await window.xAgent.setPrefs({ rightPanelOpen: true });
+    setPrefs(next);
+  };
+
+  const onOpenToolInPanelForSlot = (slotId: string) => {
+    return (toolId: string, args: unknown) => {
+      if (slotId !== activeSlotId) {
+        void switchFleetSlot(slotId);
+      }
+      openToolInRightPanel(slotId, toolId, args, () => {
+        void ensureRightPanelOpen();
+      });
+    };
+  };
+
   const toggleTool = async (tool: string) => {
     if (!prefs) return;
     const tools = prefs.tools.includes(tool)
@@ -645,7 +732,9 @@ export default function App() {
         onThinkingChange={onThinkingChange}
         onToggleThinking={toggleThinking}
         onToggleTheme={toggleTheme}
+        onToggleRightPanel={toggleRightPanel}
         onOpenSettings={openSettings}
+        rightPanelOpen={prefs?.rightPanelOpen ?? false}
         busy={busy}
       />
       <FleetStrip
@@ -741,7 +830,15 @@ export default function App() {
           </button>
         </div>
       )}
-      <div className="main-row">
+      <div
+        className={`main-row${prefs?.rightPanelOpen ? " with-right-panel" : ""}${sidebarResizing || rightPanelResizing ? " is-resizing" : ""}`}
+        style={
+          {
+            "--sidebar-width": `${sidebarWidth}px`,
+            "--right-panel-width": `${rightPanelWidth}px`,
+          } as CSSProperties
+        }
+      >
         <Sidebar
           sessions={sessions}
           activeSessionId={sessionId}
@@ -751,6 +848,9 @@ export default function App() {
           onDelete={deleteSession}
           onRename={renameSession}
           onRefresh={refreshSessions}
+          onResizePointerDown={onSidebarResizePointerDown}
+          onResizeDoubleClick={onSidebarResizeDoubleClick}
+          resizing={sidebarResizing}
         />
         {showDual && workerSlot && reviewerSlot ? (
           <DualChatPanel
@@ -778,6 +878,16 @@ export default function App() {
             onFocusReviewer={() => void switchFleetSlot(reviewerSlot.id)}
             workerBottomRef={workerBottomRef}
             reviewerBottomRef={reviewerBottomRef}
+            onOpenToolInPanelWorker={
+              workerSlot
+                ? onOpenToolInPanelForSlot(workerSlot.id)
+                : undefined
+            }
+            onOpenToolInPanelReviewer={
+              reviewerSlot
+                ? onOpenToolInPanelForSlot(reviewerSlot.id)
+                : undefined
+            }
           />
         ) : (
           <ChatPanel
@@ -797,6 +907,18 @@ export default function App() {
             disabled={!cwd}
             queuedSteering={queuedSteering}
             bottomRef={bottomRef}
+            onOpenToolInPanel={onOpenToolInPanelForSlot(activeSlotId)}
+          />
+        )}
+        {prefs?.rightPanelOpen && (
+          <RightPanel
+            slotId={activeSlotId}
+            cwd={cwd}
+            items={activeItems}
+            onClose={() => void toggleRightPanel()}
+            onResizePointerDown={onRightPanelResizePointerDown}
+            onResizeDoubleClick={onRightPanelResizeDoubleClick}
+            resizing={rightPanelResizing}
           />
         )}
       </div>

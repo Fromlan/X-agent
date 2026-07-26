@@ -1,0 +1,186 @@
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  basename,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
+import { shell } from "electron";
+
+const IGNORED_DIR_NAMES = new Set([
+  "node_modules",
+  ".git",
+  ".godot",
+  ".svn",
+  ".hg",
+  "dist",
+  "out",
+  "release",
+  "__pycache__",
+  ".next",
+  ".turbo",
+]);
+
+const MAX_FILE_BYTES = 1024 * 1024;
+
+export type ProjectDirEntry = {
+  name: string;
+  isDir: boolean;
+};
+
+export type ListProjectDirResult = {
+  ok: boolean;
+  entries?: ProjectDirEntry[];
+  error?: string;
+};
+
+export type ReadProjectFileResult = {
+  ok: boolean;
+  path?: string;
+  content?: string;
+  truncated?: boolean;
+  error?: string;
+};
+
+export type RevealProjectPathResult = {
+  ok: boolean;
+  error?: string;
+};
+
+function resolveInsideCwd(
+  cwd: string,
+  relPath: string,
+): { ok: true; abs: string; rel: string } | { ok: false; error: string } {
+  if (!cwd || !existsSync(cwd)) {
+    return { ok: false, error: "未打开项目" };
+  }
+  const raw = (relPath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (raw.includes("\0") || raw.split("/").includes("..")) {
+    return { ok: false, error: "非法路径" };
+  }
+  const root = normalize(resolve(cwd));
+  const abs = normalize(resolve(root, raw || "."));
+  const relToRoot = relative(root, abs);
+  if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
+    return { ok: false, error: "路径超出项目目录" };
+  }
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    return { ok: false, error: "路径超出项目目录" };
+  }
+  const rel = abs === root ? "" : relToRoot.replace(/\\/g, "/");
+  return { ok: true, abs, rel };
+}
+
+export function listProjectDir(
+  cwd: string,
+  relPath = "",
+): ListProjectDirResult {
+  const resolved = resolveInsideCwd(cwd, relPath);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  try {
+    const st = statSync(resolved.abs);
+    if (!st.isDirectory()) {
+      return { ok: false, error: "不是目录" };
+    }
+    const names = readdirSync(resolved.abs);
+    const entries: ProjectDirEntry[] = [];
+    for (const name of names) {
+      if (name === "." || name === "..") continue;
+      if (IGNORED_DIR_NAMES.has(name)) continue;
+      const childAbs = join(resolved.abs, name);
+      let isDir = false;
+      try {
+        isDir = statSync(childAbs).isDirectory();
+      } catch {
+        continue;
+      }
+      entries.push({ name, isDir });
+    }
+    entries.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    return { ok: true, entries };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function looksBinary(buf: Buffer): boolean {
+  const sample = buf.subarray(0, Math.min(buf.length, 8000));
+  if (sample.includes(0)) return true;
+  let weird = 0;
+  for (const b of sample) {
+    if (b < 7 || (b > 14 && b < 32 && b !== 9 && b !== 10 && b !== 13)) {
+      weird += 1;
+    }
+  }
+  return weird / Math.max(sample.length, 1) > 0.3;
+}
+
+export function readProjectFile(
+  cwd: string,
+  relPath: string,
+): ReadProjectFileResult {
+  const resolved = resolveInsideCwd(cwd, relPath);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  if (!resolved.rel) {
+    return { ok: false, error: "请选择文件" };
+  }
+  try {
+    const st = statSync(resolved.abs);
+    if (!st.isFile()) {
+      return { ok: false, error: "不是文件" };
+    }
+    if (st.size > MAX_FILE_BYTES) {
+      return {
+        ok: false,
+        error: `文件过大（>${MAX_FILE_BYTES} 字节），无法预览`,
+      };
+    }
+    const buf = readFileSync(resolved.abs);
+    if (looksBinary(buf)) {
+      return { ok: false, error: "二进制文件，无法以文本预览" };
+    }
+    return {
+      ok: true,
+      path: resolved.rel,
+      content: buf.toString("utf8"),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export function revealProjectPath(
+  cwd: string,
+  relPath: string,
+): RevealProjectPathResult {
+  const resolved = resolveInsideCwd(cwd, relPath);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  try {
+    if (!existsSync(resolved.abs)) {
+      return { ok: false, error: "路径不存在" };
+    }
+    shell.showItemInFolder(resolved.abs);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export function pathBasename(relPath: string): string {
+  return basename(relPath.replace(/\\/g, "/"));
+}

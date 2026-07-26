@@ -9,6 +9,11 @@ import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
 import { loadPrefs, patchPrefs } from "./agent/prefs";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
 import { FleetHostManager } from "./agent/fleet-host-manager";
+import {
+  listProjectDir,
+  readProjectFile,
+  revealProjectPath,
+} from "./agent/project-fs";
 import { installGodotRpcAddon } from "./agent/godot-addon-install";
 import { AppAutoUpdater } from "./agent/auto-updater";
 import {
@@ -164,6 +169,21 @@ function registerIpc(): void {
   ipcMain.handle("checkPiCli", async () => checkPiCli());
   ipcMain.handle("installPiCli", async () => installPiCli());
   ipcMain.handle("getStatus", async () => host().getStatus());
+  ipcMain.handle("getToolDetail", async (_e, toolCallId: string) =>
+    fleet.getToolDetail(toolCallId),
+  );
+  ipcMain.handle("listProjectDir", async (_e, relPath?: string) => {
+    const cwd = host().getStatus().cwd ?? "";
+    return listProjectDir(cwd, relPath ?? "");
+  });
+  ipcMain.handle("readProjectFile", async (_e, relPath: string) => {
+    const cwd = host().getStatus().cwd ?? "";
+    return readProjectFile(cwd, relPath);
+  });
+  ipcMain.handle("revealInFolder", async (_e, relPath: string) => {
+    const cwd = host().getStatus().cwd ?? "";
+    return revealProjectPath(cwd, relPath);
+  });
 
   ipcMain.handle("fleetList", async () => fleet.list());
   ipcMain.handle("fleetState", async () => fleet.state());

@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Check, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import type { AgentStatus, SessionInfo } from "@shared/ipc";
 import { StatusIcon } from "./StatusIcon";
@@ -12,6 +18,9 @@ interface Props {
   onDelete: (path: string) => void;
   onRename: (path: string, name: string) => void | Promise<void>;
   onRefresh: () => void;
+  onResizePointerDown?: (e: ReactPointerEvent) => void;
+  onResizeDoubleClick?: () => void;
+  resizing?: boolean;
 }
 
 function shortPath(p: string): string {
@@ -28,6 +37,9 @@ export function Sidebar({
   onDelete,
   onRename,
   onRefresh,
+  onResizePointerDown,
+  onResizeDoubleClick,
+  resizing,
 }: Props) {
   const locked = busy || agentStatus === "streaming" || agentStatus === "retrying";
   const [editingPath, setEditingPath] = useState<string | null>(null);
@@ -204,6 +216,17 @@ export function Sidebar({
           );
         })}
       </ul>
+      {onResizePointerDown && (
+        <div
+          className={`column-resize-handle column-resize-handle--right${resizing ? " is-dragging" : ""}`}
+          onPointerDown={onResizePointerDown}
+          onDoubleClick={onResizeDoubleClick}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整侧栏宽度"
+          title="拖动调整宽度 · 双击恢复默认"
+        />
+      )}
     </aside>
   );
 }

@@ -3,6 +3,7 @@ import {
   FolderOpen,
   MessageSquarePlus,
   Moon,
+  PanelRight,
   Settings2,
   Sun,
 } from "lucide-react";
@@ -19,12 +20,14 @@ interface Props {
   showThinking: boolean;
   theme: "light" | "dark";
   busy: boolean;
+  rightPanelOpen: boolean;
   onOpenProject: () => void;
   onNewSession: () => void;
   onModelChange: (value: string) => void;
   onThinkingChange: (level: ThinkingLevel) => void;
   onToggleThinking: () => void;
   onToggleTheme: () => void;
+  onToggleRightPanel: () => void;
   onOpenSettings: () => void;
 }
 
@@ -132,6 +135,17 @@ export function TopBar(props: Props) {
         >
           <Settings2 size={14} />
           设置
+        </button>
+
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm${props.rightPanelOpen ? " is-active" : ""}`}
+          onClick={props.onToggleRightPanel}
+          title={props.rightPanelOpen ? "收起工具面板" : "打开工具面板"}
+          aria-label="切换工具面板"
+          aria-pressed={props.rightPanelOpen}
+        >
+          <PanelRight size={14} />
         </button>
 
         <button
