@@ -21,6 +21,35 @@ export function spawnOptsForCli(
   };
 }
 
+/**
+ * Quote for `cmd.exe` when the value has whitespace/specials.
+ * Needed because Node `spawn(file, args, { shell: true })` concatenates
+ * `file` + args before wrapping in `cmd /d /s /c "…"`, so an unquoted
+ * `C:\Program Files\nodejs\npm.cmd` becomes the bogus command `C:\Program`.
+ */
+export function quoteWinCmdArg(value: string): string {
+  if (!/[\s"&<>|^()]/.test(value)) return value;
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Spawn a CLI binary. On Windows, quote .cmd/.bat paths that need shell.
+ */
+export function spawnCli(
+  command: string,
+  args: readonly string[],
+  extra: SpawnOptions = {},
+): ReturnType<typeof spawn> {
+  const needsWinShell =
+    process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
+  if (needsWinShell) {
+    return spawn(quoteWinCmdArg(command), [...args], {
+      ...spawnOptsForCli(command, extra),
+    });
+  }
+  return spawn(command, [...args], spawnOptsForCli(command, extra));
+}
+
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const ERROR_TAIL = 800;
@@ -110,7 +139,7 @@ function runNpmInstall(npmPath: string): Promise<{ code: number | null; output: 
     const args = ["install", "-g", "--ignore-scripts", PI_PACKAGE];
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(npmPath, args, spawnOptsForCli(npmPath));
+      child = spawnCli(npmPath, args);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       resolve({ code: 1, output: message });

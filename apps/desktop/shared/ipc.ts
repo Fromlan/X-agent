@@ -102,6 +102,11 @@ export interface ClientPrefs {
   sidebarWidth: number;
   /** Right tool panel width in px. */
   rightPanelWidth: number;
+  /**
+   * Project keys (`normalizeProjectKey`) hidden from the sidebar.
+   * Session files are kept; opening the project again removes the key.
+   */
+  hiddenProjectKeys: string[];
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -117,6 +122,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   rightPanelOpen: false,
   sidebarWidth: 260,
   rightPanelWidth: 360,
+  hiddenProjectKeys: [],
 };
 
 export interface OpenProjectResult {
@@ -543,6 +549,8 @@ export interface XAgentApi {
   listSessions: () => Promise<SessionInfo[]>;
   resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Close current workspace without deleting session files. */
+  closeWorkspace: () => Promise<{ ok: boolean; error?: string }>;
   renameSession: (
     sessionPath: string,
     name: string,

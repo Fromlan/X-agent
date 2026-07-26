@@ -23,6 +23,7 @@ const TABS: { id: RightPanelTab; label: string }[] = [
 interface Props {
   cwd: string | null;
   items: ChatItem[];
+  enabledTools: string[];
   onClose: () => void;
   onAddPathToChat: (relPath: string) => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
@@ -33,6 +34,7 @@ interface Props {
 export function RightPanel({
   cwd,
   items,
+  enabledTools,
   onClose,
   onAddPathToChat,
   onResizePointerDown,
@@ -95,6 +97,7 @@ export function RightPanel({
         {state.tab === "tools" && (
           <ToolsTab
             items={items}
+            enabledTools={enabledTools}
             selectedToolId={state.selectedToolId}
             onSelectTool={onSelectTool}
           />

@@ -11,6 +11,8 @@ import {
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   AgentStatus,
+  ALL_TOGGLEABLE_TOOLS,
+  ClientPrefs,
   HistoryItem,
   HostStatus,
   ModelInfo,
@@ -30,6 +32,10 @@ import { deriveSessionTitle, displaySessionName } from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
 import { TurnFileTracker } from "./turn-file-tracker";
+import {
+  normalizeProjectKey,
+  pickFallbackSessionPath,
+} from "../../shared/project-path";
 
 type SessionBundle = {
   session: AgentSession;
@@ -524,14 +530,31 @@ export class SessionHost {
       this.modelRuntime = await ModelRuntime.create({
         authPath: join(dir, "auth.json"),
         modelsPath: join(dir, "models.json"),
+        // Avoid 15s remote-catalog wait on startup / provider reload.
+        allowModelNetwork: false,
       });
     }
     return this.modelRuntime;
   }
 
+  /**
+   * Pi AuthStorage caches auth.json in memory at create time. reloadConfig()
+   * only reloads models.json — so after we write auth.json from provider
+   * activate, credentials stay stale and getAvailable() returns [].
+   */
+  private reloadAuthStorageCache(runtime: ModelRuntime): void {
+    const store = (
+      runtime as unknown as {
+        credentials?: { store?: { reload?: () => void } };
+      }
+    ).credentials?.store;
+    store?.reload?.();
+  }
+
   async reloadRuntime(): Promise<void> {
     if (this.modelRuntime) {
       try {
+        this.reloadAuthStorageCache(this.modelRuntime);
         await this.modelRuntime.reloadConfig();
         return;
       } catch {
@@ -639,11 +662,16 @@ export class SessionHost {
       resourceLoader: loader,
       modelRuntime,
       sessionManager,
-      tools: prefs.tools,
+      // Pi uses `tools` as both registry allowlist and initial active set.
+      // Register the full toggleable set so later prefs changes (e.g. enabling
+      // Godot tools) can activate via setActiveToolsByName; unknown names are
+      // otherwise silently ignored.
+      tools: [...ALL_TOGGLEABLE_TOOLS],
       customTools: this.godotRpc ? createGodotTools(this.godotRpc) : [],
       ...(selectedModel ? { model: selectedModel } : {}),
       thinkingLevel: prefs.thinkingLevel,
     });
+    session.setActiveToolsByName(prefs.tools);
 
     const unsubscribe = this.bridgeEvents(session);
     const nextBundle: SessionBundle = {
@@ -708,6 +736,18 @@ export class SessionHost {
     return info;
   }
 
+  private unhideProjectKey(cwd: string): void {
+    const key = normalizeProjectKey(cwd);
+    if (!key) return;
+    const prefs = loadPrefs();
+    const nextHidden = prefs.hiddenProjectKeys.filter(
+      (k) => normalizeProjectKey(k) !== key,
+    );
+    if (nextHidden.length !== prefs.hiddenProjectKeys.length) {
+      patchPrefs({ hiddenProjectKeys: nextHidden });
+    }
+  }
+
   async openProject(cwd: string, mode: "continue" | "new" = "continue"): Promise<OpenProjectResult> {
     return this.runReplaceExclusive(async () => {
       try {
@@ -716,7 +756,9 @@ export class SessionHost {
           mode === "new"
             ? SessionManager.create(cwd, root)
             : SessionManager.continueRecent(cwd, root);
-        return await this.createSession(cwd, sessionManager);
+        const result = await this.createSession(cwd, sessionManager);
+        if (result.ok) this.unhideProjectKey(cwd);
+        return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.setStatus("error", message);
@@ -752,7 +794,9 @@ export class SessionHost {
             "无法从会话文件解析项目路径，请先打开对应项目后再恢复",
           );
         }
-        return await this.createSession(cwd, sessionManager);
+        const result = await this.createSession(cwd, sessionManager);
+        if (result.ok) this.unhideProjectKey(cwd);
+        return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.setStatus("error", message);
@@ -769,26 +813,85 @@ export class SessionHost {
       if (!existsSync(sessionPath)) {
         return { ok: false, error: "会话文件不存在" };
       }
-      if (this.bundle?.sessionPath === sessionPath) {
-        const cwd = this.bundle.cwd;
+
+      const wasActive = this.bundle?.sessionPath === sessionPath;
+      const cwd = wasActive ? this.bundle!.cwd : null;
+
+      if (wasActive) {
         await this.disposeBundle(this.bundle);
         this.bundle = null;
+      }
+
+      unlinkSync(sessionPath);
+
+      const prefs = loadPrefs();
+      if (prefs.lastSessionPath === sessionPath) {
         patchPrefs({ lastSessionPath: null });
-        if (cwd) {
-          await this.createSession(
-            cwd,
-            SessionManager.create(cwd, getXAgentSessionsRoot()),
+      }
+
+      if (!wasActive) {
+        return { ok: true };
+      }
+
+      // Prefer another session in the same project; never silently create a new one.
+      const remaining = await this.listSessions();
+      const fallbackPath = pickFallbackSessionPath(
+        remaining,
+        cwd ?? "",
+        sessionPath,
+      );
+      if (fallbackPath) {
+        try {
+          const sessionManager = SessionManager.open(
+            fallbackPath,
+            getXAgentSessionsRoot(),
           );
-        }
-      } else {
-        unlinkSync(sessionPath);
-        const prefs = loadPrefs();
-        if (prefs.lastSessionPath === sessionPath) {
-          patchPrefs({ lastSessionPath: null });
+          const fallbackCwd = sessionManager.getCwd() || cwd;
+          if (!fallbackCwd) {
+            await this.emitClosedWorkspace();
+            return { ok: true };
+          }
+          await this.createSession(fallbackCwd, sessionManager);
+          return { ok: true };
+        } catch {
+          await this.emitClosedWorkspace(cwd);
+          return { ok: true };
         }
       }
+
+      await this.emitClosedWorkspace(cwd);
       return { ok: true };
     });
+  }
+
+  /** Close current workspace without deleting session files (sidebar hide). */
+  async closeWorkspace(): Promise<{ ok: boolean; error?: string }> {
+    return this.runReplaceExclusive(async () => {
+      const cwd = this.bundle?.cwd ?? null;
+      await this.disposeBundle(this.bundle);
+      this.bundle = null;
+      await this.emitClosedWorkspace(cwd);
+      return { ok: true };
+    });
+  }
+
+  private async emitClosedWorkspace(cwd?: string | null): Promise<void> {
+    const prefs = loadPrefs();
+    const patch: Partial<ClientPrefs> = { lastSessionPath: null };
+    if (cwd && normalizeProjectKey(prefs.lastProjectPath ?? "") === normalizeProjectKey(cwd)) {
+      patch.lastProjectPath = null;
+    }
+    patchPrefs(patch);
+    this.emit({ type: "history_replace", items: [] });
+    this.emit({
+      type: "session_info",
+      sessionId: "",
+      cwd: "",
+      model: null,
+      thinkingLevel: "medium",
+      sessionPath: null,
+    });
+    this.setStatus("idle");
   }
 
   async renameSession(
@@ -1036,17 +1139,45 @@ export class SessionHost {
 
   async applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
     patchPrefs({ tools });
-    if (this.bundle) {
-      try {
-        this.bundle.session.setActiveToolsByName(tools);
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
+    if (!this.bundle) return { ok: true };
+    try {
+      this.bundle.session.setActiveToolsByName(tools);
+      const active = new Set(this.bundle.session.getActiveToolNames());
+      const missing = tools.filter((name) => !active.has(name));
+      if (missing.length === 0) return { ok: true };
+
+      // Session was created before the full registry allowlist fix (or with a
+      // narrower tools list). Recreate so newly enabled tools can register.
+      const sessionPath = this.bundle.sessionPath;
+      const cwd = this.bundle.cwd;
+      if (sessionPath) {
+        const result = await this.resumeSession(sessionPath);
+        if (!result.ok) {
+          return {
+            ok: false,
+            error:
+              result.error ??
+              `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`,
+          };
+        }
+      } else {
+        const result = await this.openProject(cwd);
+        if (!result.ok) {
+          return {
+            ok: false,
+            error:
+              result.error ??
+              `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`,
+          };
+        }
       }
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
-    return { ok: true };
   }
 
   async listModels(): Promise<ModelInfo[]> {

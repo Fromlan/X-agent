@@ -31,6 +31,7 @@ import {
   appendAtPath,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
+import { normalizeProjectKey } from "./lib/group-sessions";
 import {
   RIGHT_PANEL_WIDTH_DEFAULT,
   RIGHT_PANEL_WIDTH_MAX,
@@ -245,6 +246,8 @@ export default function App() {
       setCwd(result.cwd);
       setSessionId(result.sessionId);
       if (result.warning) setError(result.warning);
+      const p = await window.xAgent.getPrefs();
+      setPrefs(p);
       await refreshSessions();
     } finally {
       setBusy(false);
@@ -281,6 +284,8 @@ export default function App() {
       setCwd(result.cwd);
       setSessionId(result.sessionId);
       if (result.warning) setError(result.warning);
+      const p = await window.xAgent.getPrefs();
+      setPrefs(p);
       await refreshSessions();
     } finally {
       setBusy(false);
@@ -297,6 +302,35 @@ export default function App() {
         return;
       }
       await syncFromHost();
+      await refreshSessions();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hideProject = async (projectCwd: string) => {
+    if (!prefs) return;
+    const key = normalizeProjectKey(projectCwd);
+    if (!key) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const hidden = new Set(
+        (prefs.hiddenProjectKeys ?? []).map((k) => normalizeProjectKey(k)),
+      );
+      hidden.add(key);
+      const next = await window.xAgent.setPrefs({
+        hiddenProjectKeys: [...hidden],
+      });
+      setPrefs(next);
+
+      if (cwd && normalizeProjectKey(cwd) === key) {
+        const closed = await window.xAgent.closeWorkspace();
+        if (!closed.ok) {
+          setError(closed.error ?? "关闭工作区失败");
+        }
+        await syncFromHost();
+      }
       await refreshSessions();
     } finally {
       setBusy(false);
@@ -679,12 +713,16 @@ export default function App() {
       >
         <Sidebar
           sessions={sessions}
+          hiddenProjectKeys={prefs?.hiddenProjectKeys ?? []}
           activeSessionId={sessionId}
           activeCwd={cwd}
           agentStatus={status}
           busy={busy}
           onResume={resumeSession}
           onDelete={deleteSession}
+          onHideProject={(projectCwd) => {
+            void hideProject(projectCwd);
+          }}
           onRename={renameSession}
           onRefresh={refreshSessions}
           onResizePointerDown={onSidebarResizePointerDown}
@@ -720,6 +758,7 @@ export default function App() {
           <RightPanel
             cwd={cwd}
             items={items}
+            enabledTools={prefs?.tools ?? []}
             onClose={() => void toggleRightPanel()}
             onAddPathToChat={addPathToChat}
             onResizePointerDown={onRightPanelResizePointerDown}

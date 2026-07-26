@@ -10,6 +10,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  EyeOff,
   Pencil,
   RefreshCw,
   Trash2,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import type { AgentStatus, SessionInfo } from "@shared/ipc";
 import {
+  filterVisibleProjectGroups,
   groupSessionsByProject,
   normalizeProjectKey,
 } from "@/lib/group-sessions";
@@ -24,12 +26,14 @@ import { StatusIcon } from "./StatusIcon";
 
 interface Props {
   sessions: SessionInfo[];
+  hiddenProjectKeys: string[];
   activeSessionId: string | null;
   activeCwd: string | null;
   agentStatus: AgentStatus;
   busy: boolean;
   onResume: (path: string) => void;
   onDelete: (path: string) => void;
+  onHideProject: (cwd: string, label: string) => void;
   onRename: (path: string, name: string) => void | Promise<void>;
   onRefresh: () => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
@@ -39,12 +43,14 @@ interface Props {
 
 export function Sidebar({
   sessions,
+  hiddenProjectKeys,
   activeSessionId,
   activeCwd,
   agentStatus,
   busy,
   onResume,
   onDelete,
+  onHideProject,
   onRename,
   onRefresh,
   onResizePointerDown,
@@ -58,7 +64,14 @@ export function Sidebar({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const groups = useMemo(() => groupSessionsByProject(sessions), [sessions]);
+  const groups = useMemo(
+    () =>
+      filterVisibleProjectGroups(
+        groupSessionsByProject(sessions),
+        hiddenProjectKeys,
+      ),
+    [sessions, hiddenProjectKeys],
+  );
 
   const keysToExpand = useMemo(() => {
     const keys = new Set<string>();
@@ -169,21 +182,47 @@ export function Sidebar({
           const isActiveProject = group.key === activeKey && activeKey !== "";
           return (
             <li key={group.key || "__unknown__"} className="project-group">
-              <button
-                type="button"
+              <div
                 className={
                   isActiveProject
                     ? "project-group-header is-active-project"
                     : "project-group-header"
                 }
-                onClick={() => toggleGroup(group.key)}
-                title={group.cwd || "未知项目"}
-                aria-expanded={expanded}
               >
-                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                <span className="project-group-label">{group.label}</span>
-                <span className="project-group-count tabular">{group.sessions.length}</span>
-              </button>
+                <button
+                  type="button"
+                  className="project-group-toggle"
+                  onClick={() => toggleGroup(group.key)}
+                  title={group.cwd || "未知项目"}
+                  aria-expanded={expanded}
+                >
+                  {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <span className="project-group-label">{group.label}</span>
+                  <span className="project-group-count tabular">
+                    {group.sessions.length}
+                  </span>
+                </button>
+                {group.key !== "" && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon project-group-hide"
+                    title="从侧栏移除"
+                    disabled={busy || renaming}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (
+                        window.confirm(
+                          `从侧栏移除「${group.label}」？\n会话文件不会删除，再次打开该项目后会重新出现。`,
+                        )
+                      ) {
+                        onHideProject(group.cwd, group.label);
+                      }
+                    }}
+                  >
+                    <EyeOff size={12} />
+                  </button>
+                )}
+              </div>
               {expanded && (
                 <ul className="project-group-sessions">
                   {group.sessions.map((s) => {

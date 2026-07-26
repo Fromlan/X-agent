@@ -33,7 +33,12 @@ export function loadPrefs(): ClientPrefs {
     };
     // Drop legacy unused `language` field from older prefs files.
     const { language: _legacyLanguage, ...rest } = raw;
-    return { ...DEFAULT_PREFS, ...rest };
+    const hiddenProjectKeys = Array.isArray(rest.hiddenProjectKeys)
+      ? rest.hiddenProjectKeys.filter(
+          (k): k is string => typeof k === "string" && k.trim().length > 0,
+        )
+      : [];
+    return { ...DEFAULT_PREFS, ...rest, hiddenProjectKeys };
   } catch {
     return { ...DEFAULT_PREFS };
   }

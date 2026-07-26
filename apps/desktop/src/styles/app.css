@@ -561,18 +561,13 @@ body.is-resizing-column * {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 2px;
+  padding: 2px 4px 2px 2px;
   margin: 0 0 2px;
-  border: none;
   border-radius: var(--radius-md);
-  background: transparent;
   color: var(--text-secondary);
   font-size: 11.5px;
   font-weight: 500;
-  font-family: var(--font-sans);
-  cursor: pointer;
-  text-align: left;
 }
 
 .project-group-header:hover {
@@ -582,6 +577,33 @@ body.is-resizing-column * {
 
 .project-group-header.is-active-project {
   color: var(--text-primary);
+}
+
+.project-group-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-group-hide {
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.project-group-header:hover .project-group-hide,
+.project-group-header:focus-within .project-group-hide {
+  opacity: 1;
 }
 
 .project-group-label {
@@ -2321,8 +2343,61 @@ body.is-resizing-column * {
 }
 
 .rp-tools {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: 0;
+}
+
+.rp-tools-enabled {
+  flex: 0 0 auto;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.rp-tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px 4px;
+}
+
+.rp-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-primary);
+  background: var(--surface-chip);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-tool-chip.is-godot {
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.rp-hint {
+  margin: 4px 8px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.rp-tools-calls-label {
+  padding: 10px 8px 4px;
+}
+
+.rp-tools-calls {
   display: grid;
-  grid-template-rows: minmax(120px, 38%) minmax(0, 1fr);
+  grid-template-rows: minmax(100px, 38%) minmax(0, 1fr);
   min-height: 0;
   flex: 1;
 }

@@ -18,7 +18,7 @@ import type {
   PackageInstallResult,
 } from "../../shared/ipc";
 import { getAgentDirPath } from "./prefs";
-import { checkPiCli, spawnOptsForCli } from "./pi-cli";
+import { checkPiCli, spawnCli } from "./pi-cli";
 
 const requireElectron = createRequire(import.meta.url);
 
@@ -236,7 +236,7 @@ function runPiPackageCommand(
   return new Promise((resolvePromise) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(piPath, args, spawnOptsForCli(piPath));
+      child = spawnCli(piPath, args);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       resolvePromise({ code: 1, output: message });

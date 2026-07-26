@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import type { SessionInfo } from "../shared/ipc.ts";
 import {
-  groupSessionsByProject,
+  filterVisibleProjectGroups,
+  pickFallbackSessionPath,
   normalizeProjectKey,
   projectDisplayName,
-} from "../src/lib/group-sessions.ts";
+} from "../shared/project-path.ts";
+import { groupSessionsByProject } from "../src/lib/group-sessions.ts";
 
 assert.equal(normalizeProjectKey(""), "");
 assert.equal(normalizeProjectKey("  "), "");
@@ -56,5 +58,24 @@ assert.equal(groups[1].label, "Alpha");
 assert.equal(groups[1].sessions.map((s) => s.id).join(","), "2,1");
 assert.equal(groups[2].label, "未知项目");
 assert.equal(groups[2].key, "");
+
+const visible = filterVisibleProjectGroups(groups, [
+  normalizeProjectKey("D:\\Games\\Alpha"),
+]);
+assert.equal(visible.length, 2);
+assert.equal(visible.map((g) => g.label).join(","), "Beta,未知项目");
+
+assert.equal(
+  pickFallbackSessionPath(sessions, "D:\\Games\\Alpha", "/s/2.jsonl"),
+  "/s/1.jsonl",
+);
+assert.equal(
+  pickFallbackSessionPath(sessions, "D:\\Games\\Beta", "/s/3.jsonl"),
+  null,
+);
+assert.equal(
+  pickFallbackSessionPath(sessions, "D:\\Games\\Alpha", "/s/missing.jsonl"),
+  "/s/2.jsonl",
+);
 
 console.log("test-group-sessions: ok");

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import {
   checkPiCli,
+  quoteWinCmdArg,
   resolveNpmFromPathEnv,
   resolvePiFromPathEnv,
   spawnOptsForCli,
@@ -62,6 +63,20 @@ if (process.platform === "win32") {
 assert(
   spawnOptsForCli("/usr/local/bin/pi").shell === false,
   "unix binary does not force shell",
+);
+
+const spacedNpm = join("C:\\Program Files\\nodejs", "npm.cmd");
+assert(
+  quoteWinCmdArg(spacedNpm) === `"${spacedNpm}"`,
+  "paths with spaces must be quoted for cmd.exe",
+);
+assert(
+  quoteWinCmdArg(join("C:\\npm", "npm.cmd")) === join("C:\\npm", "npm.cmd"),
+  "paths without spaces stay unquoted",
+);
+assert(
+  quoteWinCmdArg('say "hi"') === '"say ""hi"""',
+  "embedded quotes are doubled for cmd.exe",
 );
 
 console.log("test-pi-cli: ok");

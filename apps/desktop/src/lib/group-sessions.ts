@@ -1,26 +1,21 @@
 import type { SessionInfo } from "@shared/ipc";
+import {
+  normalizeProjectKey,
+  projectDisplayName,
+  filterVisibleProjectGroups,
+} from "@shared/project-path";
+
+export {
+  normalizeProjectKey,
+  projectDisplayName,
+  filterVisibleProjectGroups,
+} from "@shared/project-path";
 
 export interface ProjectSessionGroup {
   key: string;
   cwd: string;
   label: string;
   sessions: SessionInfo[];
-}
-
-/** Normalize project paths so Windows case / slash variants share one group. */
-export function normalizeProjectKey(cwd: string): string {
-  const trimmed = cwd.trim();
-  if (!trimmed) return "";
-  return trimmed.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-}
-
-/** Last path segment for display; empty cwd → 未知项目. */
-export function projectDisplayName(cwd: string): string {
-  const trimmed = cwd.trim();
-  if (!trimmed) return "未知项目";
-  const posix = trimmed.replace(/\\/g, "/").replace(/\/+$/, "");
-  const parts = posix.split("/").filter(Boolean);
-  return parts[parts.length - 1] || "未知项目";
 }
 
 function updatedMs(s: SessionInfo): number {

@@ -18,12 +18,14 @@ function formatMaybeJson(value: unknown): string {
 
 interface Props {
   items: ChatItem[];
+  enabledTools: string[];
   selectedToolId: string | null;
   onSelectTool: (toolId: string) => void;
 }
 
 export function ToolsTab({
   items,
+  enabledTools,
   selectedToolId,
   onSelectTool,
 }: Props) {
@@ -38,6 +40,11 @@ export function ToolsTab({
   const [detailTruncated, setDetailTruncated] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const godotEnabled = useMemo(
+    () => enabledTools.filter((name) => name.startsWith("godot_")),
+    [enabledTools],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -85,79 +92,107 @@ export function ToolsTab({
     }
   };
 
-  if (tools.length === 0) {
-    return (
-      <div className="rp-empty">
-        还没有工具调用。Agent 运行后会出现在这里。
-      </div>
-    );
-  }
-
   return (
     <div className="rp-tools">
-      <ul className="rp-tool-list">
-        {tools.map((t) => {
-          const active = t.id === selectedToolId;
-          return (
-            <li key={t.id}>
-              <button
-                type="button"
-                className={`rp-tool-item${active ? " active" : ""}${t.isError ? " is-error" : ""}`}
-                onClick={() => onSelectTool(t.id)}
-              >
-                <span className="rp-tool-item-name">{t.toolName}</span>
-                <span className="rp-tool-item-state">
-                  {!t.done ? (
-                    <Loader2 size={12} className="icon-spin" />
-                  ) : t.isError ? (
-                    <XCircle size={12} />
-                  ) : (
-                    <CheckCircle2 size={12} />
-                  )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="rp-tool-detail">
-        {selected ? (
-          <>
-            <div className="rp-tool-detail-head">
-              <strong>{selected.toolName}</strong>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => void copyAll()}
-              >
-                <Copy size={12} />
-                {copied ? "已复制" : "复制"}
-              </button>
-            </div>
-            {detailTruncated && (
-              <div className="rp-banner-soft">内容已达缓存上限，可能仍有截断。</div>
-            )}
-            {detailError && <div className="rp-banner-soft">{detailError}</div>}
-            {detailArgs && (
-              <div className="rp-section">
-                <div className="rp-section-label">参数</div>
-                <pre>{detailArgs}</pre>
-              </div>
-            )}
-            {detailResult && (
-              <div className={`rp-section${selected.isError ? " is-error" : ""}`}>
-                <div className="rp-section-label">结果</div>
-                <pre>{detailResult}</pre>
-              </div>
-            )}
-            {!detailArgs && !detailResult && (
-              <div className="rp-empty">暂无参数/结果</div>
-            )}
-          </>
+      <div className="rp-section rp-tools-enabled">
+        <div className="rp-section-label">
+          已启用（{enabledTools.length}）
+        </div>
+        {enabledTools.length === 0 ? (
+          <div className="rp-empty">设置 → 工具 中勾选后才会提供给 Agent。</div>
         ) : (
-          <div className="rp-empty">选择左侧工具查看详情</div>
+          <div className="rp-tool-chips">
+            {enabledTools.map((name) => (
+              <span
+                key={name}
+                className={`rp-tool-chip${name.startsWith("godot_") ? " is-godot" : ""}`}
+                title={name}
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+        {godotEnabled.length > 0 && (
+          <p className="rp-hint">
+            已启用 {godotEnabled.length} 个 Godot 工具；连接编辑器后由 Agent
+            调用时会出现在下方。
+          </p>
         )}
       </div>
+
+      <div className="rp-section-label rp-tools-calls-label">本回合调用</div>
+      {tools.length === 0 ? (
+        <div className="rp-empty">
+          还没有工具调用。Agent 运行后会出现在这里。
+        </div>
+      ) : (
+        <div className="rp-tools-calls">
+          <ul className="rp-tool-list">
+            {tools.map((t) => {
+              const active = t.id === selectedToolId;
+              return (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    className={`rp-tool-item${active ? " active" : ""}${t.isError ? " is-error" : ""}`}
+                    onClick={() => onSelectTool(t.id)}
+                  >
+                    <span className="rp-tool-item-name">{t.toolName}</span>
+                    <span className="rp-tool-item-state">
+                      {!t.done ? (
+                        <Loader2 size={12} className="icon-spin" />
+                      ) : t.isError ? (
+                        <XCircle size={12} />
+                      ) : (
+                        <CheckCircle2 size={12} />
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="rp-tool-detail">
+            {selected ? (
+              <>
+                <div className="rp-tool-detail-head">
+                  <strong>{selected.toolName}</strong>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => void copyAll()}
+                  >
+                    <Copy size={12} />
+                    {copied ? "已复制" : "复制"}
+                  </button>
+                </div>
+                {detailTruncated && (
+                  <div className="rp-banner-soft">内容已达缓存上限，可能仍有截断。</div>
+                )}
+                {detailError && <div className="rp-banner-soft">{detailError}</div>}
+                {detailArgs && (
+                  <div className="rp-section">
+                    <div className="rp-section-label">参数</div>
+                    <pre>{detailArgs}</pre>
+                  </div>
+                )}
+                {detailResult && (
+                  <div className={`rp-section${selected.isError ? " is-error" : ""}`}>
+                    <div className="rp-section-label">结果</div>
+                    <pre>{detailResult}</pre>
+                  </div>
+                )}
+                {!detailArgs && !detailResult && (
+                  <div className="rp-empty">暂无参数/结果</div>
+                )}
+              </>
+            ) : (
+              <div className="rp-empty">选择左侧工具查看详情</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

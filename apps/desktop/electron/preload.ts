@@ -39,6 +39,7 @@ const api: XAgentApi = {
     ipcRenderer.invoke("resumeSession", sessionPath),
   deleteSession: (sessionPath: string) =>
     ipcRenderer.invoke("deleteSession", sessionPath),
+  closeWorkspace: () => ipcRenderer.invoke("closeWorkspace"),
   renameSession: (sessionPath: string, name: string) =>
     ipcRenderer.invoke("renameSession", sessionPath, name),
   getPrefs: () => ipcRenderer.invoke("getPrefs"),

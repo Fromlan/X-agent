@@ -750,7 +750,10 @@ export function SettingsPanel({
             {tab === "tools" && (
               <section>
                 <h3>启用工具</h3>
-                <p className="modal-hint">更改会立即应用到当前会话（若已打开项目）。</p>
+                <p className="modal-hint">
+                  更改会立即应用到当前会话（若已打开项目）。右侧「工具」面板会显示已启用列表；实际调用记录在 Agent
+                  运行后出现。
+                </p>
                 <h4 className="settings-subhead">内置</h4>
                 <div className="tool-grid">
                   {AVAILABLE_TOOLS.map((tool) => {

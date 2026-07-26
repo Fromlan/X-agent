@@ -145,6 +145,7 @@ function registerIpc(): void {
   ipcMain.handle("deleteSession", async (_e, sessionPath: string) =>
     sessionHost.deleteSession(sessionPath),
   );
+  ipcMain.handle("closeWorkspace", async () => sessionHost.closeWorkspace());
   ipcMain.handle("renameSession", async (_e, sessionPath: string, name: string) =>
     sessionHost.renameSession(sessionPath, name),
   );
