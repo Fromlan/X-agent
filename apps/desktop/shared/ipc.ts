@@ -138,7 +138,7 @@ export interface PromptResult {
 
 /** Serializable chat history item shared by main ↔ renderer. */
 export type HistoryItem =
-  | { kind: "user"; id: string; text: string }
+  | { kind: "user"; id: string; text: string; entryId?: string }
   | {
       kind: "assistant";
       id: string;
@@ -146,6 +146,10 @@ export type HistoryItem =
       thinking: string;
       done: boolean;
       isError?: boolean;
+      /** Pi session tree entry id (for regenerate → preceding user). */
+      entryId?: string;
+      /** Preceding user message entry id on the active branch. */
+      userEntryId?: string;
     }
   | {
       kind: "tool";
@@ -163,6 +167,46 @@ export type HistoryItem =
       level?: "info" | "warn" | "error";
     };
 
+export type FileRestoreSkipReason =
+  | "bash_unknown"
+  | "outside_cwd"
+  | "no_baseline"
+  | "godot"
+  | "too_large"
+  | "error";
+
+export interface FileRestoreReport {
+  restored: string[];
+  deleted: string[];
+  skipped: Array<{ path?: string; reason: FileRestoreSkipReason; detail?: string }>;
+  warnings: string[];
+}
+
+export interface RetractOptions {
+  /** Restore write/edit baselines for the abandoned segment. Default true. */
+  undoFiles?: boolean;
+}
+
+export interface RetractPreview {
+  ok: boolean;
+  error?: string;
+  editorText?: string;
+  /** Rel-paths that have a restorable baseline. */
+  restorablePaths: string[];
+  /** Rel-paths touched by write/edit but missing baseline. */
+  unrestorablePaths: string[];
+  hasBash: boolean;
+  hasGodot: boolean;
+  warnings: string[];
+}
+
+export interface RetractResult {
+  ok: boolean;
+  error?: string;
+  editorText?: string;
+  restoreReport?: FileRestoreReport;
+}
+
 /** Simplified events pushed to the renderer for UI rendering. */
 export type UiAgentEvent =
   | { type: "agent_start" }
@@ -173,6 +217,7 @@ export type UiAgentEvent =
       type: "user_message";
       text: string;
       id?: string;
+      entryId?: string;
     }
   | {
       type: "assistant_start";
@@ -477,6 +522,20 @@ export interface XAgentApi {
   openProject: (path?: string) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
+  previewRetract: (entryId: string) => Promise<RetractPreview>;
+  retractToUserMessage: (
+    entryId: string,
+    options?: RetractOptions,
+  ) => Promise<RetractResult>;
+  editAndResend: (
+    entryId: string,
+    text: string,
+    options?: RetractOptions,
+  ) => Promise<RetractResult>;
+  regenerateFromUser: (
+    entryId: string,
+    options?: RetractOptions,
+  ) => Promise<RetractResult>;
   newSession: () => Promise<OpenProjectResult>;
   setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
   setThinkingLevel: (level: ThinkingLevel) => Promise<{ ok: boolean }>;

@@ -197,6 +197,7 @@ await createAgentSession({
 |---|---|---|
 | 空闲 `prompt(text)` | `SessionHost` | 正常用户轮次，消息进入会话历史 |
 | 流式中再发 | `streamingBehavior: "steer"` | 当前工具轮次后注入转向消息（否则 Pi 会报错） |
+| 撤回 / 编辑重发 / 重新生成 | `navigateTree` + `TurnFileTracker` | 对话改 leaf（append-only 树）；默认还原该段 `write`/`edit` 基线。**不**保证 bash / Godot / cwd 外副作用 |
 | `setActiveToolsByName` / `applyTools` | prefs 变更 | 当场改可用工具集 |
 | `setModel` / `setThinkingLevel` | 顶栏 / 设置 | 影响后续请求 |
 | `session.reload()` | 插件保存后 | 重载资源 |
@@ -221,10 +222,11 @@ await createAgentSession({
 
 | 路径 | 角色 |
 |---|---|
-| [`session-host.ts`](apps/desktop/electron/agent/session-host.ts) | 创建会话、prompt/steer、reload |
+| [`session-host.ts`](apps/desktop/electron/agent/session-host.ts) | 创建会话、prompt/steer、撤回/重发、reload |
+| [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts) | write/edit 字节基线与还原 |
+| [`history.ts`](apps/desktop/electron/agent/history.ts) | Pi branch entries → UI（含 entryId；非 LLM 组装） |
 | [`plugin-host.ts`](apps/desktop/electron/agent/plugin-host.ts) | 插件 CRUD → Pi 目录 |
 | [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts) | `pi install` |
 | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot customTools |
-| [`history.ts`](apps/desktop/electron/agent/history.ts) | Pi messages → UI（非 LLM 组装） |
 | [`chat-store.ts`](apps/desktop/src/stores/chat-store.ts) | UI 事件归并 |
 | [`shared/ipc.ts`](apps/desktop/shared/ipc.ts) | 工具名、prefs 类型 |

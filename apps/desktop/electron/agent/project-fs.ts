@@ -1,14 +1,12 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import {
   basename,
-  isAbsolute,
   join,
-  normalize,
-  relative,
-  resolve,
-  sep,
 } from "node:path";
 import { shell } from "electron";
+import { resolveInsideCwd } from "./project-path";
+
+export { resolveInsideCwd } from "./project-path";
 
 const IGNORED_DIR_NAMES = new Set([
   "node_modules",
@@ -49,30 +47,6 @@ export type RevealProjectPathResult = {
   ok: boolean;
   error?: string;
 };
-
-function resolveInsideCwd(
-  cwd: string,
-  relPath: string,
-): { ok: true; abs: string; rel: string } | { ok: false; error: string } {
-  if (!cwd || !existsSync(cwd)) {
-    return { ok: false, error: "未打开项目" };
-  }
-  const raw = (relPath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
-  if (raw.includes("\0") || raw.split("/").includes("..")) {
-    return { ok: false, error: "非法路径" };
-  }
-  const root = normalize(resolve(cwd));
-  const abs = normalize(resolve(root, raw || "."));
-  const relToRoot = relative(root, abs);
-  if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
-    return { ok: false, error: "路径超出项目目录" };
-  }
-  if (abs !== root && !abs.startsWith(root + sep)) {
-    return { ok: false, error: "路径超出项目目录" };
-  }
-  const rel = abs === root ? "" : relToRoot.replace(/\\/g, "/");
-  return { ok: true, abs, rel };
-}
 
 export function listProjectDir(
   cwd: string,

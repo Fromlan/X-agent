@@ -41,7 +41,15 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
       if (items.some((i) => i.kind === "user" && i.id === id)) {
         return items;
       }
-      return [...items, { kind: "user", id, text: event.text }];
+      return [
+        ...items,
+        {
+          kind: "user",
+          id,
+          text: event.text,
+          ...(event.entryId ? { entryId: event.entryId } : {}),
+        },
+      ];
     }
     case "assistant_start":
       return upsertAssistant(items, event.messageId, {

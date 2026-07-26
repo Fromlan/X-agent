@@ -16,16 +16,20 @@ import {
   ModelInfo,
   OpenProjectResult,
   PromptResult,
+  RetractOptions,
+  RetractPreview,
+  RetractResult,
   SessionInfo,
   ThinkingLevel,
   UiAgentEvent,
 } from "../../shared/ipc";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
-import { messagesToHistory } from "./history";
+import { branchEntriesToHistory } from "./history";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { deriveSessionTitle, displaySessionName } from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
+import { TurnFileTracker } from "./turn-file-tracker";
 
 type SessionBundle = {
   session: AgentSession;
@@ -111,6 +115,7 @@ export class SessionHost {
   private idCache = new WeakMap<object, string>();
   /** Untruncated (capped) tool payloads for right-panel detail view. */
   private toolDetails = new Map<string, ToolDetailRecord>();
+  private fileTracker = new TurnFileTracker();
 
   constructor(
     getWindow: () => BrowserWindow | null,
@@ -125,8 +130,47 @@ export class SessionHost {
   }
 
   getHistorySnapshot(): HistoryItem[] {
+    return this.historyFromBundle();
+  }
+
+  private historyFromBundle(): HistoryItem[] {
     if (!this.bundle) return [];
-    return messagesToHistory(this.bundle.session.messages);
+    try {
+      const branch = this.bundle.session.sessionManager.getBranch();
+      return branchEntriesToHistory(branch);
+    } catch {
+      return [];
+    }
+  }
+
+  private emitHistoryReplace(): void {
+    this.emit({ type: "history_replace", items: this.historyFromBundle() });
+  }
+
+  private pruneToolDetailsToBranch(): void {
+    if (!this.bundle) {
+      this.toolDetails.clear();
+      return;
+    }
+    const keep = new Set<string>();
+    try {
+      for (const entry of this.bundle.session.sessionManager.getBranch()) {
+        if (entry.type !== "message") continue;
+        const msg = entry.message as {
+          role?: string;
+          content?: Array<{ type?: string; id?: string }>;
+        };
+        if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+        for (const part of msg.content) {
+          if (part.type === "toolCall" && part.id) keep.add(part.id);
+        }
+      }
+    } catch {
+      return;
+    }
+    for (const id of this.toolDetails.keys()) {
+      if (!keep.has(id)) this.toolDetails.delete(id);
+    }
   }
 
   private runReplaceExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -205,7 +249,11 @@ export class SessionHost {
           this.emit({ type: "turn_start" });
           break;
         case "turn_end":
+          if (this.bundle) {
+            this.fileTracker.persistDirty(this.bundle.session.sessionManager);
+          }
           this.emit({ type: "turn_end" });
+          this.emitHistoryReplace();
           break;
         case "message_start": {
           const msg = event.message as {
@@ -221,10 +269,15 @@ export class SessionHost {
           } else if (msg.role === "user") {
             const text = this.extractUserText(event.message);
             if (text) {
+              const entryId = this.currentUserEntryId();
+              if (entryId) {
+                this.fileTracker.setActiveUserEntryId(entryId);
+              }
               this.emit({
                 type: "user_message",
                 text,
-                id: this.messageIdFrom(event.message),
+                id: entryId ?? this.messageIdFrom(event.message),
+                ...(entryId ? { entryId } : {}),
               });
             }
           }
@@ -269,6 +322,7 @@ export class SessionHost {
           break;
         }
         case "tool_execution_start": {
+          this.fileTracker.captureBeforeTool(event.toolName, event.args);
           const argsPack = serializeForDetail(event.args);
           this.toolDetails.set(event.toolCallId, {
             toolCallId: event.toolCallId,
@@ -375,6 +429,54 @@ export class SessionHost {
       .map((p) => p.text!)
       .join("")
       .trim();
+  }
+
+  private currentUserEntryId(): string | undefined {
+    if (!this.bundle) return undefined;
+    try {
+      const leaf = this.bundle.session.sessionManager.getLeafEntry();
+      if (
+        leaf &&
+        leaf.type === "message" &&
+        (leaf as { message?: { role?: string } }).message?.role === "user"
+      ) {
+        return leaf.id;
+      }
+      const branch = this.bundle.session.sessionManager.getBranch();
+      for (let i = branch.length - 1; i >= 0; i--) {
+        const e = branch[i]!;
+        if (
+          e.type === "message" &&
+          (e as { message?: { role?: string } }).message?.role === "user"
+        ) {
+          return e.id;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
+  }
+
+  private resolveUserEntryId(entryId: string): {
+    ok: true;
+    entryId: string;
+    editorText: string;
+  } | { ok: false; error: string } {
+    if (!this.bundle) return { ok: false, error: "尚未打开项目" };
+    const sm = this.bundle.session.sessionManager;
+    const entry = sm.getEntry(entryId);
+    if (!entry) return { ok: false, error: "找不到该消息" };
+    if (entry.type !== "message") {
+      return { ok: false, error: "只能从用户消息撤回" };
+    }
+    const msg = (entry as { message?: { role?: string; content?: unknown } }).message;
+    if (!msg || msg.role !== "user") {
+      return { ok: false, error: "只能从用户消息撤回" };
+    }
+    const editorText = this.extractUserText(msg);
+    if (!editorText) return { ok: false, error: "用户消息为空" };
+    return { ok: true, entryId, editorText };
   }
 
   /**
@@ -500,6 +602,7 @@ export class SessionHost {
     }
     // Drop tool detail cache so IDs from a prior session cannot leak into the panel.
     this.toolDetails.clear();
+    this.fileTracker.clear();
   }
 
   private async createSession(
@@ -567,7 +670,13 @@ export class SessionHost {
     });
     this.bundle.sessionPath = sessionPath;
 
-    const history: HistoryItem[] = messagesToHistory(session.messages);
+    this.fileTracker.setCwd(cwd);
+    this.fileTracker.clear();
+    this.fileTracker.loadFromSession(session.sessionManager);
+
+    const history: HistoryItem[] = branchEntriesToHistory(
+      session.sessionManager.getBranch(),
+    );
 
     const info: OpenProjectResult = {
       ok: true,
@@ -738,6 +847,146 @@ export class SessionHost {
     await this.bundle.session.abort();
     this.setStatus("idle");
     return { ok: true };
+  }
+
+  async previewRetract(entryId: string): Promise<RetractPreview> {
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        error: resolved.error,
+        restorablePaths: [],
+        unrestorablePaths: [],
+        hasBash: false,
+        hasGodot: false,
+        warnings: [],
+      };
+    }
+    const sm = this.bundle!.session.sessionManager;
+    const preview = this.fileTracker.previewRestore(sm, resolved.entryId);
+    return {
+      ok: true,
+      editorText: resolved.editorText,
+      ...preview,
+    };
+  }
+
+  async retractToUserMessage(
+    entryId: string,
+    options?: RetractOptions,
+  ): Promise<RetractResult> {
+    if (!this.bundle) return { ok: false, error: "尚未打开项目" };
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+
+    const undoFiles = options?.undoFiles !== false;
+    const { session } = this.bundle;
+
+    try {
+      if (session.isStreaming) {
+        await session.abort();
+        this.setStatus("idle");
+      }
+
+      // Scan before navigate so we know which baselines apply; restore only after
+      // tree navigation succeeds (avoid disk rollback if navigate is cancelled).
+      // Must capture paths before navigateTree — abandoned segment leaves the active branch.
+      const sm = session.sessionManager;
+      const pendingScan = undoFiles
+        ? this.fileTracker.scanSegmentSince(sm, resolved.entryId)
+        : null;
+
+      const nav = await session.navigateTree(resolved.entryId, {
+        summarize: false,
+      });
+      if (nav.cancelled) {
+        return { ok: false, error: "撤回已取消" };
+      }
+
+      let restoreReport: RetractResult["restoreReport"];
+      if (pendingScan) {
+        restoreReport = this.fileTracker.restorePaths(
+          pendingScan.mutationPaths,
+          pendingScan.userEntryIds,
+        );
+        if (pendingScan.hasBash) {
+          restoreReport.skipped.push({ reason: "bash_unknown" });
+          restoreReport.warnings.push(
+            "该段包含 bash，命令副作用无法保证还原。",
+          );
+        }
+        if (pendingScan.hasGodot) {
+          restoreReport.skipped.push({ reason: "godot" });
+          restoreReport.warnings.push(
+            "该段包含 Godot 工具，编辑器状态无法还原。",
+          );
+        }
+        this.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);
+        this.fileTracker.persistDirty(sm);
+      }
+
+      this.pruneToolDetailsToBranch();
+      this.emitHistoryReplace();
+      this.setStatus("idle");
+
+      return {
+        ok: true,
+        editorText: nav.editorText ?? resolved.editorText,
+        restoreReport,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.setStatus("error", message);
+      return { ok: false, error: message };
+    }
+  }
+
+  async editAndResend(
+    entryId: string,
+    text: string,
+    options?: RetractOptions,
+  ): Promise<RetractResult> {
+    const trimmed = text.trim();
+    if (!trimmed) return { ok: false, error: "消息不能为空" };
+
+    const retract = await this.retractToUserMessage(entryId, options);
+    if (!retract.ok) return retract;
+
+    const prompted = await this.prompt(trimmed);
+    if (!prompted.ok) {
+      return {
+        ok: false,
+        error: prompted.error,
+        editorText: retract.editorText,
+        restoreReport: retract.restoreReport,
+      };
+    }
+    return retract;
+  }
+
+  async regenerateFromUser(
+    entryId: string,
+    options?: RetractOptions,
+  ): Promise<RetractResult> {
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+
+    const retract = await this.retractToUserMessage(entryId, options);
+    if (!retract.ok) return retract;
+
+    const text = (retract.editorText ?? resolved.editorText).trim();
+    if (!text) return { ok: false, error: "用户消息为空" };
+
+    const prompted = await this.prompt(text);
+    if (!prompted.ok) {
+      return {
+        ok: false,
+        error: prompted.error,
+        editorText: text,
+        restoreReport: retract.restoreReport,
+      };
+    }
+    return { ...retract, editorText: text };
   }
 
   async setModel(

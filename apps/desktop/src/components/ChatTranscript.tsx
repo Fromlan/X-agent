@@ -2,7 +2,7 @@ import type { AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { MarkdownBody } from "./MarkdownBody";
 import { ToolCard } from "./ToolCard";
-import { Brain } from "lucide-react";
+import { Brain, Pencil, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useState, type RefObject } from "react";
 
 function ThinkingBlock({ thinking, done }: { thinking: string; done: boolean }) {
@@ -44,9 +44,20 @@ export interface ChatTranscriptProps {
   disabledEmpty?: boolean;
   bottomRef?: RefObject<HTMLDivElement | null>;
   onOpenToolInPanel?: (toolId: string, args: unknown) => void;
+  editingEntryId?: string | null;
+  editDraft?: string;
+  onEditDraftChange?: (text: string) => void;
+  onStartEdit?: (entryId: string, text: string) => void;
+  onCancelEdit?: () => void;
+  onConfirmEdit?: () => void;
+  onRetract?: (entryId: string) => void;
+  onRegenerate?: (userEntryId: string) => void;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
+  const idle = props.status === "idle" || props.status === "error";
+  const canAct = idle && !props.editingEntryId;
+
   return (
     <div className="chat-transcript">
       <div className="message-stream">
@@ -60,10 +71,62 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
         {props.items.map((item) => {
           if (item.kind === "user") {
+            const entryId = item.entryId ?? item.id;
+            const editing = props.editingEntryId === entryId;
             return (
               <div key={item.id} className="bubble bubble-user">
-                <div className="bubble-label">你</div>
-                <pre>{item.text}</pre>
+                {canAct && entryId && (
+                  <div className="bubble-head">
+                    <div className="bubble-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost bubble-action"
+                        title="编辑并重发"
+                        onClick={() => props.onStartEdit?.(entryId, item.text)}
+                      >
+                        <Pencil size={12} strokeWidth={2} />
+                        <span>编辑</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost bubble-action"
+                        title="撤回对话并还原文件"
+                        onClick={() => props.onRetract?.(entryId)}
+                      >
+                        <Undo2 size={12} strokeWidth={2} />
+                        <span>撤回</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {editing ? (
+                  <div className="bubble-edit">
+                    <textarea
+                      value={props.editDraft ?? item.text}
+                      onChange={(e) => props.onEditDraftChange?.(e.target.value)}
+                      rows={4}
+                    />
+                    <div className="bubble-edit-actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={props.onCancelEdit}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-cta"
+                        onClick={props.onConfirmEdit}
+                        disabled={!props.editDraft?.trim()}
+                      >
+                        重发
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <pre>{item.text}</pre>
+                )}
               </div>
             );
           }
@@ -80,12 +143,27 @@ export function ChatTranscript(props: ChatTranscriptProps) {
           }
 
           if (item.kind === "assistant") {
+            const userEntryId = item.userEntryId;
             return (
               <div
                 key={item.id}
                 className={`bubble bubble-text${item.isError ? " is-error" : ""}`}
               >
-                <div className="bubble-label">Agent</div>
+                {canAct && item.done && userEntryId && (
+                  <div className="bubble-head">
+                    <div className="bubble-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost bubble-action"
+                        title="重新生成"
+                        onClick={() => props.onRegenerate?.(userEntryId)}
+                      >
+                        <RotateCcw size={12} strokeWidth={2} />
+                        <span>重新生成</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {props.showThinking && item.thinking && (
                   <ThinkingBlock thinking={item.thinking} done={item.done} />
                 )}

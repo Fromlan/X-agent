@@ -14,11 +14,16 @@ import type {
   ClientPrefs,
   ModelInfo,
   PiCliStatus,
+  RetractPreview,
   SessionInfo,
   ThinkingLevel,
 } from "@shared/ipc";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
+import {
+  RetractConfirmModal,
+  type RetractConfirmMode,
+} from "./components/RetractConfirmModal";
 import { TopBar } from "./components/TopBar";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -73,6 +78,15 @@ export default function App() {
     undefined,
   );
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [retractBusy, setRetractBusy] = useState(false);
+  const [confirmState, setConfirmState] = useState<{
+    mode: RetractConfirmMode;
+    entryId: string;
+    preview: RetractPreview;
+    editText?: string;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const currentModelKey = useMemo(() => {
@@ -314,6 +328,92 @@ export default function App() {
 
   const abort = async () => {
     await window.xAgent.abort();
+  };
+
+  const beginConfirm = async (
+    mode: RetractConfirmMode,
+    entryId: string,
+    editText?: string,
+  ) => {
+    setError(null);
+    const preview = await window.xAgent.previewRetract(entryId);
+    if (!preview.ok) {
+      setError(preview.error ?? "无法预览撤回");
+      return;
+    }
+    setConfirmState({ mode, entryId, preview, editText });
+  };
+
+  const onStartEdit = (entryId: string, text: string) => {
+    setEditingEntryId(entryId);
+    setEditDraft(text);
+  };
+
+  const onCancelEdit = () => {
+    setEditingEntryId(null);
+    setEditDraft("");
+  };
+
+  const onConfirmEdit = () => {
+    if (!editingEntryId || !editDraft.trim()) return;
+    void beginConfirm("edit", editingEntryId, editDraft);
+  };
+
+  const onRetract = (entryId: string) => {
+    void beginConfirm("retract", entryId);
+  };
+
+  const onRegenerate = (userEntryId: string) => {
+    void beginConfirm("regenerate", userEntryId);
+  };
+
+  const runConfirmedRetract = async () => {
+    if (!confirmState) return;
+    setRetractBusy(true);
+    setError(null);
+    try {
+      const { mode, entryId, editText } = confirmState;
+      let result;
+      if (mode === "retract") {
+        result = await window.xAgent.retractToUserMessage(entryId, {
+          undoFiles: true,
+        });
+      } else if (mode === "edit") {
+        const expanded = await expandAtPathsInPrompt(editText ?? editDraft);
+        result = await window.xAgent.editAndResend(entryId, expanded, {
+          undoFiles: true,
+        });
+      } else {
+        result = await window.xAgent.regenerateFromUser(entryId, {
+          undoFiles: true,
+        });
+      }
+
+      if (!result.ok) {
+        setError(result.error ?? "操作失败");
+        return;
+      }
+
+      if (mode === "retract") {
+        const text =
+          result.editorText?.trim() ||
+          confirmState.preview.editorText?.trim() ||
+          "";
+        if (text) setInput(text);
+      }
+
+      const report = result.restoreReport;
+      if (report?.warnings?.length) {
+        setError(report.warnings.join(" "));
+      }
+
+      setConfirmState(null);
+      setEditingEntryId(null);
+      setEditDraft("");
+      await refreshSessions();
+    } finally {
+      setRetractBusy(false);
+    }
   };
 
   const onModelChange = async (value: string) => {
@@ -607,6 +707,14 @@ export default function App() {
               void ensureRightPanelOpen();
             });
           }}
+          editingEntryId={editingEntryId}
+          editDraft={editDraft}
+          onEditDraftChange={setEditDraft}
+          onStartEdit={onStartEdit}
+          onCancelEdit={onCancelEdit}
+          onConfirmEdit={onConfirmEdit}
+          onRetract={onRetract}
+          onRegenerate={onRegenerate}
         />
         {prefs?.rightPanelOpen && (
           <RightPanel
@@ -620,6 +728,19 @@ export default function App() {
           />
         )}
       </div>
+      {confirmState && (
+        <RetractConfirmModal
+          mode={confirmState.mode}
+          preview={confirmState.preview}
+          busy={retractBusy}
+          onCancel={() => {
+            if (!retractBusy) setConfirmState(null);
+          }}
+          onConfirm={() => {
+            void runConfirmedRetract();
+          }}
+        />
+      )}
       {prefs && (
         <SettingsPanel
           open={settingsOpen}
