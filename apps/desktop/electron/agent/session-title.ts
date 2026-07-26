@@ -9,19 +9,9 @@ function collapseWhitespace(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/[ \t\f\v]+/g, " ").trim();
 }
 
-/**
- * Strip Fleet pair role banners so auto-titles use the real task text.
- * e.g. "【Fleet 角色：实现槽 / worker】\n任务：…" → "…"
- */
-export function stripFleetRoleWrapper(text: string): string {
-  const matched = text.match(/^【Fleet 角色：[^\]]*】\s*/u);
-  if (!matched) return text.trim();
-  return text.slice(matched[0].length).replace(/^任务：\s*/u, "").trim();
-}
-
 function stripNoise(text: string): string {
   return collapseWhitespace(
-    stripFleetRoleWrapper(text)
+    text
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/`[^`\n]+`/g, " ")
       .replace(/!\[[^\]]*]\([^)]*\)/g, " ")

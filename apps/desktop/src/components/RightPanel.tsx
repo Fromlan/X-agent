@@ -3,8 +3,8 @@ import { PanelRightClose } from "lucide-react";
 import type { ChatItem } from "../stores/chat-store";
 import {
   extractToolPath,
+  getPanelState,
   getRightPanelStoreVersion,
-  getSlotPanelState,
   selectToolInPanel,
   setRightPanelTab,
   subscribeRightPanelStore,
@@ -21,20 +21,20 @@ const TABS: { id: RightPanelTab; label: string }[] = [
 ];
 
 interface Props {
-  slotId: string;
   cwd: string | null;
   items: ChatItem[];
   onClose: () => void;
+  onAddPathToChat: (relPath: string) => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
   onResizeDoubleClick?: () => void;
   resizing?: boolean;
 }
 
 export function RightPanel({
-  slotId,
   cwd,
   items,
   onClose,
+  onAddPathToChat,
   onResizePointerDown,
   onResizeDoubleClick,
   resizing,
@@ -45,13 +45,13 @@ export function RightPanel({
     getRightPanelStoreVersion,
   );
   void version;
-  const state = getSlotPanelState(slotId);
+  const state = getPanelState();
 
   const onSelectTool = (toolId: string) => {
     const tool = items.find((i) => i.kind === "tool" && i.id === toolId);
     const path =
       tool && tool.kind === "tool" ? extractToolPath(tool.args) : null;
-    selectToolInPanel(slotId, toolId, path);
+    selectToolInPanel(toolId, path);
   };
 
   return (
@@ -85,7 +85,7 @@ export function RightPanel({
             key={t.id}
             type="button"
             className={`rp-tab${state.tab === t.id ? " active" : ""}`}
-            onClick={() => setRightPanelTab(slotId, t.id)}
+            onClick={() => setRightPanelTab(t.id)}
           >
             {t.label}
           </button>
@@ -94,7 +94,6 @@ export function RightPanel({
       <div className="right-panel-body has-tabs">
         {state.tab === "tools" && (
           <ToolsTab
-            slotId={slotId}
             items={items}
             selectedToolId={state.selectedToolId}
             onSelectTool={onSelectTool}
@@ -102,13 +101,13 @@ export function RightPanel({
         )}
         {state.tab === "files" && (
           <FilesTab
-            slotId={slotId}
             cwd={cwd}
             previewPath={state.previewPath}
+            onAddPathToChat={onAddPathToChat}
           />
         )}
         {state.tab === "godot" && (
-          <GodotTab slotId={slotId} active={state.tab === "godot"} items={items} />
+          <GodotTab active={state.tab === "godot"} items={items} />
         )}
       </div>
     </aside>
@@ -117,11 +116,10 @@ export function RightPanel({
 
 /** Open panel on a tool from chat transcript. */
 export function openToolInRightPanel(
-  slotId: string,
   toolId: string,
   args: unknown,
   ensureOpen: () => void,
 ): void {
   ensureOpen();
-  selectToolInPanel(slotId, toolId, extractToolPath(args));
+  selectToolInPanel(toolId, extractToolPath(args));
 }

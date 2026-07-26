@@ -1,7 +1,7 @@
 {
   "name": "x-agent",
   "private": true,
-  "description": "Pi-based Electron agent desktop (Godot RPC + Fleet)",
+  "description": "Pi-based Electron agent desktop (Godot RPC)",
   "scripts": {
     "desktop:dev": "npm run dev --prefix apps/desktop",
     "desktop:build": "npm run build --prefix apps/desktop",

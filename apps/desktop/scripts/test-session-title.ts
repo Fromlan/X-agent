@@ -3,7 +3,6 @@ import {
   DEFAULT_TITLE,
   deriveSessionTitle,
   displaySessionName,
-  stripFleetRoleWrapper,
   truncateTitle,
 } from "../electron/agent/session-title.ts";
 
@@ -32,22 +31,5 @@ assert.equal(
 
 assert.equal(truncateTitle("第一行\n第二行内容"), "第一行");
 assert.equal(DEFAULT_TITLE, "新对话");
-
-assert.equal(
-  stripFleetRoleWrapper("【Fleet 角色：实现槽 / worker】\n任务：给 Player 加冲刺"),
-  "给 Player 加冲刺",
-);
-assert.equal(
-  deriveSessionTitle(
-    "【Fleet 角色：实现槽 / worker】\n任务：给 Player 加冲刺",
-  ),
-  "给 Player 加冲刺",
-);
-assert.equal(
-  deriveSessionTitle(
-    "【Fleet 角色：审阅槽 / reviewer · Wave2】\n任务：修 bug\n\n## 变更",
-  ),
-  "修 bug",
-);
 
 console.log("test-session-title: ok");

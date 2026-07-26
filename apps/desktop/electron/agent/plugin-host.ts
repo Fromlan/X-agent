@@ -25,6 +25,11 @@ import type {
   PluginScope,
   PluginWriteResult,
 } from "../../shared/ipc";
+import {
+  getInstalledPackageRoots,
+  listInstalledPackages,
+  resolvePackageRoot,
+} from "./package-manager";
 import { getAgentDirPath } from "./prefs";
 
 const NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
@@ -75,8 +80,8 @@ function isUnderRoot(target: string, root: string): boolean {
     toPosixLower(absTarget) === toPosixLower(absRoot);
 }
 
-/** Allowed roots for a given cwd (project roots only if cwd provided). */
-export function getAllowedPluginRoots(cwd?: string | null): string[] {
+/** Writable plugin roots (global / project). Package trees are read-only in UI. */
+export function getWritablePluginRoots(cwd?: string | null): string[] {
   const roots = [
     globalDir("prompt"),
     globalDir("skill"),
@@ -94,13 +99,25 @@ export function getAllowedPluginRoots(cwd?: string | null): string[] {
   return roots.map((r) => resolve(r));
 }
 
+/** @deprecated Prefer getWritablePluginRoots / getReadablePluginRoots */
+export function getAllowedPluginRoots(cwd?: string | null): string[] {
+  return getWritablePluginRoots(cwd);
+}
+
+export function getReadablePluginRoots(cwd?: string | null): string[] {
+  return [...getWritablePluginRoots(cwd), ...getInstalledPackageRoots().map((r) => resolve(r))];
+}
+
 export function isAllowedPluginPath(
   targetPath: string,
   cwd?: string | null,
+  mode: "read" | "write" = "read",
 ): boolean {
   if (!targetPath) return false;
   const abs = resolve(targetPath);
-  return getAllowedPluginRoots(cwd).some((root) => isUnderRoot(abs, root));
+  const roots =
+    mode === "write" ? getWritablePluginRoots(cwd) : getReadablePluginRoots(cwd);
+  return roots.some((root) => isUnderRoot(abs, root));
 }
 
 function ensureDir(path: string): void {
@@ -351,6 +368,64 @@ function contentPathFor(absPath: string, kind: PluginKind): string {
   return absPath;
 }
 
+function listPluginsFromPackages(): PluginItem[] {
+  const items: PluginItem[] = [];
+  for (const pkg of listInstalledPackages()) {
+    const root = resolvePackageRoot(pkg);
+    if (!root) continue;
+    type PkgManifest = {
+      pi?: { skills?: string[]; prompts?: string[]; extensions?: string[] };
+    };
+    let manifest: PkgManifest | null = null;
+    try {
+      manifest = JSON.parse(
+        readFileSync(join(root, "package.json"), "utf8"),
+      ) as PkgManifest;
+    } catch {
+      manifest = null;
+    }
+    const skillsRel = manifest?.pi?.skills?.[0] ?? "./skills";
+    const promptsRel = manifest?.pi?.prompts?.[0] ?? "./prompts";
+    const extensionsRel = manifest?.pi?.extensions?.[0] ?? "./extensions";
+    const tag = pkg.name;
+
+    for (const item of listSkills(resolve(root, skillsRel), "global")) {
+      items.push({
+        ...item,
+        id: `pkg:${tag}:${item.id}`,
+        description: [item.description, `Package · ${tag}`]
+          .filter(Boolean)
+          .join(" · "),
+        editable: false,
+        packageName: tag,
+      });
+    }
+    for (const item of listPrompts(resolve(root, promptsRel), "global")) {
+      items.push({
+        ...item,
+        id: `pkg:${tag}:${item.id}`,
+        description: [item.description, `Package · ${tag}`]
+          .filter(Boolean)
+          .join(" · "),
+        editable: false,
+        packageName: tag,
+      });
+    }
+    for (const item of listExtensions(resolve(root, extensionsRel), "global")) {
+      items.push({
+        ...item,
+        id: `pkg:${tag}:${item.id}`,
+        description: [item.description, `Package · ${tag}`]
+          .filter(Boolean)
+          .join(" · "),
+        editable: false,
+        packageName: tag,
+      });
+    }
+  }
+  return items;
+}
+
 export function listPlugins(cwd?: string | null): PluginItem[] {
   const items: PluginItem[] = [
     ...listPrompts(globalDir("prompt"), "global"),
@@ -366,6 +441,7 @@ export function listPlugins(cwd?: string | null): PluginItem[] {
       ...listThemes(projectDir(cwd, "theme"), "project"),
     );
   }
+  items.push(...listPluginsFromPackages());
   return items.sort((a, b) => {
     if (a.kind !== b.kind) return a.kind.localeCompare(b.kind);
     if (a.scope !== b.scope) return a.scope.localeCompare(b.scope);
@@ -383,7 +459,7 @@ export function readPlugin(
     if (!kind) return { ok: false, error: "无法识别插件类型" };
     const file = contentPathFor(abs, kind);
     const guard = kind === "skill" ? dirname(file) : file;
-    if (!isAllowedPluginPath(guard, cwd)) {
+    if (!isAllowedPluginPath(guard, cwd, "read")) {
       return { ok: false, error: "路径不在允许的插件目录内" };
     }
     if (!existsSync(file)) return { ok: false, error: "文件不存在" };
@@ -417,8 +493,11 @@ export function writePlugin(
     if (!kind) return { ok: false, error: "无法识别插件类型" };
     const file = contentPathFor(abs, kind);
     const guard = kind === "skill" ? dirname(file) : file;
-    if (!isAllowedPluginPath(guard, cwd)) {
-      return { ok: false, error: "路径不在允许的插件目录内" };
+    if (!isAllowedPluginPath(guard, cwd, "write")) {
+      return {
+        ok: false,
+        error: "该文件来自已安装 Package，请在 Packages 中管理或直接编辑包源码",
+      };
     }
     ensureDir(dirname(file));
     writeFileSync(file, content, "utf8");
@@ -546,15 +625,21 @@ export function deletePlugin(
 
     if (kind === "skill") {
       const dir = basename(abs) === "SKILL.md" ? dirname(abs) : abs;
-      if (!isAllowedPluginPath(dir, cwd)) {
-        return { ok: false, error: "路径不在允许的插件目录内" };
+      if (!isAllowedPluginPath(dir, cwd, "write")) {
+        return {
+          ok: false,
+          error: "该技能来自已安装 Package，不能从此处删除",
+        };
       }
       rmSync(dir, { recursive: true, force: true });
       return { ok: true };
     }
 
-    if (!isAllowedPluginPath(abs, cwd)) {
-      return { ok: false, error: "路径不在允许的插件目录内" };
+    if (!isAllowedPluginPath(abs, cwd, "write")) {
+      return {
+        ok: false,
+        error: "该插件来自已安装 Package，不能从此处删除",
+      };
     }
     rmSync(abs, { force: true });
     // If extension was */index.ts, leave empty dir (user can clean); don't wipe parent package.
@@ -579,7 +664,10 @@ export function revealPlugin(
         ? dirname(abs)
         : abs
       : abs;
-  if (!isAllowedPluginPath(guard, cwd) && !isAllowedPluginPath(abs, cwd)) {
+  if (
+    !isAllowedPluginPath(guard, cwd, "read") &&
+    !isAllowedPluginPath(abs, cwd, "read")
+  ) {
     return { ok: false, error: "路径不在允许的插件目录内" };
   }
   const reveal = existsSync(abs) ? abs : guard;

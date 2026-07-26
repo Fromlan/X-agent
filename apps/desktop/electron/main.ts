@@ -8,7 +8,7 @@ import { checkAuth } from "./agent/auth-check";
 import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
 import { loadPrefs, patchPrefs } from "./agent/prefs";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
-import { FleetHostManager } from "./agent/fleet-host-manager";
+import { SessionHost } from "./agent/session-host";
 import {
   listProjectDir,
   readProjectFile,
@@ -53,8 +53,7 @@ import { GODOT_RPC_DEFAULT_PORT, godotRpcTimeoutMs } from "../shared/godot-rpc";
 
 let mainWindow: BrowserWindow | null = null;
 const godotRpc = new GodotRpcBridge();
-const fleet = new FleetHostManager(() => mainWindow, godotRpc);
-const host = () => fleet.getActiveHost();
+const sessionHost = new SessionHost(() => mainWindow, godotRpc);
 const autoUpdate = new AppAutoUpdater(() => mainWindow);
 
 function createWindow(): void {
@@ -104,35 +103,35 @@ function registerIpc(): void {
       }
       projectPath = result.filePaths[0];
     }
-    return host().openProject(projectPath, "continue");
+    return sessionHost.openProject(projectPath, "continue");
   });
 
-  ipcMain.handle("prompt", async (_e, text: string) => host().prompt(text));
-  ipcMain.handle("abort", async () => host().abort());
-  ipcMain.handle("newSession", async () => host().newSession());
+  ipcMain.handle("prompt", async (_e, text: string) => sessionHost.prompt(text));
+  ipcMain.handle("abort", async () => sessionHost.abort());
+  ipcMain.handle("newSession", async () => sessionHost.newSession());
   ipcMain.handle("setModel", async (_e, provider: string, id: string) =>
-    host().setModel(provider, id),
+    sessionHost.setModel(provider, id),
   );
   ipcMain.handle("setThinkingLevel", async (_e, level: ThinkingLevel) =>
-    host().setThinkingLevel(level),
+    sessionHost.setThinkingLevel(level),
   );
-  ipcMain.handle("listModels", async () => host().listModels());
-  ipcMain.handle("listSessions", async () => host().listSessions());
+  ipcMain.handle("listModels", async () => sessionHost.listModels());
+  ipcMain.handle("listSessions", async () => sessionHost.listSessions());
   ipcMain.handle("resumeSession", async (_e, sessionPath: string) =>
-    host().resumeSession(sessionPath),
+    sessionHost.resumeSession(sessionPath),
   );
   ipcMain.handle("deleteSession", async (_e, sessionPath: string) =>
-    host().deleteSession(sessionPath),
+    sessionHost.deleteSession(sessionPath),
   );
   ipcMain.handle("renameSession", async (_e, sessionPath: string, name: string) =>
-    host().renameSession(sessionPath, name),
+    sessionHost.renameSession(sessionPath, name),
   );
   ipcMain.handle("getPrefs", async () => loadPrefs());
   ipcMain.handle("setPrefs", async (_e, patch: Partial<ClientPrefs>) => {
     if (patch.tools) {
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
       const tools = patch.tools.filter((t) => allowed.has(t));
-      await host().applyTools(tools);
+      await sessionHost.applyTools(tools);
       const { tools: _drop, ...rest } = patch;
       if (Object.keys(rest).length === 0) {
         return loadPrefs();
@@ -168,36 +167,22 @@ function registerIpc(): void {
   ipcMain.handle("checkAuth", async () => checkAuth());
   ipcMain.handle("checkPiCli", async () => checkPiCli());
   ipcMain.handle("installPiCli", async () => installPiCli());
-  ipcMain.handle("getStatus", async () => host().getStatus());
+  ipcMain.handle("getStatus", async () => sessionHost.getStatus());
   ipcMain.handle("getToolDetail", async (_e, toolCallId: string) =>
-    fleet.getToolDetail(toolCallId),
+    sessionHost.getToolDetail(toolCallId),
   );
   ipcMain.handle("listProjectDir", async (_e, relPath?: string) => {
-    const cwd = host().getStatus().cwd ?? "";
+    const cwd = sessionHost.getStatus().cwd ?? "";
     return listProjectDir(cwd, relPath ?? "");
   });
   ipcMain.handle("readProjectFile", async (_e, relPath: string) => {
-    const cwd = host().getStatus().cwd ?? "";
+    const cwd = sessionHost.getStatus().cwd ?? "";
     return readProjectFile(cwd, relPath);
   });
   ipcMain.handle("revealInFolder", async (_e, relPath: string) => {
-    const cwd = host().getStatus().cwd ?? "";
+    const cwd = sessionHost.getStatus().cwd ?? "";
     return revealProjectPath(cwd, relPath);
   });
-
-  ipcMain.handle("fleetList", async () => fleet.list());
-  ipcMain.handle("fleetState", async () => fleet.state());
-  ipcMain.handle(
-    "fleetCreate",
-    async (_e, label: string, role?: "primary" | "worker" | "reviewer") =>
-      fleet.createSlot(label, role),
-  );
-  ipcMain.handle("fleetSetActive", async (_e, id: string) => fleet.setActive(id));
-  ipcMain.handle("fleetRemove", async (_e, id: string) => fleet.removeSlot(id));
-  ipcMain.handle("fleetStartPair", async (_e, task: string) =>
-    fleet.startPair(task),
-  );
-  ipcMain.handle("fleetAbortPair", async () => fleet.abortPair());
 
   ipcMain.handle("godotRpcStatus", async () => godotRpc.getStatus());
   ipcMain.handle("godotRpcStart", async () => {
@@ -284,7 +269,7 @@ function registerIpc(): void {
       };
     }
     const project =
-      host().getStatus().cwd || prefs.lastProjectPath || undefined;
+      sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
 
     if (project) {
       const install = installGodotRpcAddon(project);
@@ -322,7 +307,7 @@ function registerIpc(): void {
 
   ipcMain.handle("installGodotRpcAddon", async () => {
     const prefs = loadPrefs();
-    const project = host().getStatus().cwd || prefs.lastProjectPath;
+    const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
     if (!project) {
       return { ok: false, error: "????????? lastProjectPath" };
     }
@@ -332,7 +317,7 @@ function registerIpc(): void {
   ipcMain.handle("pickGodotScene", async () => {
     const prefs = loadPrefs();
     const project =
-      host().getStatus().cwd || prefs.lastProjectPath || undefined;
+      sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
     const result = await dialog.showOpenDialog({
       title: "??????",
       defaultPath: project ?? undefined,
@@ -361,42 +346,42 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("listPlugins", async (_e, cwd?: string | null) => {
-    const effective = cwd ?? host().getStatus().cwd;
+    const effective = cwd ?? sessionHost.getStatus().cwd;
     return listPlugins(effective);
   });
   ipcMain.handle("readPlugin", async (_e, path: string) =>
-    readPlugin(path, host().getStatus().cwd),
+    readPlugin(path, sessionHost.getStatus().cwd),
   );
   ipcMain.handle("writePlugin", async (_e, path: string, content: string) => {
-    const result = writePlugin(path, content, host().getStatus().cwd);
+    const result = writePlugin(path, content, sessionHost.getStatus().cwd);
     if (result.ok) {
-      await host().reloadResources();
+      await sessionHost.reloadResources();
     }
     return result;
   });
   ipcMain.handle("createPlugin", async (_e, input: PluginCreateInput) => {
-    const cwd = input.cwd ?? host().getStatus().cwd;
+    const cwd = input.cwd ?? sessionHost.getStatus().cwd;
     const result = createPlugin({ ...input, cwd });
     if (result.ok) {
-      await host().reloadResources();
+      await sessionHost.reloadResources();
     }
     return result;
   });
   ipcMain.handle("deletePlugin", async (_e, path: string) => {
-    const result = deletePlugin(path, host().getStatus().cwd);
+    const result = deletePlugin(path, sessionHost.getStatus().cwd);
     if (result.ok) {
-      await host().reloadResources();
+      await sessionHost.reloadResources();
     }
     return result;
   });
   ipcMain.handle("revealPlugin", async (_e, path: string) => {
-    const result = revealPlugin(path, host().getStatus().cwd);
+    const result = revealPlugin(path, sessionHost.getStatus().cwd);
     if (result.ok && result.path) {
       shell.showItemInFolder(result.path);
     }
     return result.ok ? { ok: true } : { ok: false, error: result.error };
   });
-  ipcMain.handle("reloadResources", async () => host().reloadResources());
+  ipcMain.handle("reloadResources", async () => sessionHost.reloadResources());
 
   ipcMain.handle("listProviderProfiles", async () => listProviderProfiles());
   ipcMain.handle("getProviderProfile", async (_e, id: string) =>
@@ -411,7 +396,7 @@ function registerIpc(): void {
   ipcMain.handle("activateProviderProfile", async (_e, id: string) => {
     const result = activateProviderProfile(id);
     if (!result.ok || !result.provider || !result.model) return result;
-    const applied = await host().applyActivatedProvider(
+    const applied = await sessionHost.applyActivatedProvider(
       result.provider,
       result.model,
     );
@@ -464,7 +449,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", async () => {
   await godotRpc.stop();
-  await fleet.dispose();
+  await sessionHost.dispose();
   if (process.platform !== "darwin") {
     app.quit();
   }

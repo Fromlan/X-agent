@@ -1,8 +1,6 @@
-import type { HistoryItem, SlotAgentEvent, UiAgentEvent } from "@shared/ipc";
+import type { HistoryItem, UiAgentEvent } from "@shared/ipc";
 
 export type ChatItem = HistoryItem;
-
-export type ItemsBySlot = Record<string, ChatItem[]>;
 
 export function createEmptyState(): ChatItem[] {
   return [];
@@ -165,15 +163,4 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
     default:
       return items;
   }
-}
-
-/** Apply a slot-tagged agent event into the correct transcript bucket. */
-export function applySlotAgentEvent(
-  bySlot: ItemsBySlot,
-  payload: SlotAgentEvent,
-): ItemsBySlot {
-  const prev = bySlot[payload.slotId] ?? createEmptyState();
-  const next = applyAgentEvent(prev, payload.event);
-  if (next === prev) return bySlot;
-  return { ...bySlot, [payload.slotId]: next };
 }

@@ -1,6 +1,5 @@
 import {
   applyAgentEvent,
-  applySlotAgentEvent,
   createEmptyState,
 } from "../src/stores/chat-store";
 
@@ -36,41 +35,5 @@ items = applyAgentEvent(items, {
   items: [{ kind: "user", id: "x", text: "reset" }],
 });
 assert(items.length === 1 && items[0]!.kind === "user", "history_replace");
-
-// Per-slot isolation
-let bySlot = applySlotAgentEvent(
-  {},
-  {
-    slotId: "worker",
-    event: { type: "user_message", id: "w1", text: "impl" },
-  },
-);
-bySlot = applySlotAgentEvent(bySlot, {
-  slotId: "reviewer",
-  event: { type: "user_message", id: "r1", text: "review" },
-});
-bySlot = applySlotAgentEvent(bySlot, {
-  slotId: "worker",
-  event: { type: "assistant_start", messageId: "wa" },
-});
-bySlot = applySlotAgentEvent(bySlot, {
-  slotId: "worker",
-  event: { type: "text_delta", messageId: "wa", delta: "done" },
-});
-assert(bySlot.worker?.length === 2, "worker has user+assistant");
-assert(bySlot.reviewer?.length === 1, "reviewer only user");
-assert(
-  bySlot.reviewer?.[0]?.kind === "user" &&
-    bySlot.reviewer[0].text === "review",
-  "reviewer not polluted by worker",
-);
-assert(
-  Boolean(
-    bySlot.worker?.some(
-      (i) => i.kind === "assistant" && i.id === "wa" && i.text === "done",
-    ),
-  ),
-  "worker assistant text",
-);
 
 console.log("test-chat-store: ok");

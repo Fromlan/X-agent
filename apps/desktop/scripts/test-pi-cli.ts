@@ -3,6 +3,7 @@ import {
   checkPiCli,
   resolveNpmFromPathEnv,
   resolvePiFromPathEnv,
+  spawnOptsForCli,
 } from "../electron/agent/pi-cli";
 
 function assert(cond: boolean, msg: string): void {
@@ -50,5 +51,17 @@ const missingPi = checkPiCli("/opt/bin", "linux", npmOnly);
 assert(missingPi.ok === false, "npm only → not ok");
 assert(missingPi.canInstall === true, "npm only → can install");
 assert(missingPi.message.includes("未检测到"), "message mentions missing CLI");
+
+const cmdOpts = spawnOptsForCli(join("C:\\npm", "pi.cmd"));
+if (process.platform === "win32") {
+  assert(cmdOpts.shell === true, "win32 .cmd spawn must use shell");
+} else {
+  // Helper still inspects process.platform; on non-Windows CI shell stays false.
+  assert(cmdOpts.shell === false, "non-win32 .cmd path does not force shell");
+}
+assert(
+  spawnOptsForCli("/usr/local/bin/pi").shell === false,
+  "unix binary does not force shell",
+);
 
 console.log("test-pi-cli: ok");

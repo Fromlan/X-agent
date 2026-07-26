@@ -17,14 +17,12 @@ function formatMaybeJson(value: unknown): string {
 }
 
 interface Props {
-  slotId: string;
   items: ChatItem[];
   selectedToolId: string | null;
   onSelectTool: (toolId: string) => void;
 }
 
 export function ToolsTab({
-  slotId,
   items,
   selectedToolId,
   onSelectTool,
@@ -62,13 +60,13 @@ export function ToolsTab({
       setDetailResult(formatMaybeJson(detail.result));
       setDetailTruncated(Boolean(detail.truncated));
       const path = extractToolPath(detail.args);
-      if (path) setPreviewPath(slotId, path);
+      if (path) setPreviewPath(path);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [selected, slotId]);
+  }, [selected]);
 
   const copyAll = async () => {
     const text = [
@@ -90,7 +88,7 @@ export function ToolsTab({
   if (tools.length === 0) {
     return (
       <div className="rp-empty">
-        当前槽位还没有工具调用。Agent 运行后会出现在这里。
+        还没有工具调用。Agent 运行后会出现在这里。
       </div>
     );
   }

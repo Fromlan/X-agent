@@ -12,19 +12,20 @@ import type {
   AuthStatus,
   BashCheckResult,
   ClientPrefs,
-  FleetPairState,
-  FleetSlotInfo,
   ModelInfo,
   PiCliStatus,
   SessionInfo,
   ThinkingLevel,
 } from "@shared/ipc";
 import { Sidebar } from "./components/Sidebar";
-import { ChatPanel, DualChatPanel } from "./components/ChatPanel";
+import { ChatPanel } from "./components/ChatPanel";
 import { TopBar } from "./components/TopBar";
-import { FleetStrip } from "./components/FleetStrip";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  appendAtPath,
+  expandAtPathsInPrompt,
+} from "./lib/expandAtPaths";
 import {
   RIGHT_PANEL_WIDTH_DEFAULT,
   RIGHT_PANEL_WIDTH_MAX,
@@ -34,11 +35,7 @@ import {
   SIDEBAR_WIDTH_MIN,
   useColumnResize,
 } from "./hooks/useColumnResize";
-import {
-  applySlotAgentEvent,
-  createEmptyState,
-  type ItemsBySlot,
-} from "./stores/chat-store";
+import { applyAgentEvent, createEmptyState } from "./stores/chat-store";
 
 type SettingsTab = "general" | "providers" | "tools" | "plugins" | "godot";
 
@@ -56,17 +53,8 @@ function applyTheme(theme: "light" | "dark"): void {
   document.body.dataset.theme = theme;
 }
 
-function slotRoleHint(role: FleetSlotInfo["role"]): string {
-  if (role === "primary") return "主";
-  if (role === "reviewer") return "审";
-  return "工";
-}
-
 export default function App() {
-  const [itemsBySlot, setItemsBySlot] = useState<ItemsBySlot>({});
-  const [statusBySlot, setStatusBySlot] = useState<Record<string, AgentStatus>>(
-    {},
-  );
+  const [items, setItems] = useState(createEmptyState());
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -84,20 +72,8 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
     undefined,
   );
-  const [queuedSteeringBySlot, setQueuedSteeringBySlot] = useState<
-    Record<string, string[]>
-  >({});
-  const [fleetSlots, setFleetSlots] = useState<FleetSlotInfo[]>([]);
-  const [fleetActiveId, setFleetActiveId] = useState<string | null>(null);
-  const [fleetPair, setFleetPair] = useState<FleetPairState>({ phase: "idle" });
+  const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const workerBottomRef = useRef<HTMLDivElement>(null);
-  const reviewerBottomRef = useRef<HTMLDivElement>(null);
-  const fleetActiveIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    fleetActiveIdRef.current = fleetActiveId;
-  }, [fleetActiveId]);
 
   const currentModelKey = useMemo(() => {
     const m =
@@ -105,60 +81,10 @@ export default function App() {
     return m;
   }, [prefs]);
 
-  const activeSlotId = fleetActiveId ?? "primary";
-  const activeSlot =
-    fleetSlots.find((s) => s.id === activeSlotId) ?? fleetSlots[0] ?? null;
-  const activeItems = itemsBySlot[activeSlotId] ?? createEmptyState();
-  const activeStatus = statusBySlot[activeSlotId] ?? status;
-  const queuedSteering = queuedSteeringBySlot[activeSlotId] ?? [];
-
-  const workerSlot =
-    (fleetPair.workerSlotId
-      ? fleetSlots.find((s) => s.id === fleetPair.workerSlotId)
-      : undefined) ?? fleetSlots.find((s) => s.role === "worker");
-  const reviewerSlot =
-    (fleetPair.reviewerSlotId
-      ? fleetSlots.find((s) => s.id === fleetPair.reviewerSlotId)
-      : undefined) ?? fleetSlots.find((s) => s.role === "reviewer");
-  const showDual = Boolean(
-    workerSlot &&
-      reviewerSlot &&
-      activeSlot &&
-      activeSlot.role !== "primary",
-  );
-
-  const pruneSlots = useCallback((slots: FleetSlotInfo[]) => {
-    const ids = new Set(slots.map((s) => s.id));
-    const pruneRecord = <T,>(
-      prev: Record<string, T>,
-    ): Record<string, T> => {
-      let changed = false;
-      const next = { ...prev };
-      for (const key of Object.keys(next)) {
-        if (!ids.has(key)) {
-          delete next[key];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    };
-    setItemsBySlot((prev) => pruneRecord(prev));
-    setStatusBySlot((prev) => pruneRecord(prev));
-    setQueuedSteeringBySlot((prev) => pruneRecord(prev));
-  }, []);
-
   const refreshSessions = useCallback(async () => {
     const list = await window.xAgent.listSessions();
     setSessions(list);
   }, []);
-
-  const refreshFleet = useCallback(async () => {
-    const state = await window.xAgent.fleetState();
-    setFleetSlots(state.slots);
-    setFleetActiveId(state.activeId);
-    setFleetPair(state.pair ?? { phase: "idle" });
-    pruneSlots(state.slots);
-  }, [pruneSlots]);
 
   const refreshModels = useCallback(async () => {
     const list = await window.xAgent.listModels();
@@ -167,15 +93,13 @@ export default function App() {
 
   const syncFromHost = useCallback(async () => {
     const s = await window.xAgent.getStatus();
-    const slotId = fleetActiveIdRef.current ?? "primary";
     setStatus(s.status);
-    setStatusBySlot((prev) => ({ ...prev, [slotId]: s.status }));
     setCwd(s.cwd);
     setSessionId(s.sessionId);
     if (!s.hasSession) {
-      setItemsBySlot((prev) => ({ ...prev, [slotId]: createEmptyState() }));
+      setItems(createEmptyState());
       setSessionId(null);
-      setQueuedSteeringBySlot((prev) => ({ ...prev, [slotId]: [] }));
+      setQueuedSteering([]);
     }
     if (s.error) setError(s.error);
     else if (s.status === "idle") setError(null);
@@ -194,37 +118,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    return window.xAgent.onEvent((payload) => {
-      const { slotId, event } = payload;
-      const isActive = slotId === (fleetActiveIdRef.current ?? "primary");
-
+    return window.xAgent.onEvent((event) => {
       if (event.type === "status") {
-        setStatusBySlot((prev) => ({ ...prev, [slotId]: event.status }));
-        if (isActive) {
-          setStatus(event.status);
-          if (event.error) setError(event.error);
-          else if (event.status === "idle" || event.status === "streaming") {
-            setError(null);
-          }
+        setStatus(event.status);
+        if (event.error) setError(event.error);
+        else if (event.status === "idle" || event.status === "streaming") {
+          setError(null);
         }
         return;
       }
       if (event.type === "session_info") {
-        if (isActive) {
-          setCwd(event.cwd);
-          setSessionId(event.sessionId);
-          setPrefs((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  provider: event.model?.provider ?? prev.provider,
-                  model: event.model?.id ?? prev.model,
-                  thinkingLevel: event.thinkingLevel,
-                  lastSessionPath: event.sessionPath ?? prev.lastSessionPath,
-                }
-              : prev,
-          );
-        }
+        setCwd(event.cwd);
+        setSessionId(event.sessionId);
+        setPrefs((prev) =>
+          prev
+            ? {
+                ...prev,
+                provider: event.model?.provider ?? prev.provider,
+                model: event.model?.id ?? prev.model,
+                thinkingLevel: event.thinkingLevel,
+                lastSessionPath: event.sessionPath ?? prev.lastSessionPath,
+              }
+            : prev,
+        );
         return;
       }
       if (event.type === "session_title") {
@@ -235,48 +151,15 @@ export default function App() {
         void refreshSessions();
       }
       if (event.type === "queue_update") {
-        setQueuedSteeringBySlot((prev) => ({
-          ...prev,
-          [slotId]: event.steering,
-        }));
+        setQueuedSteering(event.steering);
         return;
       }
       if (event.type === "history_replace") {
-        setQueuedSteeringBySlot((prev) => ({ ...prev, [slotId]: [] }));
+        setQueuedSteering([]);
       }
-      setItemsBySlot((prev) => applySlotAgentEvent(prev, payload));
+      setItems((prev) => applyAgentEvent(prev, event));
     });
   }, [refreshSessions]);
-
-  useEffect(() => {
-    return window.xAgent.onFleetEvent((event) => {
-      if (event.type === "slot_status") {
-        setFleetSlots((prev) =>
-          prev.map((s) =>
-            s.id === event.slotId ? { ...s, busy: event.busy } : s,
-          ),
-        );
-        setStatusBySlot((prev) => ({
-          ...prev,
-          [event.slotId]: event.status,
-        }));
-        return;
-      }
-      if (event.type === "pair_progress") {
-        setFleetPair(event.pair);
-        if (event.pair.phase === "error" && event.pair.message) {
-          setError(event.pair.message);
-        }
-        return;
-      }
-      if (event.type === "state") {
-        setFleetSlots(event.state.slots);
-        setFleetActiveId(event.state.activeId);
-        setFleetPair(event.state.pair ?? { phase: "idle" });
-        pruneSlots(event.state.slots);
-      }
-    });
-  }, [pruneSlots]);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,8 +175,6 @@ export default function App() {
       await refreshModels();
       if (cancelled) return;
       await refreshSessions();
-      if (cancelled) return;
-      await refreshFleet();
       if (cancelled) return;
 
       let restored = false;
@@ -320,26 +201,20 @@ export default function App() {
         }
       }
       await refreshSessions();
-      await refreshFleet();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [refreshFleet, refreshModels, refreshSessions, syncFromHost]);
+  }, [refreshModels, refreshSessions, syncFromHost]);
 
   useEffect(() => {
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const behavior: ScrollBehavior = reduceMotion ? "auto" : "smooth";
-    if (showDual) {
-      workerBottomRef.current?.scrollIntoView({ behavior });
-      reviewerBottomRef.current?.scrollIntoView({ behavior });
-    } else {
-      bottomRef.current?.scrollIntoView({ behavior });
-    }
-  }, [activeItems, activeStatus, showDual, itemsBySlot, statusBySlot]);
+    bottomRef.current?.scrollIntoView({ behavior });
+  }, [items, status]);
 
   const openProject = async () => {
     setBusy(true);
@@ -357,7 +232,6 @@ export default function App() {
       setSessionId(result.sessionId);
       if (result.warning) setError(result.warning);
       await refreshSessions();
-      await refreshFleet();
     } finally {
       setBusy(false);
     }
@@ -421,12 +295,17 @@ export default function App() {
     else await refreshSessions();
   };
 
+  const addPathToChat = useCallback((relPath: string) => {
+    setInput((prev) => appendAtPath(prev, relPath));
+  }, []);
+
   const send = async () => {
     if (!input.trim() || !cwd) return;
     const text = input;
     setInput("");
     setError(null);
-    const result = await window.xAgent.prompt(text);
+    const expanded = await expandAtPathsInPrompt(text);
+    const result = await window.xAgent.prompt(expanded);
     if (!result.ok) {
       setError(result.error ?? "发送失败");
     }
@@ -532,17 +411,6 @@ export default function App() {
     setPrefs(next);
   };
 
-  const onOpenToolInPanelForSlot = (slotId: string) => {
-    return (toolId: string, args: unknown) => {
-      if (slotId !== activeSlotId) {
-        void switchFleetSlot(slotId);
-      }
-      openToolInRightPanel(slotId, toolId, args, () => {
-        void ensureRightPanelOpen();
-      });
-    };
-  };
-
   const toggleTool = async (tool: string) => {
     if (!prefs) return;
     const tools = prefs.tools.includes(tool)
@@ -596,130 +464,11 @@ export default function App() {
     }
   };
 
-  const switchFleetSlot = async (id: string) => {
-    if (id === fleetActiveId) return;
-    const previousId = fleetActiveId;
-    // Optimistic: so resyncUi session_info/history pass isActive gates.
-    fleetActiveIdRef.current = id;
-    setFleetActiveId(id);
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.fleetSetActive(id);
-      if (!result.ok) {
-        fleetActiveIdRef.current = previousId;
-        setFleetActiveId(previousId);
-        setError(result.error ?? "切换 Fleet 槽位失败");
-        return;
-      }
-      await refreshFleet();
-      await syncFromHost();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addFleetWorker = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const n = fleetSlots.filter((s) => s.role === "worker").length + 1;
-      await window.xAgent.fleetCreate(
-        n === 1 ? "实现" : `实现 ${n}`,
-        "worker",
-      );
-      await refreshFleet();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addFleetReviewer = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const n = fleetSlots.filter((s) => s.role === "reviewer").length + 1;
-      await window.xAgent.fleetCreate(
-        n === 1 ? "审阅" : `审阅 ${n}`,
-        "reviewer",
-      );
-      await refreshFleet();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeFleetSlot = async (id: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.fleetRemove(id);
-      if (!result.ok) {
-        setError(result.error ?? "移除 Fleet 槽位失败");
-        return;
-      }
-      await refreshFleet();
-      await syncFromHost();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const startFleetPair = async () => {
-    if (!input.trim() || !cwd) return;
-    const task = input;
-    setInput("");
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.fleetStartPair(task);
-      if (!result.ok) {
-        setInput(task);
-        setError(result.error ?? "启动并行编排失败");
-        return;
-      }
-      if (result.pair) setFleetPair(result.pair);
-      // Jump to worker so dual-pane 实现|审阅 shows immediately.
-      if (result.pair?.workerSlotId) {
-        const wid = result.pair.workerSlotId;
-        fleetActiveIdRef.current = wid;
-        setFleetActiveId(wid);
-        await window.xAgent.fleetSetActive(wid);
-      }
-      await refreshFleet();
-      await syncFromHost();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const abortFleetPair = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.fleetAbortPair();
-      if (!result.ok) {
-        setError(result.error ?? "中止并行编排失败");
-        return;
-      }
-      if (result.pair) setFleetPair(result.pair);
-      await refreshFleet();
-      await syncFromHost();
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="app-shell">
       <TopBar
         cwd={cwd}
-        status={activeStatus}
+        status={status}
         models={models}
         currentModelKey={currentModelKey}
         thinkingLevel={prefs?.thinkingLevel ?? "medium"}
@@ -736,17 +485,6 @@ export default function App() {
         onOpenSettings={openSettings}
         rightPanelOpen={prefs?.rightPanelOpen ?? false}
         busy={busy}
-      />
-      <FleetStrip
-        slots={fleetSlots}
-        activeId={fleetActiveId}
-        busy={busy}
-        pair={fleetPair}
-        onSelect={switchFleetSlot}
-        onAddWorker={addFleetWorker}
-        onAddReviewer={addFleetReviewer}
-        onRemove={removeFleetSlot}
-        onAbortPair={abortFleetPair}
       />
       {piCli && !piCli.ok && (
         <div className="banner warn">
@@ -842,7 +580,7 @@ export default function App() {
         <Sidebar
           sessions={sessions}
           activeSessionId={sessionId}
-          agentStatus={activeStatus}
+          agentStatus={status}
           busy={busy}
           onResume={resumeSession}
           onDelete={deleteSession}
@@ -852,70 +590,29 @@ export default function App() {
           onResizeDoubleClick={onSidebarResizeDoubleClick}
           resizing={sidebarResizing}
         />
-        {showDual && workerSlot && reviewerSlot ? (
-          <DualChatPanel
-            workerTitle={workerSlot.label}
-            reviewerTitle={reviewerSlot.label}
-            workerItems={itemsBySlot[workerSlot.id] ?? createEmptyState()}
-            reviewerItems={itemsBySlot[reviewerSlot.id] ?? createEmptyState()}
-            workerStatus={statusBySlot[workerSlot.id] ?? "idle"}
-            reviewerStatus={statusBySlot[reviewerSlot.id] ?? "idle"}
-            activeRole={
-              activeSlot?.role === "reviewer" ? "reviewer" : "worker"
-            }
-            showThinking={prefs?.showThinking ?? true}
-            input={input}
-            setInput={setInput}
-            onSend={send}
-            onAbort={abort}
-            onStartPair={startFleetPair}
-            pairActive={
-              fleetPair.phase === "wave1" || fleetPair.phase === "wave2"
-            }
-            disabled={!cwd}
-            queuedSteering={queuedSteering}
-            onFocusWorker={() => void switchFleetSlot(workerSlot.id)}
-            onFocusReviewer={() => void switchFleetSlot(reviewerSlot.id)}
-            workerBottomRef={workerBottomRef}
-            reviewerBottomRef={reviewerBottomRef}
-            onOpenToolInPanelWorker={
-              workerSlot
-                ? onOpenToolInPanelForSlot(workerSlot.id)
-                : undefined
-            }
-            onOpenToolInPanelReviewer={
-              reviewerSlot
-                ? onOpenToolInPanelForSlot(reviewerSlot.id)
-                : undefined
-            }
-          />
-        ) : (
-          <ChatPanel
-            title={activeSlot?.label ?? "主会话"}
-            roleHint={slotRoleHint(activeSlot?.role ?? "primary")}
-            items={activeItems}
-            showThinking={prefs?.showThinking ?? true}
-            status={activeStatus}
-            input={input}
-            setInput={setInput}
-            onSend={send}
-            onAbort={abort}
-            onStartPair={startFleetPair}
-            pairActive={
-              fleetPair.phase === "wave1" || fleetPair.phase === "wave2"
-            }
-            disabled={!cwd}
-            queuedSteering={queuedSteering}
-            bottomRef={bottomRef}
-            onOpenToolInPanel={onOpenToolInPanelForSlot(activeSlotId)}
-          />
-        )}
+        <ChatPanel
+          items={items}
+          showThinking={prefs?.showThinking ?? true}
+          status={status}
+          input={input}
+          setInput={setInput}
+          onSend={send}
+          onAbort={abort}
+          disabled={!cwd}
+          queuedSteering={queuedSteering}
+          bottomRef={bottomRef}
+          onOpenToolInPanel={(toolId, args) => {
+            openToolInRightPanel(toolId, args, () => {
+              void ensureRightPanelOpen();
+            });
+          }}
+        />
         {prefs?.rightPanelOpen && (
           <RightPanel
-            slotId={activeSlotId}
             cwd={cwd}
-            items={activeItems}
+            items={items}
             onClose={() => void toggleRightPanel()}
+            onAddPathToChat={addPathToChat}
             onResizePointerDown={onRightPanelResizePointerDown}
             onResizeDoubleClick={onRightPanelResizeDoubleClick}
             resizing={rightPanelResizing}

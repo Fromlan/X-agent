@@ -14,12 +14,11 @@ function formatMaybeJson(value: unknown): string {
 }
 
 interface Props {
-  slotId: string;
   active: boolean;
   items: ChatItem[];
 }
 
-export function GodotTab({ slotId, active, items }: Props) {
+export function GodotTab({ active, items }: Props) {
   const [status, setStatus] = useState<GodotRpcStatusDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [pingOut, setPingOut] = useState<string>("");
@@ -191,7 +190,7 @@ export function GodotTab({ slotId, active, items }: Props) {
           <button
             type="button"
             className="rp-tool-item active"
-            onClick={() => selectToolInPanel(slotId, lastGodotTool.id)}
+            onClick={() => selectToolInPanel(lastGodotTool.id)}
           >
             <span className="rp-tool-item-name">{lastGodotTool.toolName}</span>
             <span className="rp-tool-item-state">

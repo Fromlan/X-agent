@@ -3,11 +3,10 @@ import type {
   AppUpdateStatus,
   XAgentApi,
   ClientPrefs,
-  FleetUiEvent,
   PluginCreateInput,
   ProviderUpsertInput,
-  SlotAgentEvent,
   ThinkingLevel,
+  UiAgentEvent,
 } from "../shared/ipc";
 
 const api: XAgentApi = {
@@ -45,13 +44,6 @@ const api: XAgentApi = {
     ipcRenderer.invoke("readProjectFile", relPath),
   revealInFolder: (relPath: string) =>
     ipcRenderer.invoke("revealInFolder", relPath),
-  fleetList: () => ipcRenderer.invoke("fleetList"),
-  fleetState: () => ipcRenderer.invoke("fleetState"),
-  fleetCreate: (label, role) => ipcRenderer.invoke("fleetCreate", label, role),
-  fleetSetActive: (id) => ipcRenderer.invoke("fleetSetActive", id),
-  fleetRemove: (id) => ipcRenderer.invoke("fleetRemove", id),
-  fleetStartPair: (task) => ipcRenderer.invoke("fleetStartPair", task),
-  fleetAbortPair: () => ipcRenderer.invoke("fleetAbortPair"),
   godotRpcStatus: () => ipcRenderer.invoke("godotRpcStatus"),
   godotRpcStart: () => ipcRenderer.invoke("godotRpcStart"),
   godotRpcStop: () => ipcRenderer.invoke("godotRpcStop"),
@@ -94,22 +86,13 @@ const api: XAgentApi = {
   checkForUpdates: () => ipcRenderer.invoke("checkForUpdates"),
   downloadUpdate: () => ipcRenderer.invoke("downloadUpdate"),
   installUpdate: () => ipcRenderer.invoke("installUpdate"),
-  onEvent: (handler: (payload: SlotAgentEvent) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, payload: SlotAgentEvent) => {
-      handler(payload);
+  onEvent: (handler: (event: UiAgentEvent) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
+      handler(event);
     };
     ipcRenderer.on("agent:event", listener);
     return () => {
       ipcRenderer.removeListener("agent:event", listener);
-    };
-  },
-  onFleetEvent: (handler: (event: FleetUiEvent) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, event: FleetUiEvent) => {
-      handler(event);
-    };
-    ipcRenderer.on("fleet:event", listener);
-    return () => {
-      ipcRenderer.removeListener("fleet:event", listener);
     };
   },
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => {

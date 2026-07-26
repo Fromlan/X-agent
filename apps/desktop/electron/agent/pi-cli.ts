@@ -1,7 +1,25 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
 import type { PiCliStatus } from "../../shared/ipc";
+
+/**
+ * Windows .cmd/.bat cannot be spawned without shell after CVE-2024-27980
+ * (Node throws spawn EINVAL). Safe for args arrays Node escapes under shell.
+ */
+export function spawnOptsForCli(
+  command: string,
+  extra: SpawnOptions = {},
+): SpawnOptions {
+  const needsShell =
+    process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
+  return {
+    windowsHide: true,
+    env: process.env,
+    ...extra,
+    shell: needsShell ? true : Boolean(extra.shell),
+  };
+}
 
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -90,10 +108,14 @@ export function checkPiCli(
 function runNpmInstall(npmPath: string): Promise<{ code: number | null; output: string }> {
   return new Promise((resolve) => {
     const args = ["install", "-g", "--ignore-scripts", PI_PACKAGE];
-    const child = spawn(npmPath, args, {
-      windowsHide: true,
-      env: process.env,
-    });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(npmPath, args, spawnOptsForCli(npmPath));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      resolve({ code: 1, output: message });
+      return;
+    }
 
     let output = "";
     const append = (chunk: Buffer | string) => {

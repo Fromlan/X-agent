@@ -188,7 +188,25 @@ export function PluginsPage({ cwd }: Props) {
       );
       return;
     }
-    setMessage(`已安装 ${result.package?.name ?? source}`);
+    setKind("package");
+    const counts = result.package
+      ? [
+          result.package.skillCount != null
+            ? `${result.package.skillCount} 技能`
+            : null,
+          result.package.promptCount != null
+            ? `${result.package.promptCount} 提示词`
+            : null,
+          result.package.extensionCount != null
+            ? `${result.package.extensionCount} 扩展`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
+    setMessage(
+      `已安装 ${result.package?.name ?? source}${counts ? `（${counts}，可在对应页签查看）` : ""}`,
+    );
     setPackageSource("");
     await refresh();
     await window.xAgent.reloadResources();
@@ -205,7 +223,25 @@ export function PluginsPage({ cwd }: Props) {
       );
       return;
     }
-    setMessage(`已安装 Godot Pi 包：${result.package?.name ?? ""}`);
+    setKind("package");
+    const counts = result.package
+      ? [
+          result.package.skillCount != null
+            ? `${result.package.skillCount} 技能`
+            : null,
+          result.package.promptCount != null
+            ? `${result.package.promptCount} 提示词`
+            : null,
+          result.package.extensionCount != null
+            ? `${result.package.extensionCount} 扩展`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "";
+    setMessage(
+      `已安装 Godot Pi 包：${result.package?.name ?? ""}${counts ? `（${counts}，可在「技能 / 提示词 / 扩展」页签查看）` : ""}`,
+    );
     await refresh();
     await window.xAgent.reloadResources();
   };
@@ -294,19 +330,37 @@ export function PluginsPage({ cwd }: Props) {
           <>
             <aside className="plugins-list-pane">
               {packages.length === 0 ? (
-                <p className="empty-state">尚无已记录的 Packages</p>
+                <p className="empty-state">
+                  尚无 Packages。安装后会出现在此列表（与 <code>pi list</code>{" "}
+                  同源）。
+                </p>
               ) : (
                 <div className="plugins-list">
                 {packages.map((pkg) => (
-                  <div key={`${pkg.name}-${pkg.installedAt}`} className="plugin-item">
+                  <div key={`${pkg.name}-${pkg.source}`} className="plugin-item">
                     <div className="plugin-item-title">{pkg.name}</div>
-                    <div className="plugin-item-meta">{pkg.source}</div>
+                    <div className="plugin-item-meta" title={pkg.source}>
+                      {[
+                        pkg.skillCount != null ? `${pkg.skillCount} 技能` : null,
+                        pkg.promptCount != null
+                          ? `${pkg.promptCount} 提示词`
+                          : null,
+                        pkg.extensionCount != null
+                          ? `${pkg.extensionCount} 扩展`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || pkg.source}
+                    </div>
+                    <div className="plugin-item-meta" title={pkg.source}>
+                      {pkg.source}
+                    </div>
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
                       disabled={busy}
                       onClick={async () => {
-                        if (!confirm(`从本机记录中移除 ${pkg.name}？不会卸载 Pi 侧文件。`)) {
+                        if (!confirm(`从本机记录中移除 ${pkg.name}？不会卸载 Pi 侧文件（可用 pi remove）。`)) {
                           return;
                         }
                         setBusy(true);
@@ -330,7 +384,8 @@ export function PluginsPage({ cwd }: Props) {
               <h3>安装 Package</h3>
               <p className="modal-hint">
                 通过全局 Pi CLI 执行 <code>pi install &lt;source&gt;</code>
-                。支持本地路径、npm: 与 git: 源。
+                ，写入 <code>~/.pi/agent/settings.json</code>。包内技能 /
+                提示词 / 扩展会出现在对应页签（只读），Agent 会话也会自动加载。
               </p>
               <div className="modal-actions" style={{ marginBottom: 12 }}>
                 <button
@@ -366,12 +421,17 @@ export function PluginsPage({ cwd }: Props) {
           <>
             <aside className="plugins-list-pane">
               {filtered.length === 0 ? (
-                <p className="empty-state">暂无{kindLabel(kind)}插件</p>
+                <p className="empty-state">
+                  暂无{kindLabel(kind)}插件。
+                  {packages.length > 0 && kind !== "theme"
+                    ? " 若刚安装了 Package，点「刷新」；包内资源会标 Package。"
+                    : null}
+                </p>
               ) : (
                 <div className="plugins-list">
                 {filtered.map((item) => (
                   <button
-                    key={item.path}
+                    key={`${item.id}:${item.path}`}
                     type="button"
                     className={`plugin-item${
                       selectedPath === item.path ? " active" : ""
@@ -380,8 +440,14 @@ export function PluginsPage({ cwd }: Props) {
                   >
                     <div className="plugin-item-title">{item.name}</div>
                     <div className="plugin-item-meta">
-                      {item.scope === "global" ? "全局" : "项目"}
-                      {item.description ? ` · ${item.description}` : ""}
+                      {item.packageName
+                        ? `Package · ${item.packageName}`
+                        : item.scope === "global"
+                          ? "全局"
+                          : "项目"}
+                      {item.description && !item.packageName
+                        ? ` · ${item.description}`
+                        : ""}
                     </div>
                   </button>
                 ))}
@@ -395,7 +461,7 @@ export function PluginsPage({ cwd }: Props) {
               ) : (
                 <>
                   <div className="plugins-editor-meta">
-                    <div>
+                    <div className="plugins-editor-meta-text">
                       <h2>{selected.name}</h2>
                       <p className="plugins-editor-path" title={selected.path}>
                         {selected.path}
@@ -413,7 +479,12 @@ export function PluginsPage({ cwd }: Props) {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        disabled={busy}
+                        disabled={busy || !selected.editable}
+                        title={
+                          selected.editable
+                            ? "删除"
+                            : "来自 Package，请用 pi remove 卸载包"
+                        }
                         onClick={() => void remove()}
                       >
                         <Trash2 size={13} />
@@ -422,7 +493,12 @@ export function PluginsPage({ cwd }: Props) {
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        disabled={busy || !dirty}
+                        disabled={busy || !dirty || !selected.editable}
+                        title={
+                          selected.editable
+                            ? "保存"
+                            : "来自 Package，只读预览"
+                        }
                         onClick={() => void save()}
                       >
                         <Save size={13} />
@@ -430,6 +506,14 @@ export function PluginsPage({ cwd }: Props) {
                       </button>
                     </div>
                   </div>
+                  {!selected.editable && (
+                    <div className="banner warn">
+                      只读：来自已安装 Package
+                      {selected.packageName ? `（${selected.packageName}）` : ""}
+                      。Agent 会加载这些资源；卸载请用终端{" "}
+                      <code>pi remove</code>。
+                    </div>
+                  )}
                   {warnings.length > 0 && (
                     <div className="banner warn">
                       校验警告：{warnings.join("；")}
@@ -440,6 +524,7 @@ export function PluginsPage({ cwd }: Props) {
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     spellCheck={false}
+                    readOnly={!selected.editable}
                   />
                 </>
               )}

@@ -105,16 +105,6 @@ export class SessionHost {
   private lastError: string | undefined;
   private getWindow: () => BrowserWindow | null;
   private godotRpc: GodotRpcBridge | null;
-  /** Fleet injects sink so every slot can stream with a slotId tag. */
-  private eventSink: ((event: UiAgentEvent) => void) | null = null;
-  /** True when this host is the Fleet active slot (prefs / last-session only). */
-  private isActiveSlot: () => boolean = () => true;
-  /** Always notified (even when inactive) — for Fleet strip busy dots. */
-  private statusListeners = new Set<(status: AgentStatus) => void>();
-  /** Always notified for agent_start / agent_end — Fleet pair Wave2 handoff. */
-  private lifecycleListeners = new Set<
-    (event: { type: "agent_start" | "agent_end"; willRetry?: boolean }) => void
-  >();
   /** Serializes session create/replace/dispose only — not prompt/abort. */
   private replaceChain: Promise<void> = Promise.resolve();
   private messageSeq = 0;
@@ -134,58 +124,9 @@ export class SessionHost {
     return this.toolDetails.get(toolCallId) ?? null;
   }
 
-  /** Fleet: route all UI events through the manager (tagged with slotId). */
-  setEventSink(fn: (event: UiAgentEvent) => void): void {
-    this.eventSink = fn;
-  }
-
-  /** Fleet: whether this slot is the active composer target. */
-  setActiveSlotCheck(fn: () => boolean): void {
-    this.isActiveSlot = fn;
-  }
-
-  /** Fleet: status changes for inactive slots (busy indicators). */
-  onStatusChange(fn: (status: AgentStatus) => void): () => void {
-    this.statusListeners.add(fn);
-    return () => {
-      this.statusListeners.delete(fn);
-    };
-  }
-
-  /** Fleet orchestrator: listen for agent lifecycle without UI gating. */
-  onLifecycle(
-    fn: (event: { type: "agent_start" | "agent_end"; willRetry?: boolean }) => void,
-  ): () => void {
-    this.lifecycleListeners.add(fn);
-    return () => {
-      this.lifecycleListeners.delete(fn);
-    };
-  }
-
   getHistorySnapshot(): HistoryItem[] {
     if (!this.bundle) return [];
     return messagesToHistory(this.bundle.session.messages);
-  }
-
-  /** Push current history + session_info + status to the renderer (active slot). */
-  resyncUi(): void {
-    const status = this.getStatus();
-    if (this.bundle) {
-      this.emit({
-        type: "session_info",
-        sessionId: this.bundle.session.sessionId,
-        cwd: this.bundle.cwd,
-        model: modelFromSession(this.bundle.session),
-        thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
-        sessionPath: this.bundle.sessionPath,
-      });
-    }
-    this.emit({ type: "history_replace", items: this.getHistorySnapshot() });
-    this.emit({
-      type: "status",
-      status: status.status,
-      ...(status.error ? { error: status.error } : {}),
-    });
   }
 
   private runReplaceExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -198,16 +139,9 @@ export class SessionHost {
   }
 
   private emit(event: UiAgentEvent): void {
-    if (this.eventSink) {
-      this.eventSink(event);
-      return;
-    }
     const win = this.getWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send("agent:event", {
-        slotId: "primary",
-        event,
-      });
+      win.webContents.send("agent:event", event);
     }
   }
 
@@ -218,31 +152,11 @@ export class SessionHost {
     } else if (status === "idle" || status === "streaming" || status === "retrying") {
       this.lastError = undefined;
     }
-    for (const listener of this.statusListeners) {
-      try {
-        listener(status);
-      } catch {
-        // ignore listener errors
-      }
-    }
     this.emit({
       type: "status",
       status,
       ...(this.lastError ? { error: this.lastError } : {}),
     });
-  }
-
-  private notifyLifecycle(event: {
-    type: "agent_start" | "agent_end";
-    willRetry?: boolean;
-  }): void {
-    for (const listener of this.lifecycleListeners) {
-      try {
-        listener(event);
-      } catch {
-        // ignore listener errors
-      }
-    }
   }
 
   private messageIdFrom(message: unknown): string {
@@ -272,7 +186,6 @@ export class SessionHost {
       switch (event.type) {
         case "agent_start":
           this.setStatus("streaming");
-          this.notifyLifecycle({ type: "agent_start" });
           this.emit({ type: "agent_start" });
           break;
         case "agent_end": {
@@ -285,7 +198,6 @@ export class SessionHost {
             this.setStatus("idle");
             this.maybeAutoTitleSession();
           }
-          this.notifyLifecycle({ type: "agent_end", willRetry });
           this.emit({ type: "agent_end", willRetry });
           break;
         }
@@ -643,19 +555,16 @@ export class SessionHost {
     await this.disposeBundle(previous);
 
     const sessionPath = this.sessionFileOf(session);
-    // Inactive fleet slots must not overwrite launcher prefs (model / last paths).
-    if (this.isActiveSlot()) {
-      if (session.model) {
-        patchPrefs({
-          provider: session.model.provider,
-          model: session.model.id,
-        });
-      }
+    if (session.model) {
       patchPrefs({
-        lastProjectPath: cwd,
-        lastSessionPath: sessionPath,
+        provider: session.model.provider,
+        model: session.model.id,
       });
     }
+    patchPrefs({
+      lastProjectPath: cwd,
+      lastSessionPath: sessionPath,
+    });
     this.bundle.sessionPath = sessionPath;
 
     const history: HistoryItem[] = messagesToHistory(session.messages);
@@ -800,32 +709,6 @@ export class SessionHost {
     });
   }
 
-  /**
-   * Kick off a prompt without waiting for the agent turn to finish.
-   * Full completion is observed via lifecycle / status events.
-   */
-  beginPrompt(text: string): PromptResult {
-    if (!this.bundle) {
-      return { ok: false, error: "尚未打开项目" };
-    }
-    const trimmed = text.trim();
-    if (!trimmed) {
-      return { ok: false, error: "消息不能为空" };
-    }
-
-    const { session } = this.bundle;
-    const run = session.isStreaming
-      ? session.prompt(trimmed, { streamingBehavior: "steer" })
-      : session.prompt(trimmed);
-
-    void run.catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      this.setStatus("error", message);
-    });
-
-    return { ok: true };
-  }
-
   async prompt(text: string): Promise<PromptResult> {
     if (!this.bundle) {
       return { ok: false, error: "尚未打开项目" };
@@ -954,32 +837,6 @@ export class SessionHost {
       });
       return [];
     }
-  }
-
-  /**
-   * Last user + assistant text excerpts for Fleet handoff when git diff fails.
-   */
-  getRecentTextExcerpt(maxChars = 4000): string {
-    if (!this.bundle) return "";
-    const messages = this.bundle.session.messages as readonly unknown[];
-    let lastUser = "";
-    let lastAssistant = "";
-    for (const msg of messages) {
-      const role = (msg as { role?: string }).role;
-      if (role === "user") {
-        const t = this.extractUserText(msg);
-        if (t) lastUser = t;
-      } else if (role === "assistant") {
-        const t = this.extractUserText(msg);
-        if (t) lastAssistant = t;
-      }
-    }
-    const parts: string[] = [];
-    if (lastUser) parts.push(`【用户】\n${lastUser}`);
-    if (lastAssistant) parts.push(`【助理】\n${lastAssistant}`);
-    const joined = parts.join("\n\n").trim();
-    if (joined.length <= maxChars) return joined;
-    return `${joined.slice(0, maxChars)}\n…(已截断)`;
   }
 
   getStatus(): HostStatus {

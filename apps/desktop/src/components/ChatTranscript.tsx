@@ -38,58 +38,17 @@ function formatMaybeJson(value: unknown): string {
 }
 
 export interface ChatTranscriptProps {
-  title?: string;
-  roleHint?: string;
   items: ChatItem[];
   showThinking: boolean;
   status?: AgentStatus;
-  focused?: boolean;
   disabledEmpty?: boolean;
-  onFocus?: () => void;
   bottomRef?: RefObject<HTMLDivElement | null>;
   onOpenToolInPanel?: (toolId: string, args: unknown) => void;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
-  const streaming =
-    props.status === "streaming" || props.status === "retrying";
-
   return (
-    <div
-      className={
-        props.focused
-          ? "chat-transcript is-focused"
-          : "chat-transcript"
-      }
-      onClick={props.onFocus}
-      role={props.onFocus ? "button" : undefined}
-      tabIndex={props.onFocus ? 0 : undefined}
-      onKeyDown={
-        props.onFocus
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                props.onFocus?.();
-              }
-            }
-          : undefined
-      }
-    >
-      {(props.title || props.roleHint) && (
-        <div className="chat-transcript-header">
-          {props.roleHint && (
-            <span className="chat-transcript-role">{props.roleHint}</span>
-          )}
-          {props.title && (
-            <span className="chat-transcript-title">{props.title}</span>
-          )}
-          {streaming && (
-            <span className="chat-transcript-busy" title="运行中">
-              运行中
-            </span>
-          )}
-        </div>
-      )}
+    <div className="chat-transcript">
       <div className="message-stream">
         {props.items.length === 0 && (
           <div className="empty-state">

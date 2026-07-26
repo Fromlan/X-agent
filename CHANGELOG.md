@@ -6,17 +6,20 @@
 
 ## Unreleased
 
+### 变更
+
+- **移除 Fleet**：删除多槽 `SessionHost`、并行实现+审阅编排、Fleet 条与双栏聊天；`main` 直接持有单个 `SessionHost`，`agent:event` 载荷为裸 `UiAgentEvent`
+
 ### 功能
 
-- **Fleet 并行编排**：`fleetStartPair` / `fleetAbortPair`；worker+reviewer 双波次（Wave1 并行实现与风险清单，Wave2 基于 git diff / staged / status / 会话摘录审阅）；**完成 = Wave2 审阅结束**；`beginPrompt` 避免整轮阻塞 UI
-- **分槽独立对话**：`agent:event` 带 `slotId`；renderer `itemsBySlot`；存在实现+审阅且非主会话时左右双栏展示（优先绑定 pair 槽）
-- **Fleet 条**：添加审阅、移除槽、每槽 busy、编排相位与中止
-- **会话自动标题**：首轮结束后由 [`session-title.ts`](apps/desktop/electron/agent/session-title.ts) 派生可读名称（剥离 Fleet 角色包装）
+- **右栏文件树右键菜单**：加入对话（`@相对路径`，发送时按 Pi 语义展开为 `<file>`）、在资源管理器中显示、复制路径 / 相对路径；菜单打开期间锁定选中高亮
+- **Packages 列表**：与 `pi list` 对齐，优先读取 `settings.json` 的 `packages`
+- **会话自动标题**：首轮结束后由 [`session-title.ts`](apps/desktop/electron/agent/session-title.ts) 派生可读名称
 - **Godot Pi**：领域 skills 扩展（架构 / 玩法 / 导航 / 着色器等）；见 [`packages/godot-pi/README.md`](packages/godot-pi/README.md)
 
 ### 文档
 
-- 同步 README / CLAUDE / [`packages/fleet/README.md`](packages/fleet/README.md)
+- 同步 README / CLAUDE / AGENT_CONTEXT / DESIGN（去掉 Fleet）
 
 ## 0.1.3
 

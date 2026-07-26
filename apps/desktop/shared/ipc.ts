@@ -257,12 +257,6 @@ export type UiAgentEvent =
       sessionPath?: string | null;
     };
 
-/** Agent UI event tagged with Fleet slot (all slots stream independently). */
-export type SlotAgentEvent = {
-  slotId: string;
-  event: UiAgentEvent;
-};
-
 export interface HostStatus {
   status: AgentStatus;
   cwd: string | null;
@@ -273,50 +267,6 @@ export interface HostStatus {
   error?: string;
   hasSession: boolean;
 }
-
-export interface FleetSlotInfo {
-  id: string;
-  label: string;
-  cwd: string | null;
-  sessionId: string | null;
-  role: "primary" | "worker" | "reviewer";
-  createdAt: string;
-  /** True while the slot's SessionHost is streaming or retrying. */
-  busy: boolean;
-}
-
-export type FleetPairPhase =
-  | "idle"
-  | "wave1"
-  | "wave2"
-  | "done"
-  | "aborted"
-  | "error";
-
-export interface FleetPairState {
-  phase: FleetPairPhase;
-  task?: string;
-  workerSlotId?: string;
-  reviewerSlotId?: string;
-  message?: string;
-}
-
-export interface FleetState {
-  slots: FleetSlotInfo[];
-  activeId: string | null;
-  pair: FleetPairState;
-}
-
-/** Lightweight Fleet UI channel (inactive slots / pair progress). */
-export type FleetUiEvent =
-  | {
-      type: "slot_status";
-      slotId: string;
-      busy: boolean;
-      status: AgentStatus;
-    }
-  | { type: "pair_progress"; pair: FleetPairState }
-  | { type: "state"; state: FleetState };
 
 /** Bridge status for renderer (same shape as main-process bridge status). */
 export type GodotRpcStatusDto = GodotRpcBridgeStatus;
@@ -378,7 +328,10 @@ export interface PluginItem {
   name: string;
   path: string;
   description?: string;
-  editable: true;
+  /** False for resources that live inside an installed Pi package. */
+  editable: boolean;
+  /** Present when the item comes from `pi install` package resources. */
+  packageName?: string;
 }
 
 export interface PluginCreateInput {
@@ -497,6 +450,10 @@ export interface InstalledPackageInfo {
   source: string;
   installedAt: string;
   path?: string;
+  /** Resource counts from package.json `pi` field (when path is local). */
+  skillCount?: number;
+  promptCount?: number;
+  extensionCount?: number;
 }
 
 export interface PackageInstallResult {
@@ -546,15 +503,6 @@ export interface XAgentApi {
   listProjectDir: (relPath?: string) => Promise<ListProjectDirResult>;
   readProjectFile: (relPath: string) => Promise<ReadProjectFileResult>;
   revealInFolder: (relPath: string) => Promise<{ ok: boolean; error?: string }>;
-  fleetList: () => Promise<FleetSlotInfo[]>;
-  fleetState: () => Promise<FleetState>;
-  fleetCreate: (label: string, role?: FleetSlotInfo["role"]) => Promise<FleetSlotInfo>;
-  fleetSetActive: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  fleetRemove: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  fleetStartPair: (
-    task: string,
-  ) => Promise<{ ok: boolean; error?: string; pair?: FleetPairState }>;
-  fleetAbortPair: () => Promise<{ ok: boolean; error?: string; pair?: FleetPairState }>;
   godotRpcStatus: () => Promise<GodotRpcStatusDto>;
   godotRpcStart: () => Promise<GodotRpcStatusDto>;
   godotRpcStop: () => Promise<{ ok: boolean }>;
@@ -609,7 +557,6 @@ export interface XAgentApi {
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;
   installUpdate: () => Promise<{ ok: boolean; error?: string }>;
-  onEvent: (handler: (payload: SlotAgentEvent) => void) => () => void;
-  onFleetEvent: (handler: (event: FleetUiEvent) => void) => () => void;
+  onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
 }

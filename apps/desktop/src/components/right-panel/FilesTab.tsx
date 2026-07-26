@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -8,8 +15,15 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { setPreviewPath } from "../../stores/right-panel-store";
+import { joinProjectAbs } from "../../lib/project-path";
 
 type DirEntry = { name: string; isDir: boolean };
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+  relPath: string;
+};
 
 interface TreeNodeProps {
   cwdReady: boolean;
@@ -17,6 +31,11 @@ interface TreeNodeProps {
   depth: number;
   selectedPath: string | null;
   onSelectFile: (relPath: string) => void;
+  onContextPath: (
+    relPath: string,
+    e: ReactMouseEvent,
+    isDir: boolean,
+  ) => void;
 }
 
 function joinRel(dir: string, name: string): string {
@@ -30,6 +49,7 @@ function TreeNode({
   depth,
   selectedPath,
   onSelectFile,
+  onContextPath,
 }: TreeNodeProps) {
   const [open, setOpen] = useState(depth === 0);
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
@@ -61,8 +81,9 @@ function TreeNode({
       {depth > 0 && (
         <button
           type="button"
-          className="rp-tree-row is-dir"
+          className={`rp-tree-row is-dir${selectedPath === relDir ? " active" : ""}`}
           onClick={() => setOpen((v) => !v)}
+          onContextMenu={(e) => onContextPath(relDir, e, true)}
         >
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           {open ? <FolderOpen size={12} /> : <Folder size={12} />}
@@ -101,6 +122,7 @@ function TreeNode({
                   depth={depth + 1}
                   selectedPath={selectedPath}
                   onSelectFile={onSelectFile}
+                  onContextPath={onContextPath}
                 />
               );
             }
@@ -110,6 +132,7 @@ function TreeNode({
                 type="button"
                 className={`rp-tree-row${selectedPath === childPath ? " active" : ""}`}
                 onClick={() => onSelectFile(childPath)}
+                onContextMenu={(ev) => onContextPath(childPath, ev, false)}
               >
                 <span className="rp-tree-spacer" />
                 <FileText size={12} />
@@ -124,15 +147,18 @@ function TreeNode({
 }
 
 interface Props {
-  slotId: string;
   cwd: string | null;
   previewPath: string | null;
+  onAddPathToChat: (relPath: string) => void;
 }
 
-export function FilesTab({ slotId, cwd, previewPath }: Props) {
+export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
   const [content, setContent] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,19 +185,106 @@ export function FilesTab({ slotId, cwd, previewPath }: Props) {
     };
   }, [cwd, previewPath]);
 
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const selectionLocked = Boolean(menu);
+  /** While the context menu is open, highlight stays on the menu target. */
+  const highlightPath = menu?.relPath ?? previewPath;
+
+  const onContextPath = useCallback(
+    (relPath: string, e: ReactMouseEvent, isDir: boolean) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isDir) setPreviewPath(relPath);
+      setMenu({ x: e.clientX, y: e.clientY, relPath });
+    },
+    [],
+  );
+
+  const onSelectFile = useCallback(
+    (path: string) => {
+      if (selectionLocked) return;
+      setPreviewPath(path);
+    },
+    [selectionLocked],
+  );
+
+  useLayoutEffect(() => {
+    if (!menu || !menuRef.current) return;
+    const el = menuRef.current;
+    const rect = el.getBoundingClientRect();
+    const pad = 8;
+    let x = menu.x;
+    let y = menu.y;
+    if (x + rect.width > window.innerWidth - pad) {
+      x = Math.max(pad, window.innerWidth - rect.width - pad);
+    }
+    if (y + rect.height > window.innerHeight - pad) {
+      y = Math.max(pad, window.innerHeight - rect.height - pad);
+    }
+    if (x !== menu.x || y !== menu.y) {
+      setMenu((m) => (m ? { ...m, x, y } : m));
+    }
+  }, [menu]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenu();
+    };
+    const onPointer = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      closeMenu();
+    };
+    const onScroll = () => closeMenu();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointer);
+    treeRef.current?.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointer);
+      treeRef.current?.removeEventListener("scroll", onScroll);
+    };
+  }, [menu, closeMenu]);
+
+  const runMenu = async (
+    action: "add" | "reveal" | "copyAbs" | "copyRel",
+  ) => {
+    if (!menu || !cwd) return;
+    const { relPath } = menu;
+    closeMenu();
+    if (action === "add") {
+      onAddPathToChat(relPath);
+      return;
+    }
+    if (action === "reveal") {
+      await window.xAgent.revealInFolder(relPath);
+      return;
+    }
+    if (action === "copyAbs") {
+      await navigator.clipboard.writeText(joinProjectAbs(cwd, relPath));
+      return;
+    }
+    await navigator.clipboard.writeText(relPath.replace(/\\/g, "/"));
+  };
+
   if (!cwd) {
     return <div className="rp-empty">请先打开项目文件夹</div>;
   }
 
   return (
-    <div className="rp-files">
-      <div className="rp-files-tree">
+    <div className={`rp-files${selectionLocked ? " is-context-menu-open" : ""}`}>
+      <div
+        className={`rp-files-tree${selectionLocked ? " is-menu-open" : ""}`}
+        ref={treeRef}
+      >
         <TreeNode
           cwdReady={Boolean(cwd)}
           relDir=""
           depth={0}
-          selectedPath={previewPath}
-          onSelectFile={(path) => setPreviewPath(slotId, path)}
+          selectedPath={highlightPath}
+          onSelectFile={onSelectFile}
+          onContextPath={onContextPath}
         />
       </div>
       <div className="rp-files-preview">
@@ -198,6 +311,49 @@ export function FilesTab({ slotId, cwd, previewPath }: Props) {
           <div className="rp-empty">从上方树中选择文件，或从工具详情联动路径</div>
         )}
       </div>
+      {menu && (
+        <div
+          ref={menuRef}
+          className="rp-context-menu"
+          style={{ left: menu.x, top: menu.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            className="rp-context-menu-item"
+            role="menuitem"
+            onClick={() => void runMenu("add")}
+          >
+            加入对话
+          </button>
+          <div className="rp-context-menu-sep" />
+          <button
+            type="button"
+            className="rp-context-menu-item"
+            role="menuitem"
+            onClick={() => void runMenu("reveal")}
+          >
+            在资源管理器中显示
+          </button>
+          <div className="rp-context-menu-sep" />
+          <button
+            type="button"
+            className="rp-context-menu-item"
+            role="menuitem"
+            onClick={() => void runMenu("copyAbs")}
+          >
+            复制路径
+          </button>
+          <button
+            type="button"
+            className="rp-context-menu-item"
+            role="menuitem"
+            onClick={() => void runMenu("copyRel")}
+          >
+            复制相对路径
+          </button>
+        </div>
+      )}
     </div>
   );
 }

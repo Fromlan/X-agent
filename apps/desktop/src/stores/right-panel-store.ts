@@ -1,12 +1,12 @@
 export type RightPanelTab = "tools" | "files" | "godot";
 
-export type SlotPanelState = {
+export type PanelState = {
   tab: RightPanelTab;
   selectedToolId: string | null;
   previewPath: string | null;
 };
 
-const DEFAULT_STATE: SlotPanelState = {
+const DEFAULT_STATE: PanelState = {
   tab: "tools",
   selectedToolId: null,
   previewPath: null,
@@ -14,7 +14,7 @@ const DEFAULT_STATE: SlotPanelState = {
 
 type Listener = () => void;
 
-const bySlot = new Map<string, SlotPanelState>();
+let state: PanelState = { ...DEFAULT_STATE };
 const listeners = new Set<Listener>();
 let storeVersion = 0;
 
@@ -23,43 +23,33 @@ function emit(): void {
   for (const l of listeners) l();
 }
 
-function cloneDefault(): SlotPanelState {
-  return { ...DEFAULT_STATE };
+export function getPanelState(): PanelState {
+  return state;
 }
 
-export function getSlotPanelState(slotId: string): SlotPanelState {
-  return bySlot.get(slotId) ?? cloneDefault();
-}
-
-export function patchSlotPanelState(
-  slotId: string,
-  patch: Partial<SlotPanelState>,
-): SlotPanelState {
-  const prev = getSlotPanelState(slotId);
-  const next = { ...prev, ...patch };
-  bySlot.set(slotId, next);
+export function patchPanelState(patch: Partial<PanelState>): PanelState {
+  state = { ...state, ...patch };
   emit();
-  return next;
+  return state;
 }
 
-export function setRightPanelTab(slotId: string, tab: RightPanelTab): void {
-  patchSlotPanelState(slotId, { tab });
+export function setRightPanelTab(tab: RightPanelTab): void {
+  patchPanelState({ tab });
 }
 
 export function selectToolInPanel(
-  slotId: string,
   toolId: string,
   previewPath?: string | null,
 ): void {
-  patchSlotPanelState(slotId, {
+  patchPanelState({
     tab: "tools",
     selectedToolId: toolId,
     ...(previewPath !== undefined ? { previewPath } : {}),
   });
 }
 
-export function setPreviewPath(slotId: string, previewPath: string | null): void {
-  patchSlotPanelState(slotId, { previewPath });
+export function setPreviewPath(previewPath: string | null): void {
+  patchPanelState({ previewPath });
 }
 
 export function subscribeRightPanelStore(listener: Listener): () => void {

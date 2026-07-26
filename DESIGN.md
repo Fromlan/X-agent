@@ -132,9 +132,9 @@ Focus 光晕用 `--focus-ring-soft`，不算装饰阴影。
 ## 六、布局壳层
 
 ```
-TopBar → FleetStrip → [banners] → main-row
+TopBar → [banners] → main-row
   ├── Sidebar（会话列表，~260px）
-  ├── Chat（单栏或 Fleet 双栏）
+  ├── Chat
   └── RightPanel（可选，~300px；默认折叠；空壳占位）
 ```
 
