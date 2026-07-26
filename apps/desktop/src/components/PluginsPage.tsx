@@ -360,20 +360,27 @@ export function PluginsPage({ cwd }: Props) {
                       className="btn btn-ghost btn-sm"
                       disabled={busy}
                       onClick={async () => {
-                        if (!confirm(`从本机记录中移除 ${pkg.name}？不会卸载 Pi 侧文件（可用 pi remove）。`)) {
+                        if (
+                          !confirm(
+                            `卸载 ${pkg.name}？将执行 pi uninstall 并从设置中移除该包。`,
+                          )
+                        ) {
                           return;
                         }
                         setBusy(true);
-                        const res = await window.xAgent.removePackageRecord(pkg.name);
+                        const res = await window.xAgent.uninstallPackage(
+                          pkg.source,
+                        );
                         setBusy(false);
-                        if (!res.ok) setError(res.error ?? "移除失败");
+                        if (!res.ok) setError(res.error ?? "卸载失败");
                         else {
-                          setMessage("已移除记录");
+                          setMessage("已卸载");
+                          setError(null);
                           await refresh();
                         }
                       }}
                     >
-                      移除记录
+                      卸载
                     </button>
                   </div>
                 ))}

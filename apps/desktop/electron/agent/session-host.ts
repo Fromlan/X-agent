@@ -820,7 +820,7 @@ export class SessionHost {
           const bt = new Date(b.modified ?? b.created ?? 0).getTime();
           return bt - at;
         })
-        .slice(0, 50)
+        .slice(0, 100)
         .map((s) => ({
           id: s.id,
           name: displaySessionName(s.name, s.firstMessage),

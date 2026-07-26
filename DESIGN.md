@@ -135,12 +135,15 @@ Focus 光晕用 `--focus-ring-soft`，不算装饰阴影。
 TopBar → [banners] → main-row
   ├── Sidebar（会话列表，~260px）
   ├── Chat
-  └── RightPanel（可选，~300px；默认折叠；空壳占位）
+  └── RightPanel（可选，~300px；默认折叠；Tools / Files / Godot 三页签）
 ```
 
 - 区域分割：`1px solid var(--border-primary)`。
 - Settings：仍为居中模态（非全屏路由）；左侧 nav 用 pill 选中态。
 - 右栏：`ClientPrefs.rightPanelOpen`；窄窗（≤960px）隐藏右栏。
+  - **Tools**：当前回合工具调用详情
+  - **Files**：项目文件树、预览、右键（加入对话 / 资源管理器 / 复制路径）
+  - **Godot**：RPC 桥接状态、Ping、客户端列表（完整控制面在设置 → Godot RPC）
 
 ---
 

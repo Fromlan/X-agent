@@ -580,6 +580,7 @@ export default function App() {
         <Sidebar
           sessions={sessions}
           activeSessionId={sessionId}
+          activeCwd={cwd}
           agentStatus={status}
           busy={busy}
           onResume={resumeSession}

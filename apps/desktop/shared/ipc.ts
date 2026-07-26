@@ -87,7 +87,6 @@ export const ALL_TOGGLEABLE_TOOLS = [
 
 export interface ClientPrefs {
   theme: "light" | "dark";
-  language: "zh" | "en";
   showThinking: boolean;
   lastProjectPath: string | null;
   lastSessionPath: string | null;
@@ -97,7 +96,7 @@ export interface ClientPrefs {
   tools: string[];
   /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
   godotEditorPath: string | null;
-  /** Whether the right tool panel skeleton is open. */
+  /** Whether the right tool panel is open. */
   rightPanelOpen: boolean;
   /** Left session sidebar width in px. */
   sidebarWidth: number;
@@ -107,7 +106,6 @@ export interface ClientPrefs {
 
 export const DEFAULT_PREFS: ClientPrefs = {
   theme: "dark",
-  language: "zh",
   showThinking: true,
   lastProjectPath: null,
   lastSessionPath: null,
@@ -550,7 +548,9 @@ export interface XAgentApi {
   }) => Promise<FetchProviderModelsResult>;
   listInstalledPackages: () => Promise<InstalledPackageInfo[]>;
   installPackage: (source: string) => Promise<PackageInstallResult>;
-  removePackageRecord: (name: string) => Promise<{ ok: boolean; error?: string }>;
+  uninstallPackage: (
+    source: string,
+  ) => Promise<{ ok: boolean; error?: string; output?: string }>;
   installGodotPiPackage: () => Promise<PackageInstallResult>;
   openPiLogin: () => Promise<{ ok: boolean; error?: string; hint?: string }>;
   getUpdateStatus: () => Promise<AppUpdateStatus>;

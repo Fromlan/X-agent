@@ -28,8 +28,12 @@ export function loadPrefs(): ClientPrefs {
     return defaults;
   }
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ClientPrefs>;
-    return { ...DEFAULT_PREFS, ...raw };
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ClientPrefs> & {
+      language?: unknown;
+    };
+    // Drop legacy unused `language` field from older prefs files.
+    const { language: _legacyLanguage, ...rest } = raw;
+    return { ...DEFAULT_PREFS, ...rest };
   } catch {
     return { ...DEFAULT_PREFS };
   }

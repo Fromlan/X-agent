@@ -78,8 +78,8 @@ const api: XAgentApi = {
   fetchProviderModels: (input) => ipcRenderer.invoke("fetchProviderModels", input),
   listInstalledPackages: () => ipcRenderer.invoke("listInstalledPackages"),
   installPackage: (source: string) => ipcRenderer.invoke("installPackage", source),
-  removePackageRecord: (name: string) =>
-    ipcRenderer.invoke("removePackageRecord", name),
+  uninstallPackage: (source: string) =>
+    ipcRenderer.invoke("uninstallPackage", source),
   installGodotPiPackage: () => ipcRenderer.invoke("installGodotPiPackage"),
   openPiLogin: () => ipcRenderer.invoke("openPiLogin"),
   getUpdateStatus: () => ipcRenderer.invoke("getUpdateStatus"),

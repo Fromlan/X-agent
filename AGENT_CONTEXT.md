@@ -144,8 +144,8 @@ await createAgentSession({
 | `thinkingLevel` | 是 |
 | `tools` | 是（可用工具集） |
 | `showThinking` | 否（仅 UI） |
-| `theme` / `language` | 否 |
-| `lastProjectPath` / `lastSessionPath` | 否（启动恢复；仅活动槽写回） |
+| `theme` | 否 |
+| `lastProjectPath` / `lastSessionPath` | 否（启动恢复；由当前 `SessionHost` 写回） |
 | `godotEditorPath` | 否（启编辑器用） |
 
 ---
@@ -153,8 +153,8 @@ await createAgentSession({
 ## 插件与 Packages 如何进入上下文
 
 - [`plugin-host.ts`](apps/desktop/electron/agent/plugin-host.ts)：在全局 `~/.pi/agent/{prompts,skills,extensions,themes}` 与项目 `cwd/.pi/...` 做 CRUD；写入的是 **Pi 会扫描的文件树**，不是另一套注入 API。
-- 插件变更后：IPC → 活动槽 `reloadResources()` → `session.reload()`。
-- [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts)：封装 `pi install`，并在 `x-agent-packages.json` 记账；**真正加载**仍是 Pi loader。
+- 插件变更后：IPC → `SessionHost.reloadResources()` → `session.reload()`。
+- [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts)：封装 `pi install` / `pi uninstall`，并在 `x-agent-packages.json` 记账；**真正加载**仍是 Pi loader。
 - 类型语义见上表；主题不进 LLM。细节见 [`Pi插件指导文档.md`](Pi插件指导文档.md)。
 
 ---

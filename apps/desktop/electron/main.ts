@@ -20,7 +20,7 @@ import {
   installGodotPiPackage,
   installPackage,
   listInstalledPackages,
-  removePackageRecord,
+  uninstallPackage,
 } from "./agent/package-manager";
 import {
   createPlugin,
@@ -88,7 +88,7 @@ function registerIpc(): void {
     let projectPath = path;
     if (!projectPath) {
       const result = await dialog.showOpenDialog({
-        title: "???????",
+        title: "打开项目文件夹",
         properties: ["openDirectory"],
       });
       if (result.canceled || result.filePaths.length === 0) {
@@ -98,7 +98,7 @@ function registerIpc(): void {
           sessionId: "",
           model: null,
           thinkingLevel: "off",
-          error: "???",
+          error: "已取消",
         };
       }
       projectPath = result.filePaths[0];
@@ -147,7 +147,7 @@ function registerIpc(): void {
   ipcMain.handle("pickBashShell", async () => {
     const current = checkBash();
     const result = await dialog.showOpenDialog({
-      title: "?? bash ?????",
+      title: "选择 bash 可执行文件",
       defaultPath:
         current.shellPath ?? current.suggestedShellPath ?? undefined,
       properties: ["openFile"],
@@ -155,7 +155,7 @@ function registerIpc(): void {
         process.platform === "win32"
           ? [
               { name: "bash", extensions: ["exe"] },
-              { name: "????", extensions: ["*"] },
+              { name: "所有文件", extensions: ["*"] },
             ]
           : [{ name: "bash", extensions: ["*"] }],
     });
@@ -229,18 +229,18 @@ function registerIpc(): void {
   ipcMain.handle("pickGodotEditor", async () => {
     const prefs = loadPrefs();
     const result = await dialog.showOpenDialog({
-      title: "?? Godot ???????",
+      title: "选择 Godot 引擎可执行文件",
       defaultPath: prefs.godotEditorPath ?? undefined,
       properties: ["openFile"],
       filters:
         process.platform === "win32"
           ? [
               { name: "Godot", extensions: ["exe"] },
-              { name: "????", extensions: ["*"] },
+              { name: "所有文件", extensions: ["*"] },
             ]
           : [
               { name: "Godot", extensions: ["*"] },
-              { name: "????", extensions: ["app"] },
+              { name: "应用程序", extensions: ["app"] },
             ],
     });
     if (result.canceled || result.filePaths.length === 0) {
@@ -255,17 +255,17 @@ function registerIpc(): void {
     const prefs = loadPrefs();
     const editor = prefs.godotEditorPath;
     if (!editor) {
-      return { ok: false, error: "???? Godot ????" };
+      return { ok: false, error: "请先选择 Godot 引擎路径" };
     }
     if (!existsSync(editor)) {
-      return { ok: false, error: `??????${editor}` };
+      return { ok: false, error: `引擎不存在：${editor}` };
     }
     // Ensure bridge is up and endpoint file is written before Godot starts.
     const bridgeStatus = await godotRpc.start();
     if (!bridgeStatus.running) {
       return {
         ok: false,
-        error: bridgeStatus.error ?? "???? RPC ??",
+        error: bridgeStatus.error ?? "无法启动 RPC 桥接",
       };
     }
     const project =
@@ -274,7 +274,7 @@ function registerIpc(): void {
     if (project) {
       const install = installGodotRpcAddon(project);
       if (!install.ok) {
-        return { ok: false, error: install.error ?? "??????" };
+        return { ok: false, error: install.error ?? "插件安装失败" };
       }
     }
     const args: string[] = [];
@@ -294,8 +294,8 @@ function registerIpc(): void {
         ok: true,
         port: bridgeStatus.port,
         hint: project
-          ? `?????? X-agent RPC ???????????? Godot ???/???????? Ping????? ${bridgeStatus.port}??`
-          : `??????????? X-agent RPC ?????????? ${bridgeStatus.port}??`,
+          ? `已安装并启用 X-agent RPC 插件并用项目启动。需要在 Godot 中重启/确认插件启用后再 Ping（桥接端口 ${bridgeStatus.port}）。`
+          : `已启动编辑器。请打开含 X-agent RPC 插件的项目（桥接端口 ${bridgeStatus.port}）。`,
       };
     } catch (err) {
       return {
@@ -309,7 +309,7 @@ function registerIpc(): void {
     const prefs = loadPrefs();
     const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
     if (!project) {
-      return { ok: false, error: "????????? lastProjectPath" };
+      return { ok: false, error: "请先打开项目或设置 lastProjectPath" };
     }
     return installGodotRpcAddon(project);
   });
@@ -319,12 +319,12 @@ function registerIpc(): void {
     const project =
       sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
     const result = await dialog.showOpenDialog({
-      title: "??????",
+      title: "选择场景文件",
       defaultPath: project ?? undefined,
       properties: ["openFile"],
       filters: [
         { name: "Godot Scene", extensions: ["tscn", "scn"] },
-        { name: "????", extensions: ["*"] },
+        { name: "所有文件", extensions: ["*"] },
       ],
     });
     if (result.canceled || result.filePaths.length === 0) {
@@ -339,7 +339,7 @@ function registerIpc(): void {
       }
       return {
         ok: false,
-        error: "????????????????? res:// ??",
+        error: "场景不在当前项目目录内，无法转换为 res:// 路径",
       };
     }
     return { ok: true, path: abs };
@@ -401,7 +401,7 @@ function registerIpc(): void {
       result.model,
     );
     if (!applied.ok) {
-      return { ok: false, error: applied.error ?? "???????" };
+      return { ok: false, error: applied.error ?? "运行时重载失败" };
     }
     return result;
   });
@@ -416,13 +416,27 @@ function registerIpc(): void {
   );
 
   ipcMain.handle("listInstalledPackages", async () => listInstalledPackages());
-  ipcMain.handle("installPackage", async (_e, source: string) =>
-    installPackage(source),
-  );
-  ipcMain.handle("removePackageRecord", async (_e, name: string) =>
-    removePackageRecord(name),
-  );
-  ipcMain.handle("installGodotPiPackage", async () => installGodotPiPackage());
+  ipcMain.handle("installPackage", async (_e, source: string) => {
+    const result = await installPackage(source);
+    if (result.ok) {
+      await sessionHost.reloadResources();
+    }
+    return result;
+  });
+  ipcMain.handle("uninstallPackage", async (_e, source: string) => {
+    const result = await uninstallPackage(source);
+    if (result.ok) {
+      await sessionHost.reloadResources();
+    }
+    return result;
+  });
+  ipcMain.handle("installGodotPiPackage", async () => {
+    const result = await installGodotPiPackage();
+    if (result.ok) {
+      await sessionHost.reloadResources();
+    }
+    return result;
+  });
   ipcMain.handle("openPiLogin", async () => openPiLogin());
   ipcMain.handle("getUpdateStatus", async () => autoUpdate.getStatus());
   ipcMain.handle("checkForUpdates", async () => autoUpdate.check());

@@ -30,7 +30,7 @@ npm run desktop:smoke      # 真实模型冒烟
 npm run desktop:dist       # electron-builder（Windows）
 ```
 
-`npm test`（在 `apps/desktop`）串联：`test-history-mapper`、`test-session-paths`、`test-session-title`、`test-chat-store`、`test-plugin-host`、`test-provider-store`、`test-model-fetch`、`test-godot-rpc-bridge`、`test-pi-cli`。
+`npm test`（在 `apps/desktop`）串联：`test-history-mapper`、`test-session-paths`、`test-session-title`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-model-fetch`、`test-godot-rpc-bridge`、`test-pi-cli`、`test-package-manager`。
 
 冒烟（需本机认证）：
 

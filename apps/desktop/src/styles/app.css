@@ -553,6 +553,62 @@ body.is-resizing-column * {
   margin: 0 0 4px;
 }
 
+.session-list > li.project-group {
+  margin: 0 0 8px;
+}
+
+.project-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin: 0 0 2px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-group-header:hover {
+  background: var(--bg-list-hover);
+  color: var(--text-primary);
+}
+
+.project-group-header.is-active-project {
+  color: var(--text-primary);
+}
+
+.project-group-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-group-count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+}
+
+.project-group-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 4px;
+}
+
+.project-group-sessions > li {
+  margin: 0 0 4px;
+}
+
 .session-empty {
   padding: 16px 10px;
   color: var(--text-muted);

@@ -1,17 +1,31 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Check, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { AgentStatus, SessionInfo } from "@shared/ipc";
+import {
+  groupSessionsByProject,
+  normalizeProjectKey,
+} from "@/lib/group-sessions";
 import { StatusIcon } from "./StatusIcon";
 
 interface Props {
   sessions: SessionInfo[];
   activeSessionId: string | null;
+  activeCwd: string | null;
   agentStatus: AgentStatus;
   busy: boolean;
   onResume: (path: string) => void;
@@ -23,14 +37,10 @@ interface Props {
   resizing?: boolean;
 }
 
-function shortPath(p: string): string {
-  if (p.length <= 36) return p;
-  return `…${p.slice(-34)}`;
-}
-
 export function Sidebar({
   sessions,
   activeSessionId,
+  activeCwd,
   agentStatus,
   busy,
   onResume,
@@ -45,7 +55,35 @@ export function Sidebar({
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const groups = useMemo(() => groupSessionsByProject(sessions), [sessions]);
+
+  const keysToExpand = useMemo(() => {
+    const keys = new Set<string>();
+    if (activeCwd) keys.add(normalizeProjectKey(activeCwd));
+    if (activeSessionId) {
+      const match = sessions.find((s) => s.id === activeSessionId);
+      if (match) keys.add(normalizeProjectKey(match.cwd));
+    }
+    return keys;
+  }, [activeCwd, activeSessionId, sessions]);
+
+  useEffect(() => {
+    if (keysToExpand.size === 0) return;
+    setCollapsed((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const key of keysToExpand) {
+        if (next.has(key)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [keysToExpand]);
 
   useEffect(() => {
     if (editingPath) {
@@ -97,6 +135,17 @@ export function Sidebar({
     }
   };
 
+  const toggleGroup = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const activeKey = activeCwd ? normalizeProjectKey(activeCwd) : "";
+
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -115,103 +164,128 @@ export function Sidebar({
         {sessions.length === 0 && (
           <li className="session-empty">暂无会话记录</li>
         )}
-        {sessions.map((s) => {
-          const active = s.id === activeSessionId;
-          const editing = editingPath === s.path;
+        {groups.map((group) => {
+          const expanded = !collapsed.has(group.key);
+          const isActiveProject = group.key === activeKey && activeKey !== "";
           return (
-            <li key={s.path}>
-              <div className={active ? "session-card active" : "session-card"}>
-                {editing ? (
-                  <div className="session-card-edit">
-                    <StatusIcon status={active ? agentStatus : "idle"} />
-                    <input
-                      ref={inputRef}
-                      className="session-rename-input"
-                      value={draftName}
-                      disabled={renaming}
-                      onChange={(e) => setDraftName(e.target.value)}
-                      onKeyDown={(e) => onEditKeyDown(e, s.path)}
-                      onBlur={() => {
-                        // Delay so action buttons can receive the click first.
-                        window.setTimeout(() => {
-                          if (editingPath === s.path && !renaming) {
-                            void commitEdit(s.path);
-                          }
-                        }, 120);
-                      }}
-                      maxLength={80}
-                      aria-label="会话标题"
-                    />
-                    <div className="session-card-actions">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-icon"
-                        title="保存"
-                        disabled={renaming || !draftName.trim()}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => void commitEdit(s.path)}
-                      >
-                        <Check size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-icon"
-                        title="取消"
-                        disabled={renaming}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={cancelEdit}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="session-card-main"
-                      onClick={() => onResume(s.path)}
-                      disabled={locked}
-                      title={s.name}
-                    >
-                      <StatusIcon status={active ? agentStatus : "idle"} />
-                      <div className="session-card-text">
-                        <div className="session-card-title">{s.name}</div>
-                        <div className="session-card-meta">
-                          {shortPath(s.cwd || s.path)}
+            <li key={group.key || "__unknown__"} className="project-group">
+              <button
+                type="button"
+                className={
+                  isActiveProject
+                    ? "project-group-header is-active-project"
+                    : "project-group-header"
+                }
+                onClick={() => toggleGroup(group.key)}
+                title={group.cwd || "未知项目"}
+                aria-expanded={expanded}
+              >
+                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                <span className="project-group-label">{group.label}</span>
+                <span className="project-group-count tabular">{group.sessions.length}</span>
+              </button>
+              {expanded && (
+                <ul className="project-group-sessions">
+                  {group.sessions.map((s) => {
+                    const active = s.id === activeSessionId;
+                    const editing = editingPath === s.path;
+                    return (
+                      <li key={s.path}>
+                        <div
+                          className={active ? "session-card active" : "session-card"}
+                        >
+                          {editing ? (
+                            <div className="session-card-edit">
+                              <StatusIcon status={active ? agentStatus : "idle"} />
+                              <input
+                                ref={inputRef}
+                                className="session-rename-input"
+                                value={draftName}
+                                disabled={renaming}
+                                onChange={(e) => setDraftName(e.target.value)}
+                                onKeyDown={(e) => onEditKeyDown(e, s.path)}
+                                onBlur={() => {
+                                  window.setTimeout(() => {
+                                    if (editingPath === s.path && !renaming) {
+                                      void commitEdit(s.path);
+                                    }
+                                  }, 120);
+                                }}
+                                maxLength={80}
+                                aria-label="会话标题"
+                              />
+                              <div className="session-card-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-icon"
+                                  title="保存"
+                                  disabled={renaming || !draftName.trim()}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => void commitEdit(s.path)}
+                                >
+                                  <Check size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-icon"
+                                  title="取消"
+                                  disabled={renaming}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={cancelEdit}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="session-card-main"
+                                onClick={() => onResume(s.path)}
+                                disabled={locked}
+                                title={s.name}
+                              >
+                                <StatusIcon status={active ? agentStatus : "idle"} />
+                                <div className="session-card-text">
+                                  <div className="session-card-title">{s.name}</div>
+                                  <div className="session-card-meta tabular">
+                                    {new Date(s.updatedAt).toLocaleString()}
+                                  </div>
+                                </div>
+                              </button>
+                              <div className="session-card-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-icon"
+                                  title="重命名"
+                                  disabled={busy || renaming}
+                                  onClick={() => startEdit(s)}
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-icon"
+                                  title="删除"
+                                  disabled={busy || renaming}
+                                  onClick={() => {
+                                    if (window.confirm(`删除会话「${s.name}」？`)) {
+                                      onDelete(s.path);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div className="session-card-meta tabular">
-                          {new Date(s.updatedAt).toLocaleString()}
-                        </div>
-                      </div>
-                    </button>
-                    <div className="session-card-actions">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-icon"
-                        title="重命名"
-                        disabled={busy || renaming}
-                        onClick={() => startEdit(s)}
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-icon"
-                        title="删除"
-                        disabled={busy || renaming}
-                        onClick={() => {
-                          if (window.confirm(`删除会话「${s.name}」？`)) {
-                            onDelete(s.path);
-                          }
-                        }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </li>
           );
         })}

@@ -228,14 +228,15 @@ export function listInstalledPackages(): InstalledPackageInfo[] {
   });
 }
 
-function runPiInstall(
+function runPiPackageCommand(
   piPath: string,
-  source: string,
+  args: string[],
+  timeoutLabel: string,
 ): Promise<{ code: number | null; output: string }> {
   return new Promise((resolvePromise) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(piPath, ["install", source], spawnOptsForCli(piPath));
+      child = spawn(piPath, args, spawnOptsForCli(piPath));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       resolvePromise({ code: 1, output: message });
@@ -250,7 +251,10 @@ function runPiInstall(
     child.stderr?.on("data", append);
     const timer = setTimeout(() => {
       child.kill();
-      resolvePromise({ code: null, output: `${output}\ninstall timeout` });
+      resolvePromise({
+        code: null,
+        output: `${output}\n${timeoutLabel} timeout`,
+      });
     }, 5 * 60 * 1000);
     child.on("error", (err) => {
       clearTimeout(timer);
@@ -261,6 +265,15 @@ function runPiInstall(
       resolvePromise({ code, output });
     });
   });
+}
+
+/** Drop registry entries whose source matches (for tests + uninstall). */
+export function dropRegistryPackagesBySource(
+  packages: InstalledPackageInfo[],
+  source: string,
+): InstalledPackageInfo[] {
+  const key = normalizeSourceKey(source);
+  return packages.filter((p) => normalizeSourceKey(p.source) !== key);
 }
 
 function packageNameFromSource(source: string, fallbackPath?: string): string {
@@ -290,7 +303,11 @@ export async function installPackage(source: string): Promise<PackageInstallResu
     };
   }
   const absSource = existsSync(trimmed) ? resolve(trimmed) : trimmed;
-  const { code, output } = await runPiInstall(cli.piPath, absSource);
+  const { code, output } = await runPiPackageCommand(
+    cli.piPath,
+    ["install", absSource],
+    "install",
+  );
   if (code !== 0) {
     return {
       ok: false,
@@ -308,25 +325,80 @@ export async function installPackage(source: string): Promise<PackageInstallResu
     path: existsSync(absSource) ? absSource : undefined,
   });
   const reg = readRegistry();
-  reg.packages = reg.packages.filter(
-    (p) => normalizeSourceKey(p.source) !== normalizeSourceKey(entry.source),
-  );
+  reg.packages = dropRegistryPackagesBySource(reg.packages, entry.source);
   reg.packages.push(entry);
   writeRegistry(reg);
   return { ok: true, package: entry, output: output.trim().slice(-400) };
 }
 
-export function removePackageRecord(name: string): {
+/**
+ * Uninstall via `pi uninstall <source>` then drop matching x-agent registry rows.
+ * Registry-only orphans (not in settings.json) skip CLI and only clear the record.
+ */
+export async function uninstallPackage(source: string): Promise<{
   ok: boolean;
   error?: string;
-} {
+  output?: string;
+}> {
+  const trimmed = source.trim();
+  if (!trimmed) return { ok: false, error: "卸载源不能为空" };
+
+  const absSource = existsSync(trimmed) ? resolve(trimmed) : trimmed;
+  const inPiSettings = readPiSettingsPackageSources().some(
+    (s) =>
+      normalizeSourceKey(s) === normalizeSourceKey(absSource) ||
+      normalizeSourceKey(s) === normalizeSourceKey(trimmed),
+  );
   const reg = readRegistry();
-  const next = reg.packages.filter((p) => p.name !== name);
-  if (next.length === reg.packages.length) {
-    return { ok: false, error: "未找到该包记录" };
+  const inRegistry = reg.packages.some(
+    (p) =>
+      normalizeSourceKey(p.source) === normalizeSourceKey(absSource) ||
+      normalizeSourceKey(p.source) === normalizeSourceKey(trimmed),
+  );
+
+  if (!inPiSettings && !inRegistry) {
+    return { ok: false, error: "未找到该包" };
   }
-  writeRegistry({ packages: next });
-  return { ok: true };
+
+  let output = "";
+  if (inPiSettings) {
+    const cli = checkPiCli();
+    if (!cli.ok || !cli.piPath) {
+      return {
+        ok: false,
+        error:
+          "需要全局 Pi CLI 才能卸载 Packages。请先在设置中安装 Pi CLI，或手动执行 pi uninstall。",
+      };
+    }
+    // Prefer the exact settings entry string so pi can match it.
+    const settingsSource =
+      readPiSettingsPackageSources().find(
+        (s) =>
+          normalizeSourceKey(s) === normalizeSourceKey(absSource) ||
+          normalizeSourceKey(s) === normalizeSourceKey(trimmed),
+      ) ?? absSource;
+    const result = await runPiPackageCommand(
+      cli.piPath,
+      ["uninstall", settingsSource, "--no-approve"],
+      "uninstall",
+    );
+    output = result.output;
+    if (result.code !== 0) {
+      return {
+        ok: false,
+        error: `pi uninstall 失败（code=${result.code ?? "null"}）`,
+        output: output.trim().slice(-800),
+      };
+    }
+  }
+
+  writeRegistry({
+    packages: dropRegistryPackagesBySource(
+      dropRegistryPackagesBySource(reg.packages, absSource),
+      trimmed,
+    ),
+  });
+  return { ok: true, output: output.trim().slice(-400) || undefined };
 }
 
 /** Resolve bundled / workspace godot-pi package directory. */

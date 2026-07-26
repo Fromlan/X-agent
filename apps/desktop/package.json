@@ -1,6 +1,6 @@
 {
   "name": "x-agent-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Pi Agent desktop client (X-agent)",
   "main": "./out/main/index.js",
   "type": "module",
@@ -13,7 +13,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "tsx scripts/test-history-mapper.ts && tsx scripts/test-session-paths.ts && tsx scripts/test-session-title.ts && tsx --tsconfig tsconfig.web.json scripts/test-chat-store.ts && tsx scripts/test-plugin-host.ts && tsx scripts/test-provider-store.ts && tsx scripts/test-model-fetch.ts && tsx scripts/test-godot-rpc-bridge.ts && tsx scripts/test-pi-cli.ts && node ../../packages/godot-pi/scripts/check-skills.mjs",
+    "test": "tsx scripts/test-history-mapper.ts && tsx scripts/test-session-paths.ts && tsx scripts/test-session-title.ts && tsx --tsconfig tsconfig.web.json scripts/test-chat-store.ts && tsx --tsconfig tsconfig.web.json scripts/test-group-sessions.ts && tsx scripts/test-plugin-host.ts && tsx scripts/test-provider-store.ts && tsx scripts/test-model-fetch.ts && tsx scripts/test-godot-rpc-bridge.ts && tsx scripts/test-pi-cli.ts && tsx scripts/test-package-manager.ts && node ../../packages/godot-pi/scripts/check-skills.mjs",
     "dist": "npm run build && electron-builder --win --publish never",
     "dist:dir": "npm run build && electron-builder --win --dir --publish never"
   },
