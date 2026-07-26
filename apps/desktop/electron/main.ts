@@ -108,6 +108,28 @@ function registerIpc(): void {
 
   ipcMain.handle("prompt", async (_e, text: string) => sessionHost.prompt(text));
   ipcMain.handle("abort", async () => sessionHost.abort());
+  ipcMain.handle("previewRetract", async (_e, entryId: string) =>
+    sessionHost.previewRetract(entryId),
+  );
+  ipcMain.handle(
+    "retractToUserMessage",
+    async (_e, entryId: string, options?: { undoFiles?: boolean }) =>
+      sessionHost.retractToUserMessage(entryId, options),
+  );
+  ipcMain.handle(
+    "editAndResend",
+    async (
+      _e,
+      entryId: string,
+      text: string,
+      options?: { undoFiles?: boolean },
+    ) => sessionHost.editAndResend(entryId, text, options),
+  );
+  ipcMain.handle(
+    "regenerateFromUser",
+    async (_e, entryId: string, options?: { undoFiles?: boolean }) =>
+      sessionHost.regenerateFromUser(entryId, options),
+  );
   ipcMain.handle("newSession", async () => sessionHost.newSession());
   ipcMain.handle("setModel", async (_e, provider: string, id: string) =>
     sessionHost.setModel(provider, id),

@@ -16,6 +16,14 @@ interface Props {
   queuedSteering?: string[];
   bottomRef: RefObject<HTMLDivElement | null>;
   onOpenToolInPanel?: (toolId: string, args: unknown) => void;
+  editingEntryId?: string | null;
+  editDraft?: string;
+  onEditDraftChange?: (text: string) => void;
+  onStartEdit?: (entryId: string, text: string) => void;
+  onCancelEdit?: () => void;
+  onConfirmEdit?: () => void;
+  onRetract?: (entryId: string) => void;
+  onRegenerate?: (userEntryId: string) => void;
 }
 
 export function ChatPanel(props: Props) {
@@ -38,6 +46,14 @@ export function ChatPanel(props: Props) {
         disabledEmpty={props.disabled}
         bottomRef={props.bottomRef}
         onOpenToolInPanel={props.onOpenToolInPanel}
+        editingEntryId={props.editingEntryId}
+        editDraft={props.editDraft}
+        onEditDraftChange={props.onEditDraftChange}
+        onStartEdit={props.onStartEdit}
+        onCancelEdit={props.onCancelEdit}
+        onConfirmEdit={props.onConfirmEdit}
+        onRetract={props.onRetract}
+        onRegenerate={props.onRegenerate}
       />
 
       {props.queuedSteering && props.queuedSteering.length > 0 && (
@@ -58,7 +74,7 @@ export function ChatPanel(props: Props) {
                 ? "运行中：Enter 发送 steer，Shift+Enter 换行"
                 : "输入消息，Enter 发送，Shift+Enter 换行"
           }
-          disabled={props.disabled}
+          disabled={props.disabled || Boolean(props.editingEntryId)}
           rows={3}
         />
         <div className="composer-actions">
@@ -72,7 +88,11 @@ export function ChatPanel(props: Props) {
             type="button"
             className="btn btn-cta"
             onClick={props.onSend}
-            disabled={props.disabled || !props.input.trim()}
+            disabled={
+              props.disabled ||
+              !props.input.trim() ||
+              Boolean(props.editingEntryId)
+            }
           >
             <Send size={14} />
             {streaming ? "Steer" : "发送"}

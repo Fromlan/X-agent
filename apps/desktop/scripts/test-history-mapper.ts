@@ -1,4 +1,7 @@
-import { messagesToHistory } from "../electron/agent/history";
+import {
+  branchEntriesToHistory,
+  messagesToHistory,
+} from "../electron/agent/history";
 
 const sample = [
   {
@@ -36,4 +39,45 @@ if (items[0].kind !== "user" || items[0].text !== "你好") throw new Error("use
 if (items[1].kind !== "assistant" || !items[1].text.includes("你好")) throw new Error("asst");
 if (items[2].kind !== "tool" || items[2].toolName !== "ls" || !items[2].done) throw new Error("tool");
 if (items[3].kind !== "assistant") throw new Error("asst2");
+
+const branchItems = branchEntriesToHistory([
+  {
+    type: "message",
+    id: "entry-user-1",
+    message: sample[0],
+  },
+  {
+    type: "message",
+    id: "entry-asst-1",
+    message: sample[1],
+  },
+  {
+    type: "message",
+    id: "entry-tool-1",
+    message: sample[2],
+  },
+  {
+    type: "message",
+    id: "entry-asst-2",
+    message: sample[3],
+  },
+  {
+    type: "custom",
+    id: "entry-custom",
+  },
+]);
+
+if (branchItems[0]?.kind !== "user" || branchItems[0].entryId !== "entry-user-1") {
+  throw new Error("branch user entryId");
+}
+if (branchItems[1]?.kind !== "assistant" || branchItems[1].entryId !== "entry-asst-1") {
+  throw new Error("branch asst entryId");
+}
+if (branchItems[1].kind === "assistant" && branchItems[1].userEntryId !== "entry-user-1") {
+  throw new Error("branch asst userEntryId");
+}
+if (branchItems[3]?.kind !== "assistant" || branchItems[3].userEntryId !== "entry-user-1") {
+  throw new Error("branch asst2 userEntryId");
+}
+
 console.log("history mapper ok");

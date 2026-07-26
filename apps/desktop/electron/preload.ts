@@ -13,6 +13,21 @@ const api: XAgentApi = {
   openProject: (path?: string) => ipcRenderer.invoke("openProject", path),
   prompt: (text: string) => ipcRenderer.invoke("prompt", text),
   abort: () => ipcRenderer.invoke("abort"),
+  previewRetract: (entryId: string) =>
+    ipcRenderer.invoke("previewRetract", entryId),
+  retractToUserMessage: (
+    entryId: string,
+    options?: { undoFiles?: boolean },
+  ) => ipcRenderer.invoke("retractToUserMessage", entryId, options),
+  editAndResend: (
+    entryId: string,
+    text: string,
+    options?: { undoFiles?: boolean },
+  ) => ipcRenderer.invoke("editAndResend", entryId, text, options),
+  regenerateFromUser: (
+    entryId: string,
+    options?: { undoFiles?: boolean },
+  ) => ipcRenderer.invoke("regenerateFromUser", entryId, options),
   newSession: () => ipcRenderer.invoke("newSession"),
   setModel: (provider: string, id: string) =>
     ipcRenderer.invoke("setModel", provider, id),
