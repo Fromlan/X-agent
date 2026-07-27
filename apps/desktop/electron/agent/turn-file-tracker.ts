@@ -1,7 +1,9 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -24,9 +26,20 @@ export type SegmentScan = {
 };
 
 export type BaselinePersistPayload = {
-  /** userEntryId → rel path → base64 | null */
+  /** userEntryId → rel path → base64 | null（兼容旧格式：null = absent, base64 = file） */
   turns: Record<string, Record<string, string | null>>;
+  /**
+   * userEntryId → rel path → symlink target（仅新格式）。
+   * 与 turns 互斥：同一 (uid, rel) 不会同时出现在两个表里。
+   */
+  symlinks?: Record<string, Record<string, string>>;
 };
+
+/** 内部基线条目：symlink 需记录 target 而非内容 */
+type BaselineEntry =
+  | { kind: "file"; bytes: Buffer }
+  | { kind: "absent" }
+  | { kind: "symlink"; target: string };
 
 type SessionEntryLike = {
   type: string;
@@ -47,14 +60,43 @@ type SessionManagerLike = {
   appendCustomEntry: (customType: string, data?: unknown) => string;
 };
 
+/**
+ * 工具入参键集合，按使用频率排序。
+ * - `path` / `file_path` / `filePath` / `file`：通用文件路径
+ * - `notebook_path`：Jupyter 风格
+ * - `uri` / `dst` / `target`：URI / 目标符号 / 移动目标
+ */
+const TOOL_PATH_KEYS = [
+  "path",
+  "file_path",
+  "filePath",
+  "file",
+  "notebook_path",
+  "uri",
+  "dst",
+  "target",
+] as const;
+
+/**
+ * 从工具入参中识别"被操作的路径"。支持多种键名，避免新工具换键后漏抓导致基线缺失。
+ */
 function pathFromToolArgs(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
   const o = args as Record<string, unknown>;
-  for (const key of ["path", "file_path", "filePath", "file"]) {
+  for (const key of TOOL_PATH_KEYS) {
     const v = o[key];
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return null;
+}
+
+function lstatSyncSafe(abs: string): boolean {
+  try {
+    lstatSync(abs);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function toolCallsFromAssistantContent(
@@ -84,14 +126,22 @@ function toolCallsFromAssistantContent(
  */
 export class TurnFileTracker {
   private cwd = "";
-  /** userEntryId → rel → baseline (null = did not exist). First capture per turn wins. */
-  private turnBaselines = new Map<string, Map<string, Buffer | null>>();
+  /** userEntryId → rel → baseline。第一条 capture 胜出。symlink 单独存 target。 */
+  private turnBaselines = new Map<string, Map<string, BaselineEntry>>();
   private oversized = new Set<string>();
   private activeUserEntryId: string | null = null;
   private dirty = false;
 
+  /**
+   * 切换项目工作目录。cwd 变更意味着所有旧基线的相对路径已失效，
+   * 必须清空避免把旧项目的文件字节还原到新项目目录里。
+   */
   setCwd(cwd: string): void {
     this.cwd = cwd;
+    this.turnBaselines.clear();
+    this.oversized.clear();
+    this.activeUserEntryId = null;
+    this.dirty = true;
   }
 
   clear(): void {
@@ -117,7 +167,9 @@ export class TurnFileTracker {
   }
 
   /**
-   * Capture baseline before a mutating tool runs (once per path per active turn).
+   * 在变更型工具（write / edit）执行前抓取文件基线。
+   * 每个 (active turn, rel) 只记录一次。识别 symlink：仅记录 link 自身，
+   * 不跟随读 target（否则 symlink 被覆盖后无法还原）。
    */
   captureBeforeTool(toolName: string, args: unknown): void {
     if (!MUTATING_TOOLS.has(toolName)) return;
@@ -138,8 +190,22 @@ export class TurnFileTracker {
 
     try {
       if (!existsSync(resolved.abs)) {
-        map.set(rel, null);
+        map.set(rel, { kind: "absent" });
         this.dirty = true;
+        return;
+      }
+      // lstat 不跟随 symlink：用其判断文件类型
+      const lst = lstatSync(resolved.abs);
+      if (lst.isSymbolicLink()) {
+        try {
+          const target = readFileSync(resolved.abs); // symlink 自身即 target 字符串
+          map.set(rel, { kind: "symlink", target: target.toString("utf8") });
+          this.dirty = true;
+        } catch {
+          // readlink on Windows may fail for unprivileged links; fall back to stat
+          map.set(rel, { kind: "symlink", target: "" });
+          this.dirty = true;
+        }
         return;
       }
       const buf = readFileSync(resolved.abs);
@@ -147,13 +213,17 @@ export class TurnFileTracker {
         this.oversized.add(`${this.activeUserEntryId}:${rel}`);
         return;
       }
-      map.set(rel, buf);
+      map.set(rel, { kind: "file", bytes: buf });
       this.dirty = true;
     } catch {
       // ignore capture failures
     }
   }
 
+  /**
+   * 扫描 active branch 中 entryId 之后的 segment。
+   * 收集 write/edit 触及的相对路径、user turn id 列表，是否含 bash / Godot。
+   */
   scanSegmentSince(sm: SessionManagerLike, entryId: string): SegmentScan {
     const branch = sm.getBranch();
     const idx = branch.findIndex((e) => e.id === entryId);
@@ -196,11 +266,15 @@ export class TurnFileTracker {
     };
   }
 
+  /**
+   * 查找某路径在给定 user turn 列表下是否已有可还原基线。
+   * 优先匹配最近的 turn（从前往后），找不到再回落到 `_legacy`。
+   */
   private baselineForPath(
     path: string,
     userEntryIds: string[],
   ):
-    | { ok: true; bytes: Buffer | null }
+    | { ok: true; entry: BaselineEntry }
     | { ok: false; reason: FileRestoreSkipReason } {
     const ids = [...userEntryIds, "_legacy"];
     for (const uid of ids) {
@@ -208,9 +282,8 @@ export class TurnFileTracker {
         return { ok: false, reason: "too_large" };
       }
       const map = this.turnBaselines.get(uid);
-      if (map?.has(path)) {
-        return { ok: true, bytes: map.get(path) ?? null };
-      }
+      const e = map?.get(path);
+      if (e) return { ok: true, entry: e };
     }
     return { ok: false, reason: "no_baseline" };
   }
@@ -288,15 +361,39 @@ export class TurnFileTracker {
         continue;
       }
       try {
-        if (hit.bytes === null) {
-          if (existsSync(resolved.abs)) {
-            unlinkSync(resolved.abs);
-            deleted.push(rel);
+        switch (hit.entry.kind) {
+          case "absent": {
+            // 基线是"原本不存在" → 现状是文件 / symlink 都删
+            const lst = existsSync(resolved.abs) ? lstatSync(resolved.abs) : null;
+            if (lst) {
+              unlinkSync(resolved.abs);
+              deleted.push(rel);
+            }
+            break;
           }
-        } else {
-          mkdirSync(dirname(resolved.abs), { recursive: true });
-          writeFileSync(resolved.abs, hit.bytes);
-          restored.push(rel);
+          case "symlink": {
+            // 还原为 symlink：先清现状，再创建 symlink 指向原 target
+            if (existsSync(resolved.abs) || lstatSyncSafe(resolved.abs)) {
+              unlinkSync(resolved.abs);
+            }
+            if (hit.entry.target) {
+              symlinkSync(hit.entry.target, resolved.abs);
+              restored.push(rel);
+            } else {
+              // target 为空（极端情况）至少把 link 删除
+              deleted.push(rel);
+            }
+            break;
+          }
+          case "file": {
+            if (existsSync(resolved.abs) || lstatSyncSafe(resolved.abs)) {
+              unlinkSync(resolved.abs);
+            }
+            mkdirSync(dirname(resolved.abs), { recursive: true });
+            writeFileSync(resolved.abs, hit.entry.bytes);
+            restored.push(rel);
+            break;
+          }
         }
       } catch (err) {
         skipped.push({
@@ -345,20 +442,38 @@ export class TurnFileTracker {
     this.dirty = true;
   }
 
+  /**
+   * 把内存中的基线追加为 session 的 custom entry。
+   * 文件内容走 turns（base64）；symlink target 走 symlinks 表。
+   * null 表示原本不存在。
+   */
   persistDirty(sm: SessionManagerLike): void {
     if (!this.dirty) return;
     const turns: Record<string, Record<string, string | null>> = {};
+    const symlinks: Record<string, Record<string, string>> = {};
     for (const [uid, map] of this.turnBaselines) {
       const paths: Record<string, string | null> = {};
-      for (const [rel, buf] of map) {
-        paths[rel] = buf === null ? null : buf.toString("base64");
+      const links: Record<string, string> = {};
+      for (const [rel, entry] of map) {
+        switch (entry.kind) {
+          case "absent":
+            paths[rel] = null;
+            break;
+          case "file":
+            paths[rel] = entry.bytes.toString("base64");
+            break;
+          case "symlink":
+            links[rel] = entry.target;
+            break;
+        }
       }
       turns[uid] = paths;
+      if (Object.keys(links).length > 0) symlinks[uid] = links;
     }
     try {
-      sm.appendCustomEntry(FILE_BASELINE_CUSTOM_TYPE, {
-        turns,
-      } satisfies BaselinePersistPayload);
+      const payload: BaselinePersistPayload = { turns };
+      if (Object.keys(symlinks).length > 0) payload.symlinks = symlinks;
+      sm.appendCustomEntry(FILE_BASELINE_CUSTOM_TYPE, payload);
       this.dirty = false;
     } catch {
       // non-fatal
@@ -391,12 +506,36 @@ export class TurnFileTracker {
           for (const [rel, b64] of Object.entries(paths)) {
             const key = rel.replace(/\\/g, "/");
             if (map.has(key)) continue;
-            if (b64 === null) map.set(key, null);
+            if (b64 === null) map.set(key, { kind: "absent" });
             else if (typeof b64 === "string") {
               try {
-                map.set(key, Buffer.from(b64, "base64"));
+                map.set(key, {
+                  kind: "file",
+                  bytes: Buffer.from(b64, "base64"),
+                });
               } catch {
                 // skip
+              }
+            }
+          }
+        }
+        // Symlink 表（与 turns 互斥）
+        if (
+          "symlinks" in data &&
+          data.symlinks &&
+          typeof data.symlinks === "object"
+        ) {
+          for (const [uid, links] of Object.entries(data.symlinks)) {
+            let map = this.turnBaselines.get(uid);
+            if (!map) {
+              map = new Map();
+              this.turnBaselines.set(uid, map);
+            }
+            for (const [rel, target] of Object.entries(links)) {
+              const key = rel.replace(/\\/g, "/");
+              if (map.has(key)) continue;
+              if (typeof target === "string") {
+                map.set(key, { kind: "symlink", target });
               }
             }
           }
@@ -415,10 +554,13 @@ export class TurnFileTracker {
         for (const [rel, b64] of Object.entries(data.paths)) {
           const key = rel.replace(/\\/g, "/");
           if (map.has(key)) continue;
-          if (b64 === null) map.set(key, null);
+          if (b64 === null) map.set(key, { kind: "absent" });
           else if (typeof b64 === "string") {
             try {
-              map.set(key, Buffer.from(b64, "base64"));
+              map.set(key, {
+                kind: "file",
+                bytes: Buffer.from(b64, "base64"),
+              });
             } catch {
               // skip
             }

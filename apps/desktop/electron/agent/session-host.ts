@@ -978,6 +978,16 @@ export class SessionHost {
     };
   }
 
+  /**
+   * 撤回并切换到指定 user message。
+   * 关键时序：
+   *   1. abort 当前流（若有）。
+   *   2. navigateTree 之前**不**扫 segment —— 取消时无法保证重放安全。
+   *   3. navigate 成功后，重新从 sessionManager.getBranch() 读 segment
+   *      （navigate 后 branch 已切到新 leaf，idx = 0）。
+   *   4. 仅在 nav 成功后调用 restorePaths。
+   *   5. 撤回后清空 activeUserEntryId，下一次 user_message 事件再赋新 id。
+   */
   async retractToUserMessage(
     entryId: string,
     options?: RetractOptions,
@@ -995,14 +1005,6 @@ export class SessionHost {
         this.setStatus("idle");
       }
 
-      // Scan before navigate so we know which baselines apply; restore only after
-      // tree navigation succeeds (avoid disk rollback if navigate is cancelled).
-      // Must capture paths before navigateTree — abandoned segment leaves the active branch.
-      const sm = session.sessionManager;
-      const pendingScan = undoFiles
-        ? this.fileTracker.scanSegmentSince(sm, resolved.entryId)
-        : null;
-
       const nav = await session.navigateTree(resolved.entryId, {
         summarize: false,
       });
@@ -1010,8 +1012,14 @@ export class SessionHost {
         return { ok: false, error: "撤回已取消" };
       }
 
+      const sm = session.sessionManager;
       let restoreReport: RetractResult["restoreReport"];
-      if (pendingScan) {
+      if (undoFiles) {
+        // 取消语义：navigate 前**不**持有 pendingScan 状态；preview / restore 每次现取 branch。
+        const pendingScan = this.fileTracker.scanSegmentSince(
+          sm,
+          resolved.entryId,
+        );
         restoreReport = this.fileTracker.restorePaths(
           pendingScan.mutationPaths,
           pendingScan.userEntryIds,
@@ -1032,6 +1040,8 @@ export class SessionHost {
         this.fileTracker.persistDirty(sm);
       }
 
+      // 撤回后旧 leaf 不再属于 active branch；下一次 user_message 事件再赋新 id。
+      this.fileTracker.setActiveUserEntryId(null);
       this.pruneToolDetailsToBranch();
       this.emitHistoryReplace();
       this.setStatus("idle");
