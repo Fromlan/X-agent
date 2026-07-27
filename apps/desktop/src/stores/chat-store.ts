@@ -6,6 +6,24 @@ export function createEmptyState(): ChatItem[] {
   return [];
 }
 
+/**
+ * Find the entryId of the most recent user message in `items` (looking at
+ * items before `beforeIndex`). Used to derive `userEntryId` on assistant
+ * items when the runtime does not thread entryId through every event.
+ */
+function findPrecedingUserEntryId(
+  items: ChatItem[],
+  beforeIndex: number,
+): string | undefined {
+  for (let i = beforeIndex - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it && it.kind === "user") {
+      return it.entryId ?? it.id;
+    }
+  }
+  return undefined;
+}
+
 function upsertAssistant(
   items: ChatItem[],
   messageId: string,
@@ -13,6 +31,11 @@ function upsertAssistant(
 ): ChatItem[] {
   const idx = items.findIndex((i) => i.kind === "assistant" && i.id === messageId);
   if (idx === -1) {
+    // New assistant entry — backfill userEntryId from the preceding user
+    // message so the regenerate button is usable even when the runtime
+    // does not carry entryId on streaming events.
+    const userEntryId =
+      patch.userEntryId ?? findPrecedingUserEntryId(items, items.length);
     return [
       ...items,
       {
@@ -22,12 +45,23 @@ function upsertAssistant(
         thinking: patch.thinking ?? "",
         done: patch.done ?? false,
         isError: patch.isError,
+        ...(patch.entryId ? { entryId: patch.entryId } : {}),
+        ...(userEntryId ? { userEntryId } : {}),
       },
     ];
   }
   const current = items[idx] as Extract<ChatItem, { kind: "assistant" }>;
+  // Preserve entryId / userEntryId if the new patch doesn't carry them.
+  const entryId = patch.entryId ?? current.entryId;
+  const userEntryId =
+    patch.userEntryId ?? current.userEntryId ?? findPrecedingUserEntryId(items, idx);
   const next = [...items];
-  next[idx] = { ...current, ...patch };
+  next[idx] = {
+    ...current,
+    ...patch,
+    ...(entryId ? { entryId } : {}),
+    ...(userEntryId ? { userEntryId } : {}),
+  };
   return next;
 }
 
