@@ -501,6 +501,9 @@ function registerIpc(): void {
     deleteProviderProfile(id),
   );
   ipcMain.handle("activateProviderProfile", async (_e, id: string) => {
+    // 激活前记录旧 prefs：若运行时重载失败，回滚 provider/model，
+    // 避免 prefs 已指向新供应商但实际会话仍在用旧模型。
+    const prevPrefs = loadPrefs();
     const result = activateProviderProfile(id);
     if (!result.ok || !result.provider || !result.model) return result;
     const applied = await sessionHost.applyActivatedProvider(
@@ -508,6 +511,7 @@ function registerIpc(): void {
       result.model,
     );
     if (!applied.ok) {
+      patchPrefs({ provider: prevPrefs.provider, model: prevPrefs.model });
       return { ok: false, error: applied.error ?? "运行时重载失败" };
     }
     return result;

@@ -588,6 +588,14 @@ export class SessionHost {
             thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
             sessionPath: this.bundle.sessionPath,
           });
+        } else {
+          // 重载成功但运行时没找到模型:明确告诉用户,避免"已启用"假象。
+          const current = modelFromSession(this.bundle.session);
+          this.emit({
+            type: "notice",
+            text: `已激活档案,但会话模型仍为 ${current?.id ?? "未设置"}（未找到 ${provider}/${modelId}）`,
+            level: "warn",
+          });
         }
       }
       this.emit({
@@ -597,10 +605,13 @@ export class SessionHost {
       });
       return { ok: true };
     } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
+      const error = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "notice",
+        text: `启用供应商失败：${error}`,
+        level: "error",
+      });
+      return { ok: false, error };
     }
   }
 
@@ -1106,6 +1117,10 @@ export class SessionHost {
     return { ...retract, editorText: text };
   }
 
+  /**
+   * 切换会话模型。校验通过并真正下发给 session 后再写 prefs，
+   * 避免 prefs 已更新但 session 切换失败导致的"看起来生效实际无效"。
+   */
   async setModel(
     provider: string,
     id: string,
@@ -1115,8 +1130,11 @@ export class SessionHost {
       const runtime = await this.ensureRuntime();
       const model = runtime.getModel(provider, id);
       if (!model) {
-        return { ok: false, error: `未找到模型 ${provider}/${id}` };
+        const error = `未找到模型 ${provider}/${id}`;
+        this.emit({ type: "notice", text: error, level: "error" });
+        return { ok: false, error };
       }
+      // 先下发到 session，再持久化 prefs；任一步失败都不污染 prefs。
       await this.bundle.session.setModel(model);
       patchPrefs({ provider, model: id });
       this.emit({
@@ -1129,10 +1147,9 @@ export class SessionHost {
       });
       return { ok: true };
     } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
+      const error = err instanceof Error ? err.message : String(err);
+      this.emit({ type: "notice", text: `切换模型失败：${error}`, level: "error" });
+      return { ok: false, error };
     }
   }
 
@@ -1151,6 +1168,10 @@ export class SessionHost {
     return { ok: true };
   }
 
+  /**
+   * 应用工具白名单。先尝试热切换；只有缺失的工具在可用清单内时才重建会话，
+   * 且重建前后都会 emit notice，避免用户感到"会话无声闪烁"。
+   */
   async applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
     patchPrefs({ tools });
     if (!this.bundle) return { ok: true };
@@ -1160,37 +1181,48 @@ export class SessionHost {
       const missing = tools.filter((name) => !active.has(name));
       if (missing.length === 0) return { ok: true };
 
+      // 不在可切换清单内的名字重建也注册不上：告警即可，不要反复重建会话。
+      const registrable = new Set<string>(
+        ALL_TOGGLEABLE_TOOLS as readonly string[],
+      );
+      const rebuildable = missing.filter((name) => registrable.has(name));
+      if (rebuildable.length === 0) {
+        this.emit({
+          type: "notice",
+          text: `以下工具不在可用清单中，已忽略：${missing.join(", ")}`,
+          level: "warn",
+        });
+        return { ok: true };
+      }
+
       // Session was created before the full registry allowlist fix (or with a
       // narrower tools list). Recreate so newly enabled tools can register.
       const sessionPath = this.bundle.sessionPath;
       const cwd = this.bundle.cwd;
-      if (sessionPath) {
-        const result = await this.resumeSession(sessionPath);
-        if (!result.ok) {
-          return {
-            ok: false,
-            error:
-              result.error ??
-              `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`,
-          };
-        }
-      } else {
-        const result = await this.openProject(cwd);
-        if (!result.ok) {
-          return {
-            ok: false,
-            error:
-              result.error ??
-              `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`,
-          };
-        }
+      this.emit({
+        type: "notice",
+        text: `正在重建会话以启用工具：${rebuildable.join(", ")}（历史保留）`,
+        level: "info",
+      });
+      const result = sessionPath
+        ? await this.resumeSession(sessionPath)
+        : await this.openProject(cwd);
+      if (!result.ok) {
+        const error =
+          result.error ??
+          `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`;
+        this.emit({ type: "notice", text: error, level: "error" });
+        return { ok: false, error };
       }
       return { ok: true };
     } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
+      const error = err instanceof Error ? err.message : String(err);
+      this.emit({
+        type: "notice",
+        text: `应用工具失败：${error}`,
+        level: "error",
+      });
+      return { ok: false, error };
     }
   }
 

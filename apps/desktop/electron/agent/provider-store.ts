@@ -551,6 +551,14 @@ export function upsertProviderProfile(
       updatedAt: now,
     };
     store.profiles[idx] = next;
+    // 编辑已激活档案时,同步刷新 prefs 中的 provider/model,
+    // 避免编辑后 activate/profile 不一致。
+    if (store.activeId === next.id) {
+      patchPrefs({
+        provider: next.providerId,
+        model: next.models[0]?.id ?? null,
+      });
+    }
     saveStore(paths, store);
     return { ok: true, profile: next };
   }
