@@ -249,18 +249,38 @@ function runPiPackageCommand(
     };
     child.stdout?.on("data", append);
     child.stderr?.on("data", append);
+    let timedOut = false;
     const timer = setTimeout(() => {
-      child.kill();
-      resolvePromise({
-        code: null,
-        output: `${output}\n${timeoutLabel} timeout`,
+      timedOut = true;
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+      // unref 避免子进程阻塞 Node 事件循环；同时等待 'exit' 防止残留。
+      try {
+        child.unref();
+      } catch {
+        // ignore
+      }
+      // 不阻塞主流程，但触发一次等待以让日志完整。
+      void Promise.race([
+        new Promise<void>((res) => child.once("exit", () => res())),
+        new Promise<void>((res) => setTimeout(res, 1500)),
+      ]).finally(() => {
+        resolvePromise({
+          code: null,
+          output: `${output}\n${timeoutLabel} timeout`,
+        });
       });
     }, 5 * 60 * 1000);
     child.on("error", (err) => {
+      if (timedOut) return;
       clearTimeout(timer);
       resolvePromise({ code: 1, output: `${output}\n${err.message}` });
     });
     child.on("close", (code) => {
+      if (timedOut) return;
       clearTimeout(timer);
       resolvePromise({ code, output });
     });
