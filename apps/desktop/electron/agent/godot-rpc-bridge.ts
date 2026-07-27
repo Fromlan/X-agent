@@ -119,7 +119,7 @@ export class GodotRpcBridge {
     for (const listener of this.listeners) listener(status);
   }
 
-  private writeEndpointFile(): void {
+  private writeEndpointFile(): boolean {
     try {
       ensureAgentDir();
       writeFileSync(
@@ -131,17 +131,27 @@ export class GodotRpcBridge {
         ),
         "utf8",
       );
-    } catch {
-      // non-fatal
+      return true;
+    } catch (err) {
+      // 非致命,但 Godot addon 可能读不到 endpoint,告知用户排查。
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[godot-rpc] 写入 endpoint 文件失败（${godotRpcEndpointPath()}）：${message}`,
+      );
+      this.lastWarning = `endpoint 文件写入失败：${message}`;
+      return false;
     }
   }
 
-  private clearEndpointFile(): void {
+  private clearEndpointFile(): boolean {
     try {
       const path = godotRpcEndpointPath();
       if (existsSync(path)) unlinkSync(path);
-    } catch {
-      // ignore
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[godot-rpc] 删除 endpoint 文件失败：${message}`);
+      return false;
     }
   }
 

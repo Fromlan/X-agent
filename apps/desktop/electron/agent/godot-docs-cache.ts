@@ -442,15 +442,37 @@ export async function importDocsZip(
       safeRm(dest);
       mkdirSync(cacheRoot, { recursive: true });
       // Prefer rename; fall back to copy via rename of parent move
+      let crossDeviceMoved = false;
       try {
         renameSync(inner, dest);
       } catch {
         // Cross-device: move by renaming extract parent content
         mkdirSync(dest, { recursive: true });
+        const moved: string[] = [];
+        const skipped: string[] = [];
         for (const name of readdirSync(inner)) {
-          renameSync(join(inner, name), join(dest, name));
+          try {
+            renameSync(join(inner, name), join(dest, name));
+            moved.push(name);
+          } catch (renameErr) {
+            const message =
+              renameErr instanceof Error
+                ? renameErr.message
+                : String(renameErr);
+            console.warn(
+              `[godot-docs] rename ${join(inner, name)} → ${join(dest, name)} 失败：${message}`,
+            );
+            skipped.push(name);
+          }
         }
+        if (skipped.length > 0) {
+          console.warn(
+            `[godot-docs] 跨设备复制跳过 ${skipped.length} 项：${skipped.join(", ")}`,
+          );
+        }
+        crossDeviceMoved = true;
       }
+      void crossDeviceMoved; // 当前签名未透出,保留供后续扩展
 
       writeFileSync(
         join(dest, ".x-agent-docs-meta.json"),
