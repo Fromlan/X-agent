@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   activateProviderProfile,
   deleteProviderProfile,
+  getProviderProfile,
   importExistingProviderProfiles,
   listProviderPresets,
   listProviderProfiles,
@@ -35,6 +36,22 @@ try {
   assert(
     listProviderPresets().some((p) => p.id === "openrouter"),
     "openrouter preset",
+  );
+
+  // —— 预设命名空间隔离：deepseek 与 deepseek-anthropic 必须有不同 providerId ——
+  const dsPresets = listProviderPresets().filter(
+    (p) => p.id === "deepseek" || p.id === "deepseek-anthropic",
+  );
+  assert(dsPresets.length === 2, "deepseek preset pair present");
+  const dsIds = new Set(dsPresets.map((p) => p.providerId));
+  assert(dsIds.size === 2, `deepseek providerIds must differ, got ${[...dsIds].join(",")}`);
+  assert(
+    dsPresets.find((p) => p.id === "deepseek")?.api === "openai-completions",
+    "deepseek uses openai-completions",
+  );
+  assert(
+    dsPresets.find((p) => p.id === "deepseek-anthropic")?.api === "anthropic-messages",
+    "deepseek-anthropic uses anthropic-messages",
   );
 
   const bad = upsertProviderProfile(
@@ -236,6 +253,128 @@ try {
     listProviderProfiles(importPaths).some((p) => p.name === "Lingya"),
     "lingya listed",
   );
+
+  // —— 激活 deepseek-anthropic 不应覆盖 Pi auth/models 中已存在的 deepseek openai key ——
+  const nsRoot = mkdtempSync(join(tmpdir(), "alpha-providers-ns-"));
+  const nsPaths: ProviderPaths = {
+    agentDir: nsRoot,
+    storePath: join(nsRoot, "x-agent-providers.json"),
+    authPath: join(nsRoot, "auth.json"),
+    modelsPath: join(nsRoot, "models.json"),
+  };
+  // 已有 deepseek (openai) 与 deepseek-anthropic 两条 Pi 配置
+  writeFileSync(
+    nsPaths.authPath,
+    JSON.stringify({
+      deepseek: { type: "api_key", key: "sk-ds-openai-key" },
+      "deepseek-anthropic": { type: "api_key", key: "sk-ds-anthropic-key" },
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    nsPaths.modelsPath,
+    JSON.stringify({
+      providers: {
+        deepseek: {
+          baseUrl: "https://api.deepseek.com",
+          api: "openai-completions",
+          models: [{ id: "deepseek-chat" }],
+        },
+        "deepseek-anthropic": {
+          baseUrl: "https://api.deepseek.com/anthropic",
+          api: "anthropic-messages",
+          models: [{ id: "deepseek-v4-pro" }],
+        },
+      },
+    }),
+    "utf8",
+  );
+
+  const nsImported = importExistingProviderProfiles(nsPaths, {
+    ccSwitchDbPath: join(nsRoot, "missing-cc-switch.db"),
+  });
+  assert(nsImported.ok, "ns import ok");
+  assert(nsImported.imported === 2, `ns imported 2 got ${nsImported.imported}`);
+
+  const dsAnthropicProfile = listProviderProfiles(nsPaths).find(
+    (p) => p.providerId === "deepseek-anthropic",
+  );
+  assert(dsAnthropicProfile, "deepseek-anthropic profile exists");
+
+  const dsAnthropicFull = getProviderProfile(dsAnthropicProfile!.id, nsPaths);
+  assert(dsAnthropicFull, "fetch deepseek-anthropic full profile");
+  const dsAnthropicAct = activateProviderProfile(
+    dsAnthropicFull!.id,
+    nsPaths,
+    { updatePrefs: false },
+  );
+  assert(dsAnthropicAct.ok, `activate deepseek-anthropic: ${dsAnthropicAct.error}`);
+
+  const nsAuth = JSON.parse(readFileSync(nsPaths.authPath, "utf8")) as Record<
+    string,
+    { type: string; key: string }
+  >;
+  // 关键断言：两条 key 应同时存在
+  assert(
+    nsAuth["deepseek"]?.key === "sk-ds-openai-key",
+    "deepseek openai key preserved",
+  );
+  assert(
+    nsAuth["deepseek-anthropic"]?.key === "sk-ds-anthropic-key",
+    "deepseek-anthropic key written",
+  );
+
+  const nsModels = JSON.parse(readFileSync(nsPaths.modelsPath, "utf8")) as {
+    providers: Record<string, { api: string; baseUrl: string }>;
+  };
+  assert(
+    nsModels.providers["deepseek"]?.api === "openai-completions",
+    "deepseek models.json api preserved",
+  );
+  assert(
+    nsModels.providers["deepseek-anthropic"]?.api === "anthropic-messages",
+    "deepseek-anthropic models.json api written",
+  );
+
+  // —— slugifyProviderId 对纯中文/emoji 应安全回退 ——
+  const slugProbe = mkdtempSync(join(tmpdir(), "alpha-providers-slug-"));
+  const slugPaths: ProviderPaths = {
+    agentDir: slugProbe,
+    storePath: join(slugProbe, "x-agent-providers.json"),
+    authPath: join(slugProbe, "auth.json"),
+    modelsPath: join(slugProbe, "models.json"),
+  };
+  // 准备 Pi auth/models 让 cc-switch 路径不可达，触发 slugifyProviderId(icon|name, fallback)
+  // 通过直接调用 upsertProviderProfile 校验 providerId 校验：纯中文 providerId 应被拒绝。
+  const cnUpsert = upsertProviderProfile(
+    {
+      name: "中文名",
+      providerId: "中文",
+      api: "openai-completions",
+      baseUrl: "https://example.com/v1",
+      apiKey: "sk-cn",
+      models: [{ id: "m" }],
+    },
+    slugPaths,
+  );
+  assert(!cnUpsert.ok, "pure CJK providerId rejected");
+
+  // 纯 emoji 同样应被拒绝（不合法 providerId）。
+  const emojiUpsert = upsertProviderProfile(
+    {
+      name: "Emoji",
+      providerId: "🚀",
+      api: "openai-completions",
+      baseUrl: "https://example.com/v1",
+      apiKey: "sk-emoji",
+      models: [{ id: "m" }],
+    },
+    slugPaths,
+  );
+  assert(!emojiUpsert.ok, "emoji-only providerId rejected");
+
+  rmSync(slugProbe, { recursive: true, force: true });
+  rmSync(nsRoot, { recursive: true, force: true });
 
   rmSync(importRoot, { recursive: true, force: true });
 
