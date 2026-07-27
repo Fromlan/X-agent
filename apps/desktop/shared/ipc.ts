@@ -140,8 +140,11 @@ export const DEFAULT_PREFS: ClientPrefs = {
   showThinking: true,
   lastProjectPath: null,
   lastSessionPath: null,
-  provider: "deepseek",
-  model: "deepseek-v4-flash",
+  // 默认供应商/模型留空：首启动会按"已配置的 Pi 认证"或用户在"设置 → 供应商"中的选择
+  // 决定，避免给虚构的"deepseek-v4-flash"赋予虚假合法身份。已存在的 prefs 文件保留旧值，
+  // 迁移由 SessionHost.createSession 的 fallback 链通知 + 自动重写。
+  provider: null,
+  model: null,
   thinkingLevel: "medium",
   tools: [...AVAILABLE_TOOLS],
   godotEditorPath: null,
