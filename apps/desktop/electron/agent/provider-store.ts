@@ -53,6 +53,9 @@ export function listProviderPresets(): ProviderPreset[] {
     {
       id: "deepseek",
       name: "DeepSeek",
+      // 必须与 deepseek-anthropic 使用不同 providerId。
+      // Pi auth/models.json 的键空间就是 providerId，没有 api 维度 namespace；
+      // 若两者共用 providerId，激活其中一个会覆盖另一个的 key。
       providerId: "deepseek",
       api: "openai-completions",
       baseUrl: "https://api.deepseek.com",
@@ -68,7 +71,9 @@ export function listProviderPresets(): ProviderPreset[] {
     {
       id: "deepseek-anthropic",
       name: "DeepSeek (Anthropic)",
-      providerId: "deepseek",
+      // 与 openai-completions 预设解耦的独立 providerId，
+      // 避免激活 deepseek-anthropic 时覆盖 Pi 中的 deepseek OpenAI key。
+      providerId: "deepseek-anthropic",
       api: "anthropic-messages",
       baseUrl: "https://api.deepseek.com/anthropic",
       models: [
@@ -665,21 +670,32 @@ function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
+/**
+ * 计算档案指纹。包含 providerId + api + baseUrl + apiKey，
+ * 保证同 key 在不同 providerId / api 维度下能共存（避免 import 时误去重）。
+ */
 function profileFingerprint(input: {
+  providerId?: string;
   api: string;
   baseUrl: string;
   apiKey: string;
 }): string {
-  return `${input.api}|${normalizeBaseUrl(input.baseUrl)}|${input.apiKey.trim()}`;
+  const pid = (input.providerId ?? "").trim();
+  return `${pid}|${input.api}|${normalizeBaseUrl(input.baseUrl)}|${input.apiKey.trim()}`;
 }
 
+/**
+ * 将任意字符串规整为合法 providerId slug。
+ * 中文 / emoji 等非 ASCII 字符会被替换为 `-`，但若结果全为空或只剩连字符，
+ * 直接回退到 fallback，避免产生空字符串或不合法 ID。
+ */
 function slugifyProviderId(raw: string, fallback: string): string {
   const slug = raw
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (/^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/i.test(slug)) return slug;
+  if (slug && /^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/i.test(slug)) return slug;
   return fallback;
 }
 
@@ -708,23 +724,55 @@ function coerceApiKind(value: unknown, fallback: ProviderApiKind): ProviderApiKi
   return fallback;
 }
 
+/**
+ * 根据 providerId 推断默认 API 类型。
+ * 优先级：精确 ID > 已知子串（仅匹配厂商主体，避免 "minimax" 子串误伤其它 ID）。
+ */
 function inferApiForProviderId(providerId: string): ProviderApiKind {
   const id = providerId.toLowerCase();
-  if (
-    id.includes("anthropic") ||
-    id.includes("claude") ||
-    id.includes("minimax") ||
-    id.includes("xiaomi") ||
-    id.includes("mimo")
-  ) {
-    return "anthropic-messages";
-  }
-  if (id.includes("google") || id.includes("gemini")) {
-    return "google-generative-ai";
-  }
-  if (id.includes("openai") && id.includes("response")) {
-    return "openai-responses";
-  }
+  // 精确 ID 优先：列表来源包括内置 builtinDefaults 与预设别名。
+  const exact: Record<string, ProviderApiKind> = {
+    anthropic: "anthropic-messages",
+    "anthropic-compatible": "anthropic-messages",
+    openai: "openai-completions",
+    "openai-compatible": "openai-completions",
+    "openai-responses": "openai-responses",
+    google: "google-generative-ai",
+    minimax: "anthropic-messages",
+    "minimax-cn": "anthropic-messages",
+    "minimax-en": "anthropic-messages",
+    xiaomi: "anthropic-messages",
+    "xiaomi-mimo": "anthropic-messages",
+    deepseek: "openai-completions",
+    "deepseek-anthropic": "anthropic-messages",
+    kimi: "anthropic-messages",
+    "kimi-coding": "anthropic-messages",
+    zhipu: "anthropic-messages",
+    "zhipu-en": "anthropic-messages",
+    bailian: "anthropic-messages",
+    "bailian-coding": "anthropic-messages",
+    stepfun: "anthropic-messages",
+    longcat: "anthropic-messages",
+    doubao: "anthropic-messages",
+    bailing: "anthropic-messages",
+    qianfan: "anthropic-messages",
+    siliconflow: "openai-completions",
+    "siliconflow-en": "openai-completions",
+    openrouter: "openai-completions",
+    aihubmix: "anthropic-messages",
+    dmxapi: "anthropic-messages",
+    modelscope: "anthropic-messages",
+    novita: "anthropic-messages",
+    nvidia: "openai-completions",
+    packycode: "anthropic-messages",
+  };
+  if (exact[id]) return exact[id];
+  // 子串判断仅在精确表 miss 时兜底；只命中厂商名，避免 "minimax" / "mimo" 等
+  // 子串误命中其它不相关 ID（例如包含 minimax 的自定义网关）。
+  if (id.includes("anthropic") || id.includes("claude")) return "anthropic-messages";
+  if (id.includes("gemini") || id.includes("google")) return "google-generative-ai";
+  if (id.includes("gpt") || id.includes("openai")) return "openai-completions";
+  if (id.endsWith("-responses") || id.includes("response")) return "openai-responses";
   return "openai-completions";
 }
 
@@ -770,6 +818,12 @@ function knownBuiltinDefaults(providerId: string): {
       api: "anthropic-messages",
       baseUrl: "https://api.xiaomimimo.com/anthropic",
       models: [{ id: "mimo-v2-flash", name: "MiMo V2 Flash" }],
+    },
+    // 与预设 providerId 对齐；从早期 Pi auth/models 导入时也能命中。
+    "deepseek-anthropic": {
+      api: "anthropic-messages",
+      baseUrl: "https://api.deepseek.com/anthropic",
+      models: [{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }],
     },
   };
   return builtins[providerId] ?? null;
@@ -1041,7 +1095,12 @@ function collectCcSwitchCandidates(dbPath: string): ImportCandidate[] {
         preferActive: Boolean(row.is_current) && appType === "claude",
         source: "cc-switch",
       };
-      const fp = profileFingerprint(candidate);
+      const fp = profileFingerprint({
+        providerId: candidate.providerId,
+        api: candidate.api,
+        baseUrl: candidate.baseUrl,
+        apiKey: candidate.apiKey,
+      });
       const priority = appPriority[appType] ?? 0;
       const prev = bestByFp.get(fp);
       if (!prev || priority > prev.priority) {
@@ -1078,6 +1137,7 @@ export function importExistingProviderProfiles(
   const existingFp = new Set(
     store.profiles.map((p) =>
       profileFingerprint({
+        providerId: p.providerId,
         api: p.api,
         baseUrl: p.baseUrl,
         apiKey: p.apiKey,
@@ -1101,7 +1161,12 @@ export function importExistingProviderProfiles(
   const now = new Date().toISOString();
 
   for (const candidate of candidates) {
-    const fp = profileFingerprint(candidate);
+    const fp = profileFingerprint({
+      providerId: candidate.providerId,
+      api: candidate.api,
+      baseUrl: candidate.baseUrl,
+      apiKey: candidate.apiKey,
+    });
     if (existingFp.has(fp)) {
       skipped += 1;
       continue;
