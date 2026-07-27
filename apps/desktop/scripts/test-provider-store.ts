@@ -27,7 +27,15 @@ const paths: ProviderPaths = {
 };
 
 try {
-  assert(listProviderPresets().length >= 4, "presets");
+  assert(listProviderPresets().length >= 20, "presets");
+  assert(
+    listProviderPresets().some((p) => p.id === "kimi" && p.category === "cn"),
+    "kimi preset",
+  );
+  assert(
+    listProviderPresets().some((p) => p.id === "openrouter"),
+    "openrouter preset",
+  );
 
   const bad = upsertProviderProfile(
     {

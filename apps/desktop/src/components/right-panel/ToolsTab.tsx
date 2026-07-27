@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Loader2, XCircle } from "lucide-react";
+import {
+  AVAILABLE_TOOLS,
+  GODOT_DOCS_TOOLS,
+  GODOT_TOOLS,
+} from "@shared/ipc";
 import type { ChatItem } from "../../stores/chat-store";
 import {
   extractToolPath,
@@ -16,6 +21,30 @@ function formatMaybeJson(value: unknown): string {
   }
 }
 
+const BUILTIN_SET = new Set<string>(AVAILABLE_TOOLS);
+const GODOT_EDITOR_SET = new Set<string>(GODOT_TOOLS);
+const GODOT_DOCS_SET = new Set<string>(GODOT_DOCS_TOOLS);
+
+type ToolGroupId = "builtin" | "godot-editor" | "godot-docs" | "other";
+
+const TOOL_GROUPS: {
+  id: ToolGroupId;
+  label: string;
+  chipClass: string;
+}[] = [
+  { id: "builtin", label: "内置", chipClass: "is-builtin" },
+  { id: "godot-editor", label: "Godot 编辑器", chipClass: "is-godot" },
+  { id: "godot-docs", label: "Godot 文档", chipClass: "is-docs" },
+  { id: "other", label: "其他", chipClass: "is-other" },
+];
+
+function groupIdForTool(name: string): ToolGroupId {
+  if (BUILTIN_SET.has(name)) return "builtin";
+  if (GODOT_EDITOR_SET.has(name)) return "godot-editor";
+  if (GODOT_DOCS_SET.has(name)) return "godot-docs";
+  return "other";
+}
+
 interface Props {
   items: ChatItem[];
   enabledTools: string[];
@@ -30,7 +59,10 @@ export function ToolsTab({
   onSelectTool,
 }: Props) {
   const tools = useMemo(
-    () => items.filter((i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool"),
+    () =>
+      items.filter(
+        (i): i is Extract<ChatItem, { kind: "tool" }> => i.kind === "tool",
+      ),
     [items],
   );
 
@@ -41,10 +73,21 @@ export function ToolsTab({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const godotEnabled = useMemo(
-    () => enabledTools.filter((name) => name.startsWith("godot_")),
-    [enabledTools],
-  );
+  const groupedEnabled = useMemo(() => {
+    const buckets: Record<ToolGroupId, string[]> = {
+      builtin: [],
+      "godot-editor": [],
+      "godot-docs": [],
+      other: [],
+    };
+    for (const name of enabledTools) {
+      buckets[groupIdForTool(name)].push(name);
+    }
+    return TOOL_GROUPS.map((group) => ({
+      ...group,
+      tools: buckets[group.id],
+    })).filter((group) => group.tools.length > 0);
+  }, [enabledTools]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,23 +144,27 @@ export function ToolsTab({
         {enabledTools.length === 0 ? (
           <div className="rp-empty">设置 → 工具 中勾选后才会提供给 Agent。</div>
         ) : (
-          <div className="rp-tool-chips">
-            {enabledTools.map((name) => (
-              <span
-                key={name}
-                className={`rp-tool-chip${name.startsWith("godot_") ? " is-godot" : ""}`}
-                title={name}
-              >
-                {name}
-              </span>
+          <div className="rp-tool-groups">
+            {groupedEnabled.map((group) => (
+              <div key={group.id} className="rp-tool-group">
+                <div className="rp-tool-group-label">
+                  <span>{group.label}</span>
+                  <span className="rp-tool-group-count">{group.tools.length}</span>
+                </div>
+                <div className="rp-tool-chips">
+                  {group.tools.map((name) => (
+                    <span
+                      key={name}
+                      className={`rp-tool-chip ${group.chipClass}`}
+                      title={name}
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
-        )}
-        {godotEnabled.length > 0 && (
-          <p className="rp-hint">
-            已启用 {godotEnabled.length} 个 Godot 工具；连接编辑器后由 Agent
-            调用时会出现在下方。
-          </p>
         )}
       </div>
 
@@ -168,9 +215,13 @@ export function ToolsTab({
                   </button>
                 </div>
                 {detailTruncated && (
-                  <div className="rp-banner-soft">内容已达缓存上限，可能仍有截断。</div>
+                  <div className="rp-banner-soft">
+                    内容已达缓存上限，可能仍有截断。
+                  </div>
                 )}
-                {detailError && <div className="rp-banner-soft">{detailError}</div>}
+                {detailError && (
+                  <div className="rp-banner-soft">{detailError}</div>
+                )}
                 {detailArgs && (
                   <div className="rp-section">
                     <div className="rp-section-label">参数</div>
@@ -178,7 +229,9 @@ export function ToolsTab({
                   </div>
                 )}
                 {detailResult && (
-                  <div className={`rp-section${selected.isError ? " is-error" : ""}`}>
+                  <div
+                    className={`rp-section${selected.isError ? " is-error" : ""}`}
+                  >
                     <div className="rp-section-label">结果</div>
                     <pre>{detailResult}</pre>
                   </div>

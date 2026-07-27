@@ -40,6 +40,33 @@ import { PluginsPage } from "./PluginsPage";
 
 type SettingsTab = "general" | "providers" | "tools" | "plugins" | "godot";
 type GodotSettingsSection = "editor" | "docs";
+type PresetCategory = NonNullable<ProviderPreset["category"]> | "all";
+
+const PRESET_CATEGORY_TABS: { id: PresetCategory; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "cn", label: "国内" },
+  { id: "official", label: "官方" },
+  { id: "aggregator", label: "聚合" },
+  { id: "compatible", label: "兼容" },
+  { id: "custom", label: "自定义" },
+];
+
+function presetCategoryLabel(category: ProviderPreset["category"]): string {
+  switch (category) {
+    case "cn":
+      return "国内";
+    case "official":
+      return "官方";
+    case "aggregator":
+      return "聚合";
+    case "compatible":
+      return "兼容";
+    case "custom":
+      return "自定义";
+    default:
+      return "其他";
+  }
+}
 
 function branchLabel(b: string): string {
   if (b === "stable") return "stable（默认）";
@@ -141,6 +168,8 @@ export function SettingsPanel({
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ProviderUpsertInput>(emptyForm());
   const [showPresetPicker, setShowPresetPicker] = useState(false);
+  const [presetQuery, setPresetQuery] = useState("");
+  const [presetCategory, setPresetCategory] = useState<PresetCategory>("all");
   const [fetching, setFetching] = useState(false);
   const [fetched, setFetched] = useState<FetchedProviderModel[]>([]);
   const [selectedFetchIds, setSelectedFetchIds] = useState<Set<string>>(
@@ -212,6 +241,25 @@ export function SettingsPanel({
   useEffect(() => {
     if (open && initialTab) setTab(initialTab);
   }, [open, initialTab]);
+
+  const filteredPresets = useMemo(() => {
+    const q = presetQuery.trim().toLowerCase();
+    return presets.filter((p) => {
+      if (
+        presetCategory !== "all" &&
+        (p.category ?? "custom") !== presetCategory
+      ) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.providerId.toLowerCase().includes(q) ||
+        p.baseUrl.toLowerCase().includes(q) ||
+        (p.notes?.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [presets, presetCategory, presetQuery]);
 
   if (!open) return null;
 
@@ -1613,7 +1661,8 @@ export function SettingsPanel({
                   <div>
                     <h3>供应商 / 订阅</h3>
                     <p className="modal-hint">
-                      首次打开会自动从 Pi 认证与 cc-switch 导入已有订阅；也可随时手动同步。
+                      首次打开会自动从 Pi 认证与 cc-switch 导入已有订阅；也可随时手动同步。预设列表参考
+                      cc-switch，覆盖国内厂商、聚合中转与官方兼容模板。
                     </p>
                   </div>
                   <div className="modal-actions">
@@ -1630,7 +1679,16 @@ export function SettingsPanel({
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      onClick={() => setShowPresetPicker((v) => !v)}
+                      onClick={() => {
+                        setShowPresetPicker((v) => {
+                          const next = !v;
+                          if (next) {
+                            setPresetQuery("");
+                            setPresetCategory("all");
+                          }
+                          return next;
+                        });
+                      }}
                     >
                       从预设添加
                     </button>
@@ -1646,18 +1704,62 @@ export function SettingsPanel({
                 </div>
 
                 {showPresetPicker && (
-                  <div className="preset-grid">
-                    {presets.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="preset-card"
-                        onClick={() => openFromPreset(p)}
-                      >
-                        <strong>{p.name}</strong>
-                        <span>{p.baseUrl}</span>
-                      </button>
-                    ))}
+                  <div className="preset-panel">
+                    <div className="preset-panel-head">
+                      <input
+                        type="search"
+                        className="input"
+                        value={presetQuery}
+                        onChange={(e) => setPresetQuery(e.target.value)}
+                        placeholder="搜索预设名称 / 域名…"
+                        aria-label="搜索供应商预设"
+                      />
+                      <span className="preset-panel-count">
+                        {filteredPresets.length}/{presets.length}
+                      </span>
+                    </div>
+                    <div className="preset-category-tabs" role="tablist">
+                      {PRESET_CATEGORY_TABS.map((tabItem) => (
+                        <button
+                          key={tabItem.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={presetCategory === tabItem.id}
+                          className={
+                            presetCategory === tabItem.id
+                              ? "preset-category-tab active"
+                              : "preset-category-tab"
+                          }
+                          onClick={() => setPresetCategory(tabItem.id)}
+                        >
+                          {tabItem.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="preset-grid">
+                      {filteredPresets.length === 0 ? (
+                        <div className="session-empty">没有匹配的预设</div>
+                      ) : (
+                        filteredPresets.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="preset-card"
+                            title={p.notes ?? p.baseUrl}
+                            onClick={() => openFromPreset(p)}
+                          >
+                            <div className="preset-card-top">
+                              <strong>{p.name}</strong>
+                              <span className="preset-card-badge">
+                                {presetCategoryLabel(p.category)}
+                              </span>
+                            </div>
+                            <span className="preset-card-api">{p.api}</span>
+                            <span className="preset-card-url">{p.baseUrl}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1690,30 +1792,33 @@ export function SettingsPanel({
                       <div className="provider-card-actions">
                         <button
                           type="button"
-                          className="btn btn-primary btn-sm"
+                          className="btn btn-primary btn-icon"
                           disabled={busy || p.active}
+                          title="启用"
+                          aria-label="启用"
                           onClick={() => void activate(p.id)}
                         >
-                          <Check size={13} />
-                          启用
+                          <Check size={14} />
                         </button>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-sm"
+                          className="btn btn-ghost btn-icon"
                           disabled={busy}
+                          title="编辑"
+                          aria-label="编辑"
                           onClick={() => void openEdit(p.id)}
                         >
-                          <Pencil size={13} />
-                          编辑
+                          <Pencil size={14} />
                         </button>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-sm"
+                          className="btn btn-ghost btn-icon"
                           disabled={busy}
+                          title="删除"
+                          aria-label="删除"
                           onClick={() => void remove(p)}
                         >
-                          <Trash2 size={13} />
-                          删除
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>

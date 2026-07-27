@@ -512,6 +512,14 @@ export interface ProviderPreset {
   baseUrl: string;
   models: ProviderModelEntry[];
   notes?: string;
+  /** UI grouping — aligned with cc-switch style categories */
+  category?:
+    | "official"
+    | "cn"
+    | "aggregator"
+    | "compatible"
+    | "custom";
+  websiteUrl?: string;
 }
 
 export interface ProviderUpsertInput {
