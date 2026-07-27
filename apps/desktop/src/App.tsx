@@ -177,7 +177,9 @@ export default function App() {
         return;
       }
       if (event.type === "history_replace") {
-        setQueuedSteering([]);
+        // 不要在这里清空 queuedSteering —— queuedSteering 由 queue_update 事件驱动。
+        // 清空会把飞行中刚到的 steering 快照丢掉（事件按顺序处理，但若
+        // queue_update 在下一次 history_replace 之前到达，会被立即清空）。
         // Drop edit mode if the message being edited left the active branch.
         setEditingEntryId((id) => {
           if (!id) return null;
