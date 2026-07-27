@@ -394,7 +394,7 @@ export function PluginsPage({ cwd }: Props) {
                 ，写入 <code>~/.pi/agent/settings.json</code>。包内技能 /
                 提示词 / 扩展会出现在对应页签（只读），Agent 会话也会自动加载。
               </p>
-              <div className="modal-actions" style={{ marginBottom: 12 }}>
+              <div className="settings-toolbar">
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
@@ -412,7 +412,7 @@ export function PluginsPage({ cwd }: Props) {
                   placeholder="D:/path/to/pkg 或 npm:@scope/name"
                 />
               </label>
-              <div className="modal-actions">
+              <div className="settings-toolbar">
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"

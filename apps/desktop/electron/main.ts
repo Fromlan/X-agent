@@ -15,6 +15,14 @@ import {
   revealProjectPath,
 } from "./agent/project-fs";
 import { installGodotRpcAddon } from "./agent/godot-addon-install";
+import {
+  getDocsDownloadZipUrl,
+  getDocsStatus,
+  importDocsZip,
+  listRemoteDocsBranches,
+  normalizeGodotDocsBranch,
+  removeDocsBranch,
+} from "./agent/godot-docs-cache";
 import { AppAutoUpdater } from "./agent/auto-updater";
 import {
   installGodotPiPackage,
@@ -366,6 +374,82 @@ function registerIpc(): void {
       };
     }
     return { ok: true, path: abs };
+  });
+
+  ipcMain.handle("godotDocsGetStatus", async () => {
+    const prefs = loadPrefs();
+    return getDocsStatus(prefs.godotDocsBranch);
+  });
+  ipcMain.handle(
+    "godotDocsListRemoteBranches",
+    async (_e, force?: boolean) => {
+      const listed = await listRemoteDocsBranches({ force: Boolean(force) });
+      const prefs = loadPrefs();
+      return {
+        ...listed,
+        status: getDocsStatus(prefs.godotDocsBranch),
+      };
+    },
+  );
+  ipcMain.handle("godotDocsSetBranch", async (_e, branch: string) => {
+    const next = normalizeGodotDocsBranch(branch);
+    patchPrefs({ godotDocsBranch: next });
+    return { ok: true, status: getDocsStatus(next) };
+  });
+  ipcMain.handle("godotDocsOpenDownloadUrl", async (_e, branch?: string) => {
+    const prefs = loadPrefs();
+    const target = normalizeGodotDocsBranch(branch ?? prefs.godotDocsBranch);
+    const url = getDocsDownloadZipUrl(target);
+    try {
+      await shell.openExternal(url);
+      return { ok: true, url };
+    } catch (err) {
+      return {
+        ok: false,
+        url,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+  ipcMain.handle("godotDocsImportZip", async (_e, branch?: string) => {
+    const prefs = loadPrefs();
+    const target = normalizeGodotDocsBranch(branch ?? prefs.godotDocsBranch);
+    if (target !== prefs.godotDocsBranch) {
+      patchPrefs({ godotDocsBranch: target });
+    }
+    const picked = await dialog.showOpenDialog({
+      title: `导入 Godot 文档 zip（分支 ${target}）`,
+      properties: ["openFile"],
+      filters: [
+        { name: "ZIP", extensions: ["zip"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return { ok: false, canceled: true, status: getDocsStatus(target) };
+    }
+    const result = await importDocsZip(picked.filePaths[0]!, target);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.error ?? "导入失败",
+        status: getDocsStatus(target),
+      };
+    }
+    return { ok: true, status: getDocsStatus(target) };
+  });
+  ipcMain.handle("godotDocsRemoveLocal", async (_e, branch?: string) => {
+    const prefs = loadPrefs();
+    const target = normalizeGodotDocsBranch(branch ?? prefs.godotDocsBranch);
+    const result = removeDocsBranch(target);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.error,
+        status: getDocsStatus(target),
+      };
+    }
+    return { ok: true, status: getDocsStatus(target) };
   });
 
   ipcMain.handle("listPlugins", async (_e, cwd?: string | null) => {

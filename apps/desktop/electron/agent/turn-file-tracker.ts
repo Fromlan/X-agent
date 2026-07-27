@@ -7,12 +7,14 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import type { FileRestoreReport, FileRestoreSkipReason } from "../../shared/ipc";
+import { GODOT_TOOLS } from "../../shared/ipc";
 import { resolveInsideCwd } from "./project-path";
 
 export const FILE_BASELINE_CUSTOM_TYPE = "x-agent-file-baselines";
 export const MAX_BASELINE_BYTES = 2 * 1024 * 1024;
 
 const MUTATING_TOOLS = new Set(["write", "edit"]);
+const EDITOR_GODOT_TOOLS = new Set<string>(GODOT_TOOLS);
 
 export type SegmentScan = {
   mutationPaths: string[];
@@ -173,7 +175,7 @@ export class TurnFileTracker {
         for (const call of toolCallsFromAssistantContent(msg.content)) {
           const name = call.name;
           if (name === "bash") hasBash = true;
-          if (name.startsWith("godot_")) hasGodot = true;
+          if (EDITOR_GODOT_TOOLS.has(name)) hasGodot = true;
           if (MUTATING_TOOLS.has(name)) {
             const raw = pathFromToolArgs(call.args);
             if (!raw) continue;

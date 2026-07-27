@@ -80,9 +80,30 @@ export const GODOT_TOOLS = [
 
 export type GodotToolName = (typeof GODOT_TOOLS)[number];
 
+/** Offline Godot docs search tools (opt-in; not in DEFAULT_PREFS). */
+export const GODOT_DOCS_TOOLS = [
+  "godot_docs_search",
+  "godot_docs_status",
+] as const;
+
+export type GodotDocsToolName = (typeof GODOT_DOCS_TOOLS)[number];
+
 export const ALL_TOGGLEABLE_TOOLS = [
   ...AVAILABLE_TOOLS,
   ...GODOT_TOOLS,
+  ...GODOT_DOCS_TOOLS,
+] as const;
+
+/** Preset godot-docs git branches for settings UI fallback. */
+export const GODOT_DOCS_PRESET_BRANCHES = [
+  "stable",
+  "master",
+  "4.7",
+  "4.6",
+  "4.5",
+  "4.4",
+  "4.3",
+  "3.6",
 ] as const;
 
 export interface ClientPrefs {
@@ -96,6 +117,11 @@ export interface ClientPrefs {
   tools: string[];
   /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
   godotEditorPath: string | null;
+  /**
+   * godot-docs git branch to clone/search (e.g. stable, master, 3.6).
+   * Cached under ~/.pi/agent/x-agent/godot-docs/<branch>/.
+   */
+  godotDocsBranch: string;
   /** Whether the right tool panel is open. */
   rightPanelOpen: boolean;
   /** Left session sidebar width in px. */
@@ -119,6 +145,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   thinkingLevel: "medium",
   tools: [...AVAILABLE_TOOLS],
   godotEditorPath: null,
+  godotDocsBranch: "stable",
   rightPanelOpen: false,
   sidebarWidth: 260,
   rightPanelWidth: 360,
@@ -367,6 +394,38 @@ export interface InstallGodotRpcAddonResult {
   hint?: string;
 }
 
+export type GodotDocsBranchStatus =
+  | "missing"
+  | "ready"
+  | "downloading"
+  | "error";
+
+export interface GodotDocsStatusDto {
+  branch: string;
+  root: string;
+  status: GodotDocsBranchStatus;
+  localBranches: string[];
+  /** Docs-useful remote branches from GitHub (stable / master / x.y). */
+  remoteBranches: string[];
+  /** GitHub source zip URL for the selected branch. */
+  downloadUrl: string;
+  docsSiteVersion: string;
+  error?: string;
+}
+
+export interface GodotDocsListRemoteResult {
+  ok: boolean;
+  branches: string[];
+  error?: string;
+  status?: GodotDocsStatusDto;
+}
+
+export interface GodotDocsMutateResult {
+  ok: boolean;
+  status?: GodotDocsStatusDto;
+  error?: string;
+}
+
 export type PluginKind = "prompt" | "skill" | "extension" | "theme";
 export type PluginScope = "global" | "project";
 
@@ -593,6 +652,18 @@ export interface XAgentApi {
     canceled?: boolean;
     error?: string;
   }>;
+  godotDocsGetStatus: () => Promise<GodotDocsStatusDto>;
+  godotDocsListRemoteBranches: (force?: boolean) => Promise<GodotDocsListRemoteResult>;
+  godotDocsSetBranch: (branch: string) => Promise<GodotDocsMutateResult>;
+  /** Open GitHub source zip URL in the system browser. */
+  godotDocsOpenDownloadUrl: (
+    branch?: string,
+  ) => Promise<{ ok: boolean; url?: string; error?: string }>;
+  /** Pick and import a user-downloaded godot-docs .zip. */
+  godotDocsImportZip: (
+    branch?: string,
+  ) => Promise<GodotDocsMutateResult & { canceled?: boolean }>;
+  godotDocsRemoveLocal: (branch?: string) => Promise<GodotDocsMutateResult>;
   listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
   readPlugin: (path: string) => Promise<PluginReadResult>;
   writePlugin: (path: string, content: string) => Promise<PluginWriteResult>;

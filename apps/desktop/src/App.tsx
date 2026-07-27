@@ -90,6 +90,10 @@ export default function App() {
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!editingEntryId) setEditDraft("");
+  }, [editingEntryId]);
+
   const currentModelKey = useMemo(() => {
     const m =
       prefs?.provider && prefs?.model ? `${prefs.provider}/${prefs.model}` : "";
@@ -115,6 +119,9 @@ export default function App() {
       setItems(createEmptyState());
       setSessionId(null);
       setQueuedSteering([]);
+      setEditingEntryId(null);
+      setEditDraft("");
+      setConfirmState(null);
     }
     if (s.error) setError(s.error);
     else if (s.status === "idle") setError(null);
@@ -171,6 +178,15 @@ export default function App() {
       }
       if (event.type === "history_replace") {
         setQueuedSteering([]);
+        // Drop edit mode if the message being edited left the active branch.
+        setEditingEntryId((id) => {
+          if (!id) return null;
+          const stillThere = event.items.some(
+            (it) =>
+              it.kind === "user" && (it.entryId === id || it.id === id),
+          );
+          return stillThere ? id : null;
+        });
       }
       setItems((prev) => applyAgentEvent(prev, event));
     });
@@ -231,6 +247,12 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior });
   }, [items, status]);
 
+  const clearComposerEditState = useCallback(() => {
+    setEditingEntryId(null);
+    setEditDraft("");
+    setConfirmState(null);
+  }, []);
+
   const openProject = async () => {
     setBusy(true);
     setError(null);
@@ -243,6 +265,8 @@ export default function App() {
         }
         return;
       }
+      clearComposerEditState();
+      setInput("");
       setCwd(result.cwd);
       setSessionId(result.sessionId);
       if (result.warning) setError(result.warning);
@@ -264,6 +288,8 @@ export default function App() {
         await syncFromHost();
         return;
       }
+      clearComposerEditState();
+      setInput("");
       setSessionId(result.sessionId);
       await refreshSessions();
     } finally {
@@ -281,6 +307,8 @@ export default function App() {
         await syncFromHost();
         return;
       }
+      clearComposerEditState();
+      setInput("");
       setCwd(result.cwd);
       setSessionId(result.sessionId);
       if (result.warning) setError(result.warning);

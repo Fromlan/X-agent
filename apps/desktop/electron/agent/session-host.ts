@@ -31,6 +31,7 @@ import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { deriveSessionTitle, displaySessionName } from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
+import { createGodotDocsTools } from "./godot-docs-tools";
 import { TurnFileTracker } from "./turn-file-tracker";
 import {
   normalizeProjectKey,
@@ -667,7 +668,10 @@ export class SessionHost {
       // Godot tools) can activate via setActiveToolsByName; unknown names are
       // otherwise silently ignored.
       tools: [...ALL_TOGGLEABLE_TOOLS],
-      customTools: this.godotRpc ? createGodotTools(this.godotRpc) : [],
+      customTools: [
+        ...(this.godotRpc ? createGodotTools(this.godotRpc) : []),
+        ...createGodotDocsTools(),
+      ],
       ...(selectedModel ? { model: selectedModel } : {}),
       thinkingLevel: prefs.thinkingLevel,
     });

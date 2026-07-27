@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { ClientPrefs, DEFAULT_PREFS } from "../../shared/ipc";
+import { normalizeGodotDocsBranch } from "./godot-docs-cache";
 
 function agentDir(): string {
   return join(homedir(), ".pi", "agent");
@@ -38,7 +39,16 @@ export function loadPrefs(): ClientPrefs {
           (k): k is string => typeof k === "string" && k.trim().length > 0,
         )
       : [];
-    return { ...DEFAULT_PREFS, ...rest, hiddenProjectKeys };
+    return {
+      ...DEFAULT_PREFS,
+      ...rest,
+      hiddenProjectKeys,
+      godotDocsBranch: normalizeGodotDocsBranch(
+        typeof rest.godotDocsBranch === "string"
+          ? rest.godotDocsBranch
+          : DEFAULT_PREFS.godotDocsBranch,
+      ),
+    };
   } catch {
     return { ...DEFAULT_PREFS };
   }
@@ -52,6 +62,9 @@ export function savePrefs(prefs: ClientPrefs): ClientPrefs {
 
 export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
   const next = { ...loadPrefs(), ...patch };
+  if (typeof patch.godotDocsBranch === "string") {
+    next.godotDocsBranch = normalizeGodotDocsBranch(patch.godotDocsBranch);
+  }
   return savePrefs(next);
 }
 

@@ -70,12 +70,15 @@ export function ChatPanel(props: Props) {
           placeholder={
             props.disabled
               ? "请先打开项目…"
-              : streaming
-                ? "运行中：Enter 发送 steer，Shift+Enter 换行"
-                : "输入消息，Enter 发送，Shift+Enter 换行"
+              : props.editingEntryId
+                ? "正在编辑历史消息 — 请先确认或取消编辑"
+                : streaming
+                  ? "运行中：Enter 发送 steer，Shift+Enter 换行"
+                  : "输入消息，Enter 发送，Shift+Enter 换行"
           }
           disabled={props.disabled || Boolean(props.editingEntryId)}
           rows={3}
+          aria-disabled={props.disabled || Boolean(props.editingEntryId)}
         />
         <div className="composer-actions">
           {streaming && (

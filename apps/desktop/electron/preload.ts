@@ -73,6 +73,17 @@ const api: XAgentApi = {
   installGodotRpcAddon: () =>
     ipcRenderer.invoke("installGodotRpcAddon"),
   pickGodotScene: () => ipcRenderer.invoke("pickGodotScene"),
+  godotDocsGetStatus: () => ipcRenderer.invoke("godotDocsGetStatus"),
+  godotDocsListRemoteBranches: (force?: boolean) =>
+    ipcRenderer.invoke("godotDocsListRemoteBranches", force),
+  godotDocsSetBranch: (branch: string) =>
+    ipcRenderer.invoke("godotDocsSetBranch", branch),
+  godotDocsOpenDownloadUrl: (branch?: string) =>
+    ipcRenderer.invoke("godotDocsOpenDownloadUrl", branch),
+  godotDocsImportZip: (branch?: string) =>
+    ipcRenderer.invoke("godotDocsImportZip", branch),
+  godotDocsRemoveLocal: (branch?: string) =>
+    ipcRenderer.invoke("godotDocsRemoveLocal", branch),
   listPlugins: (cwd) => ipcRenderer.invoke("listPlugins", cwd),
   readPlugin: (path) => ipcRenderer.invoke("readPlugin", path),
   writePlugin: (path, content) => ipcRenderer.invoke("writePlugin", path, content),

@@ -44,7 +44,9 @@ export function GodotTab({ active, items }: Props) {
   const lastGodotTool = useMemo(() => {
     const tools = items.filter(
       (i): i is Extract<ChatItem, { kind: "tool" }> =>
-        i.kind === "tool" && i.toolName.startsWith("godot_"),
+        i.kind === "tool" &&
+        i.toolName.startsWith("godot_") &&
+        !i.toolName.startsWith("godot_docs_"),
     );
     return tools.length ? tools[tools.length - 1] : null;
   }, [items]);
