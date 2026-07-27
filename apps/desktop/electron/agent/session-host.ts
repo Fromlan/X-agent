@@ -659,13 +659,24 @@ export class SessionHost {
         : undefined;
 
     if (!selectedModel) {
+      // 偏好模型不可用(虚构 id / 旧 prefs 残留) → 退到 Pi 实际可用的真实模型并通知用户。
+      // 我们**不**再硬编"deepseek-v4-flash":那是 DEFAULT_PREFS 之前的虚构 id,即使
+      // 出现在 available[0] 也不一定是用户真正想用的;优先 Pi 内置 anthropic provider,
+      // 其次首条 available[0]。
       const available = await modelRuntime.getAvailable();
       selectedModel =
-        available.find(
-          (m) => m.provider === "deepseek" && m.id === "deepseek-v4-flash",
-        ) ??
-        available.find((m) => m.provider === "deepseek") ??
-        available[0];
+        available.find((m) => m.provider === "anthropic") ?? available[0];
+      if (selectedModel) {
+        const usedKey =
+          prefs.provider && prefs.model
+            ? `${prefs.provider}/${prefs.model}`
+            : "未配置";
+        this.emit({
+          type: "notice",
+          text: `偏好模型 ${usedKey} 不可用,已切换到 ${selectedModel.provider}/${selectedModel.id}`,
+          level: "warn",
+        });
+      }
     }
 
     const { session, modelFallbackMessage } = await createAgentSession({
@@ -702,10 +713,21 @@ export class SessionHost {
 
     const sessionPath = this.sessionFileOf(session);
     if (session.model) {
+      // 若用户偏好仍是旧的虚构默认("deepseek/deepseek-v4-flash")，把真实生效模型
+      // 写回 prefs 并显式通知；否则每次启动都以为已配置，实际却被静默回退。
+      const previousWasLegacyDefault =
+        prefs.provider === "deepseek" && prefs.model === "deepseek-v4-flash";
       patchPrefs({
         provider: session.model.provider,
         model: session.model.id,
       });
+      if (previousWasLegacyDefault) {
+        this.emit({
+          type: "notice",
+          text: `已重置默认模型：旧值 deepseek/deepseek-v4-flash 不可用，已切换到 ${session.model.provider}/${session.model.id}`,
+          level: "warn",
+        });
+      }
     }
     patchPrefs({
       lastProjectPath: cwd,
