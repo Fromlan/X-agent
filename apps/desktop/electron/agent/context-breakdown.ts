@@ -10,6 +10,21 @@ export function estimateTextTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+/**
+ * Prompt-side context from a turn's usage (excludes assistant output).
+ * Prefer this over usage.totalTokens for the right-panel occupancy bar.
+ */
+export function promptTokensFromTurnUsage(usage: {
+  input: number;
+  cacheRead: number;
+}): number {
+  return Math.max(
+    0,
+    Math.round(Number(usage.input) || 0) +
+      Math.round(Number(usage.cacheRead) || 0),
+  );
+}
+
 const SEGMENT_LABELS: Record<ContextSegmentId, string> = {
   system: "系统提示",
   project: "项目上下文",

@@ -32,7 +32,10 @@ function formatHits(result: Awaited<ReturnType<typeof searchGodotDocs>>): string
   }
   const lines: string[] = [
     `Godot docs search (branch=${result.branch}${result.truncated ? ", truncated" : ""}):`,
-    "Next step: call `read` on the absPath of the best hit(s). Do NOT search project cwd or node_modules.",
+    "How to use results:",
+    "- Overview / comparison questions: you may answer from summary/snippet; read only if you need more detail.",
+    "- API / method / property details: call `read` on the best `classes/class_*.rst` absPath (prefer limit=80–120 for class pages). Do NOT prefer best_practices comparison pages for API facts.",
+    "- Paths are under the godot-docs cache — never invent project cwd or node_modules paths.",
   ];
   for (let i = 0; i < result.hits.length; i++) {
     const h = result.hits[i]!;
@@ -42,6 +45,9 @@ function formatHits(result: Awaited<ReturnType<typeof searchGodotDocs>>): string
     lines.push(`   relPath: ${h.relPath}`);
     lines.push(`   url: ${h.docsUrl}`);
     lines.push(`   score: ${h.score}`);
+    if (h.summary) {
+      lines.push(`   summary: ${h.summary}`);
+    }
     lines.push("   ---");
     lines.push(
       h.snippet
@@ -79,16 +85,16 @@ export function createGodotDocsTools(): ToolDefinition[] {
       name: "godot_docs_search",
       label: "Godot docs search",
       description:
-        "Search locally imported official Godot documentation (godot-docs .rst). Returns absPath for each hit — after searching, use the `read` tool on that absPath to load the full page. Docs must be imported via Settings → Godot. Query with short keywords, not sentences.",
+        "Search locally imported official Godot documentation (godot-docs .rst). Returns title, summary, snippet, and absPath per hit. For overview questions, summaries often suffice; for API details, read the best classes/class_*.rst with a line limit. Docs must be imported via Settings → Godot. Query with short keywords, not sentences.",
       promptSnippet:
-        "godot_docs_search: keyword search docs, then read(absPath) — not project files",
+        "godot_docs_search: keyword search docs; use summary for overview, read(class absPath, limit) for API",
       promptGuidelines: [
         "When unsure about Godot APIs, node methods, signals, or editor workflows, call godot_docs_search before answering.",
         "Search tip: query with short keywords / class / method names (1–2 words). Prefer multiple searches over one long sentence.",
         'Good: "AnimationPlayer", "play", "Tween", "signal". Bad: "how to play an animation in Godot".',
-        "After hits are returned, you MUST call `read` with the hit's absPath (absolute path under the godot-docs cache). Do not invent paths under the project cwd or node_modules.",
-        "Do not stop at snippets alone when the user asked to look up docs — read the best matching .rst first.",
-        "If the first query returns no hits, retry with a single class or method name.",
+        "Overview / which-node questions: prefer hit summaries and class pages; do not skip a top-ranked classes/class_*.rst in favor of best_practices comparison pages.",
+        "API / method / property details: call `read` on the best classes/class_*.rst absPath with limit=80–120 (class pages have huge property tables). Do not invent paths under the project cwd or node_modules.",
+        "If the first query returns no hits, retry with a single class or method name. Use path_glob (e.g. classes/**) to narrow when needed.",
         "Cite the returned docs URL (or absPath) in your answer.",
         "If search reports docs not imported, tell the user to open Settings → Godot, download the zip, and import it.",
       ],
