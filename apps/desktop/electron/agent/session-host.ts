@@ -40,7 +40,10 @@ import {
   normalizeProjectKey,
   pickFallbackSessionPath,
 } from "../../shared/project-path";
-import { buildContextBreakdown } from "./context-breakdown";
+import {
+  buildContextBreakdown,
+  promptTokensFromTurnUsage,
+} from "./context-breakdown";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
@@ -186,6 +189,36 @@ function estimateMessageTokens(session: AgentSession): number {
   }
 }
 
+/**
+ * Tokens for messages after the last assistant turn.
+ * Needed when a toolResult lands before the next assistant usage arrives.
+ */
+function estimateTrailingAfterLastAssistant(session: AgentSession): number {
+  try {
+    const messages = session.messages ?? [];
+    let lastAssistant = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const role = (messages[i] as { role?: string } | undefined)?.role;
+      if (role === "assistant") {
+        lastAssistant = i;
+        break;
+      }
+    }
+    if (lastAssistant < 0 || lastAssistant >= messages.length - 1) return 0;
+    let total = 0;
+    for (let i = lastAssistant + 1; i < messages.length; i++) {
+      try {
+        total += estimateTokens(messages[i]);
+      } catch {
+        /* skip unestimable message shapes */
+      }
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
 function failOpen(
   error: string,
   cwd = "",
@@ -277,7 +310,13 @@ export class SessionHost {
           ? buildContextBreakdown({
               systemPrompt: session.systemPrompt ?? "",
               contextWindow,
-              contextTokens: ctx?.tokens ?? null,
+              // Pi's getContextUsage().tokens is often usage.totalTokens
+              // (includes output). Use prompt-only input+cacheRead, plus any
+              // trailing tool/user messages after the last assistant usage.
+              contextTokens: this.lastTurnUsage
+                ? promptTokensFromTurnUsage(this.lastTurnUsage.tokens) +
+                  estimateTrailingAfterLastAssistant(session)
+                : null,
               messageTokens: estimateMessageTokens(session),
             })
           : null;
@@ -1636,7 +1675,11 @@ export class SessionHost {
       return { ok: true, reloaded: false };
     }
     try {
+      const prefs = loadPrefs();
       await this.bundle.session.reload();
+      // Pi's reload may refresh the tool registry; re-apply user prefs so
+      // active tools stay identical to createSession/openProject flow.
+      this.bundle.session.setActiveToolsByName(prefs.tools);
       this.emit({
         type: "notice",
         text: "已重载 prompts / skills / extensions",

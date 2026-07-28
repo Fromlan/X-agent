@@ -1,6 +1,7 @@
 import {
   buildContextBreakdown,
   estimateTextTokens,
+  promptTokensFromTurnUsage,
   splitSystemPrompt,
 } from "../electron/agent/context-breakdown";
 
@@ -11,6 +12,24 @@ function assert(cond: boolean, msg: string): void {
 assert(estimateTextTokens("") === 0, "empty text → 0");
 assert(estimateTextTokens("abcd") === 1, "4 chars → 1 token");
 assert(estimateTextTokens("abcdefgh") === 2, "8 chars → 2 tokens");
+
+assert(
+  promptTokensFromTurnUsage({ input: 1546, cacheRead: 7296 }) === 8842,
+  "prompt tokens = input + cacheRead",
+);
+assert(
+  promptTokensFromTurnUsage({ input: 3697, cacheRead: 0 }) === 3697,
+  "prompt tokens without cache",
+);
+assert(
+  promptTokensFromTurnUsage({ input: 1546, cacheRead: 7296 }) <
+    1546 + 1278 + 7296,
+  "prompt tokens exclude output (1546+1278+7296 would be totalTokens)",
+);
+assert(
+  promptTokensFromTurnUsage({ input: 0, cacheRead: 0 }) === 0,
+  "zero usage → 0 prompt tokens",
+);
 
 const emptyParts = splitSystemPrompt("");
 assert(emptyParts.system === "", "empty prompt system");
