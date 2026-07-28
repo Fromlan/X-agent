@@ -22,9 +22,12 @@ import {
   GODOT_DOCS_PRESET_BRANCHES,
   GODOT_DOCS_TOOLS,
   GODOT_TOOLS,
+  THEME_IDS,
+  THEME_LABELS,
   type AppUpdateStatus,
   type BashCheckResult,
   type ClientPrefs,
+  type ColorMode,
   type FetchedProviderModel,
   type GodotDocsStatusDto,
   type GodotRpcCallDto,
@@ -34,6 +37,7 @@ import {
   type ProviderPreset,
   type ProviderProfileSummary,
   type ProviderUpsertInput,
+  type ThemeId,
   type ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
@@ -660,13 +664,32 @@ export function SettingsPanel({
                     <span className="settings-row-label">主题</span>
                     <select
                       className="settings-select"
-                      value={prefs.theme}
+                      value={prefs.themeId}
                       onChange={async (e) => {
-                        const theme = e.target.value as "light" | "dark";
-                        const next = await window.xAgent.setPrefs({ theme });
+                        const themeId = e.target.value as ThemeId;
+                        const next = await window.xAgent.setPrefs({ themeId });
                         onPrefsChanged?.(next);
                       }}
                       aria-label="主题"
+                    >
+                      {THEME_IDS.map((id) => (
+                        <option key={id} value={id}>
+                          {THEME_LABELS[id]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-row">
+                    <span className="settings-row-label">外观模式</span>
+                    <select
+                      className="settings-select"
+                      value={prefs.colorMode}
+                      onChange={async (e) => {
+                        const colorMode = e.target.value as ColorMode;
+                        const next = await window.xAgent.setPrefs({ colorMode });
+                        onPrefsChanged?.(next);
+                      }}
+                      aria-label="外观模式"
                     >
                       <option value="dark">深色</option>
                       <option value="light">浅色</option>
