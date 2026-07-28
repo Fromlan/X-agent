@@ -13,6 +13,7 @@ import {
   AgentStatus,
   ALL_TOGGLEABLE_TOOLS,
   ClientPrefs,
+  CompactSessionResult,
   HistoryItem,
   HostStatus,
   ModelInfo,
@@ -22,7 +23,9 @@ import {
   RetractPreview,
   RetractResult,
   SessionInfo,
+  SessionUsageSnapshot,
   ThinkingLevel,
+  TurnUsage,
   UiAgentEvent,
 } from "../../shared/ipc";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
@@ -37,6 +40,10 @@ import {
   normalizeProjectKey,
   pickFallbackSessionPath,
 } from "../../shared/project-path";
+import { buildContextBreakdown } from "./context-breakdown";
+import { modelUsageKey, recordTurnUsage } from "./usage-store";
+import { estimateTokens } from "@earendil-works/pi-coding-agent";
+import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
 
 type SessionBundle = {
   session: AgentSession;
@@ -92,7 +99,91 @@ function modelFromSession(session: AgentSession): ModelInfo | null {
     provider: model.provider,
     id: model.id,
     name: (model as { name?: string }).name ?? model.id,
+    contextWindow:
+      typeof model.contextWindow === "number" && model.contextWindow > 0
+        ? model.contextWindow
+        : undefined,
   };
+}
+
+function turnUsageFromMessage(message: unknown): TurnUsage | null {
+  if (!message || typeof message !== "object") return null;
+  const msg = message as {
+    usage?: Record<string, unknown>;
+    stopReason?: string;
+  };
+  if (msg.stopReason === "aborted" || msg.stopReason === "error") {
+    return null;
+  }
+  const usage = msg.usage;
+  if (!usage || typeof usage !== "object") return null;
+  const input = Number(usage.input) || 0;
+  const output = Number(usage.output) || 0;
+  const cacheRead = Number(usage.cacheRead) || 0;
+  const cacheWrite = Number(usage.cacheWrite) || 0;
+  const totalTokens =
+    Number(usage.totalTokens) || input + output + cacheRead + cacheWrite;
+  if (totalTokens <= 0 && input + output + cacheRead + cacheWrite <= 0) {
+    return null;
+  }
+  const costRaw = usage.cost as Record<string, unknown> | undefined;
+  const costInput = Number(costRaw?.input) || 0;
+  const costOutput = Number(costRaw?.output) || 0;
+  const costCacheRead = Number(costRaw?.cacheRead) || 0;
+  const costCacheWrite = Number(costRaw?.cacheWrite) || 0;
+  const costParts = costInput + costOutput + costCacheRead + costCacheWrite;
+  const costTotal = Number(costRaw?.total) || costParts;
+  return {
+    tokens: {
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      total: totalTokens,
+    },
+    cost: {
+      input: costInput,
+      output: costOutput,
+      cacheRead: costCacheRead,
+      cacheWrite: costCacheWrite,
+      total: costTotal,
+    },
+  };
+}
+
+function emptyUsageSnapshot(): SessionUsageSnapshot {
+  return {
+    tokens: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    },
+    cost: 0,
+    context: null,
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+  };
+}
+
+/** Sum Pi chars/4 estimates across current in-memory conversation messages. */
+function estimateMessageTokens(session: AgentSession): number {
+  try {
+    const messages = session.messages ?? [];
+    let total = 0;
+    for (const message of messages) {
+      try {
+        total += estimateTokens(message);
+      } catch {
+        /* skip unestimable message shapes */
+      }
+    }
+    return total;
+  } catch {
+    return 0;
+  }
 }
 
 function failOpen(
@@ -123,6 +214,22 @@ export class SessionHost {
   /** Untruncated (capped) tool payloads for right-panel detail view. */
   private toolDetails = new Map<string, ToolDetailRecord>();
   private fileTracker = new TurnFileTracker();
+  /** Last successful assistant turn usage (for snapshot lastTurn). */
+  private lastTurnUsage: TurnUsage | undefined;
+  /** Session stats snapshot at compaction_start for daily-store delta. */
+  private compactionStatsBaseline: {
+    tokens: {
+      input: number;
+      output: number;
+      cacheRead: number;
+      cacheWrite: number;
+      total: number;
+    };
+    cost: number;
+    modelKey: string;
+  } | null = null;
+  /** Skip per-message daily recording while compaction LLM usage is in flight. */
+  private compactionRecording = false;
 
   constructor(
     getWindow: () => BrowserWindow | null,
@@ -152,6 +259,115 @@ export class SessionHost {
 
   private emitHistoryReplace(): void {
     this.emit({ type: "history_replace", items: this.historyFromBundle() });
+  }
+
+  private buildUsageSnapshot(): SessionUsageSnapshot | null {
+    if (!this.bundle) return null;
+    const session = this.bundle.session;
+    try {
+      const stats = session.getSessionStats();
+      const ctx = session.getContextUsage();
+      const contextWindow =
+        ctx?.contextWindow ??
+        (typeof session.model?.contextWindow === "number"
+          ? session.model.contextWindow
+          : 0);
+      const context =
+        contextWindow > 0
+          ? buildContextBreakdown({
+              systemPrompt: session.systemPrompt ?? "",
+              contextWindow,
+              contextTokens: ctx?.tokens ?? null,
+              messageTokens: estimateMessageTokens(session),
+            })
+          : null;
+      return {
+        tokens: {
+          input: stats.tokens.input,
+          output: stats.tokens.output,
+          cacheRead: stats.tokens.cacheRead,
+          cacheWrite: stats.tokens.cacheWrite,
+          total: stats.tokens.total,
+        },
+        cost: stats.cost,
+        context,
+        ...(this.lastTurnUsage ? { lastTurn: this.lastTurnUsage } : {}),
+        userMessages: stats.userMessages,
+        assistantMessages: stats.assistantMessages,
+        toolCalls: stats.toolCalls,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private emitUsageUpdate(): void {
+    if (!this.bundle) return;
+    const usage = this.buildUsageSnapshot() ?? emptyUsageSnapshot();
+    this.emit({ type: "usage_update", usage });
+  }
+
+  private captureCompactionBaseline(): void {
+    if (!this.bundle) {
+      this.compactionStatsBaseline = null;
+      return;
+    }
+    try {
+      const session = this.bundle.session;
+      const stats = session.getSessionStats();
+      const model = session.model;
+      this.compactionStatsBaseline = {
+        tokens: {
+          input: stats.tokens.input,
+          output: stats.tokens.output,
+          cacheRead: stats.tokens.cacheRead,
+          cacheWrite: stats.tokens.cacheWrite,
+          total: stats.tokens.total,
+        },
+        cost: stats.cost,
+        modelKey: model
+          ? modelUsageKey(model.provider, model.id)
+          : "unknown/unknown",
+      };
+    } catch {
+      this.compactionStatsBaseline = null;
+    }
+  }
+
+  private recordCompactionDelta(): void {
+    const baseline = this.compactionStatsBaseline;
+    this.compactionStatsBaseline = null;
+    if (!baseline || !this.bundle) return;
+    try {
+      const stats = this.bundle.session.getSessionStats();
+      const tokens = {
+        input: Math.max(0, stats.tokens.input - baseline.tokens.input),
+        output: Math.max(0, stats.tokens.output - baseline.tokens.output),
+        cacheRead: Math.max(
+          0,
+          stats.tokens.cacheRead - baseline.tokens.cacheRead,
+        ),
+        cacheWrite: Math.max(
+          0,
+          stats.tokens.cacheWrite - baseline.tokens.cacheWrite,
+        ),
+        total: Math.max(0, stats.tokens.total - baseline.tokens.total),
+      };
+      const costTotal = Math.max(0, stats.cost - baseline.cost);
+      if (tokens.total <= 0 && costTotal <= 0) return;
+      recordTurnUsage(baseline.modelKey, {
+        tokens,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: costTotal,
+        },
+      });
+    } catch {
+      /* ignore */
+    }
   }
 
   private pruneToolDetailsToBranch(): void {
@@ -250,6 +466,7 @@ export class SessionHost {
             this.maybeAutoTitleSession();
           }
           this.emit({ type: "agent_end", willRetry });
+          this.emitUsageUpdate();
           break;
         }
         case "turn_start":
@@ -261,6 +478,7 @@ export class SessionHost {
           }
           this.emit({ type: "turn_end" });
           this.emitHistoryReplace();
+          this.emitUsageUpdate();
           break;
         case "message_start": {
           const msg = event.message as {
@@ -312,15 +530,36 @@ export class SessionHost {
             role?: string;
             stopReason?: string;
             errorMessage?: string;
+            usage?: unknown;
           };
           if (msg.role === "assistant") {
             const isError =
               msg.stopReason === "error" || Boolean(msg.errorMessage);
+            const isAborted = msg.stopReason === "aborted";
+            const turnUsage =
+              !isError && !isAborted
+                ? turnUsageFromMessage(event.message)
+                : null;
+            if (turnUsage) {
+              this.lastTurnUsage = turnUsage;
+              const model = this.bundle?.session.model;
+              if (model && !this.compactionRecording) {
+                try {
+                  recordTurnUsage(
+                    modelUsageKey(model.provider, model.id),
+                    turnUsage,
+                  );
+                } catch {
+                  /* ignore persist errors */
+                }
+              }
+            }
             this.emit({
               type: "assistant_end",
               messageId: this.messageIdFrom(event.message),
               isError,
               errorMessage: msg.errorMessage,
+              ...(turnUsage ? { usage: turnUsage } : {}),
             });
             if (isError && msg.errorMessage) {
               this.setStatus("error", msg.errorMessage);
@@ -416,6 +655,40 @@ export class SessionHost {
             message: event.finalError,
           });
           break;
+        case "compaction_start":
+          this.compactionRecording = true;
+          this.captureCompactionBaseline();
+          this.emit({
+            type: "compaction_start",
+            reason: event.reason,
+          });
+          break;
+        case "compaction_end": {
+          const result = event.result as
+            | { tokensBefore?: number; estimatedTokensAfter?: number }
+            | undefined;
+          if (!event.aborted) {
+            this.recordCompactionDelta();
+          } else {
+            this.compactionStatsBaseline = null;
+          }
+          this.compactionRecording = false;
+          this.emit({
+            type: "compaction_end",
+            reason: event.reason,
+            aborted: event.aborted,
+            errorMessage: event.errorMessage,
+            ...(result?.tokensBefore != null
+              ? { tokensBefore: result.tokensBefore }
+              : {}),
+            ...(result?.estimatedTokensAfter != null
+              ? { estimatedTokensAfter: result.estimatedTokensAfter }
+              : {}),
+          });
+          this.emitHistoryReplace();
+          this.emitUsageUpdate();
+          break;
+        }
         default:
           break;
       }
@@ -650,6 +923,12 @@ export class SessionHost {
     const loader = new DefaultResourceLoader({
       cwd,
       agentDir,
+      // Pi auto-loads ~/.agents/skills (Cursor/Claude skills). X-agent only
+      // uses ~/.pi/agent/skills + project .pi/skills (+ installed packages).
+      skillsOverride: (base) => ({
+        skills: excludeUserAgentsHomeSkills(base.skills),
+        diagnostics: base.diagnostics,
+      }),
     });
     await loader.reload();
 
@@ -769,7 +1048,9 @@ export class SessionHost {
         level: "warn",
       });
     }
+    this.lastTurnUsage = undefined;
     this.setStatus("idle");
+    this.emitUsageUpdate();
     return info;
   }
 
@@ -907,6 +1188,9 @@ export class SessionHost {
       const cwd = this.bundle?.cwd ?? null;
       await this.disposeBundle(this.bundle);
       this.bundle = null;
+      this.lastTurnUsage = undefined;
+      this.compactionStatsBaseline = null;
+      this.compactionRecording = false;
       await this.emitClosedWorkspace(cwd);
       return { ok: true };
     });
@@ -1077,6 +1361,7 @@ export class SessionHost {
       this.fileTracker.setActiveUserEntryId(null);
       this.pruneToolDetailsToBranch();
       this.emitHistoryReplace();
+      this.emitUsageUpdate();
       this.setStatus("idle");
 
       return {
@@ -1167,6 +1452,7 @@ export class SessionHost {
         thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
         sessionPath: this.bundle.sessionPath,
       });
+      this.emitUsageUpdate();
       return { ok: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -1301,6 +1587,46 @@ export class SessionHost {
     };
   }
 
+  getSessionUsage(): SessionUsageSnapshot | null {
+    return this.buildUsageSnapshot();
+  }
+
+  async compactSession(
+    customInstructions?: string,
+  ): Promise<CompactSessionResult> {
+    return this.runReplaceExclusive(async () => {
+      if (!this.bundle) {
+        return { ok: false, error: "尚未打开项目" };
+      }
+      if (this.status === "streaming" || this.status === "retrying") {
+        return { ok: false, error: "请等待当前回合结束后再压缩" };
+      }
+      const session = this.bundle.session;
+      if (session.isCompacting) {
+        return { ok: false, error: "正在压缩中" };
+      }
+      const sessionId = session.sessionId;
+      try {
+        const result = await session.compact(
+          customInstructions?.trim() || undefined,
+        );
+        if (this.bundle?.session.sessionId === sessionId) {
+          this.emitUsageUpdate();
+        }
+        return {
+          ok: true,
+          tokensBefore: result.tokensBefore,
+          estimatedTokensAfter: result.estimatedTokensAfter,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    });
+  }
+
   async reloadResources(): Promise<{
     ok: boolean;
     reloaded: boolean;
@@ -1316,6 +1642,7 @@ export class SessionHost {
         text: "已重载 prompts / skills / extensions",
         level: "info",
       });
+      this.emitUsageUpdate();
       return { ok: true, reloaded: true };
     } catch (err) {
       return {
@@ -1330,6 +1657,9 @@ export class SessionHost {
     return this.runReplaceExclusive(async () => {
       await this.disposeBundle(this.bundle);
       this.bundle = null;
+      this.lastTurnUsage = undefined;
+      this.compactionStatsBaseline = null;
+      this.compactionRecording = false;
     });
   }
 }

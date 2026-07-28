@@ -73,4 +73,23 @@ assert(
   "user order should be preserved (history_replace payload, then user_message)",
 );
 
+// usage_update / compaction events must not alter the transcript
+items = applyAgentEvent(items, {
+  type: "usage_update",
+  usage: {
+    tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, total: 3 },
+    cost: 0,
+    context: null,
+    userMessages: 1,
+    assistantMessages: 1,
+    toolCalls: 0,
+  },
+});
+assert(items.length === 3, "usage_update leaves items unchanged");
+items = applyAgentEvent(items, {
+  type: "compaction_start",
+  reason: "manual",
+});
+assert(items.length === 3, "compaction_start leaves items unchanged");
+
 console.log("test-chat-store: ok");

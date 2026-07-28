@@ -3,6 +3,7 @@ import {
   Boxes,
   CheckSquare,
   Check,
+  ChartColumn,
   Download,
   Gamepad2,
   Import,
@@ -37,8 +38,15 @@ import {
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
 import { PluginsPage } from "./PluginsPage";
+import { UsageSettingsPage } from "./UsageSettingsPage";
 
-type SettingsTab = "general" | "providers" | "tools" | "plugins" | "godot";
+type SettingsTab =
+  | "general"
+  | "providers"
+  | "tools"
+  | "plugins"
+  | "godot"
+  | "usage";
 type GodotSettingsSection = "editor" | "docs";
 type PresetCategory = NonNullable<ProviderPreset["category"]> | "all";
 
@@ -535,6 +543,7 @@ export function SettingsPanel({
   const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
     { id: "general", label: "通用", icon: Settings2 },
     { id: "providers", label: "供应商", icon: Boxes },
+    { id: "usage", label: "用量", icon: ChartColumn },
     { id: "tools", label: "工具", icon: Wrench },
     { id: "plugins", label: "插件", icon: Puzzle },
     { id: "godot", label: "Godot", icon: Gamepad2 },
@@ -912,6 +921,8 @@ export function SettingsPanel({
                 {generalMsg && <p className="modal-hint">{generalMsg}</p>}
               </section>
             )}
+
+            {tab === "usage" && <UsageSettingsPage active={tab === "usage"} />}
 
             {tab === "tools" && (
               <section className="settings-page">

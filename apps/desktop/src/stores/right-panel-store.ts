@@ -1,4 +1,4 @@
-export type RightPanelTab = "tools" | "files" | "godot";
+export type RightPanelTab = "tools" | "files" | "godot" | "context";
 
 export type PanelState = {
   tab: RightPanelTab;
