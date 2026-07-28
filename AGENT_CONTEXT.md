@@ -13,8 +13,10 @@ X-agent **不手写 LLM context**。真正组装发生在 `@earendil-works/pi-co
 本应用只做：
 
 - 选定项目 `cwd`、全局 `agentDir`（`~/.pi/agent`）
-- 传入工具白名单、model、thinking、Godot `customTools`
+- 传入可切换工具全集 + 当前白名单、model、thinking、Godot / 文档 `customTools`
+- 经 `skillsOverride` 排除用户家目录 `~/.agents/skills`（避免无关技能膨胀索引）
 - 会话落盘到隔离目录 `~/.pi/agent/x-agent/sessions/`（与 Pi CLI 的 `sessions/` 分开）
+- 可选手动压缩：右栏「压缩上下文」→ `session.compact()`
 - **不**使用 `systemPromptOverride`
 
 主接线点：[`apps/desktop/electron/agent/session-host.ts`](apps/desktop/electron/agent/session-host.ts) 的 `createSession`。
@@ -38,7 +40,7 @@ flowchart TD
 
 1. Renderer 经 IPC 打开项目 / 发 prompt / 改 prefs。
 2. `main.ts` 将请求交给单个 `SessionHost`。
-3. `SessionHost.createSession` 创建 `DefaultResourceLoader({ cwd, agentDir })`，`reload()` 后交给 `createAgentSession`。
+3. `SessionHost.createSession` 创建 `DefaultResourceLoader({ cwd, agentDir, skillsOverride })`，`reload()` 后交给 `createAgentSession`。
 4. Pi 组装 system prompt、启用工具、恢复/创建会话消息；后续 `prompt` 写入同一 `AgentSession`。
 5. 事件经 `agent:event` 推到 renderer；`applyAgentEvent` 归并展示。
 
@@ -80,7 +82,8 @@ flowchart TD
 
 - 持久化在 `SessionManager` 管理的会话文件（根：`~/.pi/agent/x-agent/sessions/`）
 - 恢复会话 = 恢复同一消息历史给模型
-- 超窗时由 **Pi 自动 compaction**（摘要 + 保留窗口）；X-agent **未**暴露 compact UI，也 **未**调用 `session.compact()`
+- 超窗时由 **Pi 自动 compaction**（摘要 + 保留窗口）
+- 另可在右栏「上下文」手动触发：`SessionHost.compactSession` → `session.compact()`（流式中不可用）
 
 ### 7. 按需写入（非 system 预装）
 
@@ -108,7 +111,14 @@ flowchart TD
 `createSession` 中（概念对照）：
 
 ```ts
-const loader = new DefaultResourceLoader({ cwd, agentDir });
+const loader = new DefaultResourceLoader({
+  cwd,
+  agentDir,
+  skillsOverride: (base) => ({
+    skills: excludeUserAgentsHomeSkills(base.skills),
+    diagnostics: base.diagnostics,
+  }),
+});
 await loader.reload();
 
 await createAgentSession({
@@ -117,24 +127,31 @@ await createAgentSession({
   resourceLoader: loader,
   modelRuntime,
   sessionManager,
-  tools: prefs.tools,
-  customTools: godotRpc ? createGodotTools(godotRpc) : [],
+  tools: [...ALL_TOGGLEABLE_TOOLS],
+  customTools: [
+    ...(godotRpc ? createGodotTools(godotRpc) : []),
+    ...createGodotDocsTools(),
+  ],
   model: selectedModel,
   thinkingLevel: prefs.thinkingLevel,
 });
+session.setActiveToolsByName(prefs.tools);
 ```
 
 | 参数 | 来源 | 作用 |
 |---|---|---|
 | `cwd` | 打开的项目路径 | 工具 FS 根；项目资源发现 |
 | `agentDir` | Pi `getAgentDir()` → 通常 `~/.pi/agent` | 全局资源 / settings |
-| `resourceLoader` | `DefaultResourceLoader` + `reload()` | skills / extensions / prompts / themes / context files |
-| `tools` | `~/.pi/agent/x-agent.json` 的 `tools` | 工具白名单 |
-| `customTools` | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot RPC 工具定义（是否可调用仍看白名单） |
+| `resourceLoader` | `DefaultResourceLoader` + `reload()` + `skillsOverride` | skills / extensions / prompts / themes / context files |
+| `tools`（注册） | `ALL_TOGGLEABLE_TOOLS` | 可切换全集；否则后续勾选会被静默忽略 |
+| 实际启用 | `prefs.tools` via `setActiveToolsByName` | 当前白名单 |
+| `customTools` | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts)、[`godot-docs-tools.ts`](apps/desktop/electron/agent/godot-docs-tools.ts) | Godot RPC / 文档工具（是否可调用仍看白名单） |
 | `model` / `thinkingLevel` | prefs + `ModelRuntime`（auth / models） | 选用模型与推理级别 |
 | `sessionManager` | `create` / `continueRecent` / `open`，根在 `x-agent/sessions/` | 对话持久化与恢复 |
 
-**本应用未传入 / 未定制**：`systemPromptOverride`、`skillsOverride`、`promptsOverride`、`agentsFilesOverride`、`extensionFactories`、`SettingsManager`、`noTools` / `excludeTools` 等。更深行为以 Pi SDK 为准。
+**本应用已定制**：`skillsOverride`（排除 `~/.agents/skills`，见 [`exclude-agents-home-skills.ts`](apps/desktop/electron/agent/exclude-agents-home-skills.ts)）。
+
+**未传入**：`systemPromptOverride`、`promptsOverride`、`agentsFilesOverride`、`extensionFactories`、`SettingsManager`、`noTools` / `excludeTools` 等。更深行为以 Pi SDK 为准。
 
 偏好文件：[`prefs.ts`](apps/desktop/electron/agent/prefs.ts) ↔ `~/.pi/agent/x-agent.json`。与上下文相关的字段：
 
@@ -146,7 +163,9 @@ await createAgentSession({
 | `showThinking` | 否（仅 UI） |
 | `theme` | 否 |
 | `lastProjectPath` / `lastSessionPath` | 否（启动恢复；由当前 `SessionHost` 写回） |
-| `godotEditorPath` | 否（启编辑器用） |
+| `godotEditorPath` / `godotDocsBranch` | 否（启编辑器 / 文档缓存用） |
+| `rightPanelOpen` / `sidebarWidth` / `rightPanelWidth` | 否（布局） |
+| `hiddenProjectKeys` | 否（侧栏隐藏） |
 
 ---
 
@@ -165,13 +184,17 @@ await createAgentSession({
 
 [`shared/ipc.ts`](apps/desktop/shared/ipc.ts) 的 `AVAILABLE_TOOLS`：`read`、`bash`、`edit`、`write`、`grep`、`find`、`ls`。默认 prefs 全部开启。
 
-### Godot（两条通道）
+### Godot（三条通道）
 
-1. **桌面 `customTools`**（[`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts)）  
+1. **桌面编辑器 `customTools`**（[`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts)）  
    - 桥接存在时 **注册**；prefs 勾选对应名后才 **active**（`GODOT_TOOLS`，默认不在白名单）。  
    - `promptSnippet` / `promptGuidelines` 进入工具说明，引导模型何时调用。
 
-2. **godot-pi Package**  
+2. **官方文档 `customTools`**（[`godot-docs-tools.ts`](apps/desktop/electron/agent/godot-docs-tools.ts)）  
+   - 始终注册；`godot_docs_search` / `godot_docs_status`（`GODOT_DOCS_TOOLS`，默认关）。  
+   - 缓存目录：`~/.pi/agent/x-agent/godot-docs/<branch>/`；设置 → Godot → 官方文档导入 zip。
+
+3. **godot-pi Package**  
    - 技能教领域流程与何时用 RPC；扩展可注册如 `godot_detect_project` 等工具（仍受白名单过滤）。  
    - 安装后需资源重载或新会话才会进 loader。
 
@@ -185,8 +208,10 @@ await createAgentSession({
 |---|---|
 | Session 文件 | 仅 `~/.pi/agent/x-agent/sessions/`；恢复路径须在该根下 |
 | Project cwd | 工具与项目 `.pi` / AGENTS 相对该根 |
-| 全局 prefs | `x-agent.json` 一份；写 last paths / 当前模型偏好 |
+| 全局 prefs | `x-agent.json` 一份；写 last paths / 当前模型偏好 / 布局 |
+| Skills | 排除 `~/.agents/skills`；保留 `~/.pi/agent/skills`、项目 skills、Packages |
 | Pi auth / models | `auth.json` / `models.json`，与 CLI 共用 |
+| 用量 | `x-agent-usage.json` 本地汇总；右栏另有会话内 snapshot |
 | UI transcript | 展示层；截断不影响 Pi 侧完整会话（受 Pi compaction 约束） |
 
 ---
@@ -198,6 +223,7 @@ await createAgentSession({
 | 空闲 `prompt(text)` | `SessionHost` | 正常用户轮次，消息进入会话历史 |
 | 流式中再发 | `streamingBehavior: "steer"` | 当前工具轮次后注入转向消息（否则 Pi 会报错） |
 | 撤回 / 编辑重发 / 重新生成 | `navigateTree` + `TurnFileTracker` | 对话改 leaf（append-only 树）；默认还原该段 `write`/`edit` 基线。**不**保证 bash / Godot / cwd 外副作用 |
+| `compactSession` | 右栏上下文 | 手动 `session.compact()`；更新用量 snapshot |
 | `setActiveToolsByName` / `applyTools` | prefs 变更 | 当场改可用工具集 |
 | `setModel` / `setThinkingLevel` | 顶栏 / 设置 | 影响后续请求 |
 | `session.reload()` | 插件保存后 | 重载资源 |
@@ -211,9 +237,9 @@ await createAgentSession({
 按层排查：
 
 1. **项目约定** — `cwd` 向上是否有 `AGENTS.md` / `CLAUDE.md`？是否被 `SYSTEM.md` 整段替换？
-2. **技能** — 是否在 `~/.pi/agent/skills`、`cwd/.pi/skills` 或已安装 package 路径？`read` 是否启用？改完是否执行了 reload？
-3. **工具** — 设置 → 工具白名单是否包含该工具名？Godot 是否勾选且桥已连接？
-4. **会话** — 是否续了旧会话（历史里已有错误假设）？是否误以为 UI 截断等于模型上下文被截断？
+2. **技能** — 是否在 `~/.pi/agent/skills`、`cwd/.pi/skills` 或已安装 package 路径？（`~/.agents/skills` 会被故意排除）`read` 是否启用？改完是否执行了 reload？
+3. **工具** — 设置 → 工具白名单是否包含该工具名？Godot 编辑器 / 文档是否勾选？桥是否已连接 / 文档是否已导入？
+4. **会话** — 是否续了旧会话（历史里已有错误假设）？是否误以为 UI 截断等于模型上下文被截断？是否需要手动压缩？
 5. **Packages** — `pi install` 是否成功？`x-agent-packages.json` 只是记账，loader 失败时需查 Pi 安装目录与日志。
 
 ---
@@ -222,11 +248,15 @@ await createAgentSession({
 
 | 路径 | 角色 |
 |---|---|
-| [`session-host.ts`](apps/desktop/electron/agent/session-host.ts) | 创建会话、prompt/steer、撤回/重发、reload |
+| [`session-host.ts`](apps/desktop/electron/agent/session-host.ts) | 创建会话、prompt/steer、撤回/重发、compact、reload |
+| [`exclude-agents-home-skills.ts`](apps/desktop/electron/agent/exclude-agents-home-skills.ts) | `skillsOverride` 过滤 |
 | [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts) | write/edit 字节基线与还原 |
+| [`context-breakdown.ts`](apps/desktop/electron/agent/context-breakdown.ts) | 右栏上下文组成拆解 |
+| [`usage-store.ts`](apps/desktop/electron/agent/usage-store.ts) | 本地按日 / 按模型用量 |
 | [`history.ts`](apps/desktop/electron/agent/history.ts) | Pi branch entries → UI（含 entryId；非 LLM 组装） |
 | [`plugin-host.ts`](apps/desktop/electron/agent/plugin-host.ts) | 插件 CRUD → Pi 目录 |
-| [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts) | `pi install` |
-| [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot customTools |
+| [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts) | `pi install` / uninstall |
+| [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot 编辑器 customTools |
+| [`godot-docs-tools.ts`](apps/desktop/electron/agent/godot-docs-tools.ts) | Godot 文档检索 customTools |
 | [`chat-store.ts`](apps/desktop/src/stores/chat-store.ts) | UI 事件归并 |
 | [`shared/ipc.ts`](apps/desktop/shared/ipc.ts) | 工具名、prefs 类型 |
