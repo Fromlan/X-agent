@@ -7,9 +7,9 @@ description: Drive X-agent Godot editor RPC for playtesting and error triage. Us
 
 ## Preconditions
 
-1. Desktop Godot RPC bridge is running (Settings → Godot RPC).
+1. Desktop Godot RPC bridge is running (Settings → Godot → Editor connection).
 2. Project has **X-agent RPC** addon enabled (not a different addon).
-3. Godot tools are enabled under Settings → Tools.
+3. Godot editor tools are enabled under Settings → Tools.
 4. If multiple editors are connected, the active client in Settings routes RPC calls.
 
 ## Play flows

@@ -1,6 +1,6 @@
 # Godot Editor RPC（X-agent）
 
-Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌面桥，供 Agent 与 **设置 → Godot RPC** 驱动编辑器（开/重载/运行场景、资源导入、收集运行期报错）。
+Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌面桥，供 Agent 与 **设置 → Godot → 编辑器连接** 驱动编辑器（开/重载/运行场景、资源导入、收集运行期报错）。
 
 | 层 | 路径 |
 |---|---|
@@ -10,9 +10,11 @@ Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌�
 | Agent 工具 | [`apps/desktop/electron/agent/godot-tools.ts`](../../apps/desktop/electron/agent/godot-tools.ts) |
 | 安装助手 | [`apps/desktop/electron/agent/godot-addon-install.ts`](../../apps/desktop/electron/agent/godot-addon-install.ts) |
 
+> 官方文档离线检索（`godot_docs_*`）是桌面侧能力，不经过本 addon；见主仓库 README「Godot 文档」。
+
 ## 安装
 
-1. X-agent：**设置 → Godot RPC → 安装/更新 RPC 插件到当前项目**  
+1. X-agent：**设置 → Godot → 编辑器连接 → 安装/更新 RPC 插件到当前项目**  
    （或手动拷贝 `addons/x_agent_rpc` 到项目 `addons/`）
 2. Godot → 项目设置 → 插件 → 启用 **X-agent RPC**（不要启用其它同名替代插件）
 3. 启动 X-agent；桥接监听 `127.0.0.1:8765`（占用时回退 `8765–8774`）
@@ -23,7 +25,7 @@ Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌�
 
 ## Agent 工具
 
-在 **设置 → 工具** 中勾选 Godot 相关项（默认关闭）：
+在 **设置 → 工具** 中勾选 **Godot 编辑器** 相关项（默认关闭）：
 
 | 工具 | RPC 方法 |
 |---|---|
@@ -74,7 +76,7 @@ Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌�
 | `get_play_errors` | 读取缓冲；可选 `clear: true` |
 | `stop_scene` | 停止播放 |
 
-**多编辑器**：桥接为每个 TCP 连接分配 id，用 `editor_ready` 记录 `projectPath`；请求发往**活动客户端**（设置 → Godot RPC 下拉）或显式 `clientId`。
+**多编辑器**：桥接为每个 TCP 连接分配 id，用 `editor_ready` 记录 `projectPath`；请求发往**活动客户端**（设置 → Godot → 编辑器连接下拉）或显式 `clientId`。
 
 ### 事件（编辑器 → 桌面）
 
