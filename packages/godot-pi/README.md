@@ -79,4 +79,4 @@ pi install /绝对路径/X-agent/packages/godot-pi
 
 1. 安装本 Pi 包（领域知识与工作流）
 2. 在 Godot 项目安装并启用 [`godot-editor-rpc`](../godot-editor-rpc)
-3. X-agent：启动 Godot RPC 桥接，并在 **设置 → 工具** 勾选 Godot 工具
+3. X-agent：启动 Godot RPC 桥接（设置 → Godot → 编辑器连接），并在 **设置 → 工具** 勾选 Godot 编辑器工具

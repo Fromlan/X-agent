@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+### 文档
+
+- 同步 README / CLAUDE / AGENT_CONTEXT / DESIGN 与 0.2.x 能力（右栏上下文压缩、用量、Godot 文档、技能排除 `~/.agents/skills`、设置分页等）
+- 根 README 改为面向用户：突出最新功能与使用说明；开发 / 发版细节留在 CLAUDE.md
+- 修正 `godot-editor-rpc` / `godot-pi` README 中设置入口文案（设置 → Godot → 编辑器连接）
+
 ## 0.2.2
 
 ### 修复
