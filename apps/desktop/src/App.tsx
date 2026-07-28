@@ -107,7 +107,7 @@ export default function App() {
     preview: RetractPreview;
     editText?: string;
   } | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [followNonce, setFollowNonce] = useState(0);
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const usageVersion = useSyncExternalStore(
@@ -311,14 +311,6 @@ export default function App() {
     };
   }, [refreshModels, refreshSessions, syncFromHost]);
 
-  useEffect(() => {
-    const reduceMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const behavior: ScrollBehavior = reduceMotion ? "auto" : "smooth";
-    bottomRef.current?.scrollIntoView({ behavior });
-  }, [items, status]);
-
   const clearComposerEditState = useCallback(() => {
     setEditingEntryId(null);
     setEditDraft("");
@@ -363,6 +355,7 @@ export default function App() {
       clearComposerEditState();
       setInput("");
       setSessionId(result.sessionId);
+      setFollowNonce((n) => n + 1);
       await refreshSessions();
     } finally {
       setBusy(false);
@@ -383,6 +376,7 @@ export default function App() {
       setInput("");
       setCwd(result.cwd);
       setSessionId(result.sessionId);
+      setFollowNonce((n) => n + 1);
       if (result.warning) setError(result.warning);
       const p = await window.xAgent.getPrefs();
       setPrefs(p);
@@ -452,6 +446,7 @@ export default function App() {
     const text = input;
     setInput("");
     setError(null);
+    setFollowNonce((n) => n + 1);
     const expanded = await expandAtPathsInPrompt(text);
     const result = await window.xAgent.prompt(expanded);
     if (!result.ok) {
@@ -866,7 +861,7 @@ export default function App() {
           onAbort={abort}
           disabled={!cwd}
           queuedSteering={queuedSteering}
-          bottomRef={bottomRef}
+          forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
           onOpenToolInPanel={(toolId, args) => {
             openToolInRightPanel(toolId, args, () => {
               void ensureRightPanelOpen();

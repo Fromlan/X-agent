@@ -2,7 +2,7 @@ import type { AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { Send, Square } from "lucide-react";
-import { type KeyboardEvent, type RefObject } from "react";
+import { type KeyboardEvent } from "react";
 
 interface Props {
   items: ChatItem[];
@@ -14,7 +14,7 @@ interface Props {
   onAbort: () => void;
   disabled: boolean;
   queuedSteering?: string[];
-  bottomRef: RefObject<HTMLDivElement | null>;
+  forceFollowKey?: string;
   onOpenToolInPanel?: (toolId: string, args: unknown) => void;
   editingEntryId?: string | null;
   editDraft?: string;
@@ -44,7 +44,7 @@ export function ChatPanel(props: Props) {
         showThinking={props.showThinking}
         status={props.status}
         disabledEmpty={props.disabled}
-        bottomRef={props.bottomRef}
+        forceFollowKey={props.forceFollowKey}
         onOpenToolInPanel={props.onOpenToolInPanel}
         editingEntryId={props.editingEntryId}
         editDraft={props.editDraft}
