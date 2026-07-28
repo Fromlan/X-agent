@@ -20,6 +20,96 @@ export interface ModelInfo {
   provider: string;
   id: string;
   name: string;
+  /** Model context window in tokens (from Pi Model). */
+  contextWindow?: number;
+}
+
+/** Per-turn / aggregate token counts (aligned with Pi Usage). */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+export interface UsageCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+/** Single-turn usage snapshot (assistant message). */
+export interface TurnUsage {
+  tokens: TokenUsage;
+  cost: UsageCost;
+}
+
+export type ContextSegmentId =
+  | "system"
+  | "project"
+  | "skills"
+  | "tools"
+  | "messages"
+  /** API total minus text estimates: tool schemas + request framing. */
+  | "overhead";
+
+export interface ContextSegment {
+  id: ContextSegmentId;
+  label: string;
+  tokens: number;
+}
+
+/** Estimated context fill + component breakdown. */
+export interface ContextBreakdown {
+  contextWindow: number;
+  /** Estimated context tokens, or null if unknown. */
+  tokens: number | null;
+  /** Percent of context window, or null if tokens unknown. */
+  percent: number | null;
+  /** Heuristic segment split; tokens are estimates. */
+  segments: ContextSegment[];
+  estimated: true;
+}
+
+/** Live session usage pushed to the renderer. */
+export interface SessionUsageSnapshot {
+  tokens: TokenUsage;
+  cost: number;
+  context: ContextBreakdown | null;
+  lastTurn?: TurnUsage;
+  /** Message counts from getSessionStats. */
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+}
+
+export interface CompactSessionResult {
+  ok: boolean;
+  error?: string;
+  tokensBefore?: number;
+  estimatedTokensAfter?: number;
+}
+
+export interface UsageModelBucket {
+  tokens: TokenUsage;
+  cost: number;
+  turns: number;
+}
+
+export interface UsageDayBucket {
+  tokens: TokenUsage;
+  cost: number;
+  turns: number;
+  byModel: Record<string, UsageModelBucket>;
+}
+
+export interface UsageSummary {
+  days: Array<{ date: string } & UsageDayBucket>;
+  byModel: Array<{ modelKey: string } & UsageModelBucket>;
+  totals: UsageModelBucket;
 }
 
 export interface SessionInfo {
@@ -274,6 +364,23 @@ export type UiAgentEvent =
       messageId: string;
       isError?: boolean;
       errorMessage?: string;
+      usage?: TurnUsage;
+    }
+  | {
+      type: "usage_update";
+      usage: SessionUsageSnapshot;
+    }
+  | {
+      type: "compaction_start";
+      reason: "manual" | "threshold" | "overflow";
+    }
+  | {
+      type: "compaction_end";
+      reason: "manual" | "threshold" | "overflow";
+      aborted: boolean;
+      errorMessage?: string;
+      tokensBefore?: number;
+      estimatedTokensAfter?: number;
     }
   | {
       type: "tool_start";
@@ -706,6 +813,12 @@ export interface XAgentApi {
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;
   installUpdate: () => Promise<{ ok: boolean; error?: string }>;
+  getSessionUsage: () => Promise<SessionUsageSnapshot | null>;
+  compactSession: (customInstructions?: string) => Promise<CompactSessionResult>;
+  getUsageSummary: (options?: {
+    days?: number;
+  }) => Promise<UsageSummary>;
+  clearUsageSummary: () => Promise<{ ok: boolean; error?: string }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
 }

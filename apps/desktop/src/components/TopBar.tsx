@@ -21,6 +21,7 @@ interface Props {
   theme: "light" | "dark";
   busy: boolean;
   rightPanelOpen: boolean;
+  compacting?: boolean;
   onOpenProject: () => void;
   onNewSession: () => void;
   onModelChange: (value: string) => void;
@@ -67,6 +68,7 @@ export function TopBar(props: Props) {
           onClick={props.onNewSession}
           disabled={
             props.busy ||
+            props.compacting ||
             !props.cwd ||
             props.status === "streaming" ||
             props.status === "retrying"

@@ -113,6 +113,12 @@ const api: XAgentApi = {
   checkForUpdates: () => ipcRenderer.invoke("checkForUpdates"),
   downloadUpdate: () => ipcRenderer.invoke("downloadUpdate"),
   installUpdate: () => ipcRenderer.invoke("installUpdate"),
+  getSessionUsage: () => ipcRenderer.invoke("getSessionUsage"),
+  compactSession: (customInstructions?: string) =>
+    ipcRenderer.invoke("compactSession", customInstructions),
+  getUsageSummary: (options?: { days?: number }) =>
+    ipcRenderer.invoke("getUsageSummary", options),
+  clearUsageSummary: () => ipcRenderer.invoke("clearUsageSummary"),
   onEvent: (handler: (event: UiAgentEvent) => void) => {
     const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
       handler(event);
