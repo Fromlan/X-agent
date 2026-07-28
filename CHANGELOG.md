@@ -6,6 +6,22 @@
 
 ## Unreleased
 
+## 0.2.4
+
+### 改进
+
+- **Godot 文档搜索**：结果带短摘要（summary）；类页 / 教程标题与排序更准确，概览可少读大 `.rst`
+- **文档工具指引**：概览优先用 summary；API 查阅引导 `read(class_*.rst, limit)`
+
+### 修复
+
+- **右栏上下文占用**：按 prompt 侧 `input + cacheRead`（含 trailing 消息）计量，不再把上一轮 output 算进占用条
+- **重载插件后工具全开**：`reload` 后重新应用用户工具白名单
+
+### 开发
+
+- 新增 `measure-context-baseline`：对比默认 7 工具与全开 19 工具的基线 token 估量，并纳入 `npm test`
+
 ## 0.2.3
 
 ### 功能
