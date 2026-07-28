@@ -13,10 +13,12 @@ import type {
   AuthStatus,
   BashCheckResult,
   ClientPrefs,
+  ColorMode,
   ModelInfo,
   PiCliStatus,
   RetractPreview,
   SessionInfo,
+  ThemeId,
   ThinkingLevel,
 } from "@shared/ipc";
 import { Sidebar } from "./components/Sidebar";
@@ -40,6 +42,7 @@ import {
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
+  fitColumnWidths,
   useColumnResize,
 } from "./hooks/useColumnResize";
 import { applyAgentEvent, createEmptyState } from "./stores/chat-store";
@@ -71,8 +74,8 @@ const THINKING_LEVELS: ThinkingLevel[] = [
   "max",
 ];
 
-function applyTheme(theme: "light" | "dark"): void {
-  document.body.dataset.theme = theme;
+function applyTheme(themeId: ThemeId, colorMode: ColorMode): void {
+  document.body.dataset.theme = `${themeId}-${colorMode}`;
 }
 
 export default function App() {
@@ -267,7 +270,7 @@ export default function App() {
       const p = await window.xAgent.getPrefs();
       if (cancelled) return;
       setPrefs(p);
-      applyTheme(p.theme);
+      applyTheme(p.themeId, p.colorMode);
       setBash(await window.xAgent.checkBash());
       setAuth(await window.xAgent.checkAuth());
       setPiCli(await window.xAgent.checkPiCli());
@@ -577,10 +580,10 @@ export default function App() {
 
   const toggleTheme = async () => {
     if (!prefs) return;
-    const theme = prefs.theme === "dark" ? "light" : "dark";
-    const next = await window.xAgent.setPrefs({ theme });
+    const colorMode = prefs.colorMode === "dark" ? "light" : "dark";
+    const next = await window.xAgent.setPrefs({ colorMode });
     setPrefs(next);
-    applyTheme(next.theme);
+    applyTheme(next.themeId, next.colorMode);
   };
 
   const commitSidebarWidth = useCallback(async (sidebarWidth: number) => {
@@ -626,6 +629,31 @@ export default function App() {
       void commitRightPanelWidth(w);
     },
   });
+
+  const [viewportWidth, setViewportWidth] = useState(
+    () => (typeof window !== "undefined" ? window.innerWidth : 1280),
+  );
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const layoutWidths = useMemo(
+    () =>
+      fitColumnWidths({
+        viewportWidth,
+        sidebarWidth,
+        rightPanelWidth,
+        rightPanelOpen: prefs?.rightPanelOpen ?? false,
+      }),
+    [
+      viewportWidth,
+      sidebarWidth,
+      rightPanelWidth,
+      prefs?.rightPanelOpen,
+    ],
+  );
 
   const toggleRightPanel = async () => {
     if (!prefs) return;
@@ -705,7 +733,7 @@ export default function App() {
         thinkingLevel={prefs?.thinkingLevel ?? "medium"}
         thinkingLevels={THINKING_LEVELS}
         showThinking={prefs?.showThinking ?? true}
-        theme={prefs?.theme ?? "dark"}
+        theme={prefs?.colorMode ?? "dark"}
         onOpenProject={openProject}
         onNewSession={newSession}
         onModelChange={onModelChange}
@@ -804,8 +832,8 @@ export default function App() {
         className={`main-row${prefs?.rightPanelOpen ? " with-right-panel" : ""}${sidebarResizing || rightPanelResizing ? " is-resizing" : ""}`}
         style={
           {
-            "--sidebar-width": `${sidebarWidth}px`,
-            "--right-panel-width": `${rightPanelWidth}px`,
+            "--sidebar-width": `${layoutWidths.sidebar}px`,
+            "--right-panel-width": `${layoutWidths.right}px`,
           } as CSSProperties
         }
       >
@@ -901,7 +929,7 @@ export default function App() {
           onToggleTool={toggleTool}
           onPrefsChanged={(p) => {
             setPrefs(p);
-            applyTheme(p.theme);
+            applyTheme(p.themeId, p.colorMode);
           }}
           onBashChanged={setBash}
           onProvidersChanged={async () => {

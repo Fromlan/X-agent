@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { join, relative, isAbsolute, sep } from "node:path";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -68,14 +68,26 @@ const godotRpc = new GodotRpcBridge();
 const sessionHost = new SessionHost(() => mainWindow, godotRpc);
 const autoUpdate = new AppAutoUpdater(() => mainWindow);
 
+function resolveAppIcon(): string | undefined {
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, "icon.ico"), join(process.resourcesPath, "icon.png")]
+    : [
+        join(__dirname, "../../build/icon.ico"),
+        join(__dirname, "../../build/icon.png"),
+      ];
+  return candidates.find((p) => existsSync(p));
+}
+
 function createWindow(): void {
+  const icon = resolveAppIcon();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 800,
+    minHeight: 560,
     title: "X-agent",
     backgroundColor: "#1e1e24",
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,
@@ -568,6 +580,7 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
   registerIpc();
   createWindow();
   autoUpdate.init();

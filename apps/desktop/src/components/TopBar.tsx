@@ -7,7 +7,12 @@ import {
   Settings2,
   Sun,
 } from "lucide-react";
-import type { AgentStatus, ModelInfo, ThinkingLevel } from "@shared/ipc";
+import type {
+  AgentStatus,
+  ColorMode,
+  ModelInfo,
+  ThinkingLevel,
+} from "@shared/ipc";
 import { StatusIcon } from "./StatusIcon";
 
 interface Props {
@@ -18,7 +23,7 @@ interface Props {
   thinkingLevel: ThinkingLevel;
   thinkingLevels: ThinkingLevel[];
   showThinking: boolean;
-  theme: "light" | "dark";
+  theme: ColorMode;
   busy: boolean;
   rightPanelOpen: boolean;
   compacting?: boolean;
@@ -42,25 +47,16 @@ function statusLabel(status: AgentStatus): string {
 export function TopBar(props: Props) {
   return (
     <header className="topbar">
-      <div className="brand">
-        <span className="brand-mark" aria-hidden>
-          X
-        </span>
-        <div>
-          <div className="brand-title">X-agent</div>
-          <div className="brand-sub">Pi Agent 客户端</div>
-        </div>
-      </div>
-
-      <div className="topbar-center">
+      <div className="topbar-left">
         <button
           type="button"
           className="btn btn-secondary btn-sm"
           onClick={props.onOpenProject}
           disabled={props.busy}
+          title="打开项目"
         >
           <FolderOpen size={14} />
-          打开项目
+          <span className="btn-label">打开项目</span>
         </button>
         <button
           type="button"
@@ -73,9 +69,10 @@ export function TopBar(props: Props) {
             props.status === "streaming" ||
             props.status === "retrying"
           }
+          title="新会话"
         >
           <MessageSquarePlus size={14} />
-          新会话
+          <span className="btn-label">新会话</span>
         </button>
         <span className="cwd" title={props.cwd ?? ""}>
           {props.cwd ?? "未打开项目"}
@@ -83,8 +80,8 @@ export function TopBar(props: Props) {
       </div>
 
       <div className="topbar-right">
-        <label className="field">
-          模型
+        <label className="field" title="模型">
+          <span className="field-label">模型</span>
           <select
             value={props.currentModelKey}
             onChange={(e) => props.onModelChange(e.target.value)}
@@ -102,8 +99,8 @@ export function TopBar(props: Props) {
           </select>
         </label>
 
-        <label className="field">
-          Thinking
+        <label className="field" title="Thinking">
+          <span className="field-label">Thinking</span>
           <select
             value={props.thinkingLevel}
             onChange={(e) =>
@@ -126,7 +123,9 @@ export function TopBar(props: Props) {
           title={props.showThinking ? "隐藏思考" : "显示思考"}
         >
           <Brain size={14} />
-          {props.showThinking ? "隐藏思考" : "显示思考"}
+          <span className="btn-label">
+            {props.showThinking ? "隐藏思考" : "显示思考"}
+          </span>
         </button>
 
         <button
@@ -136,12 +135,12 @@ export function TopBar(props: Props) {
           title="设置"
         >
           <Settings2 size={14} />
-          设置
+          <span className="btn-label">设置</span>
         </button>
 
         <button
           type="button"
-          className={`btn btn-ghost btn-sm${props.rightPanelOpen ? " is-active" : ""}`}
+          className={`btn btn-ghost btn-sm btn-icon${props.rightPanelOpen ? " is-active" : ""}`}
           onClick={props.onToggleRightPanel}
           title={props.rightPanelOpen ? "收起工具面板" : "打开工具面板"}
           aria-label="切换工具面板"
@@ -152,7 +151,7 @@ export function TopBar(props: Props) {
 
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="btn btn-ghost btn-sm btn-icon"
           onClick={props.onToggleTheme}
           title={props.theme === "dark" ? "切换浅色" : "切换深色"}
           aria-label="切换主题"
@@ -160,9 +159,9 @@ export function TopBar(props: Props) {
           {props.theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
         </button>
 
-        <span className="status-chip">
+        <span className="status-chip" title={statusLabel(props.status)}>
           <StatusIcon status={props.status} />
-          {statusLabel(props.status)}
+          <span className="status-label">{statusLabel(props.status)}</span>
         </span>
       </div>
     </header>

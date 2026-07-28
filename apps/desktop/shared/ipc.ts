@@ -196,8 +196,63 @@ export const GODOT_DOCS_PRESET_BRANCHES = [
   "3.6",
 ] as const;
 
+/** GUI theme family (color + style tokens). Independent of Pi TUI Theme plugins. */
+export const THEME_IDS = [
+  "default",
+  "nord",
+  "tokyo",
+  "paper",
+  "contrast",
+] as const;
+export type ThemeId = (typeof THEME_IDS)[number];
+
+export type ColorMode = "light" | "dark";
+
+export const THEME_LABELS: Record<ThemeId, string> = {
+  default: "默认",
+  nord: "Nord",
+  tokyo: "Tokyo Night",
+  paper: "Warm Paper",
+  contrast: "High Contrast",
+};
+
+export function isThemeId(value: unknown): value is ThemeId {
+  return (
+    typeof value === "string" &&
+    (THEME_IDS as readonly string[]).includes(value)
+  );
+}
+
+export function isColorMode(value: unknown): value is ColorMode {
+  return value === "light" || value === "dark";
+}
+
+/** Resolve theme prefs from a raw JSON blob (supports legacy `theme` / `cindy`). */
+export function normalizeThemePrefs(raw: {
+  themeId?: unknown;
+  colorMode?: unknown;
+  /** @deprecated Prefer themeId + colorMode */
+  theme?: unknown;
+}): { themeId: ThemeId; colorMode: ColorMode } {
+  let themeId: ThemeId = "default";
+  if (isThemeId(raw.themeId)) {
+    themeId = raw.themeId;
+  } else if (raw.themeId === "cindy") {
+    // Legacy id renamed to `default`
+    themeId = "default";
+  }
+  if (isColorMode(raw.colorMode)) {
+    return { themeId, colorMode: raw.colorMode };
+  }
+  if (isColorMode(raw.theme)) {
+    return { themeId, colorMode: raw.theme };
+  }
+  return { themeId, colorMode: "dark" };
+}
+
 export interface ClientPrefs {
-  theme: "light" | "dark";
+  themeId: ThemeId;
+  colorMode: ColorMode;
   showThinking: boolean;
   lastProjectPath: string | null;
   lastSessionPath: string | null;
@@ -226,7 +281,8 @@ export interface ClientPrefs {
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
-  theme: "dark",
+  themeId: "default",
+  colorMode: "dark",
   showThinking: true,
   lastProjectPath: null,
   lastSessionPath: null,

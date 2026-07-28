@@ -94,9 +94,53 @@ export function useColumnResize(options: {
 }
 
 export const SIDEBAR_WIDTH_DEFAULT = 260;
-export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MIN = 160;
 export const SIDEBAR_WIDTH_MAX = 480;
 
 export const RIGHT_PANEL_WIDTH_DEFAULT = 360;
-export const RIGHT_PANEL_WIDTH_MIN = 280;
+export const RIGHT_PANEL_WIDTH_MIN = 240;
 export const RIGHT_PANEL_WIDTH_MAX = 640;
+
+/** Keep chat column usable when the window shrinks. */
+export const CHAT_COLUMN_MIN = 300;
+
+export function fitColumnWidths(options: {
+  viewportWidth: number;
+  sidebarWidth: number;
+  rightPanelWidth: number;
+  rightPanelOpen: boolean;
+  chatMin?: number;
+  sidebarFloor?: number;
+  rightFloor?: number;
+}): { sidebar: number; right: number } {
+  const chatMin = options.chatMin ?? CHAT_COLUMN_MIN;
+  const sidebarFloor = options.sidebarFloor ?? 140;
+  const rightFloor = options.rightFloor ?? 200;
+  let sidebar = options.sidebarWidth;
+  let right = options.rightPanelOpen ? options.rightPanelWidth : 0;
+  const budget = Math.max(options.viewportWidth, chatMin + sidebarFloor);
+
+  const overflow = () => sidebar + right + chatMin - budget;
+
+  let extra = overflow();
+  if (extra <= 0) return { sidebar, right };
+
+  if (right > 0) {
+    const shrink = Math.min(extra, Math.max(0, right - rightFloor));
+    right -= shrink;
+    extra = overflow();
+  }
+  if (extra > 0) {
+    const shrink = Math.min(extra, Math.max(0, sidebar - sidebarFloor));
+    sidebar -= shrink;
+    extra = overflow();
+  }
+  if (extra > 0 && right > 0) {
+    right = Math.max(rightFloor, right - extra);
+    extra = overflow();
+  }
+  if (extra > 0) {
+    sidebar = Math.max(sidebarFloor, budget - chatMin - right);
+  }
+  return { sidebar, right };
+}

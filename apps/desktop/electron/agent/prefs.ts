@@ -7,8 +7,40 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { ClientPrefs, DEFAULT_PREFS } from "../../shared/ipc";
+import {
+  ClientPrefs,
+  DEFAULT_PREFS,
+  normalizeThemePrefs,
+} from "../../shared/ipc";
 import { normalizeGodotDocsBranch } from "./godot-docs-cache";
+
+type RawPrefs = Partial<ClientPrefs> & {
+  language?: unknown;
+  /** @deprecated Prefer themeId + colorMode */
+  theme?: unknown;
+};
+
+function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
+  const { language: _legacyLanguage, theme: _legacyTheme, ...rest } = raw;
+  const hiddenProjectKeys = Array.isArray(rest.hiddenProjectKeys)
+    ? rest.hiddenProjectKeys.filter(
+        (k): k is string => typeof k === "string" && k.trim().length > 0,
+      )
+    : [];
+  const { themeId, colorMode } = normalizeThemePrefs(raw);
+  return {
+    ...DEFAULT_PREFS,
+    ...rest,
+    themeId,
+    colorMode,
+    hiddenProjectKeys,
+    godotDocsBranch: normalizeGodotDocsBranch(
+      typeof rest.godotDocsBranch === "string"
+        ? rest.godotDocsBranch
+        : DEFAULT_PREFS.godotDocsBranch,
+    ),
+  };
+}
 
 function agentDir(): string {
   return join(homedir(), ".pi", "agent");
@@ -39,26 +71,8 @@ export function loadPrefs(): ClientPrefs {
     return defaults;
   }
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ClientPrefs> & {
-      language?: unknown;
-    };
-    // Drop legacy unused `language` field from older prefs files.
-    const { language: _legacyLanguage, ...rest } = raw;
-    const hiddenProjectKeys = Array.isArray(rest.hiddenProjectKeys)
-      ? rest.hiddenProjectKeys.filter(
-          (k): k is string => typeof k === "string" && k.trim().length > 0,
-        )
-      : [];
-    return {
-      ...DEFAULT_PREFS,
-      ...rest,
-      hiddenProjectKeys,
-      godotDocsBranch: normalizeGodotDocsBranch(
-        typeof rest.godotDocsBranch === "string"
-          ? rest.godotDocsBranch
-          : DEFAULT_PREFS.godotDocsBranch,
-      ),
-    };
+    const raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
+    return normalizeLoadedPrefs(raw);
   } catch {
     // 兼容旧行为：损坏时返回默认值,但**不**写回。
     // 主进程应优先使用 {@link loadPrefsWithRecovery}。
@@ -95,27 +109,10 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
     return { ok: true, prefs: defaults, recovered: null };
   }
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<ClientPrefs> & {
-      language?: unknown;
-    };
-    const { language: _legacyLanguage, ...rest } = raw;
-    const hiddenProjectKeys = Array.isArray(rest.hiddenProjectKeys)
-      ? rest.hiddenProjectKeys.filter(
-          (k): k is string => typeof k === "string" && k.trim().length > 0,
-        )
-      : [];
+    const raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
     return {
       ok: true,
-      prefs: {
-        ...DEFAULT_PREFS,
-        ...rest,
-        hiddenProjectKeys,
-        godotDocsBranch: normalizeGodotDocsBranch(
-          typeof rest.godotDocsBranch === "string"
-            ? rest.godotDocsBranch
-            : DEFAULT_PREFS.godotDocsBranch,
-        ),
-      },
+      prefs: normalizeLoadedPrefs(raw),
       recovered: null,
     };
   } catch (err) {
