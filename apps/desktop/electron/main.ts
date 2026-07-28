@@ -48,6 +48,10 @@ import {
   upsertProviderProfile,
 } from "./agent/provider-store";
 import { fetchProviderModels } from "./agent/model-fetch";
+import {
+  clearUsageSummary,
+  getUsageSummary,
+} from "./agent/usage-store";
 import type {
   ClientPrefs,
   GodotRpcCallDto,
@@ -553,6 +557,14 @@ function registerIpc(): void {
   ipcMain.handle("checkForUpdates", async () => autoUpdate.check());
   ipcMain.handle("downloadUpdate", async () => autoUpdate.download());
   ipcMain.handle("installUpdate", async () => autoUpdate.quitAndInstall());
+  ipcMain.handle("getSessionUsage", async () => sessionHost.getSessionUsage());
+  ipcMain.handle("compactSession", async (_e, customInstructions?: string) =>
+    sessionHost.compactSession(customInstructions),
+  );
+  ipcMain.handle("getUsageSummary", async (_e, options?: { days?: number }) =>
+    getUsageSummary(options),
+  );
+  ipcMain.handle("clearUsageSummary", async () => clearUsageSummary());
 }
 
 app.whenReady().then(async () => {

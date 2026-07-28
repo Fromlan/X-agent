@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import type {
@@ -42,8 +43,23 @@ import {
   useColumnResize,
 } from "./hooks/useColumnResize";
 import { applyAgentEvent, createEmptyState } from "./stores/chat-store";
+import {
+  clearSessionUsage,
+  getCompacting,
+  getSessionUsageState,
+  getSessionUsageStoreVersion,
+  setCompacting,
+  setSessionUsage,
+  subscribeSessionUsageStore,
+} from "./stores/session-usage-store";
 
-type SettingsTab = "general" | "providers" | "tools" | "plugins" | "godot";
+type SettingsTab =
+  | "general"
+  | "providers"
+  | "tools"
+  | "plugins"
+  | "godot"
+  | "usage";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -89,10 +105,33 @@ export default function App() {
     editText?: string;
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const usageFetchGen = useRef(0);
+  const sessionIdRef = useRef<string | null>(null);
+  const usageVersion = useSyncExternalStore(
+    subscribeSessionUsageStore,
+    getSessionUsageStoreVersion,
+    getSessionUsageStoreVersion,
+  );
+  void usageVersion;
+  const sessionUsage = getSessionUsageState();
+  const compacting = getCompacting();
+
+  const fetchSessionUsage = useCallback(() => {
+    const gen = ++usageFetchGen.current;
+    void window.xAgent.getSessionUsage().then((u) => {
+      if (gen !== usageFetchGen.current) return;
+      if (u) setSessionUsage(u);
+      else setSessionUsage(null);
+    });
+  }, []);
 
   useEffect(() => {
     if (!editingEntryId) setEditDraft("");
   }, [editingEntryId]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const currentModelKey = useMemo(() => {
     const m =
@@ -118,10 +157,15 @@ export default function App() {
     if (!s.hasSession) {
       setItems(createEmptyState());
       setSessionId(null);
+      sessionIdRef.current = null;
       setQueuedSteering([]);
       setEditingEntryId(null);
       setEditDraft("");
       setConfirmState(null);
+      usageFetchGen.current += 1;
+      clearSessionUsage();
+    } else {
+      fetchSessionUsage();
     }
     if (s.error) setError(s.error);
     else if (s.status === "idle") setError(null);
@@ -137,7 +181,7 @@ export default function App() {
           : prev,
       );
     }
-  }, []);
+  }, [fetchSessionUsage]);
 
   useEffect(() => {
     return window.xAgent.onEvent((event) => {
@@ -150,8 +194,19 @@ export default function App() {
         return;
       }
       if (event.type === "session_info") {
-        setCwd(event.cwd);
-        setSessionId(event.sessionId);
+        const nextId = event.sessionId || null;
+        const prevId = sessionIdRef.current;
+        setCwd(event.cwd || null);
+        setSessionId(nextId);
+        sessionIdRef.current = nextId;
+        if (!nextId) {
+          usageFetchGen.current += 1;
+          clearSessionUsage();
+        } else if (prevId !== nextId) {
+          // Drop previous session's snapshot immediately; usage_update follows.
+          usageFetchGen.current += 1;
+          clearSessionUsage();
+        }
         setPrefs((prev) =>
           prev
             ? {
@@ -171,6 +226,18 @@ export default function App() {
       }
       if (event.type === "agent_end" && !event.willRetry) {
         void refreshSessions();
+      }
+      if (event.type === "usage_update") {
+        setSessionUsage(event.usage);
+        return;
+      }
+      if (event.type === "compaction_start") {
+        setCompacting(true);
+        return;
+      }
+      if (event.type === "compaction_end") {
+        setCompacting(false);
+        return;
       }
       if (event.type === "queue_update") {
         setQueuedSteering(event.steering);
@@ -648,6 +715,7 @@ export default function App() {
         onToggleRightPanel={toggleRightPanel}
         onOpenSettings={openSettings}
         rightPanelOpen={prefs?.rightPanelOpen ?? false}
+        compacting={compacting}
         busy={busy}
       />
       {piCli && !piCli.ok && (
@@ -748,6 +816,7 @@ export default function App() {
           activeCwd={cwd}
           agentStatus={status}
           busy={busy}
+          compacting={compacting}
           onResume={resumeSession}
           onDelete={deleteSession}
           onHideProject={(projectCwd) => {
@@ -789,6 +858,15 @@ export default function App() {
             cwd={cwd}
             items={items}
             enabledTools={prefs?.tools ?? []}
+            usage={sessionUsage}
+            compacting={compacting}
+            sessionId={sessionId}
+            busy={
+              busy ||
+              status === "streaming" ||
+              status === "retrying" ||
+              retractBusy
+            }
             onClose={() => void toggleRightPanel()}
             onAddPathToChat={addPathToChat}
             onResizePointerDown={onRightPanelResizePointerDown}

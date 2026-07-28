@@ -1,6 +1,7 @@
 import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { PanelRightClose } from "lucide-react";
 import type { ChatItem } from "../stores/chat-store";
+import type { SessionUsageSnapshot } from "@shared/ipc";
 import {
   extractToolPath,
   getPanelState,
@@ -13,8 +14,10 @@ import {
 import { ToolsTab } from "./right-panel/ToolsTab";
 import { FilesTab } from "./right-panel/FilesTab";
 import { GodotTab } from "./right-panel/GodotTab";
+import { ContextTab } from "./right-panel/ContextTab";
 
 const TABS: { id: RightPanelTab; label: string }[] = [
+  { id: "context", label: "上下文" },
   { id: "tools", label: "工具" },
   { id: "files", label: "文件" },
   { id: "godot", label: "Godot" },
@@ -24,6 +27,10 @@ interface Props {
   cwd: string | null;
   items: ChatItem[];
   enabledTools: string[];
+  usage: SessionUsageSnapshot | null;
+  compacting: boolean;
+  busy: boolean;
+  sessionId: string | null;
   onClose: () => void;
   onAddPathToChat: (relPath: string) => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
@@ -35,6 +42,10 @@ export function RightPanel({
   cwd,
   items,
   enabledTools,
+  usage,
+  compacting,
+  busy,
+  sessionId,
   onClose,
   onAddPathToChat,
   onResizePointerDown,
@@ -94,6 +105,14 @@ export function RightPanel({
         ))}
       </nav>
       <div className="right-panel-body has-tabs">
+        {state.tab === "context" && (
+          <ContextTab
+            usage={usage}
+            compacting={compacting}
+            busy={busy}
+            sessionId={sessionId}
+          />
+        )}
         {state.tab === "tools" && (
           <ToolsTab
             items={items}

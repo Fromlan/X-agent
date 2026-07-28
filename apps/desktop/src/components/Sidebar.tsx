@@ -31,6 +31,8 @@ interface Props {
   activeCwd: string | null;
   agentStatus: AgentStatus;
   busy: boolean;
+  /** True while context compaction is in progress. */
+  compacting?: boolean;
   onResume: (path: string) => void;
   onDelete: (path: string) => void;
   onHideProject: (cwd: string, label: string) => void;
@@ -48,6 +50,7 @@ export function Sidebar({
   activeCwd,
   agentStatus,
   busy,
+  compacting = false,
   onResume,
   onDelete,
   onHideProject,
@@ -57,7 +60,11 @@ export function Sidebar({
   onResizeDoubleClick,
   resizing,
 }: Props) {
-  const locked = busy || agentStatus === "streaming" || agentStatus === "retrying";
+  const locked =
+    busy ||
+    compacting ||
+    agentStatus === "streaming" ||
+    agentStatus === "retrying";
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [renaming, setRenaming] = useState(false);
