@@ -256,6 +256,13 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
             if (item.kind === "assistant") {
               const userEntryId = item.userEntryId;
+              const showThinkingBlock =
+                Boolean(props.showThinking && item.thinking);
+              const hasText = Boolean(item.text.trim());
+              // Thinking-only turns leave an empty shell when thinking is hidden.
+              if (!showThinkingBlock && !hasText) {
+                return null;
+              }
               return (
                 <div
                   key={item.id}
@@ -276,7 +283,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                       </div>
                     </div>
                   )}
-                  {props.showThinking && item.thinking && (
+                  {showThinkingBlock && item.thinking && (
                     <ThinkingBlock thinking={item.thinking} done={item.done} />
                   )}
                   <MarkdownBody content={item.text} streaming={!item.done} />
