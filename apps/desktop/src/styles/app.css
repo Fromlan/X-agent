@@ -716,16 +716,52 @@ body.is-resizing-column * {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  position: relative;
   background: var(--bg-main);
 }
 
 .message-stream {
   flex: 1;
   overflow: auto;
-  padding: 20px;
+  padding: 20px 20px 36px;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+.message-stream-inner {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 100%;
+}
+
+.scroll-to-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--bg-modal);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.scroll-to-bottom:hover:not(:disabled) {
+  background: var(--surface-chip);
+}
+
+.scroll-to-bottom:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring-soft);
 }
 
 .empty-state {
@@ -1073,10 +1109,21 @@ body.is-resizing-column * {
   border-left: 3px solid var(--warning-accent);
   max-width: 82%;
   border-radius: var(--radius-container);
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-top: 1px solid var(--border-primary);
   border-right: 1px solid var(--border-primary);
   border-bottom: 1px solid var(--border-primary);
+  line-height: 1.3;
+}
+
+/* Collapsed: compact single-row chips so tool chains stay short */
+.bubble-tool:not([open]) {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.message-stream-inner > .bubble-tool:not([open]) + .bubble-tool:not([open]) {
+  margin-top: -10px;
 }
 
 .bubble-tool.toolcall-error {
@@ -1092,9 +1139,15 @@ body.is-resizing-column * {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  min-height: 22px;
   cursor: pointer;
   list-style: none;
   user-select: none;
+}
+
+.bubble-tool:not([open]) .tool-head {
+  min-height: 20px;
+  gap: 6px;
 }
 
 .bubble-tool > summary.tool-head::-webkit-details-marker {
@@ -1104,11 +1157,17 @@ body.is-resizing-column * {
 .tool-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  min-width: 0;
   font-weight: 500;
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.2;
   color: var(--text-primary);
+}
+
+.bubble-tool:not([open]) .tool-name {
+  font-size: 11.5px;
 }
 
 .tool-chevron {
@@ -1130,9 +1189,21 @@ body.is-resizing-column * {
 .tool-state {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  flex-shrink: 0;
+  gap: 3px;
   font-size: 11px;
+  line-height: 1;
   color: var(--text-muted);
+}
+
+.bubble-tool:not([open]) .tool-state-label {
+  display: none;
+}
+
+.bubble-tool:not([open]) .tool-open-panel {
+  padding: 2px !important;
+  min-width: 20px;
+  min-height: 20px;
 }
 
 .tool-section {
@@ -3534,7 +3605,10 @@ body.is-resizing-column * {
 
 @media (max-width: 900px) {
   .message-stream {
-    padding: 12px;
+    padding: 12px 12px 36px;
+  }
+
+  .message-stream-inner {
     gap: 12px;
   }
 

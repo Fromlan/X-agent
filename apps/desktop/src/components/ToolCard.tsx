@@ -35,11 +35,11 @@ export function ToolCard({
   }, [done]);
 
   const stateIcon = !done ? (
-    <Loader2 size={13} className="icon-spin" />
+    <Loader2 size={12} className="icon-spin" />
   ) : isError ? (
-    <XCircle size={13} />
+    <XCircle size={12} />
   ) : (
-    <CheckCircle2 size={13} />
+    <CheckCircle2 size={12} />
   );
 
   const stateText = done ? (isError ? "失败" : "完成") : "执行中…";
@@ -61,12 +61,12 @@ export function ToolCard({
       <summary className="tool-head">
         <span className="tool-name">
           {hasBody && (
-            <ChevronRight size={13} className="tool-chevron" aria-hidden />
+            <ChevronRight size={12} className="tool-chevron" aria-hidden />
           )}
-          <Wrench size={13} />
+          <Wrench size={12} />
           {toolName}
         </span>
-        <span className="tool-state">
+        <span className="tool-state" title={stateText}>
           {onOpenInPanel && (
             <button
               type="button"
@@ -79,11 +79,11 @@ export function ToolCard({
                 onOpenInPanel();
               }}
             >
-              <PanelRight size={13} />
+              <PanelRight size={12} />
             </button>
           )}
           {stateIcon}
-          {stateText}
+          <span className="tool-state-label">{stateText}</span>
         </span>
       </summary>
       {args && (
