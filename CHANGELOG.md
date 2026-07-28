@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+## 0.2.2
+
+### 修复
+
+- **CI / 发版测试**：`test-turn-file-tracker` 补上缺失的 `unlinkSync` 导入（symlink 用例在 Windows runner 上可用时不再 ReferenceError）
+
 ## 0.2.1
 
 ### 功能
