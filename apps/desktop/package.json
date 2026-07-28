@@ -1,6 +1,6 @@
 {
   "name": "x-agent-desktop",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Pi Agent desktop client (X-agent)",
   "main": "./out/main/index.js",
   "type": "module",
@@ -44,13 +44,23 @@
     "appId": "works.earendil.x-agent",
     "productName": "X-agent",
     "directories": {
+      "buildResources": "build",
       "output": "release"
     },
+    "icon": "icon.png",
     "files": [
       "out/**/*",
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
       {
         "from": "../../packages/godot-editor-rpc/addons/x_agent_rpc",
         "to": "godot-addons/x_agent_rpc"
@@ -68,6 +78,7 @@
       }
     ],
     "win": {
+      "icon": "icon.ico",
       "target": [
         "nsis",
         "portable"
@@ -76,7 +87,10 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico"
     }
   }
 }

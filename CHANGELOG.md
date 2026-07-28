@@ -6,11 +6,23 @@
 
 ## Unreleased
 
+## 0.2.3
+
+### 功能
+
+- **多风格 GUI 主题**：设置 → 通用可选默认 / Nord / Tokyo Night / Warm Paper / High Contrast；顶栏仍切换深浅；偏好为 `themeId` + `colorMode`（兼容旧 `theme` / `cindy`）
+- **应用图标**：窗口 / 安装包 / 网页 favicon 使用统一品牌图标
+- **顶栏紧凑布局**：窄窗时隐藏部分文案，保留图标与 title
+
+### 改进
+
+- 窗口最小尺寸下调，并隐藏应用菜单栏
+- 侧栏 / 右栏在窗口缩小时自动让出聊天区宽度
+
 ### 文档
 
-- 同步 README / CLAUDE / AGENT_CONTEXT / DESIGN 与 0.2.x 能力（右栏上下文压缩、用量、Godot 文档、技能排除 `~/.agents/skills`、设置分页等）
-- 根 README 改为面向用户：突出最新功能与使用说明；开发 / 发版细节留在 CLAUDE.md
-- 修正 `godot-editor-rpc` / `godot-pi` README 中设置入口文案（设置 → Godot → 编辑器连接）
+- DESIGN 补充主题族与可变样式令牌说明
+- 同步 README / CLAUDE / AGENT_CONTEXT 与 0.2.x 能力说明；修正 Godot 设置入口文案
 
 ## 0.2.2
 
