@@ -1524,6 +1524,11 @@ export class SessionHost {
     if (!this.bundle) return { ok: true };
     try {
       this.bundle.session.setActiveToolsByName(tools);
+      this.emit({
+        type: "notice",
+        text: "已更新工具白名单（系统提示已重建）。本会话前缀缓存将从下一轮重新积累。",
+        level: "warn",
+      });
       const active = new Set(this.bundle.session.getActiveToolNames());
       const missing = tools.filter((name) => !active.has(name));
       if (missing.length === 0) return { ok: true };

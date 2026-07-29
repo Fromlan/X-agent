@@ -1,4 +1,7 @@
-import { buildModelsUrlCandidates } from "../electron/agent/model-fetch";
+import {
+  buildModelsUrlCandidates,
+  parseModelsJson,
+} from "../electron/agent/model-fetch";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -31,5 +34,18 @@ const override = buildModelsUrlCandidates(
   "https://api.deepseek.com/models",
 );
 assert(override.length === 1 && override[0].endsWith("/models"), "override");
+
+const parsed = parseModelsJson({
+  data: [
+    { id: "foo", owned_by: "org", context_length: 64000 },
+    { id: "deepseek-v4-flash" },
+    { id: "  " },
+  ],
+});
+assert(parsed.length === 2, "parse skips empty id");
+const foo = parsed.find((m) => m.id === "foo");
+assert(foo?.contextWindow === 64_000, "parse uses API context_length");
+const flash = parsed.find((m) => m.id === "deepseek-v4-flash");
+assert(flash?.contextWindow === 1_000_000, "parse falls back to lookup");
 
 console.log("test-model-fetch: ok");

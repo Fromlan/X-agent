@@ -41,6 +41,11 @@ import {
   type ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
+import {
+  lookupKnownContextWindow,
+  normalizePositiveInt,
+  resolveModelContextWindow,
+} from "@shared/model-context";
 import { PluginsPage } from "./PluginsPage";
 import { UsageSettingsPage } from "./UsageSettingsPage";
 
@@ -123,6 +128,8 @@ interface Props {
   cwd: string | null;
   onClose: () => void;
   onToggleTool: (tool: string) => void;
+  /** When true, tool whitelist changes warn about prefix-cache invalidation. */
+  hasActiveSession?: boolean;
   onProvidersChanged?: () => void;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onBashChanged?: (bash: BashCheckResult) => void;
@@ -153,6 +160,7 @@ export function SettingsPanel({
   cwd,
   onClose,
   onToggleTool,
+  hasActiveSession = false,
   onProvidersChanged,
   onPrefsChanged,
   onBashChanged,
@@ -351,6 +359,20 @@ export function SettingsPanel({
     });
   };
 
+  /** When model id loses focus and context is empty, fill from known table. */
+  const autofillContextForRow = (index: number) => {
+    setForm((prev) => {
+      const row = prev.models[index];
+      if (!row?.id.trim()) return prev;
+      if (normalizePositiveInt(row.contextWindow) != null) return prev;
+      const resolved = lookupKnownContextWindow(row.id);
+      if (resolved == null) return prev;
+      const models = prev.models.slice();
+      models[index] = { ...row, contextWindow: resolved };
+      return { ...prev, models };
+    });
+  };
+
   const addModelRow = () => {
     setForm((prev) => ({
       ...prev,
@@ -409,10 +431,17 @@ export function SettingsPanel({
       setError("请至少勾选一个模型");
       return;
     }
-    const mapped: ProviderModelEntry[] = chosen.map((m) => ({
-      id: m.id,
-      name: m.id,
-    }));
+    const mapped: ProviderModelEntry[] = chosen.map((m) => {
+      const contextWindow = resolveModelContextWindow({
+        id: m.id,
+        fromApi: m.contextWindow,
+      });
+      return {
+        id: m.id,
+        name: m.id,
+        ...(contextWindow != null ? { contextWindow } : {}),
+      };
+    });
     if (mode === "replace") {
       setForm((prev) => ({ ...prev, models: mapped }));
     } else {
@@ -447,11 +476,22 @@ export function SettingsPanel({
       const input: ProviderUpsertInput = {
         ...form,
         models: form.models
-          .map((m) => ({
-            id: m.id.trim(),
-            ...(m.name?.trim() ? { name: m.name.trim() } : {}),
-          }))
-          .filter((m) => m.id),
+          .map((m) => {
+            const id = m.id.trim();
+            if (!id) return null;
+            const name = m.name?.trim();
+            const explicit = normalizePositiveInt(m.contextWindow);
+            const contextWindow = resolveModelContextWindow({
+              id,
+              explicit,
+            });
+            return {
+              id,
+              ...(name ? { name } : {}),
+              ...(contextWindow != null ? { contextWindow } : {}),
+            };
+          })
+          .filter((m): m is ProviderModelEntry => !!m),
       };
       const result = await window.xAgent.upsertProviderProfile(input);
       if (!result.ok || !result.profile) {
@@ -577,6 +617,12 @@ export function SettingsPanel({
     tools: readonly string[],
     enabled: boolean,
   ) => {
+    if (hasActiveSession) {
+      const ok = window.confirm(
+        "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
+      );
+      if (!ok) return;
+    }
     const withoutGroup = prefs.tools.filter((tool) => !tools.includes(tool));
     const nextTools = enabled ? [...withoutGroup, ...tools] : withoutGroup;
     const next = await window.xAgent.setPrefs({ tools: nextTools });
@@ -952,7 +998,9 @@ export function SettingsPanel({
                 <div className="settings-page-head">
                   <h3>启用工具</h3>
                   <p className="modal-hint">
-                    更改会立即应用到当前会话（若已打开项目）。右侧「工具」面板显示已启用列表；实际调用记录在
+                    更改会立即应用到当前会话（若已打开项目），并重建系统提示与工具定义 —
+                    这会清空本会话的 API
+                    前缀缓存命中。长会话请尽量在新会话前调好白名单。右侧「工具」面板显示已启用列表；实际调用记录在
                     Agent 运行后出现。
                   </p>
                 </div>
@@ -1958,21 +2006,21 @@ export function SettingsPanel({
                         onClick={addModelRow}
                       >
                         <Plus size={13} />
-                        添加行
+                        添加
                       </button>
                     </div>
                   </div>
                   <p className="modal-hint">
-                    参考 cc-switch：填写 Base URL 与 API Key 后可自动拉取；表格内可直接改 id /
-                    显示名。
+                    上下文写入 Pi models.json 的 contextWindow；留空则 Pi
+                    默认 128k。已知模型与拉取结果会自动填入。
                   </p>
-
                   <div className="models-table-wrap">
                     <table className="models-table">
                       <thead>
                         <tr>
-                          <th style={{ width: "42%" }}>模型 ID</th>
-                          <th style={{ width: "42%" }}>显示名</th>
+                          <th style={{ width: "34%" }}>模型 ID</th>
+                          <th style={{ width: "28%" }}>显示名</th>
+                          <th style={{ width: "22%" }}>上下文</th>
                           <th style={{ width: "16%" }}>操作</th>
                         </tr>
                       </thead>
@@ -1985,6 +2033,7 @@ export function SettingsPanel({
                                 onChange={(e) =>
                                   updateModelRow(index, { id: e.target.value })
                                 }
+                                onBlur={() => autofillContextForRow(index)}
                                 placeholder="model-id"
                               />
                             </td>
@@ -1997,6 +2046,37 @@ export function SettingsPanel({
                                   })
                                 }
                                 placeholder="可选显示名"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="tabular"
+                                inputMode="numeric"
+                                value={
+                                  row.contextWindow != null
+                                    ? String(row.contextWindow)
+                                    : ""
+                                }
+                                onChange={(e) => {
+                                  const digits = e.target.value.replace(
+                                    /[^\d]/g,
+                                    "",
+                                  );
+                                  if (!digits) {
+                                    updateModelRow(index, {
+                                      contextWindow: undefined,
+                                    });
+                                    return;
+                                  }
+                                  const n = normalizePositiveInt(digits);
+                                  if (n != null) {
+                                    updateModelRow(index, {
+                                      contextWindow: n,
+                                    });
+                                  }
+                                }}
+                                placeholder="自动 / 128k"
+                                title="上下文窗口（tokens）"
                               />
                             </td>
                             <td>
@@ -2043,6 +2123,7 @@ export function SettingsPanel({
                               <th style={{ width: "40px" }} />
                               <th>模型 ID</th>
                               <th>owned_by</th>
+                              <th style={{ width: "88px" }}>上下文</th>
                               <th style={{ width: "72px" }}>状态</th>
                             </tr>
                           </thead>
@@ -2061,6 +2142,11 @@ export function SettingsPanel({
                                   <td className="tabular">{m.id}</td>
                                   <td className="muted-cell">
                                     {m.ownedBy ?? "—"}
+                                  </td>
+                                  <td className="muted-cell tabular">
+                                    {m.contextWindow != null
+                                      ? m.contextWindow.toLocaleString()
+                                      : "—"}
                                   </td>
                                   <td className="muted-cell">
                                     {already ? "已有" : "新"}

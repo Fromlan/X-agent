@@ -210,7 +210,7 @@ session.setActiveToolsByName(prefs.tools);
 | Project cwd | 工具与项目 `.pi` / AGENTS 相对该根 |
 | 全局 prefs | `x-agent.json` 一份；写 last paths / 当前模型偏好 / 布局 |
 | Skills | 排除 `~/.agents/skills`；保留 `~/.pi/agent/skills`、项目 skills、Packages |
-| Pi auth / models | `auth.json` / `models.json`，与 CLI 共用 |
+| Pi auth / models | `auth.json` / `models.json`，与 CLI 共用。自定义供应商模型应写 `contextWindow`（tokens）；未写时 Pi 默认 **128000**。X-agent 预设、拉取 `/v1/models`、以及已知模型启发式会在保存/激活时自动补全。 |
 | 用量 | `x-agent-usage.json` 本地汇总；右栏另有会话内 snapshot |
 | UI transcript | 展示层；截断不影响 Pi 侧完整会话（受 Pi compaction 约束） |
 
@@ -224,11 +224,19 @@ session.setActiveToolsByName(prefs.tools);
 | 流式中再发 | `streamingBehavior: "steer"` | 当前工具轮次后注入转向消息（否则 Pi 会报错） |
 | 撤回 / 编辑重发 / 重新生成 | `navigateTree` + `TurnFileTracker` | 对话改 leaf（append-only 树）；默认还原该段 `write`/`edit` 基线。**不**保证 bash / Godot / cwd 外副作用 |
 | `compactSession` | 右栏上下文 | 手动 `session.compact()`；更新用量 snapshot |
-| `setActiveToolsByName` / `applyTools` | prefs 变更 | 当场改可用工具集 |
-| `setModel` / `setThinkingLevel` | 顶栏 / 设置 | 影响后续请求 |
+| `setActiveToolsByName` / `applyTools` | prefs 变更 | 当场改可用工具集并**重建 system prompt**；清空本会话 API 前缀缓存命中 |
+| `setModel` / `setThinkingLevel` | 顶栏 / 设置 | 影响后续请求；中途改 Thinking/换模型也可能改变历史消息序列化，破坏前缀缓存 |
 | `session.reload()` | 插件保存后 | 重载资源 |
 
 切换项目 / 新会话 / 恢复前会释放当前 session bundle。
+
+### 前缀缓存（DeepSeek 等）
+
+DeepSeek 等供应商对**完全一致的请求前缀**计为 cache hit（Pi 记为 `cacheRead`）。稳态多轮 append-only 可命中；下列操作会破坏命中：改工具白名单、压缩、撤回/分支、流式 steer、中途改 Thinking/模型。
+
+右栏「上下文」与设置「用量」展示 **命中率 = cacheRead / (input + cacheRead)**。
+
+**代理上的 DeepSeek 模型**：Pi 仅在 `provider === "deepseek"` 或 `baseUrl` 含 `deepseek.com` 时自动启用 DeepSeek compat。经 SiliconFlow / OpenRouter / 自建 openai-compatible 中转时，激活档案会为模型 id 含 `deepseek` 的条目写入 `reasoning` + `compat.thinkingFormat: "deepseek"`（见 `provider-store` 的 `deepseekProxyModelExtras`），以保证 `reasoning_content` 回传与 thinking 参数形态正确。官方 `api.deepseek.com` 仍走 Pi 自动检测，不重复写入。
 
 ---
 
@@ -249,6 +257,9 @@ session.setActiveToolsByName(prefs.tools);
 | 路径 | 角色 |
 |---|---|
 | [`session-host.ts`](apps/desktop/electron/agent/session-host.ts) | 创建会话、prompt/steer、撤回/重发、compact、reload |
+| [`provider-store.ts`](apps/desktop/electron/agent/provider-store.ts) | 供应商档案 → Pi auth/models；激活时写入 `contextWindow` |
+| [`model-context.ts`](apps/desktop/shared/model-context.ts) | 已知模型上下文启发式 + API 字段解析 |
+| [`model-fetch.ts`](apps/desktop/electron/agent/model-fetch.ts) | 拉取 `/v1/models`（含 context_length） |
 | [`exclude-agents-home-skills.ts`](apps/desktop/electron/agent/exclude-agents-home-skills.ts) | `skillsOverride` 过滤 |
 | [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts) | write/edit 字节基线与还原 |
 | [`context-breakdown.ts`](apps/desktop/electron/agent/context-breakdown.ts) | 右栏上下文组成拆解 |

@@ -667,6 +667,12 @@ export default function App() {
 
   const toggleTool = async (tool: string) => {
     if (!prefs) return;
+    if (sessionId) {
+      const ok = window.confirm(
+        "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
+      );
+      if (!ok) return;
+    }
     const tools = prefs.tools.includes(tool)
       ? prefs.tools.filter((t) => t !== tool)
       : [...prefs.tools, tool];
@@ -922,6 +928,7 @@ export default function App() {
             setSettingsTab(undefined);
           }}
           onToggleTool={toggleTool}
+          hasActiveSession={Boolean(sessionId)}
           onPrefsChanged={(p) => {
             setPrefs(p);
             applyTheme(p.themeId, p.colorMode);
