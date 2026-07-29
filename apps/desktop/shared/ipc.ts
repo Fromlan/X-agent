@@ -893,6 +893,8 @@ export interface XAgentApi {
     days?: number;
   }) => Promise<UsageSummary>;
   clearUsageSummary: () => Promise<{ ok: boolean; error?: string }>;
+  /** Signal main process that renderer boot finished — closes splash and shows the main window. */
+  notifyAppReady: () => Promise<{ ok: boolean }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
 }

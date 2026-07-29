@@ -91,6 +91,9 @@
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico"
+    },
+    "portable": {
+      "splashImage": "build/splash.bmp"
     }
   }
 }

@@ -1,70 +1,121 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
-import { join } from "node:path";
+/**
+ * Thin entry: Electron + splash only.
+ * Heavy agent/IPC loads via dynamic import after splash is visible.
+ */
+import { app, BrowserWindow, Menu, shell } from "electron";
 import { existsSync } from "node:fs";
-import { applyBashShellPath, checkBash } from "./agent/bash-check";
-import { checkAuth } from "./agent/auth-check";
-import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
-import { loadPrefs, patchPrefs } from "./agent/prefs";
-import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
-import { SessionHost } from "./agent/session-host";
-import {
-  listProjectDir,
-  readProjectFile,
-  revealProjectPath,
-} from "./agent/project-fs";
-import { AppAutoUpdater } from "./agent/auto-updater";
-import {
-  ensureGodotPiPackageInstalled,
-  installGodotPiPackage,
-  installPackage,
-  listInstalledPackages,
-  uninstallPackage,
-} from "./agent/package-manager";
-import {
-  createPlugin,
-  deletePlugin,
-  listPlugins,
-  readPlugin,
-  revealPlugin,
-  writePlugin,
-} from "./agent/plugin-host";
-import {
-  clearUsageSummary,
-  getUsageSummary,
-} from "./agent/usage-store";
-import type {
-  ClientPrefs,
-  PluginCreateInput,
-} from "../shared/ipc";
-import { ALL_TOGGLEABLE_TOOLS } from "../shared/ipc";
-import { registerSessionIpc } from "./ipc/register-session-ipc";
-import { registerProviderIpc } from "./ipc/register-provider-ipc";
-import { registerGodotIpc } from "./ipc/register-godot-ipc";
+import { join } from "node:path";
+
+const BG = "#141414";
+const SPLASH_TIMEOUT_MS = 30_000;
 
 let mainWindow: BrowserWindow | null = null;
-const godotRpc = new GodotRpcBridge();
-const sessionHost = new SessionHost(() => mainWindow, godotRpc);
-const autoUpdate = new AppAutoUpdater(() => mainWindow);
+let splashWindow: BrowserWindow | null = null;
+let revealed = false;
+let splashTimer: ReturnType<typeof setTimeout> | null = null;
+let runtime: typeof import("./app-runtime") | null = null;
 
-function resolveAppIcon(): string | undefined {
-  const candidates = app.isPackaged
-    ? [join(process.resourcesPath, "icon.ico"), join(process.resourcesPath, "icon.png")]
-    : [
-        join(__dirname, "../../build/icon.ico"),
-        join(__dirname, "../../build/icon.png"),
-      ];
-  return candidates.find((p) => existsSync(p));
+function alive(win: BrowserWindow | null): win is BrowserWindow {
+  return !!win && !win.isDestroyed();
 }
 
-function createWindow(): void {
-  const icon = resolveAppIcon();
+function appIcon(): string | undefined {
+  const roots = app.isPackaged
+    ? [process.resourcesPath]
+    : [join(__dirname, "../../build")];
+  for (const root of roots) {
+    for (const name of ["icon.ico", "icon.png"]) {
+      const p = join(root, name);
+      if (existsSync(p)) return p;
+    }
+  }
+}
+
+function destroySplash(): void {
+  if (splashTimer) {
+    clearTimeout(splashTimer);
+    splashTimer = null;
+  }
+  if (alive(splashWindow)) splashWindow.destroy();
+  splashWindow = null;
+}
+
+function revealMain(): void {
+  if (revealed) return;
+  revealed = true;
+  destroySplash();
+  if (alive(mainWindow)) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+async function openExternalHttpUrl(
+  url: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, error: "仅支持 http/https 链接" };
+    }
+    await shell.openExternal(parsed.toString());
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "无效链接",
+    };
+  }
+}
+
+function createSplash(): void {
+  if (alive(splashWindow)) return;
+  const icon = appIcon();
+  splashWindow = new BrowserWindow({
+    width: 400,
+    height: 300,
+    frame: false,
+    thickFrame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    center: true,
+    show: true,
+    backgroundColor: BG,
+    autoHideMenuBar: true,
+    skipTaskbar: true,
+    hasShadow: true,
+    ...(icon ? { icon } : {}),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  void splashWindow.loadFile(
+    app.isPackaged
+      ? join(__dirname, "../renderer/splash.html")
+      : join(__dirname, "../../public/splash.html"),
+  );
+  splashWindow.on("closed", () => {
+    splashWindow = null;
+  });
+}
+
+function createMain(): void {
+  if (alive(mainWindow)) return;
+  revealed = false;
+  const icon = appIcon();
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 800,
     minHeight: 560,
     title: "X-agent",
-    backgroundColor: "#141414",
+    backgroundColor: BG,
+    show: false,
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
@@ -74,248 +125,57 @@ function createWindow(): void {
     },
   });
 
-  // Markdown / target=_blank links: open in the OS browser, never a new Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void openExternalHttpUrl(url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    const current = mainWindow?.webContents.getURL() ?? "";
-    if (url === current) return;
-    // Allow vite HMR / app reload on the renderer origin; send everything else out.
-    if (
-      process.env.ELECTRON_RENDERER_URL &&
-      url.startsWith(process.env.ELECTRON_RENDERER_URL)
-    ) {
-      return;
-    }
+    if (url === mainWindow?.webContents.getURL()) return;
+    if (rendererUrl && url.startsWith(rendererUrl)) return;
     if (url.startsWith("file:")) return;
     event.preventDefault();
     void openExternalHttpUrl(url);
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  }
+  if (rendererUrl) mainWindow.loadURL(rendererUrl);
+  else mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    destroySplash();
   });
+
+  if (splashTimer) clearTimeout(splashTimer);
+  splashTimer = setTimeout(revealMain, SPLASH_TIMEOUT_MS);
 }
 
-async function openExternalHttpUrl(
-  url: string,
-): Promise<{ ok: boolean; error?: string }> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { ok: false, error: "无效链接" };
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { ok: false, error: "仅支持 http/https 链接" };
-  }
-  try {
-    await shell.openExternal(parsed.toString());
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
-function registerIpc(): void {
-  ipcMain.handle("openProject", async (_e, path?: string) => {
-    let projectPath = path;
-    if (!projectPath) {
-      const result = await dialog.showOpenDialog({
-        title: "打开项目文件夹",
-        properties: ["openDirectory"],
-      });
-      if (result.canceled || result.filePaths.length === 0) {
-        return {
-          ok: false,
-          cwd: "",
-          sessionId: "",
-          model: null,
-          thinkingLevel: "off",
-          error: "已取消",
-        };
-      }
-      projectPath = result.filePaths[0];
-    }
-    return sessionHost.openProject(projectPath, "continue");
-  });
-
-  registerSessionIpc(ipcMain, sessionHost);
-
-  ipcMain.handle("getPrefs", async () => loadPrefs());
-  ipcMain.handle("setPrefs", async (_e, patch: Partial<ClientPrefs>) => {
-    if (patch.tools) {
-      const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
-      const tools = patch.tools.filter((t) => allowed.has(t));
-      await sessionHost.applyTools(tools);
-      const { tools: _drop, ...rest } = patch;
-      if (Object.keys(rest).length === 0) {
-        return loadPrefs();
-      }
-      return patchPrefs(rest);
-    }
-    return patchPrefs(patch);
-  });
-  ipcMain.handle("checkBash", async () => checkBash());
-  ipcMain.handle("applyBashShellPath", async (_e, shellPath?: string) =>
-    applyBashShellPath(shellPath),
-  );
-  ipcMain.handle("pickBashShell", async () => {
-    const current = checkBash();
-    const result = await dialog.showOpenDialog({
-      title: "选择 bash 可执行文件",
-      defaultPath:
-        current.shellPath ?? current.suggestedShellPath ?? undefined,
-      properties: ["openFile"],
-      filters:
-        process.platform === "win32"
-          ? [
-              { name: "bash", extensions: ["exe"] },
-              { name: "所有文件", extensions: ["*"] },
-            ]
-          : [{ name: "bash", extensions: ["*"] }],
+async function bootApp(): Promise<void> {
+  if (!runtime) {
+    runtime = await import("./app-runtime");
+    runtime.bootRuntime({
+      getMainWindow: () => mainWindow,
+      revealMainWindow: revealMain,
+      openExternalHttpUrl,
     });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { ok: false, canceled: true };
-    }
-    return { ok: true, path: result.filePaths[0]! };
-  });
-  ipcMain.handle("checkAuth", async () => checkAuth());
-  ipcMain.handle("checkPiCli", async () => checkPiCli());
-  ipcMain.handle("installPiCli", async () => installPiCli());
-  ipcMain.handle("listProjectDir", async (_e, relPath?: string) => {
-    const cwd = sessionHost.getStatus().cwd ?? "";
-    return listProjectDir(cwd, relPath ?? "");
-  });
-  ipcMain.handle("readProjectFile", async (_e, relPath: string) => {
-    const cwd = sessionHost.getStatus().cwd ?? "";
-    return readProjectFile(cwd, relPath);
-  });
-  ipcMain.handle("revealInFolder", async (_e, relPath: string) => {
-    const cwd = sessionHost.getStatus().cwd ?? "";
-    return revealProjectPath(cwd, relPath);
-  });
-
-  registerGodotIpc(ipcMain, sessionHost, godotRpc);
-  registerProviderIpc(ipcMain, sessionHost);
-
-  ipcMain.handle("listPlugins", async (_e, cwd?: string | null) => {
-    const effective = cwd ?? sessionHost.getStatus().cwd;
-    return listPlugins(effective);
-  });
-  ipcMain.handle("listSessionSkills", async () => sessionHost.listSessionSkills());
-  ipcMain.handle("readPlugin", async (_e, path: string) =>
-    readPlugin(path, sessionHost.getStatus().cwd),
-  );
-  ipcMain.handle("writePlugin", async (_e, path: string, content: string) => {
-    const result = writePlugin(path, content, sessionHost.getStatus().cwd);
-    if (result.ok) {
-      await sessionHost.reloadResources();
-    }
-    return result;
-  });
-  ipcMain.handle("createPlugin", async (_e, input: PluginCreateInput) => {
-    const cwd = input.cwd ?? sessionHost.getStatus().cwd;
-    const result = createPlugin({ ...input, cwd });
-    if (result.ok) {
-      await sessionHost.reloadResources();
-    }
-    return result;
-  });
-  ipcMain.handle("deletePlugin", async (_e, path: string) => {
-    const result = deletePlugin(path, sessionHost.getStatus().cwd);
-    if (result.ok) {
-      await sessionHost.reloadResources();
-    }
-    return result;
-  });
-  ipcMain.handle("revealPlugin", async (_e, path: string) => {
-    const result = revealPlugin(path, sessionHost.getStatus().cwd);
-    if (result.ok && result.path) {
-      shell.showItemInFolder(result.path);
-    }
-    return result.ok ? { ok: true } : { ok: false, error: result.error };
-  });
-
-  ipcMain.handle("listInstalledPackages", async () => listInstalledPackages());
-  ipcMain.handle("installPackage", async (_e, source: string) => {
-    const result = await installPackage(source);
-    if (result.ok) {
-      await sessionHost.reloadResources();
-    }
-    return result;
-  });
-  ipcMain.handle("uninstallPackage", async (_e, source: string) => {
-    const result = await uninstallPackage(source);
-    if (result.ok) {
-      await sessionHost.reloadResources();
-    }
-    return result;
-  });
-  ipcMain.handle("installGodotPiPackage", async () => {
-    const result = await installGodotPiPackage();
-    if (result.ok) {
-      await sessionHost.reloadResources();
-    }
-    return result;
-  });
-  ipcMain.handle("openPiLogin", async () => openPiLogin());
-  ipcMain.handle("openExternalUrl", async (_e, url: string) =>
-    openExternalHttpUrl(typeof url === "string" ? url : ""),
-  );
-  ipcMain.handle("getUpdateStatus", async () => autoUpdate.getStatus());
-  ipcMain.handle("checkForUpdates", async () => autoUpdate.check());
-  ipcMain.handle("downloadUpdate", async () => autoUpdate.download());
-  ipcMain.handle("installUpdate", async () => autoUpdate.quitAndInstall());
-  ipcMain.handle("getUsageSummary", async (_e, options?: { days?: number }) =>
-    getUsageSummary(options),
-  );
-  ipcMain.handle("clearUsageSummary", async () => clearUsageSummary());
+  }
+  createMain();
 }
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
-  registerIpc();
-  createWindow();
-  autoUpdate.init();
-  try {
-    await godotRpc.start();
-  } catch {
-    // start() no longer throws; keep for safety
-  }
-
-  // Native skills package (godot-pi): install once when Pi CLI is available.
-  try {
-    const ensured = await ensureGodotPiPackageInstalled();
-    if (ensured.attempted && ensured.installed) {
-      await sessionHost.reloadResources();
-    }
-  } catch {
-    // Manual install remains under Settings → Plugins
-  }
+  createSplash();
+  setImmediate(() => void bootApp());
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createSplash();
+      setImmediate(() => void bootApp());
     }
   });
 });
 
 app.on("window-all-closed", async () => {
-  await godotRpc.stop();
-  await sessionHost.dispose();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  destroySplash();
+  await runtime?.shutdownRuntime();
+  if (process.platform !== "darwin") app.quit();
 });

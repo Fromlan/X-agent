@@ -126,6 +126,7 @@ const api: XAgentApi = {
   getUsageSummary: (options?: { days?: number }) =>
     ipcRenderer.invoke("getUsageSummary", options),
   clearUsageSummary: () => ipcRenderer.invoke("clearUsageSummary"),
+  notifyAppReady: () => ipcRenderer.invoke("appReady"),
   onEvent: (handler: (event: UiAgentEvent) => void) => {
     const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
       handler(event);

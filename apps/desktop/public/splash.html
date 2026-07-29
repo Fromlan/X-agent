@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <title>X-agent</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #141414;
+        color: #d4d4d4;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        -webkit-app-region: drag;
+      }
+
+      .inner {
+        box-sizing: border-box;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 28px 36px;
+        border: 1px solid #3c3c3a;
+      }
+
+      .mark {
+        width: 80px;
+        height: 80px;
+        border-radius: 18px;
+        overflow: hidden;
+        border: 1px solid #3c3c3a;
+      }
+
+      .mark img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+      }
+
+      .slogan {
+        margin: 0;
+        max-width: 260px;
+        font-size: 12px;
+        line-height: 1.45;
+        text-align: center;
+        color: #a3a3a3;
+      }
+
+      .dots {
+        display: flex;
+        gap: 6px;
+        height: 8px;
+        margin-top: 2px;
+      }
+
+      .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 9999px;
+        background: #737373;
+        animation: pulse 1.05s ease-in-out infinite;
+      }
+
+      .dot:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .dot:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+
+      .credit {
+        margin: 0;
+        font-size: 11px;
+        color: #737373;
+      }
+
+      .credit span {
+        color: #a3a3a3;
+      }
+
+      .fade {
+        opacity: 0;
+        transform: translateY(8px);
+        animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+
+      .mark.fade {
+        transform: scale(0.9) translateY(6px);
+        animation-delay: 0.08s;
+        animation-duration: 0.5s;
+      }
+      .title.fade {
+        animation-delay: 0.2s;
+      }
+      .slogan.fade {
+        animation-delay: 0.32s;
+      }
+      .dots.fade {
+        animation-delay: 0.44s;
+      }
+      .credit.fade {
+        animation-delay: 0.52s;
+      }
+
+      @keyframes fade-up {
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.28;
+          transform: scale(0.85);
+        }
+        40% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .fade,
+        .dot {
+          animation: none;
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="inner">
+      <div class="mark fade">
+        <img src="./logo.png" alt="" width="80" height="80" />
+      </div>
+      <p class="title fade">X-agent</p>
+      <p class="slogan fade">为 Godot 创作而生的桌面 Agent</p>
+      <div class="dots fade" aria-hidden="true">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+      <p class="credit fade">by <span>Fromlan</span></p>
+    </div>
+  </body>
+</html>
