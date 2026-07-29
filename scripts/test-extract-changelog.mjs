@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildReleaseBody,
+  ensureChangelogSeriesRollup,
   extractChangelogSection,
   formatSeriesAggregate,
   listSeriesSections,
@@ -84,11 +85,27 @@ const withoutAgg = buildReleaseBody("0.3.0", section, "https://example.com", {
 });
 assert.doesNotMatch(withoutAgg, /0\.2\.x 累计变更/);
 
-// Real changelog: previewing a fictional 0.3.0 still rolls up live 0.2.x notes.
+const embedded = ensureChangelogSeriesRollup(SAMPLE, "0.3.0");
+assert.equal(embedded.injected, true);
+const embeddedSection = extractChangelogSection(embedded.markdown, "0.3.0");
+assert.match(embeddedSection, /### 0\.2\.x 累计变更/);
+assert.match(embeddedSection, /#### 0\.2\.2/);
+assert.equal(
+  ensureChangelogSeriesRollup(embedded.markdown, "0.3.0").injected,
+  false,
+);
+const noDup = buildReleaseBody(
+  "0.3.0",
+  embeddedSection,
+  "https://example.com",
+  { aggregate: true, markdown: embedded.markdown },
+);
+assert.equal((noDup.match(/0\.2\.x 累计变更/g) || []).length, 1);
+
 const live = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
-const liveRollup = formatSeriesAggregate(live, "0.3.0");
-assert.match(liveRollup, /## 0\.2\.x 累计变更/);
-assert.match(liveRollup, /### 0\.2\.6/);
-assert.match(liveRollup, /### 0\.2\.0/);
+const liveSection = extractChangelogSection(live, "0.3.0");
+assert.match(liveSection, /### 0\.2\.x 累计变更/);
+assert.match(liveSection, /#### 0\.2\.6/);
+assert.match(liveSection, /#### 0\.2\.0/);
 
 console.log("test-extract-changelog: ok");
