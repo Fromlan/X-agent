@@ -72,6 +72,13 @@ function main() {
     console.warn(`Warning: could not sync package-lock.json: ${err.message}`);
   }
 
+  const parsed = version.match(/^(\d+)\.(\d+)\.(\d+)/);
+  const isMinorLineStart =
+    parsed && Number(parsed[3]) === 0 && Number(parsed[2]) > 0;
+  const prevLine = isMinorLineStart
+    ? `${parsed[1]}.${Number(parsed[2]) - 1}.x`
+    : null;
+
   console.log(
     [
       `Prepared release v${version} (was ${prev}).`,
@@ -82,6 +89,13 @@ function main() {
         .map((l) => `  ${l}`)
         .join("\n"),
       "",
+      ...(prevLine
+        ? [
+            `Note: v${version} 为小版本线起点；GitHub Release 正文将自动附带 ${prevLine} 各补丁版说明汇总。`,
+            `预览：npm run release:notes -- ${version}`,
+            "",
+          ]
+        : []),
       "Next:",
       `  git add CHANGELOG.md apps/desktop/package.json apps/desktop/package-lock.json`,
       `  git commit -m "release: v${version}"`,

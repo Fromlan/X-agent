@@ -11,6 +11,7 @@
     "desktop:smoke": "npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts",
     "desktop:reset-tutorial": "powershell -ExecutionPolicy Bypass -File scripts/reset-tutorial-env.ps1 -Yes",
     "release:prepare": "node scripts/prepare-release.mjs",
-    "release:notes": "node scripts/extract-changelog.mjs"
+    "release:notes": "node scripts/extract-changelog.mjs",
+    "release:test-changelog": "node scripts/test-extract-changelog.mjs"
   }
 }

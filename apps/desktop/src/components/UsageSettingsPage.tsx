@@ -5,6 +5,7 @@ import {
   formatCacheHitRatio,
 } from "@shared/cache-hit";
 import type { UsageSummary } from "@shared/ipc";
+import { SettingsNotice, useAutoClearNotice } from "./SettingsNotice";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -53,6 +54,14 @@ export function UsageSettingsPage({ active }: Props) {
     if (!active) return;
     void refresh();
   }, [active, refresh]);
+
+  useEffect(() => {
+    if (active) return;
+    setMsg(null);
+    setError(null);
+  }, [active]);
+
+  useAutoClearNotice(msg, () => setMsg(null), 4500, !error);
 
   useEffect(() => {
     if (!active) return;
@@ -296,8 +305,16 @@ export function UsageSettingsPage({ active }: Props) {
         </button>
       </div>
 
-      {msg && <p className="modal-hint">{msg}</p>}
-      {error && <p className="modal-hint settings-error">{error}</p>}
+      {(msg || error) && (
+        <SettingsNotice
+          text={(error ?? msg)!}
+          tone={error ? "error" : "neutral"}
+          onDismiss={() => {
+            setMsg(null);
+            setError(null);
+          }}
+        />
+      )}
     </section>
   );
 }

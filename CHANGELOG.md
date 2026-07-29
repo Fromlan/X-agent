@@ -4,6 +4,8 @@
 
 发版前须把下方 `Unreleased` 整理进对应 `## x.y.z` 章节；GitHub Release 正文由该章节生成（见 `scripts/prepare-release.mjs`）。
 
+升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，Release 正文会在本章节后自动附带上一线全部小版本（`0.2.0`…`0.2.x`）说明汇总；补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭。
+
 ## Unreleased
 
 ## 0.2.6
