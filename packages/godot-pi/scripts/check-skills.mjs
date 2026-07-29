@@ -1,5 +1,5 @@
 /**
- * Smoke-check godot-pi skills: frontmatter + README table coverage.
+ * Smoke-check godot-pi skills: frontmatter, fixed Core/Godot sets, README coverage.
  * Run: node packages/godot-pi/scripts/check-skills.mjs
  */
 
@@ -11,6 +11,39 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(__dirname, "..");
 const skillsRoot = join(pkgRoot, "skills");
 const readmePath = join(pkgRoot, "README.md");
+
+const CORE_SKILLS = [
+  "x-grill",
+  "x-diagnose",
+  "x-tdd",
+  "x-change-brief",
+  "x-handoff",
+  "x-glossary",
+  "x-review",
+  "x-safe-edit",
+];
+
+const GODOT_SKILLS = [
+  "godot-project-audit",
+  "godot-scene-edit",
+  "godot-rpc-playtest",
+  "godot-gdscript-patterns",
+  "godot-autoload-patterns",
+  "godot-state-machine",
+  "godot-ecs-component",
+  "godot-shader-patterns",
+];
+
+const EXPECTED = new Set([...CORE_SKILLS, ...GODOT_SKILLS]);
+
+const knownNonSkill = new Set([
+  "godot-next",
+  "godot-rpc-status",
+  "godot-detect-project",
+  "godot-editor-rpc",
+  "godot-pi",
+  "x-next",
+]);
 
 function fail(msg) {
   console.error(`check-skills: ${msg}`);
@@ -27,6 +60,9 @@ if (dirs.length === 0) {
 }
 
 for (const dir of dirs) {
+  if (!EXPECTED.has(dir)) {
+    fail(`${dir}: unexpected skill (not in Core/Godot allowlist)`);
+  }
   const skillPath = join(skillsRoot, dir, "SKILL.md");
   if (!existsSync(skillPath)) {
     fail(`${dir}: missing SKILL.md`);
@@ -43,6 +79,12 @@ for (const dir of dirs) {
   if (name !== dir) {
     fail(`${dir}: frontmatter name "${name}" !== directory`);
   }
+  if (dir.startsWith("godot-") && name && !name.startsWith("godot-")) {
+    fail(`${dir}: Godot-tier skill name must start with godot-`);
+  }
+  if (!dir.startsWith("godot-") && name?.startsWith("godot-")) {
+    fail(`${dir}: Core skill must not use godot- prefix`);
+  }
   if (!description) {
     fail(`${dir}: missing description`);
   } else if (!/Use when/i.test(description)) {
@@ -50,10 +92,19 @@ for (const dir of dirs) {
   }
 }
 
+for (const name of EXPECTED) {
+  if (!dirs.includes(name)) {
+    fail(`missing required skill: ${name}`);
+  }
+}
+
 const readme = readFileSync(readmePath, "utf8");
 const mentioned = new Set();
 for (const m of readme.matchAll(/`([a-z0-9-]+)`/g)) {
-  if (m[1].startsWith("godot-")) mentioned.add(m[1]);
+  const id = m[1];
+  if (id.startsWith("godot-") || id.startsWith("x-")) {
+    mentioned.add(id);
+  }
 }
 
 for (const dir of dirs) {
@@ -61,26 +112,16 @@ for (const dir of dirs) {
     fail(`${dir}: not listed in README.md`);
   }
 }
+
 for (const name of mentioned) {
-  if (!dirs.includes(name) && name !== "godot-next") {
-    // godot-next is a prompt, not a skill — skip only if not under skills/
-    // Extra skill-looking names that aren't dirs:
-    if (name.startsWith("godot-") && !name.includes(".")) {
-      // allow prompts / tools mentioned elsewhere
-      const knownNonSkill = new Set([
-        "godot-next",
-        "godot-rpc-status",
-        "godot-detect-project",
-        "godot-editor-rpc",
-        "godot-pi",
-      ]);
-      if (!knownNonSkill.has(name)) {
-        fail(`README lists \`${name}\` but no skills/${name}/`);
-      }
-    }
+  if (dirs.includes(name) || knownNonSkill.has(name)) continue;
+  if (name.startsWith("godot-") || name.startsWith("x-")) {
+    fail(`README lists \`${name}\` but no skills/${name}/`);
   }
 }
 
 if (!process.exitCode) {
-  console.log(`check-skills: ok (${dirs.length} skills)`);
+  console.log(
+    `check-skills: ok (${dirs.length} skills; core=${CORE_SKILLS.length} godot=${GODOT_SKILLS.length})`,
+  );
 }

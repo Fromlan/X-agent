@@ -244,7 +244,7 @@ export function PluginsPage({ cwd }: Props) {
           .join(" · ")
       : "";
     setMessage(
-      `已安装 Godot Pi 包：${result.package?.name ?? ""}${counts ? `（${counts}，可在「技能 / 提示词 / 扩展」页签查看）` : ""}`,
+      `已安装 X-agent 原生技能包：${result.package?.name ?? ""}${counts ? `（${counts}，可在「技能 / 提示词 / 扩展」页签查看）` : ""}`,
     );
     await refresh();
     await window.xAgent.reloadResources();
@@ -406,6 +406,8 @@ export function PluginsPage({ cwd }: Props) {
                 通过全局 Pi CLI 执行 <code>pi install &lt;source&gt;</code>
                 ，写入 <code>~/.pi/agent/settings.json</code>。包内技能 /
                 提示词 / 扩展会出现在对应页签（只读），Agent 会话也会自动加载。
+                原生技能包含通用 Core；<code>godot-*</code> 技能仅在打开
+                Godot 项目（存在 <code>project.godot</code>）时进入索引。应用启动时也会尝试自动安装。
               </p>
               <div className="settings-toolbar">
                 <button
@@ -414,7 +416,7 @@ export function PluginsPage({ cwd }: Props) {
                   disabled={busy}
                   onClick={() => void installGodotPi()}
                 >
-                  一键安装 Godot Pi 包
+                  一键安装 X-agent 原生技能包
                 </button>
               </div>
               <label className="field block-field">

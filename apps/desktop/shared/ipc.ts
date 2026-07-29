@@ -634,6 +634,12 @@ export interface PluginMutateResult {
   error?: string;
 }
 
+/** Skills available to the active session (after X-agent skillsOverride filters). */
+export interface SessionSkillInfo {
+  name: string;
+  description: string;
+}
+
 export type ProviderApiKind =
   | "openai-completions"
   | "openai-responses"
@@ -847,6 +853,8 @@ export interface XAgentApi {
   ) => Promise<GodotDocsMutateResult & { canceled?: boolean }>;
   godotDocsRemoveLocal: (branch?: string) => Promise<GodotDocsMutateResult>;
   listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
+  /** Skills indexed for the current session cwd (godot-* filtered when not a Godot project). */
+  listSessionSkills: () => Promise<SessionSkillInfo[]>;
   readPlugin: (path: string) => Promise<PluginReadResult>;
   writePlugin: (path: string, content: string) => Promise<PluginWriteResult>;
   createPlugin: (input: PluginCreateInput) => Promise<PluginMutateResult>;

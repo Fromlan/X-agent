@@ -89,6 +89,7 @@ const api: XAgentApi = {
   godotDocsRemoveLocal: (branch?: string) =>
     ipcRenderer.invoke("godotDocsRemoveLocal", branch),
   listPlugins: (cwd) => ipcRenderer.invoke("listPlugins", cwd),
+  listSessionSkills: () => ipcRenderer.invoke("listSessionSkills"),
   readPlugin: (path) => ipcRenderer.invoke("readPlugin", path),
   writePlugin: (path, content) => ipcRenderer.invoke("writePlugin", path, content),
   createPlugin: (input: PluginCreateInput) =>

@@ -3,7 +3,7 @@ description: Summarize the current Godot project and propose the next implementa
 argument-hint: "[focus area]"
 ---
 
-Inspect this Godot project (project.godot, scenes, scripts). Focus area: ${1:-general}.
+Inspect this Godot project (`project.godot`, scenes, scripts). Focus area: ${1:-general}.
 
 Provide:
 1. One-paragraph project snapshot
