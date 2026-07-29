@@ -643,6 +643,8 @@ export type ProviderApiKind =
 export interface ProviderModelEntry {
   id: string;
   name?: string;
+  /** Context window in tokens; written to Pi models.json as contextWindow. */
+  contextWindow?: number;
 }
 
 export interface ProviderProfile {
@@ -709,6 +711,8 @@ export interface ProviderActivateResult {
 export interface FetchedProviderModel {
   id: string;
   ownedBy?: string;
+  /** From API context_length / context_window / max_model_len when present. */
+  contextWindow?: number;
 }
 
 export interface FetchProviderModelsResult {

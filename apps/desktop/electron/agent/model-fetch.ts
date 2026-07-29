@@ -2,9 +2,15 @@
  * Fetch OpenAI-compatible model lists (cc-switch style candidate URL probing).
  */
 
+import {
+  parseContextWindowFromApiModel,
+  resolveModelContextWindow,
+} from "../../shared/model-context";
+
 export interface FetchedModel {
   id: string;
   ownedBy?: string;
+  contextWindow?: number;
 }
 
 const KNOWN_COMPAT_SUFFIXES = [
@@ -100,7 +106,8 @@ export function buildModelsUrlCandidates(
   return unique;
 }
 
-function parseModelsJson(json: unknown): FetchedModel[] {
+/** Exported for unit tests. */
+export function parseModelsJson(json: unknown): FetchedModel[] {
   if (!json || typeof json !== "object") return [];
   const data = (json as { data?: unknown }).data;
   if (!Array.isArray(data)) return [];
@@ -110,9 +117,15 @@ function parseModelsJson(json: unknown): FetchedModel[] {
     const id = (entry as { id?: unknown }).id;
     if (typeof id !== "string" || !id.trim()) continue;
     const ownedBy = (entry as { owned_by?: unknown }).owned_by;
+    const fromApi = parseContextWindowFromApiModel(entry);
+    const contextWindow = resolveModelContextWindow({
+      id: id.trim(),
+      fromApi,
+    });
     models.push({
       id: id.trim(),
       ...(typeof ownedBy === "string" ? { ownedBy } : {}),
+      ...(contextWindow != null ? { contextWindow } : {}),
     });
   }
   models.sort((a, b) => a.id.localeCompare(b.id));

@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+## 0.2.5
+
+### 功能
+
+- **模型上下文窗口**：供应商档案模型可配置 `contextWindow`，写入 Pi `models.json`；预设 / 拉取 `/v1/models` / 已知模型启发式自动填入（如 DeepSeek V4 → 1M），避免一律按 Pi 默认 128k 计量占用
+- **缓存命中率**：右栏上下文与设置 → 用量展示 `cacheRead / (input + cacheRead)`；改工具白名单时确认并提示会重建系统提示、清空本会话前缀缓存
+
+### 改进
+
+- 经 SiliconFlow 等非 `api.deepseek.com` 中转的 DeepSeek 模型，激活时自动写入 Pi `thinkingFormat: deepseek` compat，保证 `reasoning_content` 回传形态正确
+
+### 文档
+
+- `AGENT_CONTEXT` 补充前缀缓存注意点与 `contextWindow` 说明
+
 ## 0.2.4
 
 ### 改进

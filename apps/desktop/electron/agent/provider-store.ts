@@ -13,6 +13,10 @@ import type {
   ProviderProfileSummary,
   ProviderUpsertInput,
 } from "../../shared/ipc";
+import {
+  enrichModelEntry,
+  normalizePositiveInt,
+} from "../../shared/model-context";
 import { getAgentDirPath, patchPrefs } from "./prefs";
 
 const nodeRequire = createRequire(import.meta.url);
@@ -37,6 +41,72 @@ const API_KINDS: ProviderApiKind[] = [
   "google-generative-ai",
 ];
 
+/**
+ * OpenAI-completions models whose id mentions DeepSeek need Pi `compat`
+ * when the provider is NOT auto-detected as DeepSeek (providerId !==
+ * "deepseek" and baseUrl does not include deepseek.com). Without this,
+ * thinking/`reasoning_content` replay and prefix-cache stability break on
+ * SiliconFlow / OpenRouter / custom relays.
+ */
+export function looksLikeDeepSeekModelId(modelId: string): boolean {
+  return /deepseek/i.test(modelId.trim());
+}
+
+/** Pi auto-detects DeepSeek compat from these endpoints. */
+export function isPiAutoDetectedDeepSeekEndpoint(
+  providerId: string,
+  baseUrl: string,
+): boolean {
+  const id = providerId.trim().toLowerCase();
+  const url = baseUrl.trim().toLowerCase();
+  return id === "deepseek" || url.includes("deepseek.com");
+}
+
+/** Model entry fields written into Pi models.json for proxy DeepSeek models. */
+export function deepseekProxyModelExtras(modelId: string): {
+  reasoning: true;
+  compat: {
+    thinkingFormat: "deepseek";
+    requiresReasoningContentOnAssistantMessages: true;
+  };
+} | null {
+  if (!looksLikeDeepSeekModelId(modelId)) return null;
+  return {
+    reasoning: true,
+    compat: {
+      thinkingFormat: "deepseek",
+      requiresReasoningContentOnAssistantMessages: true,
+    },
+  };
+}
+
+function modelEntryForPiModelsJson(
+  model: ProviderModelEntry,
+  api: ProviderApiKind,
+  providerId: string,
+  baseUrl: string,
+): Record<string, unknown> {
+  const enriched = enrichModelEntry(model);
+  const entry: Record<string, unknown> = {
+    id: enriched.id,
+    ...(enriched.name ? { name: enriched.name } : {}),
+  };
+  if (enriched.contextWindow != null) {
+    entry.contextWindow = enriched.contextWindow;
+  }
+  if (
+    api === "openai-completions" &&
+    !isPiAutoDetectedDeepSeekEndpoint(providerId, baseUrl)
+  ) {
+    const extras = deepseekProxyModelExtras(enriched.id);
+    if (extras) {
+      entry.reasoning = extras.reasoning;
+      entry.compat = extras.compat;
+    }
+  }
+  return entry;
+}
+
 export function defaultProviderPaths(): ProviderPaths {
   const agentDir = getAgentDirPath();
   return {
@@ -48,6 +118,13 @@ export function defaultProviderPaths(): ProviderPaths {
 }
 
 export function listProviderPresets(): ProviderPreset[] {
+  return rawProviderPresets().map((preset) => ({
+    ...preset,
+    models: preset.models.map((m) => enrichModelEntry(m)),
+  }));
+}
+
+function rawProviderPresets(): ProviderPreset[] {
   return [
     // —— 国内官方 / 主流 ——
     {
@@ -250,7 +327,8 @@ export function listProviderPresets(): ProviderPreset[] {
         { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3" },
         { id: "Qwen/Qwen3-235B-A22B", name: "Qwen3 235B" },
       ],
-      notes: "硅基流动 OpenAI 兼容",
+      notes:
+        "硅基流动 OpenAI 兼容。含 DeepSeek 模型时会写入 Pi deepseek compat（thinking / reasoning_content），因 baseUrl 非 api.deepseek.com。",
       category: "aggregator",
       websiteUrl: "https://cloud.siliconflow.cn",
     },
@@ -261,7 +339,8 @@ export function listProviderPresets(): ProviderPreset[] {
       api: "openai-completions",
       baseUrl: "https://api.siliconflow.com/v1",
       models: [{ id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3" }],
-      notes: "硅基流动国际站",
+      notes:
+        "硅基流动国际站。DeepSeek 模型激活时自动写入 Pi deepseek compat。",
       category: "aggregator",
       websiteUrl: "https://cloud.siliconflow.com",
     },
@@ -530,11 +609,18 @@ export function upsertProviderProfile(
   const store = loadStore(paths);
   const now = new Date().toISOString();
   const models = input.models
-    .map((m) => ({
-      id: m.id.trim(),
-      ...(m.name?.trim() ? { name: m.name.trim() } : {}),
-    }))
-    .filter((m) => m.id);
+    .map((m) => {
+      const id = m.id.trim();
+      if (!id) return null;
+      const name = m.name?.trim();
+      const explicit = normalizePositiveInt(m.contextWindow);
+      return enrichModelEntry({
+        id,
+        ...(name ? { name } : {}),
+        ...(explicit != null ? { contextWindow: explicit } : {}),
+      });
+    })
+    .filter((m): m is ProviderModelEntry => !!m);
 
   if (input.id) {
     const idx = store.profiles.findIndex((p) => p.id === input.id);
@@ -638,10 +724,14 @@ export function activateProviderProfile(
   modelsFile.providers[profile.providerId] = {
     baseUrl: profile.baseUrl,
     api: profile.api,
-    models: profile.models.map((m) => ({
-      id: m.id,
-      ...(m.name ? { name: m.name } : {}),
-    })),
+    models: profile.models.map((m) =>
+      modelEntryForPiModelsJson(
+        m,
+        profile.api,
+        profile.providerId,
+        profile.baseUrl,
+      ),
+    ),
   };
   writeFileSync(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
 
@@ -842,14 +932,21 @@ function parseModelsField(raw: unknown): ProviderModelEntry[] {
   return raw
     .map((item) => {
       if (typeof item === "string" && item.trim()) {
-        return { id: item.trim() };
+        return enrichModelEntry({ id: item.trim() });
       }
       if (item && typeof item === "object") {
         const obj = item as Record<string, unknown>;
         const id = typeof obj.id === "string" ? obj.id.trim() : "";
         if (!id) return null;
         const name = typeof obj.name === "string" ? obj.name.trim() : "";
-        return name ? { id, name } : { id };
+        const contextWindow = normalizePositiveInt(
+          obj.contextWindow ?? obj.context_window,
+        );
+        return enrichModelEntry({
+          id,
+          ...(name ? { name } : {}),
+          ...(contextWindow != null ? { contextWindow } : {}),
+        });
       }
       return null;
     })
