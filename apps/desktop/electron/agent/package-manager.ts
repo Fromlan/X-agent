@@ -454,3 +454,41 @@ export async function installGodotPiPackage(): Promise<PackageInstallResult> {
   }
   return installPackage(path);
 }
+
+/** Whether the bundled native skills package path is already in Pi settings.json. */
+export function isGodotPiPackageInstalled(): boolean {
+  const path = resolveGodotPiPackagePath();
+  if (!path) return false;
+  const key = normalizeSourceKey(path);
+  return readPiSettingsPackageSources().some(
+    (source) => normalizeSourceKey(source) === key,
+  );
+}
+
+/**
+ * Install the native godot-pi package once if missing and Pi CLI is available.
+ * Does not throw; callers may ignore failures (manual install remains in Settings).
+ */
+export async function ensureGodotPiPackageInstalled(): Promise<{
+  attempted: boolean;
+  installed: boolean;
+  result?: PackageInstallResult;
+}> {
+  const path = resolveGodotPiPackagePath();
+  if (!path) {
+    return { attempted: false, installed: false };
+  }
+  if (isGodotPiPackageInstalled()) {
+    return { attempted: false, installed: true };
+  }
+  const cli = checkPiCli();
+  if (!cli.ok) {
+    return { attempted: false, installed: false };
+  }
+  const result = await installGodotPiPackage();
+  return {
+    attempted: true,
+    installed: result.ok,
+    result,
+  };
+}

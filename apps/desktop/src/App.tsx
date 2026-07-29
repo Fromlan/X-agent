@@ -764,6 +764,7 @@ export default function App() {
           onSend={send}
           onAbort={abort}
           disabled={!cwd}
+          skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
           queuedSteering={queuedSteering}
           forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
           onOpenToolInPanel={(toolId, args) => {

@@ -3,37 +3,22 @@ name: godot-rpc-playtest
 description: Drive X-agent Godot editor RPC for playtesting and error triage. Use when running scenes, collecting debugger errors, importing assets, or debugging play-time failures via Godot tools.
 ---
 
-# Godot RPC Playtest
+# Godot RPC playtest
 
-## Preconditions
+Requires **Settings → Tools**: Godot editor tools enabled, and editor RPC connected (see `/godot-rpc-status`).
 
-1. Desktop Godot RPC bridge is running (Settings → Godot → Editor connection).
-2. Project has **X-agent RPC** addon enabled (not a different addon).
-3. Godot editor tools are enabled under Settings → Tools.
-4. If multiple editors are connected, the active client in Settings routes RPC calls.
+## Typical flow
 
-## Play flows
+1. `ping` / `get_editor_info` — confirm connection and active client.
+2. Open or reload the scene under test if needed.
+3. `run_current_scene` or `play_main_scene` — then `get_play_errors` (short window).
+4. Fix root cause in scripts/scenes (small steps).
+5. Re-run until clean, or `stop_scene`.
 
-### Current scene (F6)
+## Assets
 
-1. Optional: `godot_open_scene` / `godot_reload_scene` with `res://…`.
-2. `godot_run_scene` with default `wait_ms` (~3000).
-3. Read returned `errors`. Fix scripts/scenes for severity `error`.
-4. For longer sessions, call `godot_play_errors` (optionally `clear: true`).
-5. `godot_stop_scene` when finished.
+- `import_resources` after adding/changing importable files when the editor should reimport.
 
-### Main scene (F5)
+## If tools unavailable
 
-1. `godot_run_main_scene` — uses project main scene from Project Settings.
-2. Same error triage as above.
-
-### After writing assets
-
-1. `godot_import_resources` with specific `res://` paths, or omit paths for a full filesystem scan.
-2. Then reload any open scenes that depend on those assets.
-
-## Error reading tips
-
-- Prefer fixing the first hard `error` before chasing warnings.
-- Script parse errors often appear immediately; runtime errors may need a longer `wait_ms` (max 15000).
-- If RPC returns `no Godot editor connected`, guide the user to install/enable the addon and reconnect.
+Say so and fall back to instructing the user to run from the Godot editor manually.
