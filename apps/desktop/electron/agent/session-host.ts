@@ -23,6 +23,7 @@ import {
   RetractPreview,
   RetractResult,
   SessionInfo,
+  SessionSkillInfo,
   SessionUsageSnapshot,
   ThinkingLevel,
   TurnUsage,
@@ -55,7 +56,8 @@ import {
 } from "./context-breakdown";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
-import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
+import { applyXAgentSkillsFilter } from "./filter-session-skills";
+import { listPlugins } from "./plugin-host";
 import { reloadAuthStorageCache } from "./model-runtime-auth";
 
 type SessionBundle = {
@@ -994,8 +996,9 @@ export class SessionHost {
       agentDir,
       // Pi auto-loads ~/.agents/skills (Cursor/Claude skills). X-agent only
       // uses ~/.pi/agent/skills + project .pi/skills (+ installed packages).
+      // Godot-tier skills (godot-*) are indexed only when cwd has project.godot.
       skillsOverride: (base) => ({
-        skills: excludeUserAgentsHomeSkills(base.skills),
+        skills: applyXAgentSkillsFilter(base.skills, cwd),
         diagnostics: base.diagnostics,
       }),
     });
@@ -1707,6 +1710,33 @@ export class SessionHost {
       error: this.lastError,
       hasSession: Boolean(this.bundle),
     };
+  }
+
+  /**
+   * Skills available for the active session cwd after X-agent filters
+   * (home ~/.agents excluded + godot-* only when project.godot exists).
+   */
+  listSessionSkills(): SessionSkillInfo[] {
+    const cwd = this.bundle?.cwd;
+    if (!cwd) return [];
+    const skillItems = listPlugins(cwd).filter((p) => p.kind === "skill");
+    const filtered = applyXAgentSkillsFilter(
+      skillItems.map((p) => ({
+        name: p.name,
+        description: p.description ?? "",
+        filePath: join(p.path, "SKILL.md"),
+      })),
+      cwd,
+    );
+    const byName = new Map<string, SessionSkillInfo>();
+    for (const s of filtered) {
+      if (!s.name || byName.has(s.name)) continue;
+      byName.set(s.name, {
+        name: s.name,
+        description: s.description ?? "",
+      });
+    }
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   getSessionUsage(): SessionUsageSnapshot | null {

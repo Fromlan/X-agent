@@ -3,24 +3,24 @@ name: godot-project-audit
 description: Audit a Godot 4 project structure (project.godot, scenes, scripts, autoloads) and suggest fixes. Use when opening or reviewing a Godot game project.
 ---
 
-# Godot Project Audit
+# Godot project audit
 
-You are helping with a **Godot 4** project inside X-agent.
+Aligned with ProjectSettings keys and *Project organization* guidance: Godot **does not mandate** a folder layout.
 
-## Steps
+## Check
 
-1. Locate `project.godot` from the cwd (or ask the user for the project root). Prefer `godot_detect_project` when the Godot Pi package extension is loaded.
-2. List top-level folders (`scenes/`, `scripts/`, `assets/`, `addons/`) and note missing conventions.
-3. Check for common issues:
-   - Orphan `.tscn` / `.gd` without references
-   - Autoload names that collide
-   - `config_version` / feature tags incompatible with Godot 4.x
-   - Missing or broken `run/main_scene`
-4. Prefer GDScript idioms from Godot 4 (`@onready`, signals, typed arrays).
-5. If the editor RPC is connected, optionally verify with `godot_run_main_scene` / `godot_run_scene` after proposing fixes.
-6. Summarize findings as a short checklist with actionable edits.
+1. `project.godot`
+   - Root `config_version` (Godot 4.x projects typically use `5`).
+   - `[application]`: `config/name`, `run/main_scene` (full setting paths: `application/config/name`, `application/run/main_scene`).
+   - `[autoload]`: entries and whether they belong as globals.
+2. Layout — compare to project habits; docs often group assets **near the scenes that use them**, prefer `snake_case` paths, and top-level `addons/` for third-party. Flat `scenes/`+`scripts/`+`assets/` is fine if consistent — flag chaos, not “wrong style”.
+3. Autoloads — globals that should be scene-local; circular deps; scripts that don’t extend `Node`.
+4. Main scene path exists; skim entry scripts for obvious errors (don’t assume the editor is open).
 
-## Constraints
+## Output
 
-- Do not invent Godot 3 APIs (`yield`, `connect("signal", obj, "method")` old style) unless the project is clearly 3.x.
-- Prefer `read` / `grep` / `find` before rewriting files.
+- Snapshot (3–6 bullets)
+- Risks (ordered)
+- Top fix with exact paths
+
+If X-agent Godot tools are enabled and the editor RPC is up, you may `ping` / `get_editor_info` for live context — still prefer files on disk as source of truth.

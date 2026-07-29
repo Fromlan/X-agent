@@ -14,6 +14,7 @@ import {
 } from "./agent/project-fs";
 import { AppAutoUpdater } from "./agent/auto-updater";
 import {
+  ensureGodotPiPackageInstalled,
   installGodotPiPackage,
   installPackage,
   listInstalledPackages,
@@ -213,6 +214,7 @@ function registerIpc(): void {
     const effective = cwd ?? sessionHost.getStatus().cwd;
     return listPlugins(effective);
   });
+  ipcMain.handle("listSessionSkills", async () => sessionHost.listSessionSkills());
   ipcMain.handle("readPlugin", async (_e, path: string) =>
     readPlugin(path, sessionHost.getStatus().cwd),
   );
@@ -291,6 +293,16 @@ app.whenReady().then(async () => {
     await godotRpc.start();
   } catch {
     // start() no longer throws; keep for safety
+  }
+
+  // Native skills package (godot-pi): install once when Pi CLI is available.
+  try {
+    const ensured = await ensureGodotPiPackageInstalled();
+    if (ensured.attempted && ensured.installed) {
+      await sessionHost.reloadResources();
+    }
+  } catch {
+    // Manual install remains under Settings → Plugins
   }
 
   app.on("activate", () => {

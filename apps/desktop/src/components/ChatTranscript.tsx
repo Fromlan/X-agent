@@ -1,11 +1,19 @@
 import type { AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
+import {
+  initialChatScrollPinState,
+  isNearBottom,
+  isScrollUnpinKey,
+  isScrollable,
+  isVerticalScrollbarPointer,
+  reduceChatScrollPin,
+  shouldFollow,
+  type ChatScrollPinState,
+} from "../lib/chat-scroll-pin";
 import { MarkdownBody } from "./MarkdownBody";
 import { ToolCard } from "./ToolCard";
 import { ArrowDown, Brain, Pencil, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-
-const PIN_THRESHOLD_PX = 80;
 
 function prefersReducedMotion(): boolean {
   return (
@@ -14,16 +22,12 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-function distanceFromBottom(el: HTMLElement): number {
-  return el.scrollHeight - el.scrollTop - el.clientHeight;
-}
-
-function isNearBottom(el: HTMLElement, threshold = PIN_THRESHOLD_PX): boolean {
-  return distanceFromBottom(el) <= threshold;
-}
-
-function isScrollable(el: HTMLElement): boolean {
-  return el.scrollHeight > el.clientHeight + 1;
+function metricsOf(el: HTMLElement) {
+  return {
+    scrollHeight: el.scrollHeight,
+    scrollTop: el.scrollTop,
+    clientHeight: el.clientHeight,
+  };
 }
 
 function ThinkingBlock({ thinking, done }: { thinking: string; done: boolean }) {
@@ -82,8 +86,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
   const streamRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
-  const ignoreScrollRef = useRef(false);
+  const pinStateRef = useRef<ChatScrollPinState>(initialChatScrollPinState());
+  const followScheduledRef = useRef(false);
   const prevFollowKeyRef = useRef<string | undefined>(undefined);
   const [showJump, setShowJump] = useState(false);
 
@@ -93,14 +97,17 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       setShowJump(false);
       return;
     }
-    setShowJump(!pinnedRef.current && isScrollable(el));
+    setShowJump(!shouldFollow(pinStateRef.current) && isScrollable(metricsOf(el)));
+  };
+
+  const applyPin = (next: ChatScrollPinState) => {
+    pinStateRef.current = next;
   };
 
   const scrollToBottom = (behavior: ScrollBehavior) => {
     const el = streamRef.current;
     if (!el) return;
-    pinnedRef.current = true;
-    ignoreScrollRef.current = true;
+    applyPin(reduceChatScrollPin(pinStateRef.current, { type: "force_pin" }));
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
     if (resolved === "smooth") {
@@ -110,22 +117,43 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     }
     setShowJump(false);
     requestAnimationFrame(() => {
-      ignoreScrollRef.current = false;
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "programmatic_follow_end",
+        }),
+      );
       syncJumpVisibility();
     });
   };
 
   const followIfPinned = () => {
-    if (!pinnedRef.current) {
+    if (!shouldFollow(pinStateRef.current)) {
       syncJumpVisibility();
       return;
     }
     const el = streamRef.current;
     if (!el) return;
-    ignoreScrollRef.current = true;
+    applyPin(
+      reduceChatScrollPin(pinStateRef.current, {
+        type: "programmatic_follow_start",
+      }),
+    );
     el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => {
-      ignoreScrollRef.current = false;
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "programmatic_follow_end",
+        }),
+      );
+    });
+  };
+
+  const scheduleFollow = () => {
+    if (followScheduledRef.current) return;
+    followScheduledRef.current = true;
+    requestAnimationFrame(() => {
+      followScheduledRef.current = false;
+      followIfPinned();
     });
   };
 
@@ -133,14 +161,61 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     const el = streamRef.current;
     if (!el) return;
 
-    const onScroll = () => {
-      if (ignoreScrollRef.current) return;
-      pinnedRef.current = isNearBottom(el);
+    const unpinFromUser = () => {
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, { type: "user_intent_unpin" }),
+      );
       syncJumpVisibility();
     };
 
+    const onScroll = () => {
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "scroll",
+          nearBottom: isNearBottom(metricsOf(el)),
+        }),
+      );
+      syncJumpVisibility();
+    };
+
+    const onWheel = () => {
+      unpinFromUser();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (isVerticalScrollbarPointer(el, e.clientX, e.clientY)) {
+        unpinFromUser();
+      }
+    };
+
+    const onTouchStart = () => {
+      unpinFromUser();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isScrollUnpinKey(e.key)) {
+        unpinFromUser();
+      }
+    };
+
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+    el.addEventListener("wheel", onWheel, { passive: true, capture: true });
+    el.addEventListener("pointerdown", onPointerDown, {
+      passive: true,
+      capture: true,
+    });
+    el.addEventListener("touchstart", onTouchStart, {
+      passive: true,
+      capture: true,
+    });
+    el.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel, true);
+      el.removeEventListener("pointerdown", onPointerDown, true);
+      el.removeEventListener("touchstart", onTouchStart, true);
+      el.removeEventListener("keydown", onKeyDown, true);
+    };
   }, []);
 
   useEffect(() => {
@@ -148,21 +223,21 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     if (!content) return;
 
     const ro = new ResizeObserver(() => {
-      followIfPinned();
+      scheduleFollow();
     });
     ro.observe(content);
     return () => ro.disconnect();
   }, []);
 
   useLayoutEffect(() => {
-    followIfPinned();
+    scheduleFollow();
   }, [props.items, props.status]);
 
   useLayoutEffect(() => {
     if (props.forceFollowKey == null) return;
     if (prevFollowKeyRef.current === props.forceFollowKey) return;
     prevFollowKeyRef.current = props.forceFollowKey;
-    scrollToBottom("smooth");
+    scrollToBottom("auto");
   }, [props.forceFollowKey]);
 
   const onJumpClick = () => {
@@ -171,7 +246,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
   return (
     <div className="chat-transcript">
-      <div className="message-stream" ref={streamRef}>
+      <div className="message-stream" ref={streamRef} tabIndex={-1}>
         <div className="message-stream-inner" ref={contentRef}>
           {props.items.length === 0 && props.disabledEmpty && (
             <div className="empty-state">请先打开一个项目文件夹，然后开始对话。</div>
