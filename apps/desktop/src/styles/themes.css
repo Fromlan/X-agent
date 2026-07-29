@@ -9,15 +9,15 @@
 body[data-theme="default-dark"] {
   color-scheme: dark;
 
-  --bg-app: #1f1f1e;
-  --bg-sidebar: #1f1f1e;
-  --bg-main: #1f1f1e;
+  --bg-app: #141414;
+  --bg-sidebar: #141414;
+  --bg-main: #141414;
   --bg-header: #2c2c2a;
   --bg-input: #2c2c2a;
   --bg-modal: #2c2c2a;
   --bg-list-hover: #3c3c3a;
   --bg-list-selected: #3c3c3a;
-  --bg-result: #1a1a19;
+  --bg-result: #0f0f0f;
   --surface-chip: #3c3c3a;
 
   --text-primary: #d4d4d4;

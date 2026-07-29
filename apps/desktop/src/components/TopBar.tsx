@@ -118,13 +118,16 @@ export function TopBar(props: Props) {
 
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className={`thinking-toggle${props.showThinking ? " is-on" : ""}`}
           onClick={props.onToggleThinking}
-          title={props.showThinking ? "隐藏思考" : "显示思考"}
+          title={props.showThinking ? "关闭展示思考" : "开启展示思考"}
+          aria-pressed={props.showThinking}
+          aria-label="切换展示思考"
         >
-          <Brain size={14} />
-          <span className="btn-label">
-            {props.showThinking ? "隐藏思考" : "显示思考"}
+          <Brain size={14} strokeWidth={2} />
+          <span className="thinking-toggle-label">展示思考</span>
+          <span className="thinking-toggle-state" aria-hidden="true">
+            {props.showThinking ? "开" : "关"}
           </span>
         </button>
 
