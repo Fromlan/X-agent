@@ -160,9 +160,10 @@ export function listSeriesSections(markdown, series) {
 /**
  * @param {string} markdown
  * @param {string} version
+ * @param {{ headingLevel?: number }} [options]
  * @returns {string}
  */
-export function formatSeriesAggregate(markdown, version) {
+export function formatSeriesAggregate(markdown, version, options = {}) {
   const series = previousMinorSeries(version);
   if (!series) return "";
 
@@ -171,25 +172,76 @@ export function formatSeriesAggregate(markdown, version) {
   );
   if (sections.length === 0) return "";
 
+  const headingLevel = Math.min(5, Math.max(2, options.headingLevel ?? 2));
+  const h = "#".repeat(headingLevel);
+  const hItem = "#".repeat(headingLevel + 1);
   const label = `${series.major}.${series.minor}.x`;
   const parts = [
-    `## ${label} 累计变更`,
+    `${h} ${label} 累计变更`,
     "",
     `以下为 ${series.major}.${series.minor}.0 起各小版本面向用户的说明汇总（新→旧）。`,
     "",
   ];
 
   for (const section of sections) {
-    parts.push(`### ${section.version}`, "", section.body, "");
+    parts.push(`${hItem} ${section.version}`, "", section.body, "");
   }
 
   return parts.join("\n").trim();
+}
+
+/**
+ * Embed previous-line rollup into a CHANGELOG version section (### headings),
+ * so `## x.y.0` itself documents the full line. No-op if already present.
+ *
+ * @param {string} markdown
+ * @param {string} version
+ * @returns {{ markdown: string, injected: boolean }}
+ */
+export function ensureChangelogSeriesRollup(markdown, version) {
+  const ver = normalizeVersion(version);
+  if (!ver || !previousMinorSeries(ver)) {
+    return { markdown, injected: false };
+  }
+
+  const section = extractChangelogSection(markdown, ver);
+  if (section === null) return { markdown, injected: false };
+  if (section.includes("累计变更")) return { markdown, injected: false };
+
+  const rollup = formatSeriesAggregate(markdown, ver, { headingLevel: 3 });
+  if (!rollup) return { markdown, injected: false };
+
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const headingRe = new RegExp(
+    `^##\\s+(?:\\[)?${ver.replace(/\./g, "\\.")}(?:\\])?(?:\\s|$|\\()`,
+  );
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (headingRe.test(lines[i])) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return { markdown, injected: false };
+
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+
+  const insert = ["", ...rollup.split("\n"), ""];
+  const next = [...lines.slice(0, end), ...insert, ...lines.slice(end)];
+  return { markdown: next.join("\n"), injected: true };
 }
 
 export function buildReleaseBody(version, section, repoUrl, options = {}) {
   const ver = normalizeVersion(version);
   const aggregate = options.aggregate !== false;
   const markdown = options.markdown ?? "";
+  const sectionHasRollup = Boolean(section && section.includes("累计变更"));
 
   const parts = [
     `## X-agent v${ver}`,
@@ -198,7 +250,7 @@ export function buildReleaseBody(version, section, repoUrl, options = {}) {
     "",
   ];
 
-  if (aggregate && markdown) {
+  if (aggregate && markdown && !sectionHasRollup) {
     const rollup = formatSeriesAggregate(markdown, ver);
     if (rollup) {
       parts.push("---", "", rollup, "");
