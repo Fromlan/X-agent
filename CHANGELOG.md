@@ -4,7 +4,7 @@
 
 发版前须把下方 `Unreleased` 整理进对应 `## x.y.z` 章节；GitHub Release 正文由该章节生成（见 `scripts/prepare-release.mjs`）。
 
-升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，Release 正文会在本章节后自动附带上一线全部小版本（`0.2.0`…`0.2.x`）说明汇总；补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭。
+升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，`prepare-release` 会把上一线全部小版本（`0.2.0`…`0.2.x`）汇总写入本章节；GitHub Release 正文使用该章节（已含汇总则不再重复附加）。补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭自动附加。
 
 ## Unreleased
 
@@ -13,7 +13,7 @@
 ### 功能
 
 - **主题化下拉**：自定义 `SelectMenu` 替换原生 `<select>`（顶栏模型 / Thinking、设置内外观与 Godot / 供应商等），下拉面板跟随主题 token
-- **发版 minor 汇总**：发布 `0.3.0` 等线起点时，GitHub Release 自动附带上一线（`0.2.0`…`0.2.x`）小版本说明汇总
+- **发版 minor 汇总**：`0.3.0` 等线起点的 CHANGELOG / GitHub Release 自动纳入上一线（`0.2.0`…`0.2.x`）全部小版本说明
 
 ### 改进
 
@@ -24,6 +24,110 @@
 ### 开发
 
 - `extract-changelog` / `prepare-release` 支持上一 minor 线汇总；新增 `npm run release:test-changelog`
+
+
+### 0.2.x 累计变更
+
+以下为 0.2.0 起各小版本面向用户的说明汇总（新→旧）。
+
+#### 0.2.6
+
+### 改进
+
+- **展示思考**：顶栏改为开关式 chip（「展示思考」+ 开/关徽标），开时高亮
+- **默认深色**：Surface 加深至 `#141414`，启动窗背景与之对齐
+- 空会话去掉 steer 提示；未打开项目时仍提示先选文件夹
+- 右栏上下文去掉缓存命中率长脚注，面板更干净
+
+### 修复
+
+- **撤回**：navigate 前预扫变更文件，navigate 后再还原，避免撤回到用户消息时文件状态错乱
+- **Godot 文档引用**：回答中用本地 `absPath` 反引号路径，不再改写成 `docs.godotengine.org` 链接
+
+### 开发
+
+- 加深架构接缝：对话实录 `transcript-mapper`、供应商激活、会话标题、cwd 沙箱、Godot / provider / session IPC 注册拆分；`App` 侧事件路由与撤回确认抽 hook
+
+#### 0.2.5
+
+### 功能
+
+- **模型上下文窗口**：供应商档案模型可配置 `contextWindow`，写入 Pi `models.json`；预设 / 拉取 `/v1/models` / 已知模型启发式自动填入（如 DeepSeek V4 → 1M），避免一律按 Pi 默认 128k 计量占用
+- **缓存命中率**：右栏上下文与设置 → 用量展示 `cacheRead / (input + cacheRead)`；改工具白名单时确认并提示会重建系统提示、清空本会话前缀缓存
+
+### 改进
+
+- 经 SiliconFlow 等非 `api.deepseek.com` 中转的 DeepSeek 模型，激活时自动写入 Pi `thinkingFormat: deepseek` compat，保证 `reasoning_content` 回传形态正确
+
+### 文档
+
+- `AGENT_CONTEXT` 补充前缀缓存注意点与 `contextWindow` 说明
+
+#### 0.2.4
+
+### 改进
+
+- **Godot 文档搜索**：结果带短摘要（summary）；类页 / 教程标题与排序更准确，概览可少读大 `.rst`
+- **文档工具指引**：概览优先用 summary；API 查阅引导 `read(class_*.rst, limit)`
+
+### 修复
+
+- **右栏上下文占用**：按 prompt 侧 `input + cacheRead`（含 trailing 消息）计量，不再把上一轮 output 算进占用条
+- **重载插件后工具全开**：`reload` 后重新应用用户工具白名单
+
+### 开发
+
+- 新增 `measure-context-baseline`：对比默认 7 工具与全开 19 工具的基线 token 估量，并纳入 `npm test`
+
+#### 0.2.3
+
+### 功能
+
+- **多风格 GUI 主题**：设置 → 通用可选默认 / Nord / Tokyo Night / Warm Paper / High Contrast；顶栏仍切换深浅；偏好为 `themeId` + `colorMode`（兼容旧 `theme` / `cindy`）
+- **应用图标**：窗口 / 安装包 / 网页 favicon 使用统一品牌图标
+- **顶栏紧凑布局**：窄窗时隐藏部分文案，保留图标与 title
+
+### 改进
+
+- 窗口最小尺寸下调，并隐藏应用菜单栏
+- 侧栏 / 右栏在窗口缩小时自动让出聊天区宽度
+
+### 文档
+
+- DESIGN 补充主题族与可变样式令牌说明
+- 同步 README / CLAUDE / AGENT_CONTEXT 与 0.2.x 能力说明；修正 Godot 设置入口文案
+
+#### 0.2.2
+
+### 修复
+
+- **CI / 发版测试**：`test-turn-file-tracker` 补上缺失的 `unlinkSync` 导入（symlink 用例在 Windows runner 上可用时不再 ReferenceError）
+
+#### 0.2.1
+
+### 功能
+
+- **会话用量与上下文面板**：右栏「上下文」展示占用进度、组成拆解（含协议损耗）、本轮 / 会话累计用量；支持手动压缩上下文
+- **用量设置**：设置 → 用量，查看本地按日 / 按模型汇总，可清空统计
+- **技能加载**：不再自动加载 `~/.agents/skills`，避免无关技能索引膨胀上下文
+
+### 修复
+
+- **组成拆解**：API 占用与文本估算的差额单独记为「协议损耗」，不再并入系统提示
+
+#### 0.2.0
+
+### 功能
+
+- **Godot 官方文档离线检索**：设置 → Godot →「官方文档」选择分支、打开下载链接并导入源码 zip；Agent 工具 `godot_docs_search` / `godot_docs_status`（默认关闭）
+- **设置页整理**：Godot 拆成「编辑器连接 / 官方文档」子页签；通用 / 工具等分区卡片化；左侧导航带图标
+- **工具分组一键开关**：启用工具各分组可用图标按钮整组开启 / 关闭
+
+### 修复
+
+- **新会话输入框偶发卡死**：切换 / 新建 / 恢复会话时清除编辑态，避免误锁输入
+- **文档检索后读错路径**：搜索结果提供 `absPath`，并引导用 `read` 读本地缓存而非项目内 docs
+- **Packages 安装区异常渐变**：供应商页 sticky 渐变不再误套到插件 Packages 面板
 
 ## 0.2.6
 
