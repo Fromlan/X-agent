@@ -4,9 +4,9 @@ import {
   join,
 } from "node:path";
 import { shell } from "electron";
-import { resolveInsideCwd } from "./project-path";
+import { resolveInsideCwd } from "./cwd-sandbox";
 
-export { resolveInsideCwd } from "./project-path";
+export { resolveInsideCwd } from "./cwd-sandbox";
 
 const IGNORED_DIR_NAMES = new Set([
   "node_modules",

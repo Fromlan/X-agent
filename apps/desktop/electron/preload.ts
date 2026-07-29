@@ -10,6 +10,7 @@ import type {
 } from "../shared/ipc";
 
 const api: XAgentApi = {
+  // session / workspace
   openProject: (path?: string) => ipcRenderer.invoke("openProject", path),
   prompt: (text: string) => ipcRenderer.invoke("prompt", text),
   abort: () => ipcRenderer.invoke("abort"),
@@ -39,6 +40,8 @@ const api: XAgentApi = {
     ipcRenderer.invoke("resumeSession", sessionPath),
   deleteSession: (sessionPath: string) =>
     ipcRenderer.invoke("deleteSession", sessionPath),
+  deleteProjectSessions: (projectCwd: string) =>
+    ipcRenderer.invoke("deleteProjectSessions", projectCwd),
   closeWorkspace: () => ipcRenderer.invoke("closeWorkspace"),
   renameSession: (sessionPath: string, name: string) =>
     ipcRenderer.invoke("renameSession", sessionPath, name),
@@ -60,6 +63,7 @@ const api: XAgentApi = {
     ipcRenderer.invoke("readProjectFile", relPath),
   revealInFolder: (relPath: string) =>
     ipcRenderer.invoke("revealInFolder", relPath),
+  // godot
   godotRpcStatus: () => ipcRenderer.invoke("godotRpcStatus"),
   godotRpcStart: () => ipcRenderer.invoke("godotRpcStart"),
   godotRpcStop: () => ipcRenderer.invoke("godotRpcStop"),
@@ -92,6 +96,7 @@ const api: XAgentApi = {
   deletePlugin: (path) => ipcRenderer.invoke("deletePlugin", path),
   revealPlugin: (path) => ipcRenderer.invoke("revealPlugin", path),
   reloadResources: () => ipcRenderer.invoke("reloadResources"),
+  // providers
   listProviderProfiles: () => ipcRenderer.invoke("listProviderProfiles"),
   getProviderProfile: (id) => ipcRenderer.invoke("getProviderProfile", id),
   upsertProviderProfile: (input: ProviderUpsertInput) =>
@@ -109,6 +114,7 @@ const api: XAgentApi = {
     ipcRenderer.invoke("uninstallPackage", source),
   installGodotPiPackage: () => ipcRenderer.invoke("installGodotPiPackage"),
   openPiLogin: () => ipcRenderer.invoke("openPiLogin"),
+  openExternalUrl: (url: string) => ipcRenderer.invoke("openExternalUrl", url),
   getUpdateStatus: () => ipcRenderer.invoke("getUpdateStatus"),
   checkForUpdates: () => ipcRenderer.invoke("checkForUpdates"),
   downloadUpdate: () => ipcRenderer.invoke("downloadUpdate"),
