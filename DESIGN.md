@@ -4,28 +4,32 @@
 
 ## 一、设计原则
 
-1. **深色优先**：`:root` 为 Cindy 深色回退；`body[data-theme="{themeId}-{colorMode}"]` 覆盖完整 token。
-2. **近单色（Cindy 默认）**：默认灰阶；彩度仅用于已登记的语义信号（focus、running/warning、status、diff）。实验主题族可提高语义色饱和度。
+1. **深色优先**：`:root` 为深色回退；`body[data-theme="{themeId}-{colorMode}"]` 覆盖完整 token。
+2. **近单色**：默认灰阶；彩度仅用于已登记的语义信号（focus、running/warning、status、diff）。实验主题族可提高语义色饱和度。
 3. **Token 驱动**：颜色 / 圆角 / 阴影走 CSS 变量；改主题只改 token（见 `apps/desktop/src/styles/themes.css`）。
 4. **扁平分层**：全窗 Surface 底 + 1px Board 分割；抬起控件用 Card，不用背景色块切页。
-5. **零阴影（Cindy 页面内）**：深度靠边框与 Surface/Card 差；仅 modal 浮层可用 gated shadow。实验包可启用更强的 `--shadow-*`。
-6. **Pill 优先（Cindy）**：按钮、chip、单行 input、tab 用 `9999px`；容器 12px；多行控件 8px。主题族可覆盖 `--radius-*`。
+5. **零阴影**：深度靠边框与 Surface/Card 差；仅 modal 浮层可用 gated shadow。实验包可启用更强的 `--shadow-`*。
+6. **Pill 优先**：按钮、chip、单行 input、tab 用 `9999px`；容器 12px；多行控件 8px。主题族可覆盖 `--radius-`*。
 7. **字重克制**：UI 仅 400 / 500；不用 600+。
 8. **图标**：优先 `lucide-react`；状态用色点 / 语义色，不用 emoji。
 
 ---
 
+
+
 ## 一附、主题族（GUI）
 
 偏好字段：`ClientPrefs.themeId` + `ClientPrefs.colorMode`（旧字段 `theme: light|dark` 读入时映射为 `default` + 对应模式；旧 `themeId: cindy` 映射为 `default`）。
 
-| themeId | 说明 | 样式令牌倾向 |
-| --- | --- | --- |
-| `default` | **默认**；近单色扁平 | 半径 8/12；pill 9999；页面内无阴影 |
-| `nord` | 冷灰蓝极光 | 半径 10/14；modal 阴影略强 |
-| `tokyo` | 深蓝夜 + 彩强调 | 半径同默认；focus 光晕更强 |
-| `paper` | 暖纸 / 墨水 | 半径 10/14；可有极轻 `--shadow-sm/md` |
-| `contrast` | 高对比选型 | 半径 4/8；pill 弱化为 8；Board 更硬 |
+
+| themeId    | 说明           | 样式令牌倾向                         |
+| ---------- | ------------ | ------------------------------ |
+| `default`  | **默认**；近单色扁平 | 半径 8/12；pill 9999；页面内无阴影       |
+| `nord`     | 冷灰蓝极光        | 半径 10/14；modal 阴影略强            |
+| `tokyo`    | 深蓝夜 + 彩强调    | 半径同默认；focus 光晕更强               |
+| `paper`    | 暖纸 / 墨水      | 半径 10/14；可有极轻 `--shadow-sm/md` |
+| `contrast` | 高对比选型        | 半径 4/8；pill 弱化为 8；Board 更硬     |
+
 
 可变样式令牌：`--radius-control` / `--radius-container` / `--radius-pill`、`--shadow-sm` / `--shadow-md` / `--shadow-lg`、全部颜色 token。字体栈不变。
 
@@ -35,14 +39,18 @@
 
 ---
 
+
+
 ## 二、色彩系统
 
-### 2.1 三层 Surface（Cindy 层系统）
+
+
+### 2.1 三层 Surface
 
 
 | 角色          | Light     | Dark      | Token 映射                                                          |
 | ----------- | --------- | --------- | ----------------------------------------------------------------- |
-| **Surface** | `#f8f8f6` | `#1f1f1e` | `--bg-app` / `--bg-sidebar` / `--bg-main`                         |
+| **Surface** | `#f8f8f6` | `#141414` | `--bg-app` / `--bg-sidebar` / `--bg-main`                         |
 | **Card**    | `#ffffff` | `#2c2c2a` | `--bg-header` / `--bg-input` / `--bg-modal` / composer            |
 | **Board**   | `#d7d7d4` | `#3c3c3a` | `--border-primary` / `--border-input`                             |
 | **Chip**    | `#e5e5e5` | `#3c3c3a` | `--bg-list-hover` / `--surface-chip`；选中用略抬升的 `--bg-list-selected` |
@@ -54,7 +62,7 @@
 
 
 | Token                | 深色        | 浅色        | 用途              |
-| -------------------- | --------- | --------- | ----------------- |
+| -------------------- | --------- | --------- | --------------- |
 | `--text-primary`     | `#d4d4d4` | `#262626` | 主文本             |
 | `--text-secondary`   | `#a3a3a3` | `#525252` | 次要文本            |
 | `--text-muted`       | `#737373` | `#737373` | 弱化              |
@@ -87,7 +95,7 @@
 
 
 | Token               | 深色                       | 浅色                 |
-| ------------------- | ------------------------ | ----------------- |
+| ------------------- | ------------------------ | ------------------ |
 | `--btn-bg`          | `#ffffff`                | `#000000`          |
 | `--btn-text`        | `#000000`                | `#ffffff`          |
 | `--surface-chip`    | `#3c3c3a`                | `#e5e5e5`          |
@@ -107,6 +115,7 @@
 | `--bubble-thinking` | Surface 略暗 + warning 左边线可选 |
 | `--bubble-tool`     | Card + Board 边             |
 | `--bubble-result`   | `--bg-result`              |
+
 
 
 
@@ -252,3 +261,4 @@ TopBar → [banners] → main-row
 4. 任意硬编码圆角（须用 `--radius-*`）或蓝实心主按钮铺满工具栏。
 5. 字重 ≥600。
 6. 渐变背景装饰。
+

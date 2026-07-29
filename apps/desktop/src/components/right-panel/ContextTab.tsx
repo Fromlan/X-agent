@@ -323,11 +323,6 @@ export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
         ) : (
           <p className="rp-context-empty">暂无用量数据</p>
         )}
-        <p className="rp-context-footnote">
-          命中率 = cacheRead / (input + cacheRead)。改工具白名单、压缩、撤回或中途
-          换模型/Thinking 会重置前缀缓存。费用依赖模型费率；自定义供应商未配置时多为
-          $0
-        </p>
       </section>
 
       <div className="rp-context-footer">

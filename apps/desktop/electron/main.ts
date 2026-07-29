@@ -63,7 +63,7 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 560,
     title: "X-agent",
-    backgroundColor: "#1e1e24",
+    backgroundColor: "#141414",
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),

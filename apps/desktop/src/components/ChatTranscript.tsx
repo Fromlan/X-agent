@@ -173,12 +173,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     <div className="chat-transcript">
       <div className="message-stream" ref={streamRef}>
         <div className="message-stream-inner" ref={contentRef}>
-          {props.items.length === 0 && (
-            <div className="empty-state">
-              {props.disabledEmpty
-                ? "请先打开一个项目文件夹，然后开始对话。"
-                : "向 Agent 发送指令。运行中可继续发送（steer），或中止。"}
-            </div>
+          {props.items.length === 0 && props.disabledEmpty && (
+            <div className="empty-state">请先打开一个项目文件夹，然后开始对话。</div>
           )}
 
           {props.items.map((item) => {
