@@ -15,7 +15,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { setPreviewPath } from "../../stores/right-panel-store";
-import { joinProjectAbs } from "../../lib/project-path";
+import { joinProjectAbs } from "../../lib/group-sessions";
 
 type DirEntry = { name: string; isDir: boolean };
 

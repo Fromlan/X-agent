@@ -92,4 +92,15 @@ items = applyAgentEvent(items, {
 });
 assert(items.length === 3, "compaction_start leaves items unchanged");
 
+items = applyAgentEvent(items, {
+  type: "assistant_start",
+  messageId: "a3",
+  userEntryId: "entry-from-host",
+});
+const a3 = items.find((i) => i.kind === "assistant" && i.id === "a3");
+assert(
+  a3?.kind === "assistant" && a3.userEntryId === "entry-from-host",
+  "assistant_start should prefer event.userEntryId over backfill",
+);
+
 console.log("test-chat-store: ok");

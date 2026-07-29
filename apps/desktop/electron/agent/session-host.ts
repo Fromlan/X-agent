@@ -30,8 +30,16 @@ import {
 } from "../../shared/ipc";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
 import { branchEntriesToHistory } from "./history";
+import {
+  TRANSCRIPT_CAPS,
+  extractMessageText,
+  truncateTranscript,
+} from "./transcript-mapper";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
-import { deriveSessionTitle, displaySessionName } from "./session-title";
+import {
+  displaySessionName,
+  ensureSessionTitle,
+} from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
 import { createGodotDocsTools } from "./godot-docs-tools";
@@ -39,6 +47,7 @@ import { TurnFileTracker } from "./turn-file-tracker";
 import {
   normalizeProjectKey,
   pickFallbackSessionPath,
+  sessionPathsForProject,
 } from "../../shared/project-path";
 import {
   buildContextBreakdown,
@@ -47,6 +56,7 @@ import {
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
+import { reloadAuthStorageCache } from "./model-runtime-auth";
 
 type SessionBundle = {
   session: AgentSession;
@@ -66,17 +76,6 @@ export type ToolDetailRecord = {
   done: boolean;
   truncated?: boolean;
 };
-
-function truncate(value: unknown, max = 4000): unknown {
-  try {
-    const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    if (!text) return value;
-    if (text.length <= max) return value;
-    return `${text.slice(0, max)}\n…(截断 ${text.length - max} 字符)`;
-  } catch {
-    return String(value);
-  }
-}
 
 function serializeForDetail(value: unknown): { value: unknown; truncated: boolean } {
   try {
@@ -237,6 +236,8 @@ export class SessionHost {
   private bundle: SessionBundle | null = null;
   private modelRuntime: ModelRuntime | null = null;
   private status: AgentStatus = "idle";
+  /** Prevent overlapping model title requests for the same open session. */
+  private autoTitleInFlight = false;
   private lastError: string | undefined;
   private getWindow: () => BrowserWindow | null;
   private godotRpc: GodotRpcBridge | null;
@@ -502,7 +503,7 @@ export class SessionHost {
             this.setStatus("retrying");
           } else {
             this.setStatus("idle");
-            this.maybeAutoTitleSession();
+            void this.maybeAutoTitleSession();
           }
           this.emit({ type: "agent_end", willRetry });
           this.emitUsageUpdate();
@@ -526,12 +527,15 @@ export class SessionHost {
             errorMessage?: string;
           };
           if (msg.role === "assistant") {
+            const userEntryId =
+              this.fileTracker.getActiveUserEntryId() ?? undefined;
             this.emit({
               type: "assistant_start",
               messageId: this.messageIdFrom(event.message),
+              ...(userEntryId ? { userEntryId } : {}),
             });
           } else if (msg.role === "user") {
-            const text = this.extractUserText(event.message);
+            const text = extractMessageText(event.message);
             if (text) {
               const entryId = this.currentUserEntryId();
               if (entryId) {
@@ -620,7 +624,7 @@ export class SessionHost {
             type: "tool_start",
             toolCallId: event.toolCallId,
             toolName: event.toolName,
-            args: truncate(event.args, 2000),
+            args: truncateTranscript(event.args, TRANSCRIPT_CAPS.streamTool),
           });
           break;
         }
@@ -637,7 +641,10 @@ export class SessionHost {
           this.emit({
             type: "tool_update",
             toolCallId: event.toolCallId,
-            partialResult: truncate(event.partialResult, 2000),
+            partialResult: truncateTranscript(
+              event.partialResult,
+              TRANSCRIPT_CAPS.streamTool,
+            ),
           });
           break;
         }
@@ -658,7 +665,10 @@ export class SessionHost {
             type: "tool_end",
             toolCallId: event.toolCallId,
             toolName: event.toolName,
-            result: truncate(event.result, 4000),
+            result: truncateTranscript(
+              event.result,
+              TRANSCRIPT_CAPS.streamToolResult,
+            ),
             isError: event.isError,
           });
           break;
@@ -734,22 +744,6 @@ export class SessionHost {
     });
   }
 
-  private extractUserText(message: unknown): string {
-    if (!message || typeof message !== "object") return "";
-    const content = (message as { content?: unknown }).content;
-    if (typeof content === "string") return content.trim();
-    if (!Array.isArray(content)) return "";
-    return content
-      .filter(
-        (p): p is { type?: string; text?: string } =>
-          !!p && typeof p === "object",
-      )
-      .filter((p) => p.type === "text" && p.text)
-      .map((p) => p.text!)
-      .join("")
-      .trim();
-  }
-
   private currentUserEntryId(): string | undefined {
     if (!this.bundle) return undefined;
     try {
@@ -793,19 +787,17 @@ export class SessionHost {
     if (!msg || msg.role !== "user") {
       return { ok: false, error: "只能从用户消息撤回" };
     }
-    const editorText = this.extractUserText(msg);
+    const editorText = extractMessageText(msg);
     if (!editorText) return { ok: false, error: "用户消息为空" };
     return { ok: true, entryId, editorText };
   }
 
   /**
-   * After the first completed round, persist a human-readable title once.
-   * Skips if the user (or a prior auto-title) already set session_info.name.
+   * After the first completed round, ensure the open session has a title once.
    */
-  private maybeAutoTitleSession(): void {
+  private async maybeAutoTitleSession(): Promise<void> {
     const bundle = this.bundle;
-    if (!bundle) return;
-    if (bundle.session.sessionManager.getSessionName()) return;
+    if (!bundle || this.autoTitleInFlight) return;
 
     const messages = bundle.session.messages as readonly unknown[];
     let userText = "";
@@ -813,27 +805,78 @@ export class SessionHost {
     for (const msg of messages) {
       const role = (msg as { role?: string }).role;
       if (!userText && role === "user") {
-        userText = this.extractUserText(msg);
+        userText = extractMessageText(msg);
       } else if (userText && !assistantText && role === "assistant") {
-        assistantText = this.extractUserText(msg);
+        assistantText = extractMessageText(msg);
         break;
       }
     }
-    if (!userText && !assistantText) return;
 
-    const title = deriveSessionTitle(userText, assistantText);
-    if (!title.trim()) return;
-
+    this.autoTitleInFlight = true;
     try {
-      bundle.session.setSessionName(title);
-      this.emit({
-        type: "session_title",
-        sessionId: bundle.session.sessionId,
-        name: title,
-        sessionPath: bundle.sessionPath,
+      const decided = await ensureSessionTitle({
+        currentName: bundle.session.sessionManager.getSessionName(),
+        userText,
+        assistantText,
+        complete: async (prompt) => {
+          const model = bundle.session.model;
+          if (!model) return null;
+          const runtime = await this.ensureRuntime();
+          if (this.bundle !== bundle) return null;
+          if (bundle.session.sessionManager.getSessionName()) return null;
+          const result = await runtime.completeSimple(
+            model,
+            {
+              messages: [
+                {
+                  role: "user",
+                  content: prompt,
+                  timestamp: Date.now(),
+                },
+              ],
+              tools: [],
+            },
+            { maxTokens: 64, temperature: 0.2 },
+          );
+          if (this.bundle !== bundle) return null;
+          if (bundle.session.sessionManager.getSessionName()) return null;
+          if (result.stopReason === "error" || result.stopReason === "aborted") {
+            return null;
+          }
+          return result.content
+            .filter(
+              (p): p is { type: "text"; text: string } =>
+                !!p &&
+                typeof p === "object" &&
+                (p as { type?: string }).type === "text" &&
+                typeof (p as { text?: unknown }).text === "string",
+            )
+            .map((p) => p.text)
+            .join("")
+            .trim();
+        },
+        isStale: () =>
+          this.bundle !== bundle ||
+          Boolean(bundle.session.sessionManager.getSessionName()),
       });
-    } catch {
-      // Non-fatal: listSessions still falls back to firstMessage.
+
+      if (!decided || decided.action !== "set") return;
+      if (this.bundle !== bundle) return;
+      if (bundle.session.sessionManager.getSessionName()) return;
+
+      try {
+        bundle.session.setSessionName(decided.title);
+        this.emit({
+          type: "session_title",
+          sessionId: bundle.session.sessionId,
+          name: decided.title,
+          sessionPath: bundle.sessionPath,
+        });
+      } catch {
+        // Non-fatal: listSessions still falls back to firstMessage.
+      }
+    } finally {
+      this.autoTitleInFlight = false;
     }
   }
 
@@ -850,24 +893,10 @@ export class SessionHost {
     return this.modelRuntime;
   }
 
-  /**
-   * Pi AuthStorage caches auth.json in memory at create time. reloadConfig()
-   * only reloads models.json — so after we write auth.json from provider
-   * activate, credentials stay stale and getAvailable() returns [].
-   */
-  private reloadAuthStorageCache(runtime: ModelRuntime): void {
-    const store = (
-      runtime as unknown as {
-        credentials?: { store?: { reload?: () => void } };
-      }
-    ).credentials?.store;
-    store?.reload?.();
-  }
-
   async reloadRuntime(): Promise<void> {
     if (this.modelRuntime) {
       try {
-        this.reloadAuthStorageCache(this.modelRuntime);
+        reloadAuthStorageCache(this.modelRuntime);
         await this.modelRuntime.reloadConfig();
         return;
       } catch {
@@ -950,6 +979,7 @@ export class SessionHost {
     // Drop tool detail cache so IDs from a prior session cannot leak into the panel.
     this.toolDetails.clear();
     this.fileTracker.clear();
+    this.autoTitleInFlight = false;
   }
 
   private async createSession(
@@ -1067,7 +1097,6 @@ export class SessionHost {
       sessionId: session.sessionId,
       model: modelFromSession(session),
       thinkingLevel: session.thinkingLevel as ThinkingLevel,
-      history,
       ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
     };
 
@@ -1221,6 +1250,56 @@ export class SessionHost {
     });
   }
 
+  /** Delete all X-agent sessions belonging to a project cwd. */
+  async deleteProjectSessions(
+    projectCwd: string,
+  ): Promise<{ ok: boolean; deleted?: number; error?: string }> {
+    return this.runReplaceExclusive(async () => {
+      const key = normalizeProjectKey(projectCwd);
+      const listed = await this.listSessions();
+      const paths = sessionPathsForProject(listed, projectCwd);
+      if (paths.length === 0) {
+        return { ok: true, deleted: 0 };
+      }
+
+      const activePath = this.bundle?.sessionPath ?? null;
+      const activeCwd = this.bundle?.cwd ?? null;
+      const activeInProject =
+        Boolean(this.bundle) &&
+        (activePath
+          ? paths.includes(activePath)
+          : normalizeProjectKey(activeCwd ?? "") === key);
+
+      if (activeInProject) {
+        await this.disposeBundle(this.bundle);
+        this.bundle = null;
+      }
+
+      let deleted = 0;
+      const prefs = loadPrefs();
+      let clearLastSession = false;
+      for (const sessionPath of paths) {
+        if (!isXAgentSessionPath(sessionPath)) continue;
+        if (!existsSync(sessionPath)) continue;
+        unlinkSync(sessionPath);
+        deleted += 1;
+        if (prefs.lastSessionPath === sessionPath) {
+          clearLastSession = true;
+        }
+      }
+
+      if (clearLastSession) {
+        patchPrefs({ lastSessionPath: null });
+      }
+
+      if (activeInProject) {
+        await this.emitClosedWorkspace(activeCwd ?? projectCwd);
+      }
+
+      return { ok: true, deleted };
+    });
+  }
+
   /** Close current workspace without deleting session files (sidebar hide). */
   async closeWorkspace(): Promise<{ ok: boolean; error?: string }> {
     return this.runReplaceExclusive(async () => {
@@ -1338,11 +1417,10 @@ export class SessionHost {
    * 撤回并切换到指定 user message。
    * 关键时序：
    *   1. abort 当前流（若有）。
-   *   2. navigateTree 之前**不**扫 segment —— 取消时无法保证重放安全。
-   *   3. navigate 成功后，重新从 sessionManager.getBranch() 读 segment
-   *      （navigate 后 branch 已切到新 leaf，idx = 0）。
-   *   4. 仅在 nav 成功后调用 restorePaths。
-   *   5. 撤回后清空 activeUserEntryId，下一次 user_message 事件再赋新 id。
+   *   2. 只读 scan 即将废弃的 segment（不写盘）；navigate 取消时无需回滚。
+   *   3. navigateTree；若 cancelled 则直接返回。
+   *   4. navigate 成功后按预扫路径 restorePaths（此时 branch 已不含废弃节点）。
+   *   5. dropBaselines · persistDirty · 清空 activeUserEntryId · history replace。
    */
   async retractToUserMessage(
     entryId: string,
@@ -1354,12 +1432,18 @@ export class SessionHost {
 
     const undoFiles = options?.undoFiles !== false;
     const { session } = this.bundle;
+    const sm = session.sessionManager;
 
     try {
       if (session.isStreaming) {
         await session.abort();
         this.setStatus("idle");
       }
+
+      // 预扫必须在 navigate 之前：nav 后 abandoned write/edit 不在 active branch。
+      const pendingScan = undoFiles
+        ? this.fileTracker.scanSegmentSince(sm, resolved.entryId)
+        : null;
 
       const nav = await session.navigateTree(resolved.entryId, {
         summarize: false,
@@ -1368,14 +1452,8 @@ export class SessionHost {
         return { ok: false, error: "撤回已取消" };
       }
 
-      const sm = session.sessionManager;
       let restoreReport: RetractResult["restoreReport"];
-      if (undoFiles) {
-        // 取消语义：navigate 前**不**持有 pendingScan 状态；preview / restore 每次现取 branch。
-        const pendingScan = this.fileTracker.scanSegmentSince(
-          sm,
-          resolved.entryId,
-        );
+      if (undoFiles && pendingScan) {
         restoreReport = this.fileTracker.restorePaths(
           pendingScan.mutationPaths,
           pendingScan.userEntryIds,

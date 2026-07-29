@@ -10,7 +10,7 @@ import {
 import { dirname } from "node:path";
 import type { FileRestoreReport, FileRestoreSkipReason } from "../../shared/ipc";
 import { GODOT_TOOLS } from "../../shared/ipc";
-import { resolveInsideCwd } from "./project-path";
+import { resolveInsideCwd } from "./cwd-sandbox";
 
 export const FILE_BASELINE_CUSTOM_TYPE = "x-agent-file-baselines";
 export const MAX_BASELINE_BYTES = 2 * 1024 * 1024;
@@ -153,6 +153,10 @@ export class TurnFileTracker {
 
   setActiveUserEntryId(entryId: string | null): void {
     this.activeUserEntryId = entryId;
+  }
+
+  getActiveUserEntryId(): string | null {
+    return this.activeUserEntryId;
   }
 
   hasBaseline(rel: string, userEntryId?: string): boolean {
@@ -408,8 +412,11 @@ export class TurnFileTracker {
   }
 
   /**
-   * Restore files for a segment without dropping baselines.
-   * Call {@link dropBaselinesForTurns} after navigateTree succeeds.
+   * Restore files for a segment still present on the active branch.
+   * Production retract scans *before* navigateTree, then calls
+   * {@link restorePaths} with that scan — do not call this after nav
+   * (abandoned tool calls leave the branch).
+   * Call {@link dropBaselinesForTurns} after a successful restore.
    */
   restoreSegment(sm: SessionManagerLike, entryId: string): {
     report: FileRestoreReport;

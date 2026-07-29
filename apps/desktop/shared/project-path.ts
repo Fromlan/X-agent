@@ -50,3 +50,22 @@ export function pickFallbackSessionPath(
     );
   return candidates[0]?.path ?? null;
 }
+
+/** Paths of sessions belonging to `cwd` (empty key matches empty cwd only). */
+export function sessionPathsForProject(
+  sessions: ReadonlyArray<{ path: string; cwd: string }>,
+  cwd: string,
+): string[] {
+  const key = normalizeProjectKey(cwd);
+  return sessions
+    .filter((s) => normalizeProjectKey(s.cwd) === key)
+    .map((s) => s.path);
+}
+
+/** Join project cwd + relative path into an OS-style absolute path. */
+export function joinProjectAbs(cwd: string, relPath: string): string {
+  const root = cwd.replace(/[/\\]+$/, "");
+  const sep = cwd.includes("\\") ? "\\" : "/";
+  if (!relPath) return root;
+  return `${root}${sep}${relPath.replace(/\//g, sep)}`;
+}

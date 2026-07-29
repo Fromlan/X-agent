@@ -16,17 +16,13 @@ import type {
   ColorMode,
   ModelInfo,
   PiCliStatus,
-  RetractPreview,
   SessionInfo,
   ThemeId,
   ThinkingLevel,
 } from "@shared/ipc";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
-import {
-  RetractConfirmModal,
-  type RetractConfirmMode,
-} from "./components/RetractConfirmModal";
+import { RetractConfirmModal } from "./components/RetractConfirmModal";
 import { TopBar } from "./components/TopBar";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -45,13 +41,14 @@ import {
   fitColumnWidths,
   useColumnResize,
 } from "./hooks/useColumnResize";
-import { applyAgentEvent, createEmptyState } from "./stores/chat-store";
+import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
+import { useRetractConfirm } from "./hooks/useRetractConfirm";
+import { createEmptyState } from "./stores/chat-store";
 import {
   clearSessionUsage,
   getCompacting,
   getSessionUsageState,
   getSessionUsageStoreVersion,
-  setCompacting,
   setSessionUsage,
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
@@ -100,13 +97,6 @@ export default function App() {
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
-  const [retractBusy, setRetractBusy] = useState(false);
-  const [confirmState, setConfirmState] = useState<{
-    mode: RetractConfirmMode;
-    entryId: string;
-    preview: RetractPreview;
-    editText?: string;
-  } | null>(null);
   const [followNonce, setFollowNonce] = useState(0);
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
@@ -152,6 +142,22 @@ export default function App() {
     setModels(list);
   }, []);
 
+  const {
+    confirmState,
+    retractBusy,
+    beginConfirm,
+    runConfirmedRetract,
+    cancelConfirm,
+    setConfirmState,
+  } = useRetractConfirm({
+    editDraft,
+    setError,
+    setInput,
+    setEditingEntryId,
+    setEditDraft,
+    refreshSessions,
+  });
+
   const syncFromHost = useCallback(async () => {
     const s = await window.xAgent.getStatus();
     setStatus(s.status);
@@ -184,85 +190,21 @@ export default function App() {
           : prev,
       );
     }
-  }, [fetchSessionUsage]);
+  }, [fetchSessionUsage, setConfirmState]);
 
-  useEffect(() => {
-    return window.xAgent.onEvent((event) => {
-      if (event.type === "status") {
-        setStatus(event.status);
-        if (event.error) setError(event.error);
-        else if (event.status === "idle" || event.status === "streaming") {
-          setError(null);
-        }
-        return;
-      }
-      if (event.type === "session_info") {
-        const nextId = event.sessionId || null;
-        const prevId = sessionIdRef.current;
-        setCwd(event.cwd || null);
-        setSessionId(nextId);
-        sessionIdRef.current = nextId;
-        if (!nextId) {
-          usageFetchGen.current += 1;
-          clearSessionUsage();
-        } else if (prevId !== nextId) {
-          // Drop previous session's snapshot immediately; usage_update follows.
-          usageFetchGen.current += 1;
-          clearSessionUsage();
-        }
-        setPrefs((prev) =>
-          prev
-            ? {
-                ...prev,
-                provider: event.model?.provider ?? prev.provider,
-                model: event.model?.id ?? prev.model,
-                thinkingLevel: event.thinkingLevel,
-                lastSessionPath: event.sessionPath ?? prev.lastSessionPath,
-              }
-            : prev,
-        );
-        return;
-      }
-      if (event.type === "session_title") {
-        void refreshSessions();
-        return;
-      }
-      if (event.type === "agent_end" && !event.willRetry) {
-        void refreshSessions();
-      }
-      if (event.type === "usage_update") {
-        setSessionUsage(event.usage);
-        return;
-      }
-      if (event.type === "compaction_start") {
-        setCompacting(true);
-        return;
-      }
-      if (event.type === "compaction_end") {
-        setCompacting(false);
-        return;
-      }
-      if (event.type === "queue_update") {
-        setQueuedSteering(event.steering);
-        return;
-      }
-      if (event.type === "history_replace") {
-        // 不要在这里清空 queuedSteering —— queuedSteering 由 queue_update 事件驱动。
-        // 清空会把飞行中刚到的 steering 快照丢掉（事件按顺序处理，但若
-        // queue_update 在下一次 history_replace 之前到达，会被立即清空）。
-        // Drop edit mode if the message being edited left the active branch.
-        setEditingEntryId((id) => {
-          if (!id) return null;
-          const stillThere = event.items.some(
-            (it) =>
-              it.kind === "user" && (it.entryId === id || it.id === id),
-          );
-          return stillThere ? id : null;
-        });
-      }
-      setItems((prev) => applyAgentEvent(prev, event));
-    });
-  }, [refreshSessions]);
+  useAgentEventRouter({
+    setStatus,
+    setError,
+    setCwd,
+    setSessionId,
+    sessionIdRef,
+    usageFetchGen,
+    setPrefs,
+    setQueuedSteering,
+    setEditingEntryId,
+    setItems,
+    refreshSessions,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -402,6 +344,22 @@ export default function App() {
     }
   };
 
+  const deleteProjectSessions = async (projectCwd: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await window.xAgent.deleteProjectSessions(projectCwd);
+      if (!result.ok) {
+        setError(result.error ?? "删除项目对话失败");
+        return;
+      }
+      await syncFromHost();
+      await refreshSessions();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const hideProject = async (projectCwd: string) => {
     if (!prefs) return;
     const key = normalizeProjectKey(projectCwd);
@@ -459,20 +417,6 @@ export default function App() {
     await window.xAgent.abort();
   };
 
-  const beginConfirm = async (
-    mode: RetractConfirmMode,
-    entryId: string,
-    editText?: string,
-  ) => {
-    setError(null);
-    const preview = await window.xAgent.previewRetract(entryId);
-    if (!preview.ok) {
-      setError(preview.error ?? "无法预览撤回");
-      return;
-    }
-    setConfirmState({ mode, entryId, preview, editText });
-  };
-
   const onStartEdit = (entryId: string, text: string) => {
     setEditingEntryId(entryId);
     setEditDraft(text);
@@ -494,55 +438,6 @@ export default function App() {
 
   const onRegenerate = (userEntryId: string) => {
     void beginConfirm("regenerate", userEntryId);
-  };
-
-  const runConfirmedRetract = async () => {
-    if (!confirmState) return;
-    setRetractBusy(true);
-    setError(null);
-    try {
-      const { mode, entryId, editText } = confirmState;
-      let result;
-      if (mode === "retract") {
-        result = await window.xAgent.retractToUserMessage(entryId, {
-          undoFiles: true,
-        });
-      } else if (mode === "edit") {
-        const expanded = await expandAtPathsInPrompt(editText ?? editDraft);
-        result = await window.xAgent.editAndResend(entryId, expanded, {
-          undoFiles: true,
-        });
-      } else {
-        result = await window.xAgent.regenerateFromUser(entryId, {
-          undoFiles: true,
-        });
-      }
-
-      if (!result.ok) {
-        setError(result.error ?? "操作失败");
-        return;
-      }
-
-      if (mode === "retract") {
-        const text =
-          result.editorText?.trim() ||
-          confirmState.preview.editorText?.trim() ||
-          "";
-        if (text) setInput(text);
-      }
-
-      const report = result.restoreReport;
-      if (report?.warnings?.length) {
-        setError(report.warnings.join(" "));
-      }
-
-      setConfirmState(null);
-      setEditingEntryId(null);
-      setEditDraft("");
-      await refreshSessions();
-    } finally {
-      setRetractBusy(false);
-    }
   };
 
   const onModelChange = async (value: string) => {
@@ -848,6 +743,9 @@ export default function App() {
           compacting={compacting}
           onResume={resumeSession}
           onDelete={deleteSession}
+          onDeleteProjectSessions={(projectCwd) => {
+            void deleteProjectSessions(projectCwd);
+          }}
           onHideProject={(projectCwd) => {
             void hideProject(projectCwd);
           }}
@@ -910,7 +808,7 @@ export default function App() {
           preview={confirmState.preview}
           busy={retractBusy}
           onCancel={() => {
-            if (!retractBusy) setConfirmState(null);
+            if (!retractBusy) cancelConfirm();
           }}
           onConfirm={() => {
             void runConfirmedRetract();

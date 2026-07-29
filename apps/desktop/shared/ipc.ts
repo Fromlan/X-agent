@@ -307,8 +307,6 @@ export interface OpenProjectResult {
   sessionId: string;
   model: ModelInfo | null;
   thinkingLevel: ThinkingLevel;
-  /** @deprecated Prefer history_replace events; kept for callers that need a snapshot. */
-  history?: HistoryItem[];
   warning?: string;
   error?: string;
 }
@@ -404,6 +402,8 @@ export type UiAgentEvent =
   | {
       type: "assistant_start";
       messageId: string;
+      /** Preceding user entry id on the active branch (for regenerate). */
+      userEntryId?: string;
     }
   | {
       type: "text_delta";
@@ -786,6 +786,10 @@ export interface XAgentApi {
   listSessions: () => Promise<SessionInfo[]>;
   resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Delete all X-agent sessions for a project cwd. */
+  deleteProjectSessions: (
+    projectCwd: string,
+  ) => Promise<{ ok: boolean; deleted?: number; error?: string }>;
   /** Close current workspace without deleting session files. */
   closeWorkspace: () => Promise<{ ok: boolean; error?: string }>;
   renameSession: (
@@ -869,6 +873,8 @@ export interface XAgentApi {
   ) => Promise<{ ok: boolean; error?: string; output?: string }>;
   installGodotPiPackage: () => Promise<PackageInstallResult>;
   openPiLogin: () => Promise<{ ok: boolean; error?: string; hint?: string }>;
+  /** Open an http(s) URL in the system browser. */
+  openExternalUrl: (url: string) => Promise<{ ok: boolean; error?: string }>;
   getUpdateStatus: () => Promise<AppUpdateStatus>;
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;

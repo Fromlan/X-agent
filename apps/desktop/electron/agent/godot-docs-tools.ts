@@ -36,6 +36,7 @@ function formatHits(result: Awaited<ReturnType<typeof searchGodotDocs>>): string
     "- Overview / comparison questions: you may answer from summary/snippet; read only if you need more detail.",
     "- API / method / property details: call `read` on the best `classes/class_*.rst` absPath (prefer limit=80–120 for class pages). Do NOT prefer best_practices comparison pages for API facts.",
     "- Paths are under the godot-docs cache — never invent project cwd or node_modules paths.",
+    "- When citing sources in the user-facing answer, paste absPath as a plain path in backticks. Do NOT turn paths into https://docs.godotengine.org Markdown links.",
   ];
   for (let i = 0; i < result.hits.length; i++) {
     const h = result.hits[i]!;
@@ -43,7 +44,6 @@ function formatHits(result: Awaited<ReturnType<typeof searchGodotDocs>>): string
     lines.push(`${i + 1}. ${h.title}`);
     lines.push(`   absPath: ${h.absPath}`);
     lines.push(`   relPath: ${h.relPath}`);
-    lines.push(`   url: ${h.docsUrl}`);
     lines.push(`   score: ${h.score}`);
     if (h.summary) {
       lines.push(`   summary: ${h.summary}`);
@@ -95,7 +95,7 @@ export function createGodotDocsTools(): ToolDefinition[] {
         "Overview / which-node questions: prefer hit summaries and class pages; do not skip a top-ranked classes/class_*.rst in favor of best_practices comparison pages.",
         "API / method / property details: call `read` on the best classes/class_*.rst absPath with limit=80–120 (class pages have huge property tables). Do not invent paths under the project cwd or node_modules.",
         "If the first query returns no hits, retry with a single class or method name. Use path_glob (e.g. classes/**) to narrow when needed.",
-        "Cite the returned docs URL (or absPath) in your answer.",
+        "Cite sources with the returned absPath as a plain backtick path (local .rst file). Never rewrite absPath/relPath into https://docs.godotengine.org Markdown links.",
         "If search reports docs not imported, tell the user to open Settings → Godot, download the zip, and import it.",
       ],
       parameters: searchParams,

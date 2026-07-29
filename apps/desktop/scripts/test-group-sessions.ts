@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import type { SessionInfo } from "../shared/ipc.ts";
 import {
   filterVisibleProjectGroups,
+  joinProjectAbs,
   pickFallbackSessionPath,
   normalizeProjectKey,
   projectDisplayName,
+  sessionPathsForProject,
 } from "../shared/project-path.ts";
 import { groupSessionsByProject } from "../src/lib/group-sessions.ts";
 
@@ -77,5 +79,21 @@ assert.equal(
   pickFallbackSessionPath(sessions, "D:\\Games\\Alpha", "/s/missing.jsonl"),
   "/s/2.jsonl",
 );
+
+assert.deepEqual(
+  sessionPathsForProject(sessions, "D:\\Games\\Alpha").sort(),
+  ["/s/1.jsonl", "/s/2.jsonl"],
+);
+assert.deepEqual(sessionPathsForProject(sessions, "D:\\Games\\Beta"), [
+  "/s/3.jsonl",
+]);
+assert.deepEqual(sessionPathsForProject(sessions, ""), ["/s/4.jsonl"]);
+assert.deepEqual(sessionPathsForProject(sessions, "D:\\Games\\Missing"), []);
+
+assert.equal(
+  joinProjectAbs("D:\\Games\\Alpha", "scenes/main.tscn"),
+  "D:\\Games\\Alpha\\scenes\\main.tscn",
+);
+assert.equal(joinProjectAbs("/home/user/proj", "a/b"), "/home/user/proj/a/b");
 
 console.log("test-group-sessions: ok");

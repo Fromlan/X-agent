@@ -1,7 +1,4 @@
-/**
- * Repro: external auth.json write + reloadConfig alone leaves getAvailable empty;
- * AuthStorage.reload() before reloadConfig fixes it.
- */
+import { reloadAuthStorageCache } from "../electron/agent/model-runtime-auth";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,15 +6,6 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
-}
-
-function reloadAuthStorageCache(runtime: ModelRuntime): void {
-  const store = (
-    runtime as unknown as {
-      credentials?: { store?: { reload?: () => void } };
-    }
-  ).credentials?.store;
-  store?.reload?.();
 }
 
 const root = mkdtempSync(join(tmpdir(), "x-agent-runtime-reload-"));
@@ -33,7 +21,11 @@ try {
     modelsPath,
     allowModelNetwork: false,
   });
-  assert((await runtime.getAvailable()).length === 0, "start empty");
+  const before = await runtime.getAvailable();
+  assert(
+    !before.some((m) => m.provider === "test-relay" && m.id === "model-a"),
+    "start without test-relay model",
+  );
 
   // Simulate provider activate writing files while runtime stays alive.
   writeFileSync(
@@ -66,9 +58,12 @@ try {
   );
 
   await runtime.reloadConfig();
+  const afterConfigOnly = await runtime.getAvailable();
   assert(
-    (await runtime.getAvailable()).length === 0,
-    "reloadConfig alone must stay empty (auth cache stale)",
+    !afterConfigOnly.some(
+      (m) => m.provider === "test-relay" && m.id === "model-a",
+    ),
+    "reloadConfig alone must not expose test-relay (auth cache stale)",
   );
 
   reloadAuthStorageCache(runtime);

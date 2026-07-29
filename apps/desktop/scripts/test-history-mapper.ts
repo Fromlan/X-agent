@@ -2,6 +2,10 @@ import {
   branchEntriesToHistory,
   messagesToHistory,
 } from "../electron/agent/history";
+import {
+  extractMessageText,
+  textFromContent,
+} from "../electron/agent/transcript-mapper";
 
 const sample = [
   {
@@ -78,6 +82,15 @@ if (branchItems[1].kind === "assistant" && branchItems[1].userEntryId !== "entry
 }
 if (branchItems[3]?.kind !== "assistant" || branchItems[3].userEntryId !== "entry-user-1") {
   throw new Error("branch asst2 userEntryId");
+}
+
+const extracted = extractMessageText({
+  role: "user",
+  content: [{ type: "text", text: "  hi  " }],
+});
+if (extracted !== "hi") throw new Error(`extractMessageText trim: ${extracted}`);
+if (textFromContent([{ type: "text", text: "a" }, { type: "text", text: "b" }]) !== "ab") {
+  throw new Error("textFromContent join");
 }
 
 console.log("history mapper ok");
