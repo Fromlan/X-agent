@@ -7,9 +7,8 @@ export function createEmptyState(): ChatItem[] {
 }
 
 /**
- * Find the entryId of the most recent user message in `items` (looking at
- * items before `beforeIndex`). Used to derive `userEntryId` on assistant
- * items when the runtime does not thread entryId through every event.
+ * Defense-only: when streaming events omit userEntryId, derive from the
+ * preceding user message. Prefer event / history_replace payloads.
  */
 function findPrecedingUserEntryId(
   items: ChatItem[],
@@ -31,9 +30,6 @@ function upsertAssistant(
 ): ChatItem[] {
   const idx = items.findIndex((i) => i.kind === "assistant" && i.id === messageId);
   if (idx === -1) {
-    // New assistant entry — backfill userEntryId from the preceding user
-    // message so the regenerate button is usable even when the runtime
-    // does not carry entryId on streaming events.
     const userEntryId =
       patch.userEntryId ?? findPrecedingUserEntryId(items, items.length);
     return [
@@ -51,10 +47,11 @@ function upsertAssistant(
     ];
   }
   const current = items[idx] as Extract<ChatItem, { kind: "assistant" }>;
-  // Preserve entryId / userEntryId if the new patch doesn't carry them.
   const entryId = patch.entryId ?? current.entryId;
   const userEntryId =
-    patch.userEntryId ?? current.userEntryId ?? findPrecedingUserEntryId(items, idx);
+    patch.userEntryId ??
+    current.userEntryId ??
+    findPrecedingUserEntryId(items, idx);
   const next = [...items];
   next[idx] = {
     ...current,
@@ -90,6 +87,7 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
         text: "",
         thinking: "",
         done: false,
+        ...(event.userEntryId ? { userEntryId: event.userEntryId } : {}),
       });
     case "text_delta": {
       const prev = items.find(

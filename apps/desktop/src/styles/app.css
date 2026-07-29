@@ -476,34 +476,34 @@ body.is-resizing-column * {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border-primary);
   background: var(--bg-app);
 }
 
 .sidebar-head h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .session-list {
   list-style: none;
   margin: 0;
-  padding: 8px;
+  padding: 6px;
   overflow: auto;
   flex: 1;
 }
 
 .session-list > li {
-  margin: 0 0 4px;
+  margin: 0;
 }
 
 .session-list > li.project-group {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
 }
 
 .project-group-header {
@@ -511,15 +511,16 @@ body.is-resizing-column * {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 4px 2px 2px;
-  margin: 0 0 2px;
+  padding: 0;
+  margin: 0;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
 }
 
-.project-group-header:hover {
+.project-group-header:hover,
+.project-group-header.is-menu-target {
   background: var(--bg-list-hover);
   color: var(--text-primary);
 }
@@ -533,7 +534,7 @@ body.is-resizing-column * {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   padding: 4px 6px;
   border: none;
   border-radius: var(--radius-md);
@@ -543,16 +544,6 @@ body.is-resizing-column * {
   font-family: var(--font-sans);
   cursor: pointer;
   text-align: left;
-}
-
-.project-group-hide {
-  flex-shrink: 0;
-  opacity: 0;
-}
-
-.project-group-header:hover .project-group-hide,
-.project-group-header:focus-within .project-group-hide {
-  opacity: 1;
 }
 
 .project-group-label {
@@ -566,22 +557,22 @@ body.is-resizing-column * {
 .project-group-count {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 10px;
   font-family: var(--font-mono);
 }
 
 .project-group-sessions {
   list-style: none;
   margin: 0;
-  padding: 0 0 0 4px;
+  padding: 0 0 0 2px;
 }
 
 .project-group-sessions > li {
-  margin: 0 0 4px;
+  margin: 0;
 }
 
 .session-empty {
-  padding: 16px 10px;
+  padding: 14px 8px;
   color: var(--text-muted);
   font-size: 12px;
   text-align: center;
@@ -591,50 +582,39 @@ body.is-resizing-column * {
   width: 100%;
   display: flex;
   align-items: stretch;
-  gap: 4px;
   text-align: left;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-container);
+  border: none;
+  border-radius: var(--radius-md);
   padding: 0;
   color: var(--text-primary);
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s;
   position: relative;
 }
 
-.session-card:hover {
+.session-card:hover,
+.session-card.is-menu-target {
   background: var(--bg-list-hover);
 }
 
 .session-card.active {
   background: var(--bg-list-selected);
-  border-color: var(--border-primary);
-}
-
-.session-card.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--text-primary);
 }
 
 .session-card-main {
   flex: 1;
   display: flex;
-  gap: 8px;
+  gap: 7px;
   align-items: flex-start;
   text-align: left;
   border: none;
   background: transparent;
   color: inherit;
-  padding: 8px 8px 8px 10px;
+  padding: 5px 8px;
   cursor: pointer;
   border-radius: var(--radius-md);
   min-width: 0;
+  width: 100%;
 }
 
 .session-card-main:disabled {
@@ -650,17 +630,17 @@ body.is-resizing-column * {
 .session-card-edit {
   flex: 1;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  padding: 8px 0 8px 10px;
+  padding: 4px 4px 4px 8px;
   min-width: 0;
 }
 
 .session-rename-input {
   flex: 1;
   min-width: 0;
-  height: 28px;
-  padding: 0 8px;
+  height: 26px;
+  padding: 0 7px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-primary);
   background: var(--bg-input);
@@ -677,9 +657,9 @@ body.is-resizing-column * {
 
 .session-card-actions {
   display: flex;
-  flex-direction: column;
-  padding: 6px 6px 6px 0;
-  gap: 2px;
+  flex-direction: row;
+  padding: 0;
+  gap: 0;
   flex-shrink: 0;
 }
 
@@ -689,16 +669,26 @@ body.is-resizing-column * {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .session-card-meta {
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 10px;
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  margin-top: 1px;
+  opacity: 0.75;
+}
+
+.sidebar.is-context-menu-open .session-list {
+  pointer-events: none;
+}
+
+.sidebar.is-context-menu-open .rp-context-menu {
+  pointer-events: auto;
 }
 
 /* —— Chat —— */
@@ -3476,6 +3466,20 @@ body.is-resizing-column * {
 .rp-context-menu-item:focus-visible {
   background: var(--bg-list-hover);
   outline: none;
+}
+
+.rp-context-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rp-context-menu-item.is-danger {
+  color: var(--accent-red);
+}
+
+.rp-context-menu-item.is-danger:hover,
+.rp-context-menu-item.is-danger:focus-visible {
+  background: var(--bg-list-hover);
 }
 
 .rp-context-menu-sep {

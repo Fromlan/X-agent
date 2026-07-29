@@ -3,12 +3,14 @@ import {
   normalizeProjectKey,
   projectDisplayName,
   filterVisibleProjectGroups,
+  joinProjectAbs,
 } from "@shared/project-path";
 
 export {
   normalizeProjectKey,
   projectDisplayName,
   filterVisibleProjectGroups,
+  joinProjectAbs,
 } from "@shared/project-path";
 
 export interface ProjectSessionGroup {

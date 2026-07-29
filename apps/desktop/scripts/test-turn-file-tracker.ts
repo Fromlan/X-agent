@@ -260,6 +260,75 @@ try {
   assert(rep.restored.includes(linkRel), "symlink restored");
   assert(lstatSync(linkAbs).isSymbolicLink(), "is symlink again");
 
+  // Production order: scan while abandoned tools are still on the branch,
+  // then restorePaths after a successful navigate (scan alone is read-only).
+  const preNav = new TurnFileTracker();
+  preNav.setCwd(root);
+  preNav.setActiveUserEntryId("u-pre");
+  const preFile = join(root, "pre.txt");
+  writeFileSync(preFile, "before", "utf8");
+  preNav.captureBeforeTool("write", { path: "pre.txt" });
+  writeFileSync(preFile, "after", "utf8");
+  const smPre = {
+    getBranch: () => [
+      {
+        type: "message",
+        id: "u-pre",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "x" }],
+        },
+      },
+      {
+        type: "message",
+        id: "a-pre",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "t-pre",
+              name: "write",
+              arguments: { path: "pre.txt" },
+            },
+          ],
+        },
+      },
+    ],
+    getEntry: () => undefined,
+    appendCustomEntry: () => "c",
+  };
+  const scanned = preNav.scanSegmentSince(smPre, "u-pre");
+  assert(scanned.mutationPaths.includes("pre.txt"), "pre-nav scan paths");
+  // Simulate post-nav branch: leaf is the target user only.
+  const smPostNav = {
+    getBranch: () => [
+      {
+        type: "message",
+        id: "u-pre",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "x" }],
+        },
+      },
+    ],
+    getEntry: () => undefined,
+    appendCustomEntry: () => "c",
+  };
+  const emptyAfterNav = preNav.scanSegmentSince(smPostNav, "u-pre");
+  assert(
+    emptyAfterNav.mutationPaths.length === 0,
+    "post-nav scan must not see abandoned tools",
+  );
+  const reportPre = preNav.restorePaths(
+    scanned.mutationPaths,
+    scanned.userEntryIds,
+  );
+  assert(reportPre.restored.includes("pre.txt"), "restore from pre-nav scan");
+  assert(readFileSync(preFile, "utf8") === "before", "pre-nav content");
+  preNav.dropBaselinesForTurns(scanned.userEntryIds);
+  assert(!preNav.hasBaseline("pre.txt", "u-pre"), "baselines dropped after");
+
   console.log("turn-file-tracker ok");
 } finally {
   rmSync(root, { recursive: true, force: true });
