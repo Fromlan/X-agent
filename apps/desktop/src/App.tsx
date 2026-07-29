@@ -209,43 +209,49 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const p = await window.xAgent.getPrefs();
-      if (cancelled) return;
-      setPrefs(p);
-      applyTheme(p.themeId, p.colorMode);
-      setBash(await window.xAgent.checkBash());
-      setAuth(await window.xAgent.checkAuth());
-      setPiCli(await window.xAgent.checkPiCli());
-      if (cancelled) return;
-      await refreshModels();
-      if (cancelled) return;
-      await refreshSessions();
-      if (cancelled) return;
+      try {
+        const p = await window.xAgent.getPrefs();
+        if (cancelled) return;
+        setPrefs(p);
+        applyTheme(p.themeId, p.colorMode);
+        setBash(await window.xAgent.checkBash());
+        setAuth(await window.xAgent.checkAuth());
+        setPiCli(await window.xAgent.checkPiCli());
+        if (cancelled) return;
+        await refreshModels();
+        if (cancelled) return;
+        await refreshSessions();
+        if (cancelled) return;
 
-      let restored = false;
-      if (p.lastSessionPath) {
-        const result = await window.xAgent.resumeSession(p.lastSessionPath);
-        if (cancelled) return;
-        if (result.ok) {
-          setCwd(result.cwd);
-          setSessionId(result.sessionId);
-          restored = true;
-          if (result.warning) setError(result.warning);
+        let restored = false;
+        if (p.lastSessionPath) {
+          const result = await window.xAgent.resumeSession(p.lastSessionPath);
+          if (cancelled) return;
+          if (result.ok) {
+            setCwd(result.cwd);
+            setSessionId(result.sessionId);
+            restored = true;
+            if (result.warning) setError(result.warning);
+          }
+        }
+        if (!restored && p.lastProjectPath) {
+          const result = await window.xAgent.openProject(p.lastProjectPath);
+          if (cancelled) return;
+          if (result.ok) {
+            setCwd(result.cwd);
+            setSessionId(result.sessionId);
+            if (result.warning) setError(result.warning);
+          } else if (result.error && result.error !== "已取消") {
+            setError(result.error);
+            await syncFromHost();
+          }
+        }
+        await refreshSessions();
+      } finally {
+        if (!cancelled) {
+          void window.xAgent.notifyAppReady();
         }
       }
-      if (!restored && p.lastProjectPath) {
-        const result = await window.xAgent.openProject(p.lastProjectPath);
-        if (cancelled) return;
-        if (result.ok) {
-          setCwd(result.cwd);
-          setSessionId(result.sessionId);
-          if (result.warning) setError(result.warning);
-        } else if (result.error && result.error !== "已取消") {
-          setError(result.error);
-          await syncFromHost();
-        }
-      }
-      await refreshSessions();
     })();
 
     return () => {
