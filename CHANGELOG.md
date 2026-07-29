@@ -8,6 +8,23 @@
 
 ## Unreleased
 
+## 0.3.0
+
+### 功能
+
+- **主题化下拉**：自定义 `SelectMenu` 替换原生 `<select>`（顶栏模型 / Thinking、设置内外观与 Godot / 供应商等），下拉面板跟随主题 token
+- **发版 minor 汇总**：发布 `0.3.0` 等线起点时，GitHub Release 自动附带上一线（`0.2.0`…`0.2.x`）小版本说明汇总
+
+### 改进
+
+- **聊天输入**：一体化 composer 壳（输入 + 发送 / 中止），焦点环包住整块
+- **输入框**：全局单行 pill、只读淡化、多行统一圆角与焦点环；Shell 路径等宽
+- **设置提示**：供应商 / 通用 / Godot / 插件 / 用量反馈可关闭；成功约 4.5s 自动消失；切页签与关窗清空，避免跨页粘滞
+
+### 开发
+
+- `extract-changelog` / `prepare-release` 支持上一 minor 线汇总；新增 `npm run release:test-changelog`
+
 ## 0.2.6
 
 ### 改进
