@@ -33,6 +33,8 @@ npm run desktop:dist           # electron-builder（Windows）
 npm run desktop:reset-tutorial # 重置教程环境
 npm run release:prepare -- x.y.z
 npm run release:notes -- x.y.z
+# minor 线起点（如 0.3.0）的 notes 会附带上一线 0.2.x 汇总；加 --no-aggregate 可关闭
+npm run release:test-changelog # 可选：验证 CHANGELOG 抽取 / 汇总
 ```
 
 `npm test`（在 `apps/desktop`）串联：

@@ -13,6 +13,8 @@ import type {
   PluginKind,
   PluginScope,
 } from "@shared/ipc";
+import { SelectMenu } from "./SelectMenu";
+import { SettingsNotice, useAutoClearNotice } from "./SettingsNotice";
 
 interface Props {
   cwd: string | null;
@@ -55,6 +57,8 @@ export function PluginsPage({ cwd }: Props) {
 
   const dirty = content !== baseline;
   const isPackageTab = kind === "package";
+
+  useAutoClearNotice(message, () => setMessage(null), 4500, !error);
 
   const filtered = useMemo(() => {
     if (isPackageTab) return [];
@@ -286,7 +290,11 @@ export function PluginsPage({ cwd }: Props) {
             key={tab.kind}
             type="button"
             className={`plugins-tab${kind === tab.kind ? " active" : ""}`}
-            onClick={() => setKind(tab.kind)}
+            onClick={() => {
+              setKind(tab.kind);
+              setMessage(null);
+              setError(null);
+            }}
           >
             {tab.label}
           </button>
@@ -320,9 +328,14 @@ export function PluginsPage({ cwd }: Props) {
       </div>
 
       {(message || error) && (
-        <div className={`banner ${error ? "warn" : ""}`}>
-          {error ?? message}
-        </div>
+        <SettingsNotice
+          text={(error ?? message)!}
+          tone={error ? "error" : "warn"}
+          onDismiss={() => {
+            setMessage(null);
+            setError(null);
+          }}
+        />
       )}
 
       <div className="plugins-body">
@@ -576,20 +589,23 @@ export function PluginsPage({ cwd }: Props) {
                   autoFocus
                 />
               </label>
-              <label className="field block-field">
+              <div className="field block-field">
                 作用域
-                <select
+                <SelectMenu
+                  variant="block"
                   value={createScope}
-                  onChange={(e) =>
-                    setCreateScope(e.target.value as PluginScope)
-                  }
-                >
-                  <option value="global">全局 ~/.pi/agent</option>
-                  <option value="project" disabled={!cwd}>
-                    项目 .pi{!cwd ? "（需先打开项目）" : ""}
-                  </option>
-                </select>
-              </label>
+                  options={[
+                    { value: "global", label: "全局 ~/.pi/agent" },
+                    {
+                      value: "project",
+                      label: `项目 .pi${!cwd ? "（需先打开项目）" : ""}`,
+                      disabled: !cwd,
+                    },
+                  ]}
+                  onChange={(v) => setCreateScope(v as PluginScope)}
+                  aria-label="作用域"
+                />
+              </div>
               <p className="modal-hint">
                 名称：1–64 位小写字母、数字、连字符（不能首尾为连字符）
               </p>
