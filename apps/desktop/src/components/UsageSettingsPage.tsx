@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
+import {
+  cacheHitRatio,
+  formatCacheHitRatio,
+} from "@shared/cache-hit";
 import type { UsageSummary } from "@shared/ipc";
 
 function formatTokens(n: number): string {
@@ -98,6 +102,12 @@ export function UsageSettingsPage({ active }: Props) {
 
   const hasDays = Boolean(summary && summary.days.length > 0);
   const hasModels = Boolean(summary && summary.byModel.length > 0);
+  const totalsHitRatio = summary
+    ? cacheHitRatio({
+        input: summary.totals.tokens.input,
+        cacheRead: summary.totals.tokens.cacheRead,
+      })
+    : null;
 
   return (
     <section className="settings-page usage-page">
@@ -131,6 +141,12 @@ export function UsageSettingsPage({ active }: Props) {
           <span className="usage-hero-label">Tokens</span>
           <span className="usage-hero-value">
             {summary ? formatTokens(summary.totals.tokens.total) : "—"}
+          </span>
+        </div>
+        <div className="usage-hero-card">
+          <span className="usage-hero-label">缓存命中</span>
+          <span className="usage-hero-value">
+            {summary ? formatCacheHitRatio(totalsHitRatio) : "—"}
           </span>
         </div>
         <div className="usage-hero-card">
@@ -172,6 +188,7 @@ export function UsageSettingsPage({ active }: Props) {
                     <th>日期</th>
                     <th className="is-num">轮次</th>
                     <th className="is-num">Tokens</th>
+                    <th className="is-num">命中率</th>
                     <th className="is-num">费用</th>
                   </tr>
                 </thead>
@@ -182,6 +199,14 @@ export function UsageSettingsPage({ active }: Props) {
                       <td className="is-num">{day.turns}</td>
                       <td className="is-num">
                         {formatTokens(day.tokens.total)}
+                      </td>
+                      <td className="is-num">
+                        {formatCacheHitRatio(
+                          cacheHitRatio({
+                            input: day.tokens.input,
+                            cacheRead: day.tokens.cacheRead,
+                          }),
+                        )}
                       </td>
                       <td className="is-num">{formatCost(day.cost)}</td>
                     </tr>
@@ -206,6 +231,7 @@ export function UsageSettingsPage({ active }: Props) {
                     <th>模型</th>
                     <th className="is-num">轮次</th>
                     <th className="is-num">Tokens</th>
+                    <th className="is-num">命中率</th>
                     <th className="is-num">费用</th>
                   </tr>
                 </thead>
@@ -227,6 +253,14 @@ export function UsageSettingsPage({ active }: Props) {
                         <td className="is-num">{row.turns}</td>
                         <td className="is-num">
                           {formatTokens(row.tokens.total)}
+                        </td>
+                        <td className="is-num">
+                          {formatCacheHitRatio(
+                            cacheHitRatio({
+                              input: row.tokens.input,
+                              cacheRead: row.tokens.cacheRead,
+                            }),
+                          )}
                         </td>
                         <td className="is-num">{formatCost(row.cost)}</td>
                       </tr>

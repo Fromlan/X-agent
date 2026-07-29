@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   activateProviderProfile,
+  deepseekProxyModelExtras,
   deleteProviderProfile,
   getProviderProfile,
   importExistingProviderProfiles,
+  isPiAutoDetectedDeepSeekEndpoint,
   listProviderPresets,
   listProviderProfiles,
+  looksLikeDeepSeekModelId,
   type ProviderPaths,
   upsertProviderProfile,
 } from "../electron/agent/provider-store";
@@ -377,6 +380,147 @@ try {
   rmSync(nsRoot, { recursive: true, force: true });
 
   rmSync(importRoot, { recursive: true, force: true });
+
+  // —— 代理 DeepSeek：models.json 应写入 deepseek compat ——
+  assert(looksLikeDeepSeekModelId("deepseek-ai/DeepSeek-V3"), "looksLike V3");
+  assert(!looksLikeDeepSeekModelId("Qwen/Qwen3"), "not qwen");
+  assert(
+    isPiAutoDetectedDeepSeekEndpoint("deepseek", "https://api.deepseek.com"),
+    "official deepseek auto",
+  );
+  assert(
+    !isPiAutoDetectedDeepSeekEndpoint(
+      "siliconflow",
+      "https://api.siliconflow.cn/v1",
+    ),
+    "siliconflow not auto",
+  );
+  assert(
+    deepseekProxyModelExtras("deepseek-ai/DeepSeek-V3")?.compat
+      .thinkingFormat === "deepseek",
+    "proxy extras thinkingFormat",
+  );
+
+  const proxyRoot = mkdtempSync(join(tmpdir(), "alpha-providers-proxy-ds-"));
+  const proxyPaths: ProviderPaths = {
+    agentDir: proxyRoot,
+    storePath: join(proxyRoot, "x-agent-providers.json"),
+    authPath: join(proxyRoot, "auth.json"),
+    modelsPath: join(proxyRoot, "models.json"),
+  };
+  const proxyCreated = upsertProviderProfile(
+    {
+      name: "SF",
+      providerId: "siliconflow",
+      api: "openai-completions",
+      baseUrl: "https://api.siliconflow.cn/v1",
+      apiKey: "sk-sf-test",
+      models: [
+        { id: "deepseek-ai/DeepSeek-V3", name: "DeepSeek V3" },
+        { id: "Qwen/Qwen3-235B-A22B", name: "Qwen3" },
+      ],
+    },
+    proxyPaths,
+  );
+  assert(proxyCreated.ok && proxyCreated.profile, "proxy profile");
+  assert(
+    activateProviderProfile(proxyCreated.profile!.id, proxyPaths, {
+      updatePrefs: false,
+    }).ok,
+    "activate proxy",
+  );
+  const proxyModels = JSON.parse(readFileSync(proxyPaths.modelsPath, "utf8")) as {
+    providers: Record<
+      string,
+      {
+        models: Array<{
+          id: string;
+          reasoning?: boolean;
+          compat?: { thinkingFormat?: string };
+        }>;
+      }
+    >;
+  };
+  const sfModels = proxyModels.providers["siliconflow"]?.models ?? [];
+  const dsEntry = sfModels.find((m) => m.id === "deepseek-ai/DeepSeek-V3");
+  const qwenEntry = sfModels.find((m) => m.id === "Qwen/Qwen3-235B-A22B");
+  assert(dsEntry?.reasoning === true, "proxy deepseek reasoning");
+  assert(
+    dsEntry?.compat?.thinkingFormat === "deepseek",
+    "proxy deepseek compat",
+  );
+  assert(
+    (dsEntry as { contextWindow?: number } | undefined)?.contextWindow ===
+      128_000,
+    "proxy deepseek contextWindow V3",
+  );
+  assert(qwenEntry?.compat == null, "qwen without deepseek compat");
+
+  // DeepSeek V4 preset activate should write 1M contextWindow
+  const v4 = upsertProviderProfile(
+    {
+      name: "DS V4",
+      providerId: "deepseek",
+      api: "openai-completions",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "sk-ds-v4",
+      models: [{ id: "deepseek-v4-flash", name: "Flash" }],
+    },
+    proxyPaths,
+  );
+  assert(v4.ok && v4.profile, "v4 profile");
+  assert(
+    v4.profile!.models[0]?.contextWindow === 1_000_000,
+    "upsert enriches v4 context",
+  );
+  assert(
+    activateProviderProfile(v4.profile!.id, proxyPaths, {
+      updatePrefs: false,
+    }).ok,
+    "activate v4",
+  );
+  const v4Models = JSON.parse(readFileSync(proxyPaths.modelsPath, "utf8")) as {
+    providers: Record<
+      string,
+      { models: Array<{ id: string; contextWindow?: number }> }
+    >;
+  };
+  assert(
+    v4Models.providers["deepseek"]?.models?.[0]?.contextWindow === 1_000_000,
+    "models.json contextWindow for v4",
+  );
+
+  // 官方 deepseek.com：依赖 Pi 自动检测，不重复写 compat
+  const official = upsertProviderProfile(
+    {
+      name: "DS Official",
+      providerId: "deepseek",
+      api: "openai-completions",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "sk-ds-official",
+      models: [{ id: "deepseek-v4-flash", name: "Flash" }],
+    },
+    proxyPaths,
+  );
+  assert(official.ok && official.profile, "official profile");
+  assert(
+    activateProviderProfile(official.profile!.id, proxyPaths, {
+      updatePrefs: false,
+    }).ok,
+    "activate official",
+  );
+  const officialModels = JSON.parse(
+    readFileSync(proxyPaths.modelsPath, "utf8"),
+  ) as {
+    providers: Record<
+      string,
+      { models: Array<{ id: string; compat?: unknown }> }
+    >;
+  };
+  const officialEntry = officialModels.providers["deepseek"]?.models?.[0];
+  assert(officialEntry?.compat == null, "official deepseek skips written compat");
+
+  rmSync(proxyRoot, { recursive: true, force: true });
 
   console.log("test-provider-store: ok");
 } finally {

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { Loader2, Minimize2 } from "lucide-react";
+import {
+  cacheHitRatio,
+  formatCacheHitRatio,
+} from "@shared/cache-hit";
 import type { ContextSegmentId, SessionUsageSnapshot } from "@shared/ipc";
 
 function formatTokens(n: number | null | undefined): string {
@@ -62,11 +66,21 @@ export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
   const lastTurn = usage?.lastTurn ?? null;
   const turnInput = lastTurn?.tokens.input ?? 0;
   const turnOutput = lastTurn?.tokens.output ?? 0;
-  const turnCache =
-    (lastTurn?.tokens.cacheRead ?? 0) + (lastTurn?.tokens.cacheWrite ?? 0);
+  const turnCacheRead = lastTurn?.tokens.cacheRead ?? 0;
+  const turnCacheWrite = lastTurn?.tokens.cacheWrite ?? 0;
+  const turnCache = turnCacheRead + turnCacheWrite;
+  const turnHitRatio = lastTurn
+    ? cacheHitRatio({ input: turnInput, cacheRead: turnCacheRead })
+    : null;
   const turnTotal = lastTurn
     ? lastTurn.tokens.total || turnInput + turnOutput + turnCache
     : 0;
+  const sessionHitRatio = usage
+    ? cacheHitRatio({
+        input: usage.tokens.input,
+        cacheRead: usage.tokens.cacheRead,
+      })
+    : null;
 
   const onCompact = async () => {
     setError(null);
@@ -219,7 +233,19 @@ export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
               <div className="rp-context-metric">
                 <span className="rp-context-metric-label">Cache</span>
                 <span className="rp-context-metric-value">
-                  {formatTokens(turnCache)}
+                  {formatTokens(turnCacheRead)}
+                  {turnCacheWrite > 0 && (
+                    <span className="rp-context-metric-soft">
+                      {" "}
+                      +{formatTokens(turnCacheWrite)}w
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="rp-context-metric">
+                <span className="rp-context-metric-label">命中率</span>
+                <span className="rp-context-metric-value">
+                  {formatCacheHitRatio(turnHitRatio)}
                 </span>
               </div>
               <div className="rp-context-metric">
@@ -256,9 +282,19 @@ export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
             <div className="rp-context-metric">
               <span className="rp-context-metric-label">Cache</span>
               <span className="rp-context-metric-value">
-                {formatTokens(
-                  usage.tokens.cacheRead + usage.tokens.cacheWrite,
+                {formatTokens(usage.tokens.cacheRead)}
+                {usage.tokens.cacheWrite > 0 && (
+                  <span className="rp-context-metric-soft">
+                    {" "}
+                    +{formatTokens(usage.tokens.cacheWrite)}w
+                  </span>
                 )}
+              </span>
+            </div>
+            <div className="rp-context-metric">
+              <span className="rp-context-metric-label">命中率</span>
+              <span className="rp-context-metric-value">
+                {formatCacheHitRatio(sessionHitRatio)}
               </span>
             </div>
             <div className="rp-context-metric">
@@ -288,7 +324,9 @@ export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
           <p className="rp-context-empty">暂无用量数据</p>
         )}
         <p className="rp-context-footnote">
-          费用依赖模型费率；自定义供应商未配置时多为 $0
+          命中率 = cacheRead / (input + cacheRead)。改工具白名单、压缩、撤回或中途
+          换模型/Thinking 会重置前缀缓存。费用依赖模型费率；自定义供应商未配置时多为
+          $0
         </p>
       </section>
 
