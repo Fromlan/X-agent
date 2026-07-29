@@ -17,6 +17,8 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { SelectMenu } from "./SelectMenu";
+import { SettingsNotice, useAutoClearNotice } from "./SettingsNotice";
 import {
   AVAILABLE_TOOLS,
   GODOT_DOCS_PRESET_BRANCHES,
@@ -261,6 +263,22 @@ export function SettingsPanel({
   useEffect(() => {
     if (open && initialTab) setTab(initialTab);
   }, [open, initialTab]);
+
+  useEffect(() => {
+    if (open) return;
+    setError(null);
+    setMessage(null);
+    setGeneralMsg(null);
+    setAuthHint(null);
+    setRpcMsg(null);
+    setDocsMsg(null);
+  }, [open]);
+
+  useAutoClearNotice(message, () => setMessage(null), 4500, !error);
+  useAutoClearNotice(generalMsg, () => setGeneralMsg(null));
+  useAutoClearNotice(authHint, () => setAuthHint(null));
+  useAutoClearNotice(docsMsg, () => setDocsMsg(null));
+  // RPC payloads are often JSON to inspect — dismiss manually / on tab leave only.
 
   const filteredPresets = useMemo(() => {
     const q = presetQuery.trim().toLowerCase();
@@ -599,6 +617,8 @@ export function SettingsPanel({
     setEditing(false);
     setShowPresetPicker(false);
     resetFetchPanel();
+    if (section === "editor") setDocsMsg(null);
+    if (section === "docs") setRpcMsg(null);
   };
 
   const rpcTone = rpcStatusLabel(rpc);
@@ -675,6 +695,12 @@ export function SettingsPanel({
                     setEditing(false);
                     setShowPresetPicker(false);
                     resetFetchPanel();
+                    setError(null);
+                    setMessage(null);
+                    setGeneralMsg(null);
+                    setAuthHint(null);
+                    setRpcMsg(null);
+                    setDocsMsg(null);
                   }}
                 >
                   <Icon size={14} />
@@ -691,9 +717,21 @@ export function SettingsPanel({
                 : "settings-content"
             }
           >
-            {(error || message) && (
+            {tab === "providers" && (error || message) && (
               <div className={`banner ${error ? "error" : "warn"}`}>
-                {error ?? message}
+                <span>{error ?? message}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm btn-icon"
+                  title="关闭提示"
+                  aria-label="关闭提示"
+                  onClick={() => {
+                    setError(null);
+                    setMessage(null);
+                  }}
+                >
+                  <X size={14} />
+                </button>
               </div>
             )}
 
@@ -706,41 +744,46 @@ export function SettingsPanel({
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">外观</h4>
-                  <label className="settings-row">
+                  <div className="settings-row">
                     <span className="settings-row-label">主题</span>
-                    <select
-                      className="settings-select"
+                    <SelectMenu
+                      variant="control"
                       value={prefs.themeId}
-                      onChange={async (e) => {
-                        const themeId = e.target.value as ThemeId;
-                        const next = await window.xAgent.setPrefs({ themeId });
-                        onPrefsChanged?.(next);
+                      options={THEME_IDS.map((id) => ({
+                        value: id,
+                        label: THEME_LABELS[id],
+                      }))}
+                      onChange={(v) => {
+                        void (async () => {
+                          const next = await window.xAgent.setPrefs({
+                            themeId: v as ThemeId,
+                          });
+                          onPrefsChanged?.(next);
+                        })();
                       }}
                       aria-label="主题"
-                    >
-                      {THEME_IDS.map((id) => (
-                        <option key={id} value={id}>
-                          {THEME_LABELS[id]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="settings-row">
+                    />
+                  </div>
+                  <div className="settings-row">
                     <span className="settings-row-label">外观模式</span>
-                    <select
-                      className="settings-select"
+                    <SelectMenu
+                      variant="control"
                       value={prefs.colorMode}
-                      onChange={async (e) => {
-                        const colorMode = e.target.value as ColorMode;
-                        const next = await window.xAgent.setPrefs({ colorMode });
-                        onPrefsChanged?.(next);
+                      options={[
+                        { value: "dark", label: "深色" },
+                        { value: "light", label: "浅色" },
+                      ]}
+                      onChange={(v) => {
+                        void (async () => {
+                          const next = await window.xAgent.setPrefs({
+                            colorMode: v as ColorMode,
+                          });
+                          onPrefsChanged?.(next);
+                        })();
                       }}
                       aria-label="外观模式"
-                    >
-                      <option value="dark">深色</option>
-                      <option value="light">浅色</option>
-                    </select>
-                  </label>
+                    />
+                  </div>
                 </div>
 
                 <div className="settings-block">
@@ -758,38 +801,38 @@ export function SettingsPanel({
                       }}
                     />
                   </label>
-                  <label className="settings-row">
+                  <div className="settings-row">
                     <span className="settings-row-label">默认 Thinking</span>
-                    <select
-                      className="settings-select"
+                    <SelectMenu
+                      variant="control"
                       value={prefs.thinkingLevel}
-                      onChange={async (e) => {
-                        const level = e.target.value as ThinkingLevel;
-                        const applied =
-                          await window.xAgent.setThinkingLevel(level);
-                        if (applied.ok) {
-                          const next = await window.xAgent.getPrefs();
+                      options={THINKING_LEVELS.map((level) => ({
+                        value: level,
+                        label: level,
+                      }))}
+                      onChange={(v) => {
+                        void (async () => {
+                          const level = v as ThinkingLevel;
+                          const applied =
+                            await window.xAgent.setThinkingLevel(level);
+                          if (applied.ok) {
+                            const next = await window.xAgent.getPrefs();
+                            onPrefsChanged?.(next);
+                            setGeneralMsg(null);
+                            return;
+                          }
+                          const next = await window.xAgent.setPrefs({
+                            thinkingLevel: level,
+                          });
                           onPrefsChanged?.(next);
-                          setGeneralMsg(null);
-                          return;
-                        }
-                        const next = await window.xAgent.setPrefs({
-                          thinkingLevel: level,
-                        });
-                        onPrefsChanged?.(next);
-                        setGeneralMsg(
-                          "已保存默认 Thinking；打开项目后对当前会话生效。",
-                        );
+                          setGeneralMsg(
+                            "已保存默认 Thinking；打开项目后对当前会话生效。",
+                          );
+                        })();
                       }}
                       aria-label="默认 Thinking 级别"
-                    >
-                      {THINKING_LEVELS.map((level) => (
-                        <option key={level} value={level}>
-                          {level}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    />
+                  </div>
                 </div>
 
                 <div className="settings-block">
@@ -801,7 +844,7 @@ export function SettingsPanel({
                   <div className="settings-inline-row">
                     <input
                       type="text"
-                      className="input"
+                      className="input input-mono"
                       readOnly
                       value={bash?.shellPath ?? ""}
                       placeholder="尚未配置 shellPath…"
@@ -809,7 +852,7 @@ export function SettingsPanel({
                     />
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
+                      className="btn btn-secondary btn-sm"
                       onClick={async () => {
                         const status = await window.xAgent.checkBash();
                         setBash(status);
@@ -898,7 +941,12 @@ export function SettingsPanel({
                       前往供应商
                     </button>
                   </div>
-                  {authHint && <p className="modal-hint">{authHint}</p>}
+                  {authHint && (
+                    <SettingsNotice
+                      text={authHint}
+                      onDismiss={() => setAuthHint(null)}
+                    />
+                  )}
                 </div>
 
                 <div className="settings-block">
@@ -987,7 +1035,17 @@ export function SettingsPanel({
                   )}
                 </div>
 
-                {generalMsg && <p className="modal-hint">{generalMsg}</p>}
+                {generalMsg && (
+                  <SettingsNotice
+                    text={generalMsg}
+                    tone={
+                      /失败|错误|无法|未找到|不可用/.test(generalMsg)
+                        ? "error"
+                        : "neutral"
+                    }
+                    onDismiss={() => setGeneralMsg(null)}
+                  />
+                )}
               </section>
             )}
 
@@ -1171,7 +1229,10 @@ export function SettingsPanel({
                         ? "settings-subtab active"
                         : "settings-subtab"
                     }
-                    onClick={() => setGodotSection("editor")}
+                    onClick={() => {
+                      setGodotSection("editor");
+                      setDocsMsg(null);
+                    }}
                   >
                     编辑器连接
                   </button>
@@ -1184,7 +1245,10 @@ export function SettingsPanel({
                         ? "settings-subtab active"
                         : "settings-subtab"
                     }
-                    onClick={() => setGodotSection("docs")}
+                    onClick={() => {
+                      setGodotSection("docs");
+                      setRpcMsg(null);
+                    }}
                   >
                     官方文档
                   </button>
@@ -1256,32 +1320,32 @@ export function SettingsPanel({
                         中启用 X-agent RPC（不要用 godot_agent）。
                       </p>
                 {(rpc?.clientInfos?.length ?? 0) > 0 && (
-                  <label className="field">
+                  <div className="field">
                     <span>活动编辑器客户端</span>
-                    <select
-                      className="select"
+                    <SelectMenu
+                      variant="control"
                       value={rpc?.activeClientId ?? ""}
-                      onChange={async (e) => {
-                        const id = e.target.value || null;
-                        const res = await window.xAgent.godotRpcSetActiveClient(
-                          id,
-                        );
-                        setRpc(res.status);
-                        setRpcMsg(
-                          id
-                            ? `已切换活动客户端：${id.slice(0, 8)}…`
-                            : "已清除活动客户端（将使用首个连接）",
-                        );
+                      options={rpc!.clientInfos.map((c) => ({
+                        value: c.id,
+                        label: `${(c.projectPath || "unknown project").slice(-48)} · ${c.godotVersion ?? "?"} · ${c.id.slice(0, 8)}`,
+                      }))}
+                      onChange={(id) => {
+                        void (async () => {
+                          const res =
+                            await window.xAgent.godotRpcSetActiveClient(
+                              id || null,
+                            );
+                          setRpc(res.status);
+                          setRpcMsg(
+                            id
+                              ? `已切换活动客户端：${id.slice(0, 8)}…`
+                              : "已清除活动客户端（将使用首个连接）",
+                          );
+                        })();
                       }}
-                    >
-                      {rpc!.clientInfos.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {(c.projectPath || "unknown project").slice(-48)} ·{" "}
-                          {c.godotVersion ?? "?"} · {c.id.slice(0, 8)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      aria-label="活动编辑器客户端"
+                    />
+                  </div>
                 )}
                       <div className="settings-toolbar">
                         <button
@@ -1516,7 +1580,16 @@ export function SettingsPanel({
                     </div>
 
                     {rpcMsg && (
-                      <pre className="settings-result">{rpcMsg}</pre>
+                      <SettingsNotice
+                        text={rpcMsg}
+                        pre
+                        tone={
+                          /fail|error|失败|错误/i.test(rpcMsg)
+                            ? "error"
+                            : "neutral"
+                        }
+                        onDismiss={() => setRpcMsg(null)}
+                      />
                     )}
                   </>
                 )}
@@ -1534,52 +1607,55 @@ export function SettingsPanel({
                         下载 GitHub 源码 zip（需含 .rst，不要 HTML offline
                         包），导入后 Agent 工具 godot_docs_search 才能检索。
                       </p>
-                <label className="field">
+                <div className="field">
                   <span>文档版本分支</span>
-                  <select
-                    className="select"
+                  <SelectMenu
+                    variant="control"
                     value={
                       docsBranches.includes(prefs.godotDocsBranch)
                         ? prefs.godotDocsBranch
                         : "__custom__"
                     }
-                    onChange={async (e) => {
-                      const v = e.target.value;
-                      if (v === "__custom__") {
-                        const custom =
-                          docsCustomBranch.trim() || prefs.godotDocsBranch;
-                        const res = await window.xAgent.godotDocsSetBranch(
-                          custom,
-                        );
+                    options={[
+                      ...docsBranches.map((b) => ({
+                        value: b,
+                        label: branchLabel(b),
+                      })),
+                      { value: "__custom__", label: "自定义…" },
+                    ]}
+                    onChange={(v) => {
+                      void (async () => {
+                        if (v === "__custom__") {
+                          const custom =
+                            docsCustomBranch.trim() || prefs.godotDocsBranch;
+                          const res =
+                            await window.xAgent.godotDocsSetBranch(custom);
+                          if (res.status) setDocsStatus(res.status);
+                          if (res.ok) {
+                            const next = await window.xAgent.getPrefs();
+                            onPrefsChanged?.(next);
+                            setDocsMsg(
+                              `已选择自定义分支：${next.godotDocsBranch}`,
+                            );
+                          } else {
+                            setDocsMsg(res.error ?? "切换失败");
+                          }
+                          return;
+                        }
+                        const res = await window.xAgent.godotDocsSetBranch(v);
                         if (res.status) setDocsStatus(res.status);
                         if (res.ok) {
                           const next = await window.xAgent.getPrefs();
                           onPrefsChanged?.(next);
-                          setDocsMsg(`已选择自定义分支：${next.godotDocsBranch}`);
+                          setDocsMsg(`已选择文档版本：${v}`);
                         } else {
                           setDocsMsg(res.error ?? "切换失败");
                         }
-                        return;
-                      }
-                      const res = await window.xAgent.godotDocsSetBranch(v);
-                      if (res.status) setDocsStatus(res.status);
-                      if (res.ok) {
-                        const next = await window.xAgent.getPrefs();
-                        onPrefsChanged?.(next);
-                        setDocsMsg(`已选择文档版本：${v}`);
-                      } else {
-                        setDocsMsg(res.error ?? "切换失败");
-                      }
+                      })();
                     }}
-                  >
-                    {docsBranches.map((b) => (
-                      <option key={b} value={b}>
-                        {branchLabel(b)}
-                      </option>
-                    ))}
-                    <option value="__custom__">自定义…</option>
-                  </select>
-                </label>
+                    aria-label="文档版本分支"
+                  />
+                </div>
                 {!docsBranches.includes(prefs.godotDocsBranch) ||
                 docsCustomBranch ? (
                   <div className="settings-inline-row">
@@ -1729,7 +1805,15 @@ export function SettingsPanel({
                   </button>
                 </div>
                     </div>
-                    {docsMsg && <p className="modal-hint">{docsMsg}</p>}
+                    {docsMsg && (
+                      <SettingsNotice
+                        text={docsMsg}
+                        tone={
+                          /失败|错误|无法/.test(docsMsg) ? "error" : "neutral"
+                        }
+                        onDismiss={() => setDocsMsg(null)}
+                      />
+                    )}
                   </>
                 )}
               </section>
@@ -1943,24 +2027,24 @@ export function SettingsPanel({
                     placeholder="deepseek"
                   />
                 </label>
-                <label className="field block-field">
+                <div className="field block-field">
                   API 类型
-                  <select
+                  <SelectMenu
+                    variant="block"
                     value={form.api}
-                    onChange={(e) =>
+                    options={API_OPTIONS.map((o) => ({
+                      value: o.value,
+                      label: o.label,
+                    }))}
+                    onChange={(v) =>
                       setForm({
                         ...form,
-                        api: e.target.value as ProviderApiKind,
+                        api: v as ProviderApiKind,
                       })
                     }
-                  >
-                    {API_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    aria-label="API 类型"
+                  />
+                </div>
                 <label className="field block-field">
                   Base URL
                   <input

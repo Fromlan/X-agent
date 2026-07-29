@@ -63,43 +63,54 @@ export function ChatPanel(props: Props) {
       )}
 
       <div className="composer">
-        <textarea
-          value={props.input}
-          onChange={(e) => props.setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={
-            props.disabled
-              ? "请先打开项目…"
-              : props.editingEntryId
-                ? "正在编辑历史消息 — 请先确认或取消编辑"
-                : streaming
-                  ? "运行中：Enter 发送 steer，Shift+Enter 换行"
-                  : "输入消息，Enter 发送，Shift+Enter 换行"
-          }
-          disabled={props.disabled || Boolean(props.editingEntryId)}
-          rows={3}
-          aria-disabled={props.disabled || Boolean(props.editingEntryId)}
-        />
-        <div className="composer-actions">
-          {streaming && (
-            <button type="button" className="btn btn-danger" onClick={props.onAbort}>
-              <Square size={14} />
-              中止
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn-cta"
-            onClick={props.onSend}
-            disabled={
-              props.disabled ||
-              !props.input.trim() ||
-              Boolean(props.editingEntryId)
+        <div className="composer-shell">
+          <textarea
+            value={props.input}
+            onChange={(e) => props.setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={
+              props.disabled
+                ? "请先打开项目…"
+                : props.editingEntryId
+                  ? "正在编辑历史消息 — 请先确认或取消编辑"
+                  : streaming
+                    ? "运行中：Enter 发送 steer，Shift+Enter 换行"
+                    : "输入消息，Enter 发送，Shift+Enter 换行"
             }
-          >
-            <Send size={14} />
-            {streaming ? "Steer" : "发送"}
-          </button>
+            disabled={props.disabled || Boolean(props.editingEntryId)}
+            rows={2}
+            aria-disabled={props.disabled || Boolean(props.editingEntryId)}
+          />
+          <div className="composer-toolbar">
+            <span className="composer-hint" aria-hidden="true">
+              {streaming ? "Steer · Shift+Enter 换行" : "Enter 发送 · Shift+Enter 换行"}
+            </span>
+            <div className="composer-actions">
+              {streaming && (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={props.onAbort}
+                >
+                  <Square size={14} />
+                  中止
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-cta btn-sm composer-send"
+                onClick={props.onSend}
+                disabled={
+                  props.disabled ||
+                  !props.input.trim() ||
+                  Boolean(props.editingEntryId)
+                }
+              >
+                <Send size={14} />
+                {streaming ? "Steer" : "发送"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </section>

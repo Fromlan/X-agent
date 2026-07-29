@@ -14,6 +14,7 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { StatusIcon } from "./StatusIcon";
+import { SelectMenu } from "./SelectMenu";
 
 interface Props {
   cwd: string | null;
@@ -45,6 +46,17 @@ function statusLabel(status: AgentStatus): string {
 }
 
 export function TopBar(props: Props) {
+  const modelOptions =
+    props.models.length === 0
+      ? [{ value: "", label: "无可用模型", disabled: true }]
+      : props.models.map((m) => {
+          const key = `${m.provider}/${m.id}`;
+          return {
+            value: key,
+            label: `${m.name} (${m.provider})`,
+          };
+        });
+
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -80,41 +92,34 @@ export function TopBar(props: Props) {
       </div>
 
       <div className="topbar-right">
-        <label className="field" title="模型">
+        <div className="field" title="模型">
           <span className="field-label">模型</span>
-          <select
+          <SelectMenu
+            variant="pill"
             value={props.currentModelKey}
-            onChange={(e) => props.onModelChange(e.target.value)}
+            options={modelOptions}
+            onChange={props.onModelChange}
             disabled={!props.cwd || props.models.length === 0 || props.busy}
-          >
-            {props.models.length === 0 && <option value="">无可用模型</option>}
-            {props.models.map((m) => {
-              const key = `${m.provider}/${m.id}`;
-              return (
-                <option key={key} value={key}>
-                  {m.name} ({m.provider})
-                </option>
-              );
-            })}
-          </select>
-        </label>
+            aria-label="模型"
+            placeholder="选择模型"
+          />
+        </div>
 
-        <label className="field" title="Thinking">
+        <div className="field" title="Thinking">
           <span className="field-label">Thinking</span>
-          <select
+          <SelectMenu
+            variant="pill"
+            className="select-menu-compact"
             value={props.thinkingLevel}
-            onChange={(e) =>
-              props.onThinkingChange(e.target.value as ThinkingLevel)
-            }
+            options={props.thinkingLevels.map((level) => ({
+              value: level,
+              label: level,
+            }))}
+            onChange={(v) => props.onThinkingChange(v as ThinkingLevel)}
             disabled={!props.cwd || props.busy}
-          >
-            {props.thinkingLevels.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
+            aria-label="Thinking"
+          />
+        </div>
 
         <button
           type="button"
