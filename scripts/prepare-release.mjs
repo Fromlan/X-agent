@@ -13,7 +13,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractChangelogSection } from "./extract-changelog.mjs";
+import {
+  ensureChangelogSeriesRollup,
+  extractChangelogSection,
+} from "./extract-changelog.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -34,7 +37,13 @@ function main() {
     process.exit(2);
   }
 
-  const changelog = readFileSync(CHANGELOG, "utf8");
+  let changelog = readFileSync(CHANGELOG, "utf8");
+  const rolled = ensureChangelogSeriesRollup(changelog, version);
+  if (rolled.injected) {
+    changelog = rolled.markdown;
+    writeFileSync(CHANGELOG, changelog, "utf8");
+  }
+
   const section = extractChangelogSection(changelog, version);
   if (section === null) {
     console.error(
@@ -82,16 +91,21 @@ function main() {
   console.log(
     [
       `Prepared release v${version} (was ${prev}).`,
+      ...(rolled.injected
+        ? [`已把 ${prevLine} 累计说明写入 CHANGELOG "## ${version}"。`]
+        : []),
       "",
       "CHANGELOG excerpt:",
       section
         .split("\n")
+        .slice(0, 40)
         .map((l) => `  ${l}`)
         .join("\n"),
+      ...(section.split("\n").length > 40 ? ["  …"] : []),
       "",
       ...(prevLine
         ? [
-            `Note: v${version} 为小版本线起点；GitHub Release 正文将自动附带 ${prevLine} 各补丁版说明汇总。`,
+            `Note: v${version} 为小版本线起点；CHANGELOG / GitHub Release 含 ${prevLine} 各补丁汇总。`,
             `预览：npm run release:notes -- ${version}`,
             "",
           ]
