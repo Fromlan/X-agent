@@ -14,6 +14,21 @@
 
 ### 改进
 
+## 0.3.4
+
+### 功能
+
+- **Shadow Git 工作区撤回**：有本机 Git 时，每轮 prompt 前打独立检查点（`~/.pi/agent/x-agent/checkpoints/`，不写用户 `.git`）；撤回 / 编辑重发优先 `reset` 到该轮 pre，覆盖 write/edit/bash 等 cwd 内改动；无 Git 时仍降级为 write/edit 字节基线
+- **撤回确认**：展示还原模式（Shadow / 基线）、可还原路径与风险提示；Godot 仅对会改编辑器状态的工具告警
+
+### 修复
+
+- **检查点绑定时机**：Pi 在 `message_end` 之后才持久化用户消息；改为在 append 之后（`queueMicrotask` / `tool_execution_start`）绑定 active user 与 Shadow pre，避免基线与检查点绑到错误轮次导致「缺少 Shadow / 缺基线」
+
+### 改进
+
+- **测试**：`test-shadow-git`、`test-session-bind-timing`；文档补充撤回 / 检查点路径说明
+
 ## 0.3.3
 
 ### 变更

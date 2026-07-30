@@ -9,14 +9,21 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import type { FileRestoreReport, FileRestoreSkipReason } from "../../shared/ipc";
-import { GODOT_TOOLS } from "../../shared/ipc";
 import { resolveInsideCwd } from "./cwd-sandbox";
 
 export const FILE_BASELINE_CUSTOM_TYPE = "x-agent-file-baselines";
 export const MAX_BASELINE_BYTES = 2 * 1024 * 1024;
 
 const MUTATING_TOOLS = new Set(["write", "edit"]);
-const EDITOR_GODOT_TOOLS = new Set<string>(GODOT_TOOLS);
+/** Godot tools that change editor/runtime state (not read-only probes). */
+const MUTATING_GODOT_TOOLS = new Set<string>([
+  "godot_open_scene",
+  "godot_reload_scene",
+  "godot_run_scene",
+  "godot_run_main_scene",
+  "godot_import_resources",
+  "godot_stop_scene",
+]);
 
 export type SegmentScan = {
   mutationPaths: string[];
@@ -249,7 +256,7 @@ export class TurnFileTracker {
         for (const call of toolCallsFromAssistantContent(msg.content)) {
           const name = call.name;
           if (name === "bash") hasBash = true;
-          if (EDITOR_GODOT_TOOLS.has(name)) hasGodot = true;
+          if (MUTATING_GODOT_TOOLS.has(name)) hasGodot = true;
           if (MUTATING_TOOLS.has(name)) {
             const raw = pathFromToolArgs(call.args);
             if (!raw) continue;
@@ -315,7 +322,7 @@ export class TurnFileTracker {
       warnings.push("该段包含 bash，命令副作用无法保证还原。");
     }
     if (scan.hasGodot) {
-      warnings.push("该段包含 Godot 工具，编辑器状态无法还原。");
+      warnings.push("该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。");
     }
     if (unrestorablePaths.length > 0) {
       warnings.push(
@@ -430,7 +437,9 @@ export class TurnFileTracker {
     }
     if (scan.hasGodot) {
       report.skipped.push({ reason: "godot" });
-      report.warnings.push("该段包含 Godot 工具，编辑器状态无法还原。");
+      report.warnings.push(
+        "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
+      );
     }
     return { report, userEntryIds: scan.userEntryIds };
   }

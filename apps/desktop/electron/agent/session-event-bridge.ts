@@ -12,6 +12,7 @@ import {
 } from "./transcript-mapper";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import type { TurnFileTracker } from "./turn-file-tracker";
+import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
   serializeForDetail,
   turnUsageFromMessage,
@@ -32,6 +33,7 @@ export interface SessionEventBridgeDeps {
   emitHistoryReplace(): void;
   messageIdFrom(message: unknown): string;
   fileTracker: TurnFileTracker;
+  shadowCheckpoints: ShadowCheckpointTracker;
   toolDetails: Map<string, ToolDetailRecord>;
   /** Current bundle's session, or null if no project is open. */
   getSession(): AgentSession | null;
@@ -43,6 +45,32 @@ export interface SessionEventBridgeDeps {
   clearCompactionBaseline(): void;
   maybeAutoTitleSession(): Promise<void>;
   currentUserEntryId(): string | undefined;
+}
+
+/**
+ * Pi persists user messages on message_end *after* notifying listeners, so
+ * getLeafEntry() is still the previous user during message_start/message_end.
+ * Bind active turn only after append (microtask) or at tool_execution_start.
+ */
+function bindActiveUserTurn(deps: SessionEventBridgeDeps): string | undefined {
+  const entryId = deps.currentUserEntryId();
+  if (!entryId) return undefined;
+  if (deps.fileTracker.getActiveUserEntryId() !== entryId) {
+    deps.fileTracker.setActiveUserEntryId(entryId);
+    deps.shadowCheckpoints.bindPendingPre(entryId);
+    const sess = deps.getSession();
+    if (sess) {
+      deps.shadowCheckpoints.persistDirty(sess.sessionManager);
+    }
+  } else if (!deps.shadowCheckpoints.getCheckpoint(entryId)?.pre) {
+    // Same turn already active but pre not bound yet (pending SHA arrived late).
+    deps.shadowCheckpoints.bindPendingPre(entryId);
+    const sess = deps.getSession();
+    if (sess) {
+      deps.shadowCheckpoints.persistDirty(sess.sessionManager);
+    }
+  }
+  return entryId;
 }
 
 /** Subscribes to `session`'s Pi events and forwards them via `deps`. Returns the unsubscribe function. */
@@ -75,6 +103,15 @@ export function bridgeSessionEvents(
         break;
       case "turn_end": {
         const currentSession = deps.getSession();
+        // Persist may have landed after message_end; bind before post snapshot.
+        const activeUid =
+          bindActiveUserTurn(deps) ??
+          deps.fileTracker.getActiveUserEntryId();
+        if (currentSession && activeUid) {
+          void deps.shadowCheckpoints.capturePost(activeUid).then(() => {
+            deps.shadowCheckpoints.persistDirty(currentSession.sessionManager);
+          });
+        }
         if (currentSession) {
           deps.fileTracker.persistDirty(currentSession.sessionManager);
         }
@@ -90,8 +127,11 @@ export function bridgeSessionEvents(
           errorMessage?: string;
         };
         if (msg.role === "assistant") {
+          // Prefer already-bound id; fall back to leaf (user should be persisted by now).
           const userEntryId =
-            deps.fileTracker.getActiveUserEntryId() ?? undefined;
+            deps.fileTracker.getActiveUserEntryId() ??
+            bindActiveUserTurn(deps) ??
+            undefined;
           deps.emit({
             type: "assistant_start",
             messageId: deps.messageIdFrom(event.message),
@@ -100,15 +140,12 @@ export function bridgeSessionEvents(
         } else if (msg.role === "user") {
           const text = extractMessageText(event.message);
           if (text) {
-            const entryId = deps.currentUserEntryId();
-            if (entryId) {
-              deps.fileTracker.setActiveUserEntryId(entryId);
-            }
+            // Do NOT bind active turn here: sessionManager has not appended yet,
+            // so currentUserEntryId() is the previous user (or undefined).
             deps.emit({
               type: "user_message",
               text,
-              id: entryId ?? deps.messageIdFrom(event.message),
-              ...(entryId ? { entryId } : {}),
+              id: deps.messageIdFrom(event.message),
             });
           }
         }
@@ -138,7 +175,12 @@ export function bridgeSessionEvents(
           errorMessage?: string;
           usage?: unknown;
         };
-        if (msg.role === "assistant") {
+        if (msg.role === "user") {
+          // appendMessage runs after listeners return; bind on next microtask.
+          queueMicrotask(() => {
+            bindActiveUserTurn(deps);
+          });
+        } else if (msg.role === "assistant") {
           const isError =
             msg.stopReason === "error" || Boolean(msg.errorMessage);
           const isAborted = msg.stopReason === "aborted";
@@ -174,6 +216,8 @@ export function bridgeSessionEvents(
         break;
       }
       case "tool_execution_start": {
+        // User message is persisted by now; bind before capturing baselines.
+        bindActiveUserTurn(deps);
         deps.fileTracker.captureBeforeTool(event.toolName, event.args);
         const argsPack = serializeForDetail(event.args);
         deps.toolDetails.set(event.toolCallId, {
