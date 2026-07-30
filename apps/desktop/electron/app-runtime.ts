@@ -29,6 +29,7 @@ import {
 import { clearUsageSummary, getUsageSummary } from "./agent/usage-store";
 import type { ClientPrefs, PluginCreateInput } from "../shared/ipc";
 import { ALL_TOGGLEABLE_TOOLS } from "../shared/ipc";
+import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { registerSessionIpc } from "./ipc/register-session-ipc";
 import { registerProviderIpc } from "./ipc/register-provider-ipc";
 import { registerGodotIpc } from "./ipc/register-godot-ipc";
@@ -52,7 +53,7 @@ function registerIpc(
 ): void {
   const cwdOf = () => host.getStatus().cwd;
 
-  ipcMain.handle("openProject", async (_e, path?: string) => {
+  ipcMain.handle(IPC_CHANNELS.openProject, async (_e, path?: string) => {
     let projectPath = path;
     if (!projectPath) {
       const result = await dialog.showOpenDialog({
@@ -76,21 +77,32 @@ function registerIpc(
 
   registerSessionIpc(ipcMain, host);
 
-  ipcMain.handle("getPrefs", async () => loadPrefs());
-  ipcMain.handle("setPrefs", async (_e, patch: Partial<ClientPrefs>) => {
+  ipcMain.handle(IPC_CHANNELS.getPrefs, async () => loadPrefs());
+  ipcMain.handle(IPC_CHANNELS.setPrefs, async (_e, patch: Partial<ClientPrefs>) => {
     if (patch.tools) {
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
       await host.applyTools(patch.tools.filter((t) => allowed.has(t)));
       const { tools: _drop, ...rest } = patch;
-      return Object.keys(rest).length === 0 ? loadPrefs() : patchPrefs(rest);
+      if (Object.keys(rest).length === 0) {
+        return loadPrefs();
+      }
+      const next = patchPrefs(rest);
+      if (rest.updateSource !== undefined) {
+        updater.applyFeed(next.updateSource);
+      }
+      return next;
     }
-    return patchPrefs(patch);
+    const next = patchPrefs(patch);
+    if (patch.updateSource !== undefined) {
+      updater.applyFeed(next.updateSource);
+    }
+    return next;
   });
-  ipcMain.handle("checkBash", async () => checkBash());
-  ipcMain.handle("applyBashShellPath", async (_e, shellPath?: string) =>
+  ipcMain.handle(IPC_CHANNELS.checkBash, async () => checkBash());
+  ipcMain.handle(IPC_CHANNELS.applyBashShellPath, async (_e, shellPath?: string) =>
     applyBashShellPath(shellPath),
   );
-  ipcMain.handle("pickBashShell", async () => {
+  ipcMain.handle(IPC_CHANNELS.pickBashShell, async () => {
     const current = checkBash();
     const result = await dialog.showOpenDialog({
       title: "选择 bash 可执行文件",
@@ -109,79 +121,87 @@ function registerIpc(
     }
     return { ok: true, path: result.filePaths[0]! };
   });
-  ipcMain.handle("checkAuth", async () => checkAuth());
-  ipcMain.handle("checkPiCli", async () => checkPiCli());
-  ipcMain.handle("installPiCli", async () => installPiCli());
-  ipcMain.handle("listProjectDir", async (_e, relPath?: string) =>
+  ipcMain.handle(IPC_CHANNELS.checkAuth, async () => checkAuth());
+  ipcMain.handle(IPC_CHANNELS.checkPiCli, async () => checkPiCli());
+  ipcMain.handle(IPC_CHANNELS.installPiCli, async () => installPiCli());
+  ipcMain.handle(IPC_CHANNELS.listProjectDir, async (_e, relPath?: string) =>
     listProjectDir(cwdOf() ?? "", relPath ?? ""),
   );
-  ipcMain.handle("readProjectFile", async (_e, relPath: string) =>
+  ipcMain.handle(IPC_CHANNELS.readProjectFile, async (_e, relPath: string) =>
     readProjectFile(cwdOf() ?? "", relPath),
   );
-  ipcMain.handle("revealInFolder", async (_e, relPath: string) =>
-    revealProjectPath(cwdOf() ?? "", relPath),
-  );
+  ipcMain.handle(IPC_CHANNELS.revealInFolder, async (_e, relPath: string) => {
+    const result = revealProjectPath(cwdOf() ?? "", relPath);
+    if (result.ok && result.path) {
+      shell.showItemInFolder(result.path);
+    }
+    return result.ok ? { ok: true } : { ok: false, error: result.error };
+  });
 
   registerGodotIpc(ipcMain, host, rpc);
   registerProviderIpc(ipcMain, host);
 
-  ipcMain.handle("listPlugins", async (_e, cwd?: string | null) =>
+  ipcMain.handle(IPC_CHANNELS.listPlugins, async (_e, cwd?: string | null) =>
     listPlugins(cwd ?? cwdOf()),
   );
-  ipcMain.handle("listSessionSkills", async () => host.listSessionSkills());
-  ipcMain.handle("readPlugin", async (_e, path: string) =>
+  ipcMain.handle(IPC_CHANNELS.listSessionSkills, async () =>
+    host.listSessionSkills(),
+  );
+  ipcMain.handle(IPC_CHANNELS.readPlugin, async (_e, path: string) =>
     readPlugin(path, cwdOf()),
   );
-  ipcMain.handle("writePlugin", async (_e, path: string, content: string) => {
+  ipcMain.handle(IPC_CHANNELS.writePlugin, async (_e, path: string, content: string) => {
     const result = writePlugin(path, content, cwdOf());
     if (result.ok) await host.reloadResources();
     return result;
   });
-  ipcMain.handle("createPlugin", async (_e, input: PluginCreateInput) => {
+  ipcMain.handle(IPC_CHANNELS.createPlugin, async (_e, input: PluginCreateInput) => {
     const result = createPlugin({ ...input, cwd: input.cwd ?? cwdOf() });
     if (result.ok) await host.reloadResources();
     return result;
   });
-  ipcMain.handle("deletePlugin", async (_e, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.deletePlugin, async (_e, path: string) => {
     const result = deletePlugin(path, cwdOf());
     if (result.ok) await host.reloadResources();
     return result;
   });
-  ipcMain.handle("revealPlugin", async (_e, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.revealPlugin, async (_e, path: string) => {
     const result = revealPlugin(path, cwdOf());
     if (result.ok && result.path) shell.showItemInFolder(result.path);
     return result.ok ? { ok: true } : { ok: false, error: result.error };
   });
 
-  ipcMain.handle("listInstalledPackages", async () => listInstalledPackages());
-  ipcMain.handle("installPackage", async (_e, source: string) => {
+  ipcMain.handle(IPC_CHANNELS.listInstalledPackages, async () =>
+    listInstalledPackages(),
+  );
+  ipcMain.handle(IPC_CHANNELS.installPackage, async (_e, source: string) => {
     const result = await installPackage(source);
     if (result.ok) await host.reloadResources();
     return result;
   });
-  ipcMain.handle("uninstallPackage", async (_e, source: string) => {
+  ipcMain.handle(IPC_CHANNELS.uninstallPackage, async (_e, source: string) => {
     const result = await uninstallPackage(source);
     if (result.ok) await host.reloadResources();
     return result;
   });
-  ipcMain.handle("installGodotPiPackage", async () => {
+  ipcMain.handle(IPC_CHANNELS.installGodotPiPackage, async () => {
     const result = await installGodotPiPackage();
     if (result.ok) await host.reloadResources();
     return result;
   });
-  ipcMain.handle("openPiLogin", async () => openPiLogin());
-  ipcMain.handle("openExternalUrl", async (_e, url: string) =>
+  ipcMain.handle(IPC_CHANNELS.openPiLogin, async () => openPiLogin());
+  ipcMain.handle(IPC_CHANNELS.openExternalUrl, async (_e, url: string) =>
     hooks.openExternalHttpUrl(typeof url === "string" ? url : ""),
   );
-  ipcMain.handle("getUpdateStatus", async () => updater.getStatus());
-  ipcMain.handle("checkForUpdates", async () => updater.check());
-  ipcMain.handle("downloadUpdate", async () => updater.download());
-  ipcMain.handle("installUpdate", async () => updater.quitAndInstall());
-  ipcMain.handle("getUsageSummary", async (_e, options?: { days?: number }) =>
+  ipcMain.handle(IPC_CHANNELS.getUpdateStatus, async () => updater.getStatus());
+  ipcMain.handle(IPC_CHANNELS.checkForUpdates, async () => updater.check());
+  ipcMain.handle(IPC_CHANNELS.downloadUpdate, async () => updater.download());
+  ipcMain.handle(IPC_CHANNELS.installUpdate, async () => updater.quitAndInstall());
+  ipcMain.handle(IPC_CHANNELS.getUsageSummary, async (_e, options?: { days?: number }) =>
     getUsageSummary(options),
   );
-  ipcMain.handle("clearUsageSummary", async () => clearUsageSummary());
-  ipcMain.handle("appReady", async () => {
+  ipcMain.handle(IPC_CHANNELS.clearUsageSummary, async () => clearUsageSummary());
+  ipcMain.handle(IPC_CHANNELS.appReady, async () => {
     hooks.revealMainWindow();
     return { ok: true as const };
   });

@@ -11,6 +11,7 @@ import {
   ClientPrefs,
   DEFAULT_PREFS,
   normalizeThemePrefs,
+  normalizeUpdateSource,
 } from "../../shared/ipc";
 import { normalizeGodotDocsBranch } from "./godot-docs-cache";
 
@@ -27,6 +28,20 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
         (k): k is string => typeof k === "string" && k.trim().length > 0,
       )
     : [];
+  const dismissedReadyChecklistKeys = Array.isArray(
+    rest.dismissedReadyChecklistKeys,
+  )
+    ? rest.dismissedReadyChecklistKeys.filter(
+        (k): k is string => typeof k === "string" && k.trim().length > 0,
+      )
+    : [];
+  const dismissedGodotToolsNudgeKeys = Array.isArray(
+    rest.dismissedGodotToolsNudgeKeys,
+  )
+    ? rest.dismissedGodotToolsNudgeKeys.filter(
+        (k): k is string => typeof k === "string" && k.trim().length > 0,
+      )
+    : [];
   const { themeId, colorMode } = normalizeThemePrefs(raw);
   return {
     ...DEFAULT_PREFS,
@@ -34,11 +49,14 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     themeId,
     colorMode,
     hiddenProjectKeys,
+    dismissedReadyChecklistKeys,
+    dismissedGodotToolsNudgeKeys,
     godotDocsBranch: normalizeGodotDocsBranch(
       typeof rest.godotDocsBranch === "string"
         ? rest.godotDocsBranch
         : DEFAULT_PREFS.godotDocsBranch,
     ),
+    updateSource: normalizeUpdateSource(rest.updateSource),
   };
 }
 
@@ -154,6 +172,9 @@ export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
   const next = { ...loadPrefs(), ...patch };
   if (typeof patch.godotDocsBranch === "string") {
     next.godotDocsBranch = normalizeGodotDocsBranch(patch.godotDocsBranch);
+  }
+  if (patch.updateSource !== undefined) {
+    next.updateSource = normalizeUpdateSource(patch.updateSource);
   }
   return savePrefs(next);
 }

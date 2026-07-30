@@ -18,6 +18,7 @@ import {
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
 import { GODOT_RPC_DEFAULT_PORT, godotRpcTimeoutMs } from "../../shared/godot-rpc";
+import { IPC_CHANNELS } from "../../shared/ipc-channels";
 
 /** Godot RPC bridge + docs + editor launch IPC. */
 export function registerGodotIpc(
@@ -25,8 +26,8 @@ export function registerGodotIpc(
   sessionHost: SessionHost,
   godotRpc: GodotRpcBridge,
 ): void {
-  ipcMain.handle("godotRpcStatus", async () => godotRpc.getStatus());
-  ipcMain.handle("godotRpcStart", async () => {
+  ipcMain.handle(IPC_CHANNELS.godotRpcStatus, async () => godotRpc.getStatus());
+  ipcMain.handle(IPC_CHANNELS.godotRpcStart, async () => {
     try {
       return await godotRpc.start();
     } catch (err) {
@@ -40,17 +41,17 @@ export function registerGodotIpc(
       };
     }
   });
-  ipcMain.handle("godotRpcStop", async () => {
+  ipcMain.handle(IPC_CHANNELS.godotRpcStop, async () => {
     await godotRpc.stop();
     return { ok: true };
   });
-  ipcMain.handle("godotRpcPing", async () => {
+  ipcMain.handle(IPC_CHANNELS.godotRpcPing, async () => {
     const res = await godotRpc.request({ id: randomUUID(), method: "ping" });
     if (!res.ok) return { ok: false, error: res.error };
     return { ok: true, result: res.result };
   });
   ipcMain.handle(
-    "godotRpcRequest",
+    IPC_CHANNELS.godotRpcRequest,
     async (
       _e,
       call: GodotRpcCallDto,
@@ -62,12 +63,12 @@ export function registerGodotIpc(
       return { ok: true, result: res.result };
     },
   );
-  ipcMain.handle("godotRpcSetActiveClient", async (_e, clientId: string | null) => ({
+  ipcMain.handle(IPC_CHANNELS.godotRpcSetActiveClient, async (_e, clientId: string | null) => ({
     ok: godotRpc.setActiveClient(clientId),
     status: godotRpc.getStatus(),
   }));
 
-  ipcMain.handle("pickGodotEditor", async () => {
+  ipcMain.handle(IPC_CHANNELS.pickGodotEditor, async () => {
     const prefs = loadPrefs();
     const result = await dialog.showOpenDialog({
       title: "选择 Godot 引擎可执行文件",
@@ -92,7 +93,7 @@ export function registerGodotIpc(
     return { ok: true, path };
   });
 
-  ipcMain.handle("launchGodotEditor", async () => {
+  ipcMain.handle(IPC_CHANNELS.launchGodotEditor, async () => {
     const prefs = loadPrefs();
     const editor = prefs.godotEditorPath;
     if (!editor) {
@@ -145,7 +146,7 @@ export function registerGodotIpc(
     }
   });
 
-  ipcMain.handle("installGodotRpcAddon", async () => {
+  ipcMain.handle(IPC_CHANNELS.installGodotRpcAddon, async () => {
     const prefs = loadPrefs();
     const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
     if (!project) {
@@ -154,7 +155,7 @@ export function registerGodotIpc(
     return installGodotRpcAddon(project);
   });
 
-  ipcMain.handle("pickGodotScene", async () => {
+  ipcMain.handle(IPC_CHANNELS.pickGodotScene, async () => {
     const prefs = loadPrefs();
     const project =
       sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
@@ -185,12 +186,12 @@ export function registerGodotIpc(
     return { ok: true, path: abs };
   });
 
-  ipcMain.handle("godotDocsGetStatus", async () => {
+  ipcMain.handle(IPC_CHANNELS.godotDocsGetStatus, async () => {
     const prefs = loadPrefs();
     return getDocsStatus(prefs.godotDocsBranch);
   });
   ipcMain.handle(
-    "godotDocsListRemoteBranches",
+    IPC_CHANNELS.godotDocsListRemoteBranches,
     async (_e, force?: boolean) => {
       const listed = await listRemoteDocsBranches({ force: Boolean(force) });
       const prefs = loadPrefs();
@@ -200,12 +201,12 @@ export function registerGodotIpc(
       };
     },
   );
-  ipcMain.handle("godotDocsSetBranch", async (_e, branch: string) => {
+  ipcMain.handle(IPC_CHANNELS.godotDocsSetBranch, async (_e, branch: string) => {
     const next = normalizeGodotDocsBranch(branch);
     patchPrefs({ godotDocsBranch: next });
     return { ok: true, status: getDocsStatus(next) };
   });
-  ipcMain.handle("godotDocsOpenDownloadUrl", async (_e, branch?: string) => {
+  ipcMain.handle(IPC_CHANNELS.godotDocsOpenDownloadUrl, async (_e, branch?: string) => {
     const prefs = loadPrefs();
     const target = normalizeGodotDocsBranch(branch ?? prefs.godotDocsBranch);
     const url = getDocsDownloadZipUrl(target);
@@ -220,7 +221,7 @@ export function registerGodotIpc(
       };
     }
   });
-  ipcMain.handle("godotDocsImportZip", async (_e, branch?: string) => {
+  ipcMain.handle(IPC_CHANNELS.godotDocsImportZip, async (_e, branch?: string) => {
     const prefs = loadPrefs();
     const target = normalizeGodotDocsBranch(branch ?? prefs.godotDocsBranch);
     if (target !== prefs.godotDocsBranch) {
@@ -247,7 +248,7 @@ export function registerGodotIpc(
     }
     return { ok: true, status: getDocsStatus(target) };
   });
-  ipcMain.handle("godotDocsRemoveLocal", async (_e, branch?: string) => {
+  ipcMain.handle(IPC_CHANNELS.godotDocsRemoveLocal, async (_e, branch?: string) => {
     const prefs = loadPrefs();
     const target = normalizeGodotDocsBranch(branch ?? prefs.godotDocsBranch);
     const result = removeDocsBranch(target);

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Boxes,
-  CheckSquare,
   Check,
   ChartColumn,
   Download,
@@ -11,7 +10,6 @@ import {
   Plus,
   Puzzle,
   Settings2,
-  Square,
   Trash2,
   Wrench,
   X,
@@ -20,36 +18,29 @@ import type { LucideIcon } from "lucide-react";
 import { SelectMenu } from "./SelectMenu";
 import { SettingsNotice, useAutoClearNotice } from "./SettingsNotice";
 import {
-  AVAILABLE_TOOLS,
-  GODOT_DOCS_PRESET_BRANCHES,
-  GODOT_DOCS_TOOLS,
-  GODOT_TOOLS,
-  THEME_IDS,
-  THEME_LABELS,
-  type AppUpdateStatus,
   type BashCheckResult,
   type ClientPrefs,
-  type ColorMode,
   type FetchedProviderModel,
-  type GodotDocsStatusDto,
-  type GodotRpcCallDto,
-  type GodotRpcStatusDto,
   type ProviderApiKind,
   type ProviderModelEntry,
   type ProviderPreset,
   type ProviderProfileSummary,
   type ProviderUpsertInput,
-  type ThemeId,
-  type ThinkingLevel,
 } from "@shared/ipc";
-import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
 import {
   lookupKnownContextWindow,
   normalizePositiveInt,
   resolveModelContextWindow,
 } from "@shared/model-context";
+import { useConfirm } from "@/lib/app-confirm";
 import { PluginsPage } from "./PluginsPage";
 import { UsageSettingsPage } from "./UsageSettingsPage";
+import { GeneralSettingsPage } from "./settings/GeneralSettingsPage";
+import { ToolsSettingsPage } from "./settings/ToolsSettingsPage";
+import {
+  GodotSettingsPage,
+  type GodotSettingsSection,
+} from "./settings/GodotSettingsPage";
 
 type SettingsTab =
   | "general"
@@ -58,7 +49,6 @@ type SettingsTab =
   | "plugins"
   | "godot"
   | "usage";
-type GodotSettingsSection = "editor" | "docs";
 type PresetCategory = NonNullable<ProviderPreset["category"]> | "all";
 
 const PRESET_CATEGORY_TABS: { id: PresetCategory; label: string }[] = [
@@ -87,42 +77,6 @@ function presetCategoryLabel(category: ProviderPreset["category"]): string {
   }
 }
 
-function branchLabel(b: string): string {
-  if (b === "stable") return "stable（默认）";
-  if (b === "master") return "master（latest）";
-  return b;
-}
-
-function docsStatusLabel(status: GodotDocsStatusDto["status"] | undefined): {
-  text: string;
-  tone: "is-ok" | "is-warn" | "is-off";
-} {
-  if (status === "ready") return { text: "已导入", tone: "is-ok" };
-  if (status === "downloading") return { text: "导入中", tone: "is-warn" };
-  return { text: "未导入", tone: "is-off" };
-}
-
-function rpcStatusLabel(rpc: GodotRpcStatusDto | null): {
-  text: string;
-  tone: "is-ok" | "is-warn" | "is-off" | "is-error";
-} {
-  if (rpc?.error) return { text: "错误", tone: "is-error" };
-  if (!rpc?.running) return { text: "桥接未启动", tone: "is-off" };
-  if (rpc.clients > 0) {
-    return { text: `已连接 · ${rpc.clients}`, tone: "is-ok" };
-  }
-  return { text: "等待连接", tone: "is-warn" };
-}
-
-const THINKING_LEVELS: ThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
 
 interface Props {
   open: boolean;
@@ -137,6 +91,8 @@ interface Props {
   onBashChanged?: (bash: BashCheckResult) => void;
   /** When set, switch to this tab when the panel opens */
   initialTab?: SettingsTab;
+  /** When set with godot tab, select editor/docs sub-section. */
+  initialGodotSection?: GodotSettingsSection;
 }
 
 const API_OPTIONS: { value: ProviderApiKind; label: string }[] = [
@@ -167,21 +123,12 @@ export function SettingsPanel({
   onPrefsChanged,
   onBashChanged,
   initialTab,
+  initialGodotSection,
 }: Props) {
+  const confirm = useConfirm();
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? "providers");
   const [godotSection, setGodotSection] =
-    useState<GodotSettingsSection>("editor");
-  const [rpc, setRpc] = useState<GodotRpcStatusDto | null>(null);
-  const [rpcMsg, setRpcMsg] = useState<string | null>(null);
-  const [docsStatus, setDocsStatus] = useState<GodotDocsStatusDto | null>(null);
-  const [docsMsg, setDocsMsg] = useState<string | null>(null);
-  const [docsBusy, setDocsBusy] = useState(false);
-  const [docsBranches, setDocsBranches] = useState<string[]>([
-    ...GODOT_DOCS_PRESET_BRANCHES,
-  ]);
-  const [docsCustomBranch, setDocsCustomBranch] = useState("");
-  const [scenePath, setScenePath] = useState("res://");
-  const [importPaths, setImportPaths] = useState("res://");
+    useState<GodotSettingsSection>(initialGodotSection ?? "editor");
   const [profiles, setProfiles] = useState<ProviderProfileSummary[]>([]);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -198,14 +145,6 @@ export function SettingsPanel({
     () => new Set(),
   );
   const [showFetchPanel, setShowFetchPanel] = useState(false);
-  const [bash, setBash] = useState<BashCheckResult | null>(null);
-  const [generalMsg, setGeneralMsg] = useState<string | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(
-    null,
-  );
-  const [updateBusy, setUpdateBusy] = useState(false);
-  const [authHint, setAuthHint] = useState<string | null>(null);
-  const [piLoginBusy, setPiLoginBusy] = useState(false);
 
   const refreshProfiles = useCallback(async () => {
     setProfiles(await window.xAgent.listProviderProfiles());
@@ -220,43 +159,16 @@ export function SettingsPanel({
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [status, list, presetList, bashStatus, update, docs, remote] =
-        await Promise.all([
-          window.xAgent.godotRpcStatus(),
-          window.xAgent.listProviderProfiles(),
-          window.xAgent.listProviderPresets(),
-          window.xAgent.checkBash(),
-          window.xAgent.getUpdateStatus(),
-          window.xAgent.godotDocsGetStatus(),
-          window.xAgent.godotDocsListRemoteBranches(false),
-        ]);
+      const [list, presetList] = await Promise.all([
+        window.xAgent.listProviderProfiles(),
+        window.xAgent.listProviderPresets(),
+      ]);
       if (cancelled) return;
-      setRpc(status);
       setProfiles(list);
       setPresets(presetList);
-      setBash(bashStatus);
-      setUpdateStatus(update);
-      setDocsStatus(remote.status ?? docs);
-      const branches =
-        remote.branches.length > 0
-          ? remote.branches
-          : docs.remoteBranches.length > 0
-            ? docs.remoteBranches
-            : [...GODOT_DOCS_PRESET_BRANCHES];
-      setDocsBranches(branches);
-      if (docs.branch && !branches.includes(docs.branch)) {
-        setDocsCustomBranch(docs.branch);
-      }
-      if (!remote.ok && remote.error) {
-        setDocsMsg(`远程分支列表：${remote.error}`);
-      }
     })();
-    const unsub = window.xAgent.onUpdateStatus((status) => {
-      if (!cancelled) setUpdateStatus(status);
-    });
     return () => {
       cancelled = true;
-      unsub();
     };
   }, [open]);
 
@@ -265,19 +177,16 @@ export function SettingsPanel({
   }, [open, initialTab]);
 
   useEffect(() => {
+    if (open && initialGodotSection) setGodotSection(initialGodotSection);
+  }, [open, initialGodotSection]);
+
+  useEffect(() => {
     if (open) return;
     setError(null);
     setMessage(null);
-    setGeneralMsg(null);
-    setAuthHint(null);
-    setRpcMsg(null);
-    setDocsMsg(null);
   }, [open]);
 
   useAutoClearNotice(message, () => setMessage(null), 4500, !error);
-  useAutoClearNotice(generalMsg, () => setGeneralMsg(null));
-  useAutoClearNotice(authHint, () => setAuthHint(null));
-  useAutoClearNotice(docsMsg, () => setDocsMsg(null));
   // RPC payloads are often JSON to inspect — dismiss manually / on tab leave only.
 
   const filteredPresets = useMemo(() => {
@@ -300,20 +209,6 @@ export function SettingsPanel({
   }, [presets, presetCategory, presetQuery]);
 
   if (!open) return null;
-
-  const refreshRpc = async () => {
-    setRpc(await window.xAgent.godotRpcStatus());
-  };
-
-  const runRpc = async (call: GodotRpcCallDto) => {
-    const res = await window.xAgent.godotRpcRequest(call);
-    setRpcMsg(
-      res.ok
-        ? JSON.stringify(res.result, null, 2)
-        : res.error ?? "request failed",
-    );
-    await refreshRpc();
-  };
 
   const resetFetchPanel = () => {
     setShowFetchPanel(false);
@@ -557,7 +452,13 @@ export function SettingsPanel({
   };
 
   const remove = async (profile: ProviderProfileSummary) => {
-    if (!window.confirm(`删除订阅「${profile.name}」？`)) return;
+    const ok = await confirm({
+      title: "删除订阅",
+      message: `删除订阅「${profile.name}」？`,
+      confirmLabel: "删除",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {
@@ -617,36 +518,6 @@ export function SettingsPanel({
     setEditing(false);
     setShowPresetPicker(false);
     resetFetchPanel();
-    if (section === "editor") setDocsMsg(null);
-    if (section === "docs") setRpcMsg(null);
-  };
-
-  const rpcTone = rpcStatusLabel(rpc);
-  const docsTone = docsStatusLabel(docsStatus?.status);
-  const allBuiltinToolsEnabled = AVAILABLE_TOOLS.every((tool) =>
-    prefs.tools.includes(tool),
-  );
-  const allGodotEditorToolsEnabled = GODOT_TOOLS.every((tool) =>
-    prefs.tools.includes(tool),
-  );
-  const allGodotDocsToolsEnabled = GODOT_DOCS_TOOLS.every((tool) =>
-    prefs.tools.includes(tool),
-  );
-
-  const setToolGroupEnabled = async (
-    tools: readonly string[],
-    enabled: boolean,
-  ) => {
-    if (hasActiveSession) {
-      const ok = window.confirm(
-        "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
-      );
-      if (!ok) return;
-    }
-    const withoutGroup = prefs.tools.filter((tool) => !tools.includes(tool));
-    const nextTools = enabled ? [...withoutGroup, ...tools] : withoutGroup;
-    const next = await window.xAgent.setPrefs({ tools: nextTools });
-    onPrefsChanged?.(next);
   };
 
   const toggleFetchId = (id: string) => {
@@ -697,10 +568,6 @@ export function SettingsPanel({
                     resetFetchPanel();
                     setError(null);
                     setMessage(null);
-                    setGeneralMsg(null);
-                    setAuthHint(null);
-                    setRpcMsg(null);
-                    setDocsMsg(null);
                   }}
                 >
                   <Icon size={14} />
@@ -736,1087 +603,41 @@ export function SettingsPanel({
             )}
 
             {tab === "general" && (
-              <section className="settings-page">
-                <div className="settings-page-head">
-                  <h3>通用</h3>
-                  <p className="modal-hint">外观、对话、Shell、认证与更新</p>
-                </div>
-
-                <div className="settings-block">
-                  <h4 className="settings-block-title">外观</h4>
-                  <div className="settings-row">
-                    <span className="settings-row-label">主题</span>
-                    <SelectMenu
-                      variant="control"
-                      value={prefs.themeId}
-                      options={THEME_IDS.map((id) => ({
-                        value: id,
-                        label: THEME_LABELS[id],
-                      }))}
-                      onChange={(v) => {
-                        void (async () => {
-                          const next = await window.xAgent.setPrefs({
-                            themeId: v as ThemeId,
-                          });
-                          onPrefsChanged?.(next);
-                        })();
-                      }}
-                      aria-label="主题"
-                    />
-                  </div>
-                  <div className="settings-row">
-                    <span className="settings-row-label">外观模式</span>
-                    <SelectMenu
-                      variant="control"
-                      value={prefs.colorMode}
-                      options={[
-                        { value: "dark", label: "深色" },
-                        { value: "light", label: "浅色" },
-                      ]}
-                      onChange={(v) => {
-                        void (async () => {
-                          const next = await window.xAgent.setPrefs({
-                            colorMode: v as ColorMode,
-                          });
-                          onPrefsChanged?.(next);
-                        })();
-                      }}
-                      aria-label="外观模式"
-                    />
-                  </div>
-                </div>
-
-                <div className="settings-block">
-                  <h4 className="settings-block-title">对话</h4>
-                  <label className="settings-row settings-row-check">
-                    <span className="settings-row-label">显示思考过程</span>
-                    <input
-                      type="checkbox"
-                      checked={prefs.showThinking}
-                      onChange={async (e) => {
-                        const next = await window.xAgent.setPrefs({
-                          showThinking: e.target.checked,
-                        });
-                        onPrefsChanged?.(next);
-                      }}
-                    />
-                  </label>
-                  <div className="settings-row">
-                    <span className="settings-row-label">默认 Thinking</span>
-                    <SelectMenu
-                      variant="control"
-                      value={prefs.thinkingLevel}
-                      options={THINKING_LEVELS.map((level) => ({
-                        value: level,
-                        label: level,
-                      }))}
-                      onChange={(v) => {
-                        void (async () => {
-                          const level = v as ThinkingLevel;
-                          const applied =
-                            await window.xAgent.setThinkingLevel(level);
-                          if (applied.ok) {
-                            const next = await window.xAgent.getPrefs();
-                            onPrefsChanged?.(next);
-                            setGeneralMsg(null);
-                            return;
-                          }
-                          const next = await window.xAgent.setPrefs({
-                            thinkingLevel: level,
-                          });
-                          onPrefsChanged?.(next);
-                          setGeneralMsg(
-                            "已保存默认 Thinking；打开项目后对当前会话生效。",
-                          );
-                        })();
-                      }}
-                      aria-label="默认 Thinking 级别"
-                    />
-                  </div>
-                </div>
-
-                <div className="settings-block">
-                  <h4 className="settings-block-title">Shell</h4>
-                  <p className="modal-hint">
-                    Pi 的 bash 工具需要可用的 bash（Windows 上多为 Git
-                    Bash）。路径写入 ~/.pi/agent/settings.json。
-                  </p>
-                  <div className="settings-inline-row">
-                    <input
-                      type="text"
-                      className="input input-mono"
-                      readOnly
-                      value={bash?.shellPath ?? ""}
-                      placeholder="尚未配置 shellPath…"
-                      aria-label="当前 shellPath"
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={async () => {
-                        const status = await window.xAgent.checkBash();
-                        setBash(status);
-                        onBashChanged?.(status);
-                        setGeneralMsg(status.message);
-                      }}
-                    >
-                      检测
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={!bash?.suggestedShellPath}
-                      onClick={async () => {
-                        const status = await window.xAgent.applyBashShellPath(
-                          bash?.suggestedShellPath ?? undefined,
-                        );
-                        setBash(status);
-                        onBashChanged?.(status);
-                        setGeneralMsg(status.message);
-                      }}
-                    >
-                      写入建议路径
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={async () => {
-                        const picked = await window.xAgent.pickBashShell();
-                        if (picked.canceled || !picked.path) return;
-                        const status = await window.xAgent.applyBashShellPath(
-                          picked.path,
-                        );
-                        setBash(status);
-                        onBashChanged?.(status);
-                        setGeneralMsg(status.message);
-                      }}
-                    >
-                      浏览…
-                    </button>
-                  </div>
-                  {bash?.suggestedShellPath &&
-                    bash.suggestedShellPath !== bash.shellPath && (
-                      <p className="modal-hint">
-                        建议路径：{bash.suggestedShellPath}
-                      </p>
-                    )}
-                </div>
-
-                <div className="settings-block">
-                  <h4 className="settings-block-title">认证</h4>
-                  <p className="modal-hint">
-                    可用 Pi CLI 的 /login，或在「供应商」页配置 API Key。
-                  </p>
-                  <div className="settings-inline-row">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={piLoginBusy}
-                      onClick={async () => {
-                        setPiLoginBusy(true);
-                        setAuthHint(null);
-                        try {
-                          const result = await window.xAgent.openPiLogin();
-                          setAuthHint(
-                            result.hint ??
-                              (result.ok
-                                ? "已打开终端"
-                                : result.error ?? "无法打开 Pi 登录"),
-                          );
-                          if (!result.ok && result.error) {
-                            setGeneralMsg(result.error);
-                          }
-                        } finally {
-                          setPiLoginBusy(false);
-                        }
-                      }}
-                    >
-                      {piLoginBusy ? "打开中…" : "打开 Pi 登录"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => setTab("providers")}
-                    >
-                      前往供应商
-                    </button>
-                  </div>
-                  {authHint && (
-                    <SettingsNotice
-                      text={authHint}
-                      onDismiss={() => setAuthHint(null)}
-                    />
-                  )}
-                </div>
-
-                <div className="settings-block">
-                  <h4 className="settings-block-title">更新</h4>
-                  <p className="modal-hint">
-                    {updateStatus?.message ??
-                      "检查 GitHub Releases 上的新版本。"}
-                    {updateStatus?.version
-                      ? `（当前目标：${updateStatus.version}）`
-                      : ""}
-                    {typeof updateStatus?.progress === "number" &&
-                    updateStatus.downloading
-                      ? ` ${updateStatus.progress}%`
-                      : ""}
-                  </p>
-                  <div className="settings-inline-row">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={
-                        updateBusy ||
-                        updateStatus?.checking ||
-                        updateStatus?.downloading
-                      }
-                      onClick={async () => {
-                        setUpdateBusy(true);
-                        try {
-                          setUpdateStatus(
-                            await window.xAgent.checkForUpdates(),
-                          );
-                        } finally {
-                          setUpdateBusy(false);
-                        }
-                      }}
-                    >
-                      {updateStatus?.checking ? "检查中…" : "检查更新"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={
-                        updateBusy ||
-                        !updateStatus?.available ||
-                        updateStatus.downloaded ||
-                        updateStatus.downloading ||
-                        !updateStatus.supported
-                      }
-                      onClick={async () => {
-                        setUpdateBusy(true);
-                        try {
-                          setUpdateStatus(await window.xAgent.downloadUpdate());
-                        } finally {
-                          setUpdateBusy(false);
-                        }
-                      }}
-                    >
-                      {updateStatus?.downloading ? "下载中…" : "下载更新"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={
-                        updateBusy ||
-                        !updateStatus?.downloaded ||
-                        !updateStatus.supported
-                      }
-                      onClick={async () => {
-                        setUpdateBusy(true);
-                        try {
-                          const result = await window.xAgent.installUpdate();
-                          if (!result.ok) {
-                            setGeneralMsg(result.error ?? "安装失败");
-                          }
-                        } finally {
-                          setUpdateBusy(false);
-                        }
-                      }}
-                    >
-                      安装并重启
-                    </button>
-                  </div>
-                  {updateStatus?.error && (
-                    <p className="modal-hint settings-error">
-                      {updateStatus.error}
-                    </p>
-                  )}
-                </div>
-
-                {generalMsg && (
-                  <SettingsNotice
-                    text={generalMsg}
-                    tone={
-                      /失败|错误|无法|未找到|不可用/.test(generalMsg)
-                        ? "error"
-                        : "neutral"
-                    }
-                    onDismiss={() => setGeneralMsg(null)}
-                  />
-                )}
-              </section>
+              <GeneralSettingsPage
+                open={open && tab === "general"}
+                prefs={prefs}
+                onPrefsChanged={onPrefsChanged}
+                onBashChanged={onBashChanged}
+                onOpenProviders={() => {
+                  setTab("providers");
+                  setEditing(false);
+                  setShowPresetPicker(false);
+                  resetFetchPanel();
+                }}
+              />
             )}
 
             {tab === "usage" && <UsageSettingsPage active={tab === "usage"} />}
 
             {tab === "tools" && (
-              <section className="settings-page">
-                <div className="settings-page-head">
-                  <h3>启用工具</h3>
-                  <p className="modal-hint">
-                    更改会立即应用到当前会话（若已打开项目），并重建系统提示与工具定义 —
-                    这会清空本会话的 API
-                    前缀缓存命中。长会话请尽量在新会话前调好白名单。右侧「工具」面板显示已启用列表；实际调用记录在
-                    Agent 运行后出现。
-                  </p>
-                </div>
-
-                <div className="settings-block">
-                  <div className="settings-block-head">
-                    <h4 className="settings-block-title">内置</h4>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm settings-link-btn"
-                      title={allBuiltinToolsEnabled ? "全部关闭" : "全部开启"}
-                      aria-label={allBuiltinToolsEnabled ? "全部关闭" : "全部开启"}
-                      onClick={() => {
-                        void setToolGroupEnabled(
-                          AVAILABLE_TOOLS,
-                          !allBuiltinToolsEnabled,
-                        );
-                      }}
-                    >
-                      {allBuiltinToolsEnabled ? (
-                        <CheckSquare size={14} />
-                      ) : (
-                        <Square size={14} />
-                      )}
-                    </button>
-                  </div>
-                <div className="tool-grid">
-                  {AVAILABLE_TOOLS.map((tool) => {
-                    const checked = prefs.tools.includes(tool);
-                    return (
-                      <label key={tool} className="tool-check">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => onToggleTool(tool)}
-                        />
-                        <span>{tool}</span>
-                      </label>
-                    );
-                  })}
-                  </div>
-                </div>
-
-                <div className="settings-block">
-                  <div className="settings-block-head">
-                    <h4 className="settings-block-title">Godot 编辑器</h4>
-                    <div className="settings-toolbar">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        title={allGodotEditorToolsEnabled ? "全部关闭" : "全部开启"}
-                        aria-label={
-                          allGodotEditorToolsEnabled ? "全部关闭" : "全部开启"
-                        }
-                        onClick={() => {
-                          void setToolGroupEnabled(
-                            GODOT_TOOLS,
-                            !allGodotEditorToolsEnabled,
-                          );
-                        }}
-                      >
-                        {allGodotEditorToolsEnabled ? (
-                          <CheckSquare size={14} />
-                        ) : (
-                          <Square size={14} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm settings-link-btn"
-                        onClick={() => openGodotSection("editor")}
-                      >
-                        连接与 RPC 设置
-                      </button>
-                    </div>
-                  </div>
-                  <p className="modal-hint">
-                    需启用 RPC 插件并连接桌面桥；默认关闭。
-                  </p>
-                <div className="tool-grid">
-                  {GODOT_TOOLS.map((tool) => {
-                    const checked = prefs.tools.includes(tool);
-                    return (
-                      <label key={tool} className="tool-check">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => onToggleTool(tool)}
-                        />
-                        <span>{tool}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                </div>
-
-                <div className="settings-block">
-                  <div className="settings-block-head">
-                    <h4 className="settings-block-title">Godot 文档</h4>
-                    <div className="settings-toolbar">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        title={allGodotDocsToolsEnabled ? "全部关闭" : "全部开启"}
-                        aria-label={
-                          allGodotDocsToolsEnabled ? "全部关闭" : "全部开启"
-                        }
-                        onClick={() => {
-                          void setToolGroupEnabled(
-                            GODOT_DOCS_TOOLS,
-                            !allGodotDocsToolsEnabled,
-                          );
-                        }}
-                      >
-                        {allGodotDocsToolsEnabled ? (
-                          <CheckSquare size={14} />
-                        ) : (
-                          <Square size={14} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm settings-link-btn"
-                        onClick={() => openGodotSection("docs")}
-                      >
-                        文档缓存设置
-                      </button>
-                    </div>
-                  </div>
-                  <p className="modal-hint">
-                    离线检索官方 godot-docs；需先导入 zip。默认关闭。
-                  </p>
-                  <div className="tool-grid">
-                    {GODOT_DOCS_TOOLS.map((tool) => {
-                      const checked = prefs.tools.includes(tool);
-                      return (
-                        <label key={tool} className="tool-check">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => onToggleTool(tool)}
-                          />
-                          <span>{tool}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              </section>
+              <ToolsSettingsPage
+                prefs={prefs}
+                hasActiveSession={hasActiveSession}
+                onToggleTool={onToggleTool}
+                onPrefsChanged={onPrefsChanged}
+                onOpenGodotSection={openGodotSection}
+              />
             )}
 
             {tab === "godot" && (
-              <section className="settings-page">
-                <div className="settings-page-head">
-                  <h3>Godot</h3>
-                  <p className="modal-hint">
-                    编辑器 RPC 与官方文档离线检索，分别在下方页签配置。
-                  </p>
-                </div>
-
-                <div className="settings-subtabs" role="tablist" aria-label="Godot 设置分类">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={godotSection === "editor"}
-                    className={
-                      godotSection === "editor"
-                        ? "settings-subtab active"
-                        : "settings-subtab"
-                    }
-                    onClick={() => {
-                      setGodotSection("editor");
-                      setDocsMsg(null);
-                    }}
-                  >
-                    编辑器连接
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={godotSection === "docs"}
-                    className={
-                      godotSection === "docs"
-                        ? "settings-subtab active"
-                        : "settings-subtab"
-                    }
-                    onClick={() => {
-                      setGodotSection("docs");
-                      setRpcMsg(null);
-                    }}
-                  >
-                    官方文档
-                  </button>
-                </div>
-
-                {godotSection === "editor" && (
-                  <>
-                    <div className="settings-block">
-                      <h4 className="settings-block-title">引擎</h4>
-                      <p className="modal-hint">
-                        选择本机 Godot 可执行文件，并可从此处启动编辑器。
-                      </p>
-                      <div className="settings-inline-row">
-                  <input
-                    type="text"
-                    className="input"
-                    readOnly
-                    value={prefs.godotEditorPath ?? ""}
-                    placeholder="尚未选择 Godot 可执行文件…"
-                    aria-label="Godot editor path"
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={async () => {
-                      const res = await window.xAgent.pickGodotEditor();
-                      if (res.canceled) return;
-                      if (!res.ok || !res.path) {
-                        setRpcMsg("未选择引擎");
-                        return;
-                      }
-                      const next = await window.xAgent.getPrefs();
-                      onPrefsChanged?.(next);
-                      setRpcMsg(`已选择引擎：${res.path}`);
-                    }}
-                  >
-                    浏览…
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={async () => {
-                      const res = await window.xAgent.launchGodotEditor();
-                      setRpcMsg(
-                        res.ok
-                          ? res.hint ?? "已启动 Godot 编辑器"
-                          : res.error ?? "启动失败",
-                      );
-                      await refreshRpc();
-                    }}
-                  >
-                    启动编辑器
-                  </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-block">
-                      <div className="settings-block-head">
-                        <h4 className="settings-block-title">RPC 桥接</h4>
-                        <span
-                          className={`settings-status ${rpcTone.tone}`}
-                          title={rpc?.error ?? undefined}
-                        >
-                          {rpcTone.text}
-                        </span>
-                      </div>
-                      <p className="modal-hint">
-                        端口 {rpc?.port ?? 8765}。先安装插件并启动桥接，再在 Godot
-                        中启用 X-agent RPC（不要用 godot_agent）。
-                      </p>
-                {(rpc?.clientInfos?.length ?? 0) > 0 && (
-                  <div className="field">
-                    <span>活动编辑器客户端</span>
-                    <SelectMenu
-                      variant="control"
-                      value={rpc?.activeClientId ?? ""}
-                      options={rpc!.clientInfos.map((c) => ({
-                        value: c.id,
-                        label: `${(c.projectPath || "unknown project").slice(-48)} · ${c.godotVersion ?? "?"} · ${c.id.slice(0, 8)}`,
-                      }))}
-                      onChange={(id) => {
-                        void (async () => {
-                          const res =
-                            await window.xAgent.godotRpcSetActiveClient(
-                              id || null,
-                            );
-                          setRpc(res.status);
-                          setRpcMsg(
-                            id
-                              ? `已切换活动客户端：${id.slice(0, 8)}…`
-                              : "已清除活动客户端（将使用首个连接）",
-                          );
-                        })();
-                      }}
-                      aria-label="活动编辑器客户端"
-                    />
-                  </div>
-                )}
-                      <div className="settings-toolbar">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={async () => {
-                            const res =
-                              await window.xAgent.installGodotRpcAddon();
-                            setRpcMsg(
-                              res.ok
-                                ? res.hint ?? "插件安装完成"
-                                : res.error ?? "插件安装失败",
-                            );
-                            await refreshRpc();
-                          }}
-                        >
-                          安装/更新插件
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={async () => {
-                            const status = await window.xAgent.godotRpcStart();
-                            setRpc(status);
-                            setRpcMsg(
-                              status.error
-                                ? status.error
-                                : status.warning
-                                  ? status.warning
-                                  : status.running
-                                    ? `桥接已启动（端口 ${status.port}），等待 Godot 插件连入`
-                                    : null,
-                            );
-                          }}
-                        >
-                          启动桥接
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={async () => {
-                            await window.xAgent.godotRpcStop();
-                            await refreshRpc();
-                            setRpcMsg(null);
-                          }}
-                        >
-                          停止桥接
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={async () => {
-                            const res = await window.xAgent.godotRpcRequest({
-                              method: "ping",
-                            });
-                            if (res.ok) {
-                              setRpcMsg("ping ok — Godot 已连接");
-                            } else {
-                              setRpcMsg(
-                                res.error === "no Godot editor connected"
-                                  ? "Godot 尚未连入桥接。请先安装插件并重启编辑器。"
-                                  : res.error ?? "ping failed",
-                              );
-                            }
-                            await refreshRpc();
-                          }}
-                        >
-                          Ping
-                        </button>
-                      </div>
-                      {rpc?.running && rpc.clients === 0 && (
-                        <p className="modal-hint">
-                          桥接已运行但尚无客户端。请安装插件、启用 X-agent RPC
-                          后重启 Godot。
-                        </p>
-                      )}
-                      {rpc?.warning && (
-                        <p className="modal-hint">{rpc.warning}</p>
-                      )}
-                      {rpc?.error && (
-                        <p className="modal-hint settings-error">{rpc.error}</p>
-                      )}
-                      {rpc?.lastEvent && (
-                        <p className="modal-hint">
-                          最近事件：{JSON.stringify(rpc.lastEvent)}
-                        </p>
-                      )}
-                      <p className="modal-hint">调试（需编辑器已连接）</p>
-                      <div className="settings-toolbar">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => runRpc({ method: "get_editor_info" })}
-                        >
-                          Info
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => runRpc({ method: "get_open_scenes" })}
-                        >
-                          Open scenes
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => runRpc({ method: "get_edited_scene" })}
-                        >
-                          Edited
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() =>
-                            runRpc({
-                              method: "run_current_scene",
-                              wait_ms: GODOT_RPC_DEFAULT_WAIT_MS,
-                            })
-                          }
-                        >
-                          Run
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() =>
-                            runRpc({
-                              method: "play_main_scene",
-                              wait_ms: GODOT_RPC_DEFAULT_WAIT_MS,
-                            })
-                          }
-                        >
-                          Run main
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => runRpc({ method: "get_play_errors" })}
-                        >
-                          Errors
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => runRpc({ method: "stop_scene" })}
-                        >
-                          Stop
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-block">
-                      <h4 className="settings-block-title">场景</h4>
-                      <p className="modal-hint">需编辑器已连接。</p>
-                      <div className="settings-inline-row">
-                  <input
-                    type="text"
-                    className="input"
-                    value={scenePath}
-                    onChange={(e) => setScenePath(e.target.value)}
-                    placeholder="res://scenes/main.tscn"
-                    aria-label="Scene path"
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={async () => {
-                      const res = await window.xAgent.pickGodotScene();
-                      if (res.canceled) return;
-                      if (!res.ok || !res.path) {
-                        setRpcMsg(res.error ?? "未选择场景");
-                        return;
-                      }
-                      setScenePath(res.path);
-                      setRpcMsg(`已填入：${res.path}`);
-                    }}
-                  >
-                    浏览场景…
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() =>
-                      runRpc({ method: "open_scene", path: scenePath.trim() })
-                    }
-                  >
-                    打开场景
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() =>
-                      runRpc({ method: "reload_scene", path: scenePath.trim() })
-                    }
-                  >
-                    重载场景
-                  </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-block">
-                      <h4 className="settings-block-title">资源导入</h4>
-                      <p className="modal-hint">
-                        空路径则全量扫描；多路径用逗号分隔。
-                      </p>
-                      <div className="settings-inline-row">
-                  <input
-                    type="text"
-                    className="input"
-                    value={importPaths}
-                    onChange={(e) => setImportPaths(e.target.value)}
-                    placeholder="res://icon.svg（空则全量 scan；多路径用逗号分隔）"
-                    aria-label="Import paths"
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => {
-                      const paths = importPaths
-                        .split(/[,;\n]/)
-                        .map((p) => p.trim())
-                        .filter(Boolean);
-                      void runRpc({
-                        method: "import_resources",
-                        paths,
-                      });
-                    }}
-                  >
-                    导入/扫描
-                  </button>
-                      </div>
-                    </div>
-
-                    {rpcMsg && (
-                      <SettingsNotice
-                        text={rpcMsg}
-                        pre
-                        tone={
-                          /fail|error|失败|错误/i.test(rpcMsg)
-                            ? "error"
-                            : "neutral"
-                        }
-                        onDismiss={() => setRpcMsg(null)}
-                      />
-                    )}
-                  </>
-                )}
-
-                {godotSection === "docs" && (
-                  <>
-                    <div className="settings-block">
-                      <div className="settings-block-head">
-                        <h4 className="settings-block-title">文档缓存</h4>
-                        <span className={`settings-status ${docsTone.tone}`}>
-                          {docsTone.text}
-                        </span>
-                      </div>
-                      <p className="modal-hint">
-                        下载 GitHub 源码 zip（需含 .rst，不要 HTML offline
-                        包），导入后 Agent 工具 godot_docs_search 才能检索。
-                      </p>
-                <div className="field">
-                  <span>文档版本分支</span>
-                  <SelectMenu
-                    variant="control"
-                    value={
-                      docsBranches.includes(prefs.godotDocsBranch)
-                        ? prefs.godotDocsBranch
-                        : "__custom__"
-                    }
-                    options={[
-                      ...docsBranches.map((b) => ({
-                        value: b,
-                        label: branchLabel(b),
-                      })),
-                      { value: "__custom__", label: "自定义…" },
-                    ]}
-                    onChange={(v) => {
-                      void (async () => {
-                        if (v === "__custom__") {
-                          const custom =
-                            docsCustomBranch.trim() || prefs.godotDocsBranch;
-                          const res =
-                            await window.xAgent.godotDocsSetBranch(custom);
-                          if (res.status) setDocsStatus(res.status);
-                          if (res.ok) {
-                            const next = await window.xAgent.getPrefs();
-                            onPrefsChanged?.(next);
-                            setDocsMsg(
-                              `已选择自定义分支：${next.godotDocsBranch}`,
-                            );
-                          } else {
-                            setDocsMsg(res.error ?? "切换失败");
-                          }
-                          return;
-                        }
-                        const res = await window.xAgent.godotDocsSetBranch(v);
-                        if (res.status) setDocsStatus(res.status);
-                        if (res.ok) {
-                          const next = await window.xAgent.getPrefs();
-                          onPrefsChanged?.(next);
-                          setDocsMsg(`已选择文档版本：${v}`);
-                        } else {
-                          setDocsMsg(res.error ?? "切换失败");
-                        }
-                      })();
-                    }}
-                    aria-label="文档版本分支"
-                  />
-                </div>
-                {!docsBranches.includes(prefs.godotDocsBranch) ||
-                docsCustomBranch ? (
-                  <div className="settings-inline-row">
-                    <input
-                      type="text"
-                      className="input"
-                      value={docsCustomBranch}
-                      onChange={(e) => setDocsCustomBranch(e.target.value)}
-                      placeholder="自定义分支名，如 4.3"
-                      aria-label="Custom docs branch"
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      disabled={docsBusy || !docsCustomBranch.trim()}
-                      onClick={async () => {
-                        const branch = docsCustomBranch.trim();
-                        if (!branch) return;
-                        setDocsBusy(true);
-                        try {
-                          const res =
-                            await window.xAgent.godotDocsSetBranch(branch);
-                          if (res.status) setDocsStatus(res.status);
-                          if (res.ok) {
-                            const next = await window.xAgent.getPrefs();
-                            onPrefsChanged?.(next);
-                            setDocsMsg(`已选择文档版本：${branch}`);
-                          } else {
-                            setDocsMsg(res.error ?? "切换失败");
-                          }
-                        } finally {
-                          setDocsBusy(false);
-                        }
-                      }}
-                    >
-                      应用
-                    </button>
-                  </div>
-                ) : null}
-                <p className="modal-hint">
-                  当前分支：{docsStatus?.branch ?? prefs.godotDocsBranch}
-                  {docsBranches.length
-                    ? ` · 可选 ${docsBranches.length} 个版本`
-                    : ""}
-                  {docsStatus?.localBranches?.length
-                    ? ` · 本地已有：${docsStatus.localBranches.join(", ")}`
-                    : ""}
-                </p>
-                {docsStatus?.downloadUrl && (
-                  <p className="modal-hint" style={{ wordBreak: "break-all" }}>
-                    下载地址：{docsStatus.downloadUrl}
-                  </p>
-                )}
-                <div className="settings-toolbar">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={docsBusy}
-                    onClick={async () => {
-                      setDocsBusy(true);
-                      try {
-                        const res =
-                          await window.xAgent.godotDocsOpenDownloadUrl();
-                        setDocsMsg(
-                          res.ok
-                            ? `已在浏览器打开下载：${res.url ?? ""}`
-                            : res.error ?? "无法打开链接",
-                        );
-                      } finally {
-                        setDocsBusy(false);
-                      }
-                    }}
-                  >
-                    打开下载链接
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={docsBusy}
-                    onClick={async () => {
-                      setDocsBusy(true);
-                      setDocsMsg("请选择已下载的 godot-docs 源码 zip…");
-                      try {
-                        const res = await window.xAgent.godotDocsImportZip();
-                        if (res.canceled) {
-                          setDocsMsg(null);
-                          return;
-                        }
-                        if (res.status) setDocsStatus(res.status);
-                        setDocsMsg(
-                          res.ok
-                            ? `已导入文档：${res.status?.branch ?? prefs.godotDocsBranch}`
-                            : res.error ?? "导入失败",
-                        );
-                      } finally {
-                        setDocsBusy(false);
-                      }
-                    }}
-                  >
-                    导入 zip…
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={docsBusy || docsStatus?.status !== "ready"}
-                    onClick={async () => {
-                      setDocsBusy(true);
-                      try {
-                        const res = await window.xAgent.godotDocsRemoveLocal();
-                        if (res.status) setDocsStatus(res.status);
-                        setDocsMsg(
-                          res.ok
-                            ? "已删除本地文档缓存"
-                            : res.error ?? "删除失败",
-                        );
-                      } finally {
-                        setDocsBusy(false);
-                      }
-                    }}
-                  >
-                    删除本地缓存
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={docsBusy}
-                    onClick={async () => {
-                      setDocsBusy(true);
-                      try {
-                        const remote =
-                          await window.xAgent.godotDocsListRemoteBranches(true);
-                        if (remote.status) setDocsStatus(remote.status);
-                        if (remote.branches.length > 0) {
-                          setDocsBranches(remote.branches);
-                        }
-                        setDocsMsg(
-                          remote.ok
-                            ? `已刷新远程分支（${remote.branches.length}）`
-                            : remote.error ?? "刷新失败",
-                        );
-                      } finally {
-                        setDocsBusy(false);
-                      }
-                    }}
-                  >
-                    刷新分支列表
-                  </button>
-                </div>
-                    </div>
-                    {docsMsg && (
-                      <SettingsNotice
-                        text={docsMsg}
-                        tone={
-                          /失败|错误|无法/.test(docsMsg) ? "error" : "neutral"
-                        }
-                        onDismiss={() => setDocsMsg(null)}
-                      />
-                    )}
-                  </>
-                )}
-              </section>
+              <GodotSettingsPage
+                open={open && tab === "godot"}
+                prefs={prefs}
+                cwd={cwd}
+                section={godotSection}
+                onSectionChange={setGodotSection}
+                onPrefsChanged={onPrefsChanged}
+              />
             )}
 
             {tab === "plugins" && <PluginsPage cwd={cwd} />}

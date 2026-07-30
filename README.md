@@ -36,7 +36,7 @@
 - **供应商** — 多档案订阅、拉取模型列表；可导入 Pi / cc-switch 配置
 - **插件** — Prompt / Skill / Extension / Theme / Packages
 - **工具白名单** — 内置读写与终端默认开；Godot 编辑器 / 文档工具默认关，可按组开关
-- **用量 / 认证 / 更新** — 本地用量汇总；应用内 Pi 登录；安装版可检查更新
+- **用量 / 认证 / 更新** — 本地用量汇总；应用内 Pi 登录；安装版可检查更新（设置 → 通用可选 **GitHub** 或 **Gitee** 源）
 
 ## 环境要求
 
@@ -60,7 +60,7 @@
 
 | 设置分页 | 内容 |
 |---|---|
-| 通用 | 主题、Thinking 默认、bash、Pi 登录、自动更新 |
+| 通用 | 主题、Thinking 默认、bash、Pi 登录、自动更新（GitHub / Gitee） |
 | 供应商 | 模型供应商档案与导入 |
 | 用量 | 本地用量汇总 |
 | 工具 | 工具白名单与分组开关 |
@@ -87,5 +87,10 @@
 |---|---|
 | [`packages/godot-editor-rpc`](packages/godot-editor-rpc) | Godot 编辑器 RPC 插件 |
 | [`packages/godot-pi`](packages/godot-pi) | Godot 领域 skills 与 prompts |
+
+## 更新与安装信任
+
+- **更新源**：设置 → 通用可选 **GitHub**（默认）或 **Gitee**。Gitee 源依赖发版 CI 的 `GITEE_TOKEN` 同步滚动标签 `latest`（含 `latest.yml`）；未配置时请用 GitHub。
+- **代码签名**：打包时若环境提供 `CSC_LINK`（证书文件/base64）与 `CSC_KEY_PASSWORD`，electron-builder 会自动签名，减轻 SmartScreen 拦截。未配置证书时仍可产出未签名安装包。
 
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。
