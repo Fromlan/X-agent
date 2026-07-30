@@ -3,7 +3,6 @@ import {
   basename,
   join,
 } from "node:path";
-import { shell } from "electron";
 import { resolveInsideCwd } from "./cwd-sandbox";
 
 export { resolveInsideCwd } from "./cwd-sandbox";
@@ -45,6 +44,7 @@ export type ReadProjectFileResult = {
 
 export type RevealProjectPathResult = {
   ok: boolean;
+  path?: string;
   error?: string;
 };
 
@@ -135,6 +135,11 @@ export function readProjectFile(
   }
 }
 
+/**
+ * Resolve + validate a reveal target inside cwd. Callers (main process) are
+ * responsible for actually invoking `shell.showItemInFolder` — kept out of
+ * this module so it stays importable/testable outside Electron.
+ */
 export function revealProjectPath(
   cwd: string,
   relPath: string,
@@ -145,8 +150,7 @@ export function revealProjectPath(
     if (!existsSync(resolved.abs)) {
       return { ok: false, error: "路径不存在" };
     }
-    shell.showItemInFolder(resolved.abs);
-    return { ok: true };
+    return { ok: true, path: resolved.abs };
   } catch (err) {
     return {
       ok: false,

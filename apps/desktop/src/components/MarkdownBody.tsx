@@ -6,6 +6,8 @@ import type { MouseEvent } from "react";
 interface Props {
   content: string;
   streaming?: boolean;
+  /** Skip react-markdown (streaming / long-history perf). */
+  plain?: boolean;
 }
 
 function isHttpUrl(href: string | undefined): href is string {
@@ -37,13 +39,25 @@ const components: Components = {
   ),
 };
 
-export function MarkdownBody({ content, streaming = false }: Props) {
+export function MarkdownBody({
+  content,
+  streaming = false,
+  plain = false,
+}: Props) {
   if (!content && streaming) {
     return <div className="markdown stream-cursor" />;
   }
 
   if (!content) {
     return null;
+  }
+
+  if (plain) {
+    return (
+      <pre className={streaming ? "markdown-plain stream-cursor" : "markdown-plain"}>
+        {content}
+      </pre>
+    );
   }
 
   return (

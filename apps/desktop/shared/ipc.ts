@@ -250,6 +250,14 @@ export function normalizeThemePrefs(raw: {
   return { themeId, colorMode: "dark" };
 }
 
+/** Packaged-app auto-update feed: GitHub Releases or Gitee generic mirror. */
+export const UPDATE_SOURCES = ["github", "gitee"] as const;
+export type UpdateSource = (typeof UPDATE_SOURCES)[number];
+
+export function normalizeUpdateSource(value: unknown): UpdateSource {
+  return value === "gitee" ? "gitee" : "github";
+}
+
 export interface ClientPrefs {
   themeId: ThemeId;
   colorMode: ColorMode;
@@ -278,6 +286,18 @@ export interface ClientPrefs {
    * Session files are kept; opening the project again removes the key.
    */
   hiddenProjectKeys: string[];
+  /** Auto-update download source (GitHub or Gitee mirror). */
+  updateSource: UpdateSource;
+  /**
+   * Project keys where the ready checklist was dismissed.
+   * Cleared automatically when the project is opened again after a dismiss
+   * only if the user clears prefs; otherwise persists per project.
+   */
+  dismissedReadyChecklistKeys: string[];
+  /**
+   * Project keys where the "enable Godot editor tools" nudge was dismissed.
+   */
+  dismissedGodotToolsNudgeKeys: string[];
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -299,6 +319,9 @@ export const DEFAULT_PREFS: ClientPrefs = {
   sidebarWidth: 260,
   rightPanelWidth: 360,
   hiddenProjectKeys: [],
+  updateSource: "github",
+  dismissedReadyChecklistKeys: [],
+  dismissedGodotToolsNudgeKeys: [],
 };
 
 export interface OpenProjectResult {
@@ -765,6 +788,8 @@ export interface AppUpdateStatus {
   progress?: number;
   error?: string;
   message?: string;
+  /** Active update feed after applyFeed / check. */
+  source?: UpdateSource;
 }
 
 export interface XAgentApi {

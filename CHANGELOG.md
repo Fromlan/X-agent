@@ -8,6 +8,23 @@
 
 ## Unreleased
 
+## 0.3.2
+
+### 功能
+
+- **项目就绪清单**：单一可折叠条替代多层横幅（认证 / bash / RPC / Godot 工具 / 文档）；桥接启动有明确反馈，等待连入时可一键启动编辑器
+- **空聊天引导**：打开项目后展示 starter prompts，并可跳转 Godot / 设置
+- **Godot 工具渐进启用**：桥已连接但工具仍关时提示一键启用
+- **双更新源**：设置 → 通用可选 GitHub 或 Gitee；发版 CI 可同步 Gitee `latest` feed（需 `GITEE_TOKEN`）
+- **主题化确认框**：替换系统 `window.confirm`；warn/danger 默认高亮「取消」
+
+### 改进
+
+- **长会话聊天**：超过阈值时折叠更早消息；流式/长历史时对非尾部气泡降级为纯文本渲染
+- **设置分页拆分**：通用 / 工具 / Godot 独立页面组件；Settings 壳层变薄
+- **更新与签名说明**：README / CLAUDE / 设置补充 Gitee feed 与可选 Windows 代码签名（`CSC_LINK`）
+- **工程**：`SessionHost` 拆出 helpers / event-bridge / usage；IPC channel 常量表；`project-fs` 与 Electron shell 解耦；sandbox / ready-checklist / update-feed 测试
+
 ## 0.3.1
 
 ### 功能

@@ -29,13 +29,10 @@ import {
   TurnUsage,
   UiAgentEvent,
 } from "../../shared/ipc";
+import { IPC_EVENTS } from "../../shared/ipc-channels";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
 import { branchEntriesToHistory } from "./history";
-import {
-  TRANSCRIPT_CAPS,
-  extractMessageText,
-  truncateTranscript,
-} from "./transcript-mapper";
+import { extractMessageText } from "./transcript-mapper";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import {
   displaySessionName,
@@ -50,15 +47,27 @@ import {
   pickFallbackSessionPath,
   sessionPathsForProject,
 } from "../../shared/project-path";
-import {
-  buildContextBreakdown,
-  promptTokensFromTurnUsage,
-} from "./context-breakdown";
-import { modelUsageKey, recordTurnUsage } from "./usage-store";
-import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { applyXAgentSkillsFilter } from "./filter-session-skills";
 import { listPlugins } from "./plugin-host";
 import { reloadAuthStorageCache } from "./model-runtime-auth";
+import {
+  emptyUsageSnapshot,
+  failOpen,
+  modelFromSession,
+  type ToolDetailRecord,
+} from "./session-host-helpers";
+import {
+  bridgeSessionEvents,
+  type SessionEventBridgeDeps,
+} from "./session-event-bridge";
+import {
+  buildUsageSnapshot as buildUsageSnapshotFor,
+  captureCompactionBaseline as captureCompactionBaselineFor,
+  recordCompactionDelta as recordCompactionDeltaFor,
+  type CompactionStatsBaseline,
+} from "./session-usage";
+
+export type { ToolDetailRecord } from "./session-host-helpers";
 
 type SessionBundle = {
   session: AgentSession;
@@ -66,173 +75,6 @@ type SessionBundle = {
   cwd: string;
   sessionPath: string | null;
 };
-
-const TOOL_DETAIL_MAX_CHARS = 256 * 1024;
-
-export type ToolDetailRecord = {
-  toolCallId: string;
-  toolName: string;
-  args: unknown;
-  result?: unknown;
-  isError?: boolean;
-  done: boolean;
-  truncated?: boolean;
-};
-
-function serializeForDetail(value: unknown): { value: unknown; truncated: boolean } {
-  try {
-    const text =
-      typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    if (!text) return { value, truncated: false };
-    if (text.length <= TOOL_DETAIL_MAX_CHARS) {
-      return { value, truncated: false };
-    }
-    return {
-      value: `${text.slice(0, TOOL_DETAIL_MAX_CHARS)}\n…(截断 ${text.length - TOOL_DETAIL_MAX_CHARS} 字符)`,
-      truncated: true,
-    };
-  } catch {
-    return { value: String(value), truncated: false };
-  }
-}
-
-function modelFromSession(session: AgentSession): ModelInfo | null {
-  const model = session.model;
-  if (!model) return null;
-  return {
-    provider: model.provider,
-    id: model.id,
-    name: (model as { name?: string }).name ?? model.id,
-    contextWindow:
-      typeof model.contextWindow === "number" && model.contextWindow > 0
-        ? model.contextWindow
-        : undefined,
-  };
-}
-
-function turnUsageFromMessage(message: unknown): TurnUsage | null {
-  if (!message || typeof message !== "object") return null;
-  const msg = message as {
-    usage?: Record<string, unknown>;
-    stopReason?: string;
-  };
-  if (msg.stopReason === "aborted" || msg.stopReason === "error") {
-    return null;
-  }
-  const usage = msg.usage;
-  if (!usage || typeof usage !== "object") return null;
-  const input = Number(usage.input) || 0;
-  const output = Number(usage.output) || 0;
-  const cacheRead = Number(usage.cacheRead) || 0;
-  const cacheWrite = Number(usage.cacheWrite) || 0;
-  const totalTokens =
-    Number(usage.totalTokens) || input + output + cacheRead + cacheWrite;
-  if (totalTokens <= 0 && input + output + cacheRead + cacheWrite <= 0) {
-    return null;
-  }
-  const costRaw = usage.cost as Record<string, unknown> | undefined;
-  const costInput = Number(costRaw?.input) || 0;
-  const costOutput = Number(costRaw?.output) || 0;
-  const costCacheRead = Number(costRaw?.cacheRead) || 0;
-  const costCacheWrite = Number(costRaw?.cacheWrite) || 0;
-  const costParts = costInput + costOutput + costCacheRead + costCacheWrite;
-  const costTotal = Number(costRaw?.total) || costParts;
-  return {
-    tokens: {
-      input,
-      output,
-      cacheRead,
-      cacheWrite,
-      total: totalTokens,
-    },
-    cost: {
-      input: costInput,
-      output: costOutput,
-      cacheRead: costCacheRead,
-      cacheWrite: costCacheWrite,
-      total: costTotal,
-    },
-  };
-}
-
-function emptyUsageSnapshot(): SessionUsageSnapshot {
-  return {
-    tokens: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      total: 0,
-    },
-    cost: 0,
-    context: null,
-    userMessages: 0,
-    assistantMessages: 0,
-    toolCalls: 0,
-  };
-}
-
-/** Sum Pi chars/4 estimates across current in-memory conversation messages. */
-function estimateMessageTokens(session: AgentSession): number {
-  try {
-    const messages = session.messages ?? [];
-    let total = 0;
-    for (const message of messages) {
-      try {
-        total += estimateTokens(message);
-      } catch {
-        /* skip unestimable message shapes */
-      }
-    }
-    return total;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Tokens for messages after the last assistant turn.
- * Needed when a toolResult lands before the next assistant usage arrives.
- */
-function estimateTrailingAfterLastAssistant(session: AgentSession): number {
-  try {
-    const messages = session.messages ?? [];
-    let lastAssistant = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const role = (messages[i] as { role?: string } | undefined)?.role;
-      if (role === "assistant") {
-        lastAssistant = i;
-        break;
-      }
-    }
-    if (lastAssistant < 0 || lastAssistant >= messages.length - 1) return 0;
-    let total = 0;
-    for (let i = lastAssistant + 1; i < messages.length; i++) {
-      try {
-        total += estimateTokens(messages[i]);
-      } catch {
-        /* skip unestimable message shapes */
-      }
-    }
-    return total;
-  } catch {
-    return 0;
-  }
-}
-
-function failOpen(
-  error: string,
-  cwd = "",
-): OpenProjectResult {
-  return {
-    ok: false,
-    cwd,
-    sessionId: "",
-    model: null,
-    thinkingLevel: "off",
-    error,
-  };
-}
 
 export class SessionHost {
   private bundle: SessionBundle | null = null;
@@ -253,17 +95,7 @@ export class SessionHost {
   /** Last successful assistant turn usage (for snapshot lastTurn). */
   private lastTurnUsage: TurnUsage | undefined;
   /** Session stats snapshot at compaction_start for daily-store delta. */
-  private compactionStatsBaseline: {
-    tokens: {
-      input: number;
-      output: number;
-      cacheRead: number;
-      cacheWrite: number;
-      total: number;
-    };
-    cost: number;
-    modelKey: string;
-  } | null = null;
+  private compactionStatsBaseline: CompactionStatsBaseline | null = null;
   /** Skip per-message daily recording while compaction LLM usage is in flight. */
   private compactionRecording = false;
 
@@ -299,48 +131,7 @@ export class SessionHost {
 
   private buildUsageSnapshot(): SessionUsageSnapshot | null {
     if (!this.bundle) return null;
-    const session = this.bundle.session;
-    try {
-      const stats = session.getSessionStats();
-      const ctx = session.getContextUsage();
-      const contextWindow =
-        ctx?.contextWindow ??
-        (typeof session.model?.contextWindow === "number"
-          ? session.model.contextWindow
-          : 0);
-      const context =
-        contextWindow > 0
-          ? buildContextBreakdown({
-              systemPrompt: session.systemPrompt ?? "",
-              contextWindow,
-              // Pi's getContextUsage().tokens is often usage.totalTokens
-              // (includes output). Use prompt-only input+cacheRead, plus any
-              // trailing tool/user messages after the last assistant usage.
-              contextTokens: this.lastTurnUsage
-                ? promptTokensFromTurnUsage(this.lastTurnUsage.tokens) +
-                  estimateTrailingAfterLastAssistant(session)
-                : null,
-              messageTokens: estimateMessageTokens(session),
-            })
-          : null;
-      return {
-        tokens: {
-          input: stats.tokens.input,
-          output: stats.tokens.output,
-          cacheRead: stats.tokens.cacheRead,
-          cacheWrite: stats.tokens.cacheWrite,
-          total: stats.tokens.total,
-        },
-        cost: stats.cost,
-        context,
-        ...(this.lastTurnUsage ? { lastTurn: this.lastTurnUsage } : {}),
-        userMessages: stats.userMessages,
-        assistantMessages: stats.assistantMessages,
-        toolCalls: stats.toolCalls,
-      };
-    } catch {
-      return null;
-    }
+    return buildUsageSnapshotFor(this.bundle.session, this.lastTurnUsage);
   }
 
   private emitUsageUpdate(): void {
@@ -350,66 +141,16 @@ export class SessionHost {
   }
 
   private captureCompactionBaseline(): void {
-    if (!this.bundle) {
-      this.compactionStatsBaseline = null;
-      return;
-    }
-    try {
-      const session = this.bundle.session;
-      const stats = session.getSessionStats();
-      const model = session.model;
-      this.compactionStatsBaseline = {
-        tokens: {
-          input: stats.tokens.input,
-          output: stats.tokens.output,
-          cacheRead: stats.tokens.cacheRead,
-          cacheWrite: stats.tokens.cacheWrite,
-          total: stats.tokens.total,
-        },
-        cost: stats.cost,
-        modelKey: model
-          ? modelUsageKey(model.provider, model.id)
-          : "unknown/unknown",
-      };
-    } catch {
-      this.compactionStatsBaseline = null;
-    }
+    this.compactionStatsBaseline = this.bundle
+      ? captureCompactionBaselineFor(this.bundle.session)
+      : null;
   }
 
   private recordCompactionDelta(): void {
     const baseline = this.compactionStatsBaseline;
     this.compactionStatsBaseline = null;
     if (!baseline || !this.bundle) return;
-    try {
-      const stats = this.bundle.session.getSessionStats();
-      const tokens = {
-        input: Math.max(0, stats.tokens.input - baseline.tokens.input),
-        output: Math.max(0, stats.tokens.output - baseline.tokens.output),
-        cacheRead: Math.max(
-          0,
-          stats.tokens.cacheRead - baseline.tokens.cacheRead,
-        ),
-        cacheWrite: Math.max(
-          0,
-          stats.tokens.cacheWrite - baseline.tokens.cacheWrite,
-        ),
-        total: Math.max(0, stats.tokens.total - baseline.tokens.total),
-      };
-      const costTotal = Math.max(0, stats.cost - baseline.cost);
-      if (tokens.total <= 0 && costTotal <= 0) return;
-      recordTurnUsage(baseline.modelKey, {
-        tokens,
-        cost: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          total: costTotal,
-        },
-      });
-    } catch {
-      /* ignore */
-    }
+    recordCompactionDeltaFor(this.bundle.session, baseline);
   }
 
   private pruneToolDetailsToBranch(): void {
@@ -450,7 +191,7 @@ export class SessionHost {
   private emit(event: UiAgentEvent): void {
     const win = this.getWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send("agent:event", event);
+      win.webContents.send(IPC_EVENTS.agentEvent, event);
     }
   }
 
@@ -491,259 +232,34 @@ export class SessionHost {
   }
 
   private bridgeEvents(session: AgentSession): () => void {
-    return session.subscribe((event) => {
-      switch (event.type) {
-        case "agent_start":
-          this.setStatus("streaming");
-          this.emit({ type: "agent_start" });
-          break;
-        case "agent_end": {
-          const willRetry = Boolean(
-            (event as { willRetry?: boolean }).willRetry,
-          );
-          if (willRetry) {
-            this.setStatus("retrying");
-          } else {
-            this.setStatus("idle");
-            void this.maybeAutoTitleSession();
-          }
-          this.emit({ type: "agent_end", willRetry });
-          this.emitUsageUpdate();
-          break;
-        }
-        case "turn_start":
-          this.emit({ type: "turn_start" });
-          break;
-        case "turn_end":
-          if (this.bundle) {
-            this.fileTracker.persistDirty(this.bundle.session.sessionManager);
-          }
-          this.emit({ type: "turn_end" });
-          this.emitHistoryReplace();
-          this.emitUsageUpdate();
-          break;
-        case "message_start": {
-          const msg = event.message as {
-            role?: string;
-            stopReason?: string;
-            errorMessage?: string;
-          };
-          if (msg.role === "assistant") {
-            const userEntryId =
-              this.fileTracker.getActiveUserEntryId() ?? undefined;
-            this.emit({
-              type: "assistant_start",
-              messageId: this.messageIdFrom(event.message),
-              ...(userEntryId ? { userEntryId } : {}),
-            });
-          } else if (msg.role === "user") {
-            const text = extractMessageText(event.message);
-            if (text) {
-              const entryId = this.currentUserEntryId();
-              if (entryId) {
-                this.fileTracker.setActiveUserEntryId(entryId);
-              }
-              this.emit({
-                type: "user_message",
-                text,
-                id: entryId ?? this.messageIdFrom(event.message),
-                ...(entryId ? { entryId } : {}),
-              });
-            }
-          }
-          break;
-        }
-        case "message_update": {
-          const ame = event.assistantMessageEvent as {
-            type?: string;
-            delta?: string;
-          };
-          const id = this.messageIdFrom(event.message);
-          if (ame?.type === "text_delta" && ame.delta) {
-            this.emit({ type: "text_delta", messageId: id, delta: ame.delta });
-          } else if (ame?.type === "thinking_delta" && ame.delta) {
-            this.emit({
-              type: "thinking_delta",
-              messageId: id,
-              delta: ame.delta,
-            });
-          }
-          break;
-        }
-        case "message_end": {
-          const msg = event.message as {
-            role?: string;
-            stopReason?: string;
-            errorMessage?: string;
-            usage?: unknown;
-          };
-          if (msg.role === "assistant") {
-            const isError =
-              msg.stopReason === "error" || Boolean(msg.errorMessage);
-            const isAborted = msg.stopReason === "aborted";
-            const turnUsage =
-              !isError && !isAborted
-                ? turnUsageFromMessage(event.message)
-                : null;
-            if (turnUsage) {
-              this.lastTurnUsage = turnUsage;
-              const model = this.bundle?.session.model;
-              if (model && !this.compactionRecording) {
-                try {
-                  recordTurnUsage(
-                    modelUsageKey(model.provider, model.id),
-                    turnUsage,
-                  );
-                } catch {
-                  /* ignore persist errors */
-                }
-              }
-            }
-            this.emit({
-              type: "assistant_end",
-              messageId: this.messageIdFrom(event.message),
-              isError,
-              errorMessage: msg.errorMessage,
-              ...(turnUsage ? { usage: turnUsage } : {}),
-            });
-            if (isError && msg.errorMessage) {
-              this.setStatus("error", msg.errorMessage);
-            }
-          }
-          break;
-        }
-        case "tool_execution_start": {
-          this.fileTracker.captureBeforeTool(event.toolName, event.args);
-          const argsPack = serializeForDetail(event.args);
-          this.toolDetails.set(event.toolCallId, {
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            args: argsPack.value,
-            done: false,
-            truncated: argsPack.truncated,
-          });
-          this.emit({
-            type: "tool_start",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            args: truncateTranscript(event.args, TRANSCRIPT_CAPS.streamTool),
-          });
-          break;
-        }
-        case "tool_execution_update": {
-          const prev = this.toolDetails.get(event.toolCallId);
-          if (prev) {
-            const pack = serializeForDetail(event.partialResult);
-            this.toolDetails.set(event.toolCallId, {
-              ...prev,
-              result: pack.value,
-              truncated: prev.truncated || pack.truncated,
-            });
-          }
-          this.emit({
-            type: "tool_update",
-            toolCallId: event.toolCallId,
-            partialResult: truncateTranscript(
-              event.partialResult,
-              TRANSCRIPT_CAPS.streamTool,
-            ),
-          });
-          break;
-        }
-        case "tool_execution_end": {
-          const prevDetail = this.toolDetails.get(event.toolCallId);
-          const argsPack = serializeForDetail(prevDetail?.args);
-          const resultPack = serializeForDetail(event.result);
-          this.toolDetails.set(event.toolCallId, {
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            args: argsPack.value,
-            result: resultPack.value,
-            isError: event.isError,
-            done: true,
-            truncated: Boolean(prevDetail?.truncated) || resultPack.truncated,
-          });
-          this.emit({
-            type: "tool_end",
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            result: truncateTranscript(
-              event.result,
-              TRANSCRIPT_CAPS.streamToolResult,
-            ),
-            isError: event.isError,
-          });
-          break;
-        }
-        case "queue_update":
-          this.emit({
-            type: "queue_update",
-            steering: [...(event.steering ?? [])],
-            followUp: [...(event.followUp ?? [])],
-          });
-          break;
-        case "auto_retry_start":
-          this.setStatus("retrying");
-          this.emit({
-            type: "auto_retry",
-            phase: "start",
-            attempt: event.attempt,
-            maxAttempts: event.maxAttempts,
-            delayMs: event.delayMs,
-            message: event.errorMessage,
-          });
-          break;
-        case "auto_retry_end":
-          this.setStatus(event.success ? "streaming" : "error");
-          if (!event.success && event.finalError) {
-            this.lastError = event.finalError;
-          }
-          this.emit({
-            type: "auto_retry",
-            phase: "end",
-            attempt: event.attempt,
-            success: event.success,
-            message: event.finalError,
-          });
-          break;
-        case "compaction_start":
-          this.compactionRecording = true;
-          this.captureCompactionBaseline();
-          this.emit({
-            type: "compaction_start",
-            reason: event.reason,
-          });
-          break;
-        case "compaction_end": {
-          const result = event.result as
-            | { tokensBefore?: number; estimatedTokensAfter?: number }
-            | undefined;
-          if (!event.aborted) {
-            this.recordCompactionDelta();
-          } else {
-            this.compactionStatsBaseline = null;
-          }
-          this.compactionRecording = false;
-          this.emit({
-            type: "compaction_end",
-            reason: event.reason,
-            aborted: event.aborted,
-            errorMessage: event.errorMessage,
-            ...(result?.tokensBefore != null
-              ? { tokensBefore: result.tokensBefore }
-              : {}),
-            ...(result?.estimatedTokensAfter != null
-              ? { estimatedTokensAfter: result.estimatedTokensAfter }
-              : {}),
-          });
-          this.emitHistoryReplace();
-          this.emitUsageUpdate();
-          break;
-        }
-        default:
-          break;
-      }
-    });
+    const deps: SessionEventBridgeDeps = {
+      emit: (event) => this.emit(event),
+      setStatus: (status, error) => this.setStatus(status, error),
+      setLastErrorSilently: (error) => {
+        this.lastError = error;
+      },
+      emitUsageUpdate: () => this.emitUsageUpdate(),
+      emitHistoryReplace: () => this.emitHistoryReplace(),
+      messageIdFrom: (message) => this.messageIdFrom(message),
+      fileTracker: this.fileTracker,
+      toolDetails: this.toolDetails,
+      getSession: () => this.bundle?.session ?? null,
+      setLastTurnUsage: (usage) => {
+        this.lastTurnUsage = usage;
+      },
+      isCompactionRecording: () => this.compactionRecording,
+      setCompactionRecording: (value) => {
+        this.compactionRecording = value;
+      },
+      captureCompactionBaseline: () => this.captureCompactionBaseline(),
+      recordCompactionDelta: () => this.recordCompactionDelta(),
+      clearCompactionBaseline: () => {
+        this.compactionStatsBaseline = null;
+      },
+      maybeAutoTitleSession: () => this.maybeAutoTitleSession(),
+      currentUserEntryId: () => this.currentUserEntryId(),
+    };
+    return bridgeSessionEvents(session, deps);
   }
 
   private currentUserEntryId(): string | undefined {

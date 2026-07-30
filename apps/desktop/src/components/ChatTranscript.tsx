@@ -13,7 +13,10 @@ import {
 import { MarkdownBody } from "./MarkdownBody";
 import { ToolCard } from "./ToolCard";
 import { ArrowDown, Brain, Pencil, RotateCcw, Undo2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+const VIRTUALIZE_THRESHOLD = 60;
+const VIRTUALIZE_TAIL = 40;
 
 function prefersReducedMotion(): boolean {
   return (
@@ -62,11 +65,21 @@ function formatMaybeJson(value: unknown): string {
   }
 }
 
+export type ChatStarterChip = {
+  id: string;
+  label: string;
+  prompt: string;
+};
+
 export interface ChatTranscriptProps {
   items: ChatItem[];
   showThinking: boolean;
   status?: AgentStatus;
   disabledEmpty?: boolean;
+  /** Starters shown when project is open but transcript is empty. */
+  starters?: ChatStarterChip[];
+  readinessHints?: { label: string; onClick: () => void }[];
+  onPickStarter?: (prompt: string) => void;
   /** Changes when send / session switch should force stick-to-bottom. */
   forceFollowKey?: string;
   onOpenToolInPanel?: (toolId: string, args: unknown) => void;
@@ -78,11 +91,15 @@ export interface ChatTranscriptProps {
   onConfirmEdit?: () => void;
   onRetract?: (entryId: string) => void;
   onRegenerate?: (userEntryId: string) => void;
+  /** When true, skip heavy Markdown for non-tail bubbles. */
+  degradeMarkdown?: boolean;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
   const idle = props.status === "idle" || props.status === "error";
   const canAct = idle && !props.editingEntryId;
+  const streaming =
+    props.status === "streaming" || props.status === "retrying";
 
   const streamRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -90,6 +107,25 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   const followScheduledRef = useRef(false);
   const prevFollowKeyRef = useRef<string | undefined>(undefined);
   const [showJump, setShowJump] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+
+  useEffect(() => {
+    setShowAllHistory(false);
+  }, [props.forceFollowKey]);
+
+  const visibleItems = useMemo(() => {
+    const items = props.items;
+    if (showAllHistory || items.length <= VIRTUALIZE_THRESHOLD) {
+      return { hidden: 0, items };
+    }
+    const start = Math.max(0, items.length - VIRTUALIZE_TAIL);
+    return { hidden: start, items: items.slice(start) };
+  }, [props.items, showAllHistory]);
+
+  const plainMarkdownCutoff = useMemo(() => {
+    if (!props.degradeMarkdown && !streaming) return -1;
+    return Math.max(0, props.items.length - 6);
+  }, [props.degradeMarkdown, streaming, props.items.length]);
 
   const syncJumpVisibility = () => {
     const el = streamRef.current;
@@ -252,7 +288,60 @@ export function ChatTranscript(props: ChatTranscriptProps) {
             <div className="empty-state">请先打开一个项目文件夹，然后开始对话。</div>
           )}
 
-          {props.items.map((item) => {
+          {props.items.length === 0 &&
+            !props.disabledEmpty &&
+            ((props.starters && props.starters.length > 0) ||
+              (props.readinessHints && props.readinessHints.length > 0)) && (
+              <div className="empty-state empty-state-starters">
+                <p className="empty-state-title">开始对话</p>
+                <p className="empty-state-hint">
+                  选择下方提示，或直接在输入框提问。
+                </p>
+                {props.readinessHints && props.readinessHints.length > 0 && (
+                  <div className="empty-ready-hints">
+                    {props.readinessHints.map((hint) => (
+                      <button
+                        key={hint.label}
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={hint.onClick}
+                      >
+                        {hint.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {props.starters && props.starters.length > 0 && (
+                  <div className="starter-chips">
+                    {props.starters.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="starter-chip"
+                        onClick={() => props.onPickStarter?.(s.prompt)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          {visibleItems.hidden > 0 && (
+            <div className="history-virtualize-bar">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowAllHistory(true)}
+              >
+                显示更早的 {visibleItems.hidden} 条消息
+              </button>
+            </div>
+          )}
+
+          {visibleItems.items.map((item, i) => {
+            const absoluteIndex = visibleItems.hidden + i;
             if (item.kind === "user") {
               const entryId = item.entryId ?? item.id;
               const editing = props.editingEntryId === entryId;
@@ -334,6 +423,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
               if (!showThinkingBlock && !hasText) {
                 return null;
               }
+              const usePlain =
+                plainMarkdownCutoff >= 0 && absoluteIndex < plainMarkdownCutoff;
               return (
                 <div
                   key={item.id}
@@ -357,7 +448,11 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                   {showThinkingBlock && item.thinking && (
                     <ThinkingBlock thinking={item.thinking} done={item.done} />
                   )}
-                  <MarkdownBody content={item.text} streaming={!item.done} />
+                  <MarkdownBody
+                    content={item.text}
+                    streaming={!item.done}
+                    plain={usePlain}
+                  />
                 </div>
               );
             }

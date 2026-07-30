@@ -23,6 +23,7 @@ import {
   normalizeProjectKey,
 } from "@/lib/group-sessions";
 import { StatusIcon } from "./StatusIcon";
+import { useConfirm } from "@/lib/app-confirm";
 
 type ContextMenuState =
   | {
@@ -79,6 +80,7 @@ export function Sidebar({
   onResizeDoubleClick,
   resizing,
 }: Props) {
+  const confirm = useConfirm();
   const locked =
     busy ||
     compacting ||
@@ -256,7 +258,7 @@ export function Sidebar({
     });
   };
 
-  const runSessionMenu = (action: "rename" | "delete") => {
+  const runSessionMenu = async (action: "rename" | "delete") => {
     if (!menu || menu.kind !== "session") return;
     const { session } = menu;
     closeMenu();
@@ -264,33 +266,37 @@ export function Sidebar({
       startEdit(session);
       return;
     }
-    if (window.confirm(`删除会话「${session.name}」？`)) {
-      onDelete(session.path);
-    }
+    const ok = await confirm({
+      title: "删除会话",
+      message: `删除会话「${session.name}」？`,
+      confirmLabel: "删除",
+      tone: "danger",
+    });
+    if (ok) onDelete(session.path);
   };
 
-  const runProjectMenu = (action: "archive" | "deleteAll") => {
+  const runProjectMenu = async (action: "archive" | "deleteAll") => {
     if (!menu || menu.kind !== "project") return;
     const { key, cwd, label, sessionCount } = menu;
     closeMenu();
     if (action === "archive") {
       if (key === "") return;
-      if (
-        window.confirm(
-          `归档项目「${label}」？\n会话文件不会删除，再次打开该项目后会重新出现。`,
-        )
-      ) {
-        onHideProject(cwd, label);
-      }
+      const ok = await confirm({
+        title: "归档项目",
+        message: `归档项目「${label}」？\n会话文件不会删除，再次打开该项目后会重新出现。`,
+        confirmLabel: "归档",
+        tone: "warn",
+      });
+      if (ok) onHideProject(cwd, label);
       return;
     }
-    if (
-      window.confirm(
-        `删除「${label}」下的全部 ${sessionCount} 个对话？\n此操作不可恢复。`,
-      )
-    ) {
-      onDeleteProjectSessions(cwd);
-    }
+    const ok = await confirm({
+      title: "删除项目对话",
+      message: `删除「${label}」下的全部 ${sessionCount} 个对话？\n此操作不可恢复。`,
+      confirmLabel: "全部删除",
+      tone: "danger",
+    });
+    if (ok) onDeleteProjectSessions(cwd);
   };
 
   const activeKey = activeCwd ? normalizeProjectKey(activeCwd) : "";

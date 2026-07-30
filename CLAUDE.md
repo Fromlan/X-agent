@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.2.2`）。
+X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.3.1`）。
 
 **当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成、右栏（上下文压缩 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器 + Godot 文档）、Godot RPC、官方文档离线检索、应用内 Pi 登录引导与打包版自动更新。
 
@@ -35,7 +35,22 @@ npm run release:prepare -- x.y.z
 npm run release:notes -- x.y.z
 # minor 线起点（如 0.3.0）的 notes 会附带上一线 0.2.x 汇总；加 --no-aggregate 可关闭
 npm run release:test-changelog # 可选：验证 CHANGELOG 抽取 / 汇总
+# 手动把 apps/desktop/release 产物同步到 Gitee（需 GITEE_TOKEN；CI 发版也会自动跑）
+npm run release:sync-gitee -- x.y.z apps/desktop/release
 ```
+
+### 发版流程（GitHub + Gitee）
+
+1. `npm run release:prepare -- x.y.z`（改版本号、校验 CHANGELOG）
+2. 提交并打标签：`git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z`
+3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 构建 Windows 安装包，上传 **GitHub Releases**
+4. 若仓库配置了 Actions secret **`GITEE_TOKEN`**，同一次 CI 会调用 [`scripts/sync-gitee-release.mjs`](scripts/sync-gitee-release.mjs)，把相同产物同步到公开仓 [fromlan/x-agent](https://gitee.com/fromlan/x-agent)：
+   - 版本 Release：`vX.Y.Z`
+   - 滚动 feed：标签 **`latest`**（供 electron-updater generic 拉取 `latest.yml` / 安装包）
+5. 未配置 `GITEE_TOKEN` 时 GitHub 发版照常，仅跳过 Gitee 同步；也可本地手动 `release:sync-gitee`
+6. Windows 代码签名（可选）：在 Actions / 本地构建环境设置 `CSC_LINK` + `CSC_KEY_PASSWORD`（或 `WIN_CSC_LINK`），electron-builder 会自动签名；未设置则产出未签名包
+
+前提：Gitee 仓须为**公开**且已有至少一个 commit；令牌需具备 projects / Releases 写权限。
 
 `npm test`（在 `apps/desktop`）串联：
 
@@ -117,8 +132,11 @@ Electron 三进程边界：
 ### 认证与自动更新
 
 - `auth-check.ts` / `pi-cli.ts`（含 `openPiLogin`）
-- `auto-updater.ts`：仅打包版启用 `electron-updater`（GitHub Releases）
-- UI：设置 → 通用
+- `auto-updater.ts` / `update-feed.ts`：仅打包版启用 `electron-updater`
+  - 偏好 `updateSource`：`github`（默认）| `gitee`
+  - GitHub：`provider: "github"` → `Fromlan/X-agent` Releases
+  - Gitee：`provider: "generic"` → `https://gitee.com/fromlan/x-agent/releases/download/latest/`
+- UI：设置 → 通用 → **更新源** + 检查 / 下载 / 安装
 
 ### 持久化与隔离
 

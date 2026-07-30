@@ -14,15 +14,24 @@ import type {
   BashCheckResult,
   ClientPrefs,
   ColorMode,
+  GodotDocsStatusDto,
+  GodotRpcStatusDto,
   ModelInfo,
   PiCliStatus,
   SessionInfo,
   ThemeId,
   ThinkingLevel,
 } from "@shared/ipc";
+import { GODOT_TOOLS } from "@shared/ipc";
+import { useConfirm } from "./lib/app-confirm";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
 import { RetractConfirmModal } from "./components/RetractConfirmModal";
+import {
+  GodotToolsNudge,
+  ReadyChecklist,
+  type SettingsTabTarget,
+} from "./components/ReadyChecklist";
 import { TopBar } from "./components/TopBar";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -30,7 +39,12 @@ import {
   appendAtPath,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
+import { startersForProject } from "./lib/chat-starters";
 import { normalizeProjectKey } from "./lib/group-sessions";
+import {
+  allGodotEditorToolsEnabled,
+  buildReadyItems,
+} from "./lib/ready-checklist";
 import {
   RIGHT_PANEL_WIDTH_DEFAULT,
   RIGHT_PANEL_WIDTH_MAX,
@@ -60,6 +74,7 @@ type SettingsTab =
   | "plugins"
   | "godot"
   | "usage";
+type GodotSettingsSection = "editor" | "docs";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -76,6 +91,7 @@ function applyTheme(themeId: ThemeId, colorMode: ColorMode): void {
 }
 
 export default function App() {
+  const confirm = useConfirm();
   const [items, setItems] = useState(createEmptyState());
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
@@ -94,10 +110,19 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
     undefined,
   );
+  const [settingsGodotSection, setSettingsGodotSection] = useState<
+    GodotSettingsSection | undefined
+  >(undefined);
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [followNonce, setFollowNonce] = useState(0);
+  const [isGodotProject, setIsGodotProject] = useState(false);
+  const [rpcStatus, setRpcStatus] = useState<GodotRpcStatusDto | null>(null);
+  const [docsStatus, setDocsStatus] = useState<GodotDocsStatusDto | null>(null);
+  const [addonInstalled, setAddonInstalled] = useState<boolean | null>(null);
+  const [readyBusy, setReadyBusy] = useState(false);
+  const [readyNotice, setReadyNotice] = useState<string | null>(null);
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const usageVersion = useSyncExternalStore(
@@ -206,6 +231,134 @@ export default function App() {
     refreshSessions,
   });
 
+  const refreshProjectReadiness = useCallback(async (projectCwd: string | null) => {
+    if (!projectCwd) {
+      setIsGodotProject(false);
+      setAddonInstalled(null);
+      setRpcStatus(null);
+      setDocsStatus(null);
+      return;
+    }
+    try {
+      const listed = await window.xAgent.listProjectDir("");
+      const godot = Boolean(
+        listed.ok &&
+          listed.entries?.some(
+            (e) => !e.isDir && e.name.toLowerCase() === "project.godot",
+          ),
+      );
+      setIsGodotProject(godot);
+      if (!godot) {
+        setAddonInstalled(null);
+        setRpcStatus(null);
+        setDocsStatus(null);
+        return;
+      }
+      const [rpc, docs, addonDir] = await Promise.all([
+        window.xAgent.godotRpcStatus(),
+        window.xAgent.godotDocsGetStatus(),
+        window.xAgent.listProjectDir("addons"),
+      ]);
+      setRpcStatus(rpc);
+      setDocsStatus(docs);
+      const hasAddon = Boolean(
+        addonDir.ok &&
+          addonDir.entries?.some(
+            (e) => e.isDir && e.name.toLowerCase() === "x_agent_rpc",
+          ),
+      );
+      setAddonInstalled(hasAddon);
+    } catch {
+      setIsGodotProject(false);
+      setAddonInstalled(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshProjectReadiness(cwd);
+    setReadyNotice(null);
+  }, [cwd, refreshProjectReadiness]);
+
+  useEffect(() => {
+    if (!cwd || !isGodotProject) return;
+    const timer = window.setInterval(() => {
+      void window.xAgent.godotRpcStatus().then(setRpcStatus);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [cwd, isGodotProject]);
+
+  const projectKey = useMemo(
+    () => (cwd ? normalizeProjectKey(cwd) : ""),
+    [cwd],
+  );
+
+  const readyItems = useMemo(
+    () =>
+      buildReadyItems({
+        piCli,
+        auth,
+        modelCount: models.length,
+        bash,
+        isGodotProject,
+        prefs,
+        rpc: rpcStatus,
+        addonInstalled,
+        docs: docsStatus,
+      }),
+    [
+      piCli,
+      auth,
+      models.length,
+      bash,
+      isGodotProject,
+      prefs,
+      rpcStatus,
+      addonInstalled,
+      docsStatus,
+    ],
+  );
+
+  const checklistDismissed = Boolean(
+    projectKey &&
+      prefs?.dismissedReadyChecklistKeys?.includes(projectKey),
+  );
+  // Global auth/runtime issues always surface; project Godot steps respect dismiss.
+  const globalReadyPending = readyItems.some(
+    (i) =>
+      !i.done &&
+      (i.id === "auth" ||
+        i.id === "models" ||
+        i.id === "piCli" ||
+        i.id === "bash"),
+  );
+  const projectReadyPending = readyItems.some(
+    (i) =>
+      !i.done &&
+      (i.id === "rpcAddon" ||
+        i.id === "rpcBridge" ||
+        i.id === "godotTools" ||
+        i.id === "docs"),
+  );
+  const showReadyChecklist =
+    globalReadyPending || (projectReadyPending && !checklistDismissed);
+
+  const godotToolsNudgeDismissed = Boolean(
+    projectKey &&
+      prefs?.dismissedGodotToolsNudgeKeys?.includes(projectKey),
+  );
+  const showGodotToolsNudge =
+    isGodotProject &&
+    !godotToolsNudgeDismissed &&
+    Boolean(rpcStatus?.running) &&
+    (rpcStatus?.clients ?? 0) > 0 &&
+    !allGodotEditorToolsEnabled(prefs) &&
+    !showReadyChecklist;
+
+  const chatStarters = useMemo(
+    () => startersForProject(isGodotProject),
+    [isGodotProject],
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -285,6 +438,7 @@ export default function App() {
       const p = await window.xAgent.getPrefs();
       setPrefs(p);
       await refreshSessions();
+      await refreshProjectReadiness(result.cwd);
     } finally {
       setBusy(false);
     }
@@ -569,9 +723,13 @@ export default function App() {
   const toggleTool = async (tool: string) => {
     if (!prefs) return;
     if (sessionId) {
-      const ok = window.confirm(
-        "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
-      );
+      const ok = await confirm({
+        title: "更改工具白名单",
+        message:
+          "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
+        confirmLabel: "继续",
+        tone: "warn",
+      });
       if (!ok) return;
     }
     const tools = prefs.tools.includes(tool)
@@ -590,14 +748,142 @@ export default function App() {
     else setError(null);
   };
 
-  const openProviderSettings = () => {
-    setSettingsTab("providers");
+  const openSettings = () => {
+    setSettingsTab(undefined);
+    setSettingsGodotSection(undefined);
     setSettingsOpen(true);
   };
 
-  const openSettings = () => {
-    setSettingsTab(undefined);
+  const openSettingsAt = (
+    tab: SettingsTabTarget,
+    godotSection?: GodotSettingsSection,
+  ) => {
+    setSettingsTab(tab);
+    setSettingsGodotSection(godotSection);
     setSettingsOpen(true);
+  };
+
+  const dismissReadyChecklist = async () => {
+    if (!prefs || !projectKey) return;
+    const keys = new Set(prefs.dismissedReadyChecklistKeys ?? []);
+    keys.add(projectKey);
+    const next = await window.xAgent.setPrefs({
+      dismissedReadyChecklistKeys: [...keys],
+    });
+    setPrefs(next);
+  };
+
+  const dismissGodotToolsNudge = async () => {
+    if (!prefs || !projectKey) return;
+    const keys = new Set(prefs.dismissedGodotToolsNudgeKeys ?? []);
+    keys.add(projectKey);
+    const next = await window.xAgent.setPrefs({
+      dismissedGodotToolsNudgeKeys: [...keys],
+    });
+    setPrefs(next);
+  };
+
+  const enableGodotEditorTools = async () => {
+    if (!prefs) return;
+    setReadyBusy(true);
+    try {
+      const without = prefs.tools.filter(
+        (t) => !(GODOT_TOOLS as readonly string[]).includes(t),
+      );
+      const next = await window.xAgent.setPrefs({
+        tools: [...without, ...GODOT_TOOLS],
+      });
+      setPrefs(next);
+      await dismissGodotToolsNudge();
+    } finally {
+      setReadyBusy(false);
+    }
+  };
+
+  const installRpcAddon = async () => {
+    setReadyBusy(true);
+    try {
+      const res = await window.xAgent.installGodotRpcAddon();
+      if (!res.ok) {
+        setError(res.error ?? res.hint ?? "安装 RPC 插件失败");
+      } else {
+        setAddonInstalled(true);
+        await window.xAgent.godotRpcStart().then(setRpcStatus).catch(() => {});
+      }
+      await refreshProjectReadiness(cwd);
+    } finally {
+      setReadyBusy(false);
+    }
+  };
+
+  const startRpcBridge = async () => {
+    setReadyBusy(true);
+    setReadyNotice(null);
+    setError(null);
+    try {
+      const status = await window.xAgent.godotRpcStart();
+      setRpcStatus(status);
+      if (status.error) {
+        setError(status.error);
+        setReadyNotice(status.error);
+        return;
+      }
+      if (status.warning) {
+        setReadyNotice(status.warning);
+      } else if (status.running && (status.clients ?? 0) > 0) {
+        setReadyNotice(`桥接已连接 Godot（${status.clients}）`);
+      } else if (status.running) {
+        setReadyNotice(
+          `桥接已启动（端口 ${status.port}）。请在 Godot 启用 X-agent RPC 并保持编辑器打开。`,
+        );
+      } else {
+        setReadyNotice("桥接未能启动，请到设置 → Godot 查看详情。");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setReadyNotice(msg);
+    } finally {
+      setReadyBusy(false);
+    }
+  };
+
+  const launchGodotEditor = async () => {
+    setReadyBusy(true);
+    setReadyNotice(null);
+    setError(null);
+    try {
+      // Ensure bridge is up before launching the editor.
+      const status = await window.xAgent.godotRpcStart();
+      setRpcStatus(status);
+      if (status.error) {
+        setError(status.error);
+        setReadyNotice(status.error);
+        return;
+      }
+      const res = await window.xAgent.launchGodotEditor();
+      if (!res.ok) {
+        const msg = res.error ?? "启动 Godot 编辑器失败";
+        setError(msg);
+        setReadyNotice(msg);
+        return;
+      }
+      setReadyNotice(
+        res.hint ??
+          `已请求启动编辑器；桥接端口 ${status.port}，等待插件连入。`,
+      );
+      setRpcStatus(await window.xAgent.godotRpcStatus());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setReadyNotice(msg);
+    } finally {
+      setReadyBusy(false);
+    }
+  };
+
+  const pickStarter = (prompt: string) => {
+    setInput(prompt);
   };
 
   const openPiLogin = async () => {
@@ -648,74 +934,52 @@ export default function App() {
         compacting={compacting}
         busy={busy}
       />
-      {piCli && !piCli.ok && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>{piCliInstalling ? "正在安装 Pi CLI…" : piCli.message}</span>
-          {piCli.canInstall && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={installPi}
-              disabled={piCliInstalling}
-            >
-              {piCliInstalling ? "安装中…" : "安装 Pi CLI"}
-            </button>
-          )}
-        </div>
+      {showReadyChecklist && (
+        <ReadyChecklist
+          items={readyItems}
+          busy={readyBusy || busy}
+          piCliInstalling={piCliInstalling}
+          notice={readyNotice}
+          onDismissNotice={() => setReadyNotice(null)}
+          onDismiss={() => {
+            void dismissReadyChecklist();
+          }}
+          onOpenSettings={openSettingsAt}
+          onInstallPiCli={() => {
+            void installPi();
+          }}
+          onOpenPiLogin={() => {
+            void openPiLogin();
+          }}
+          onApplyBash={() => {
+            void applyBash();
+          }}
+          onInstallRpcAddon={() => {
+            void installRpcAddon();
+          }}
+          onStartRpcBridge={() => {
+            void startRpcBridge();
+          }}
+          onLaunchGodotEditor={() => {
+            void launchGodotEditor();
+          }}
+          onEnableGodotTools={() => {
+            void enableGodotEditorTools();
+          }}
+        />
       )}
-      {auth && !auth.ok && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>{auth.message}</span>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => void openPiLogin()}
-          >
-            打开 Pi 登录
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={openProviderSettings}
-          >
-            配置供应商
-          </button>
-        </div>
-      )}
-      {models.length === 0 && auth?.ok && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>无可用模型。请检查 ~/.pi/agent/models.json 与认证配置。</span>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={openProviderSettings}
-          >
-            配置供应商
-          </button>
-        </div>
-      )}
-      {!bash?.ok && bash && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>{bash.message}</span>
-          {bash.suggestedShellPath && (
-            <button type="button" className="btn btn-secondary btn-sm" onClick={applyBash}>
-              写入 shellPath
-            </button>
-          )}
-        </div>
-      )}
-      {bash?.ok && bash.suggestedShellPath && bash.message.includes("可写入") && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>已检测到 bash，但尚未写入 Pi settings。</span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={applyBash}>
-            写入 shellPath
-          </button>
-        </div>
+      {showGodotToolsNudge && (
+        <GodotToolsNudge
+          visible
+          busy={readyBusy}
+          onEnable={() => {
+            void enableGodotEditorTools();
+          }}
+          onDismiss={() => {
+            void dismissGodotToolsNudge();
+          }}
+          onOpenSettings={() => openSettingsAt("tools")}
+        />
       )}
       {error && (
         <div className="banner error">
@@ -773,6 +1037,32 @@ export default function App() {
           skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
           queuedSteering={queuedSteering}
           forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
+          starters={chatStarters}
+          readinessHints={
+            !cwd
+              ? undefined
+              : [
+                  ...(isGodotProject && !allGodotEditorToolsEnabled(prefs)
+                    ? [
+                        {
+                          label: "启用 Godot 工具",
+                          onClick: () => {
+                            void enableGodotEditorTools();
+                          },
+                        },
+                      ]
+                    : []),
+                  {
+                    label: isGodotProject ? "Godot 设置" : "打开设置",
+                    onClick: () =>
+                      openSettingsAt(
+                        isGodotProject ? "godot" : "general",
+                        isGodotProject ? "editor" : undefined,
+                      ),
+                  },
+                ]
+          }
+          onPickStarter={pickStarter}
           onOpenToolInPanel={(toolId, args) => {
             openToolInRightPanel(toolId, args, () => {
               void ensureRightPanelOpen();
@@ -828,9 +1118,11 @@ export default function App() {
           prefs={prefs}
           cwd={cwd}
           initialTab={settingsTab}
+          initialGodotSection={settingsGodotSection}
           onClose={() => {
             setSettingsOpen(false);
             setSettingsTab(undefined);
+            setSettingsGodotSection(undefined);
           }}
           onToggleTool={toggleTool}
           hasActiveSession={Boolean(sessionId)}

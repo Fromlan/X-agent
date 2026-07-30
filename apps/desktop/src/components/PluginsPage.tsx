@@ -15,6 +15,7 @@ import type {
 } from "@shared/ipc";
 import { SelectMenu } from "./SelectMenu";
 import { SettingsNotice, useAutoClearNotice } from "./SettingsNotice";
+import { useConfirm } from "@/lib/app-confirm";
 
 interface Props {
   cwd: string | null;
@@ -39,6 +40,7 @@ function kindLabel(kind: PluginKind): string {
 }
 
 export function PluginsPage({ cwd }: Props) {
+  const confirm = useConfirm();
   const [kind, setKind] = useState<PageKind>("prompt");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [items, setItems] = useState<PluginItem[]>([]);
@@ -167,7 +169,13 @@ export function PluginsPage({ cwd }: Props) {
 
   const remove = async () => {
     if (!selected) return;
-    if (!confirm(`删除 ${selected.name}？此操作不可撤销。`)) return;
+    const ok = await confirm({
+      title: "删除插件",
+      message: `删除 ${selected.name}？此操作不可撤销。`,
+      confirmLabel: "删除",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusy(true);
     const result = await window.xAgent.deletePlugin(selected.path);
     setBusy(false);
@@ -373,13 +381,13 @@ export function PluginsPage({ cwd }: Props) {
                       className="btn btn-ghost btn-sm"
                       disabled={busy}
                       onClick={async () => {
-                        if (
-                          !confirm(
-                            `卸载 ${pkg.name}？将执行 pi uninstall 并从设置中移除该包。`,
-                          )
-                        ) {
-                          return;
-                        }
+                        const ok = await confirm({
+                          title: "卸载 Packages",
+                          message: `卸载 ${pkg.name}？将执行 pi uninstall 并从设置中移除该包。`,
+                          confirmLabel: "卸载",
+                          tone: "danger",
+                        });
+                        if (!ok) return;
                         setBusy(true);
                         const res = await window.xAgent.uninstallPackage(
                           pkg.source,

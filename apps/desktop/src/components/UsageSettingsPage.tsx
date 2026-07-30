@@ -6,6 +6,7 @@ import {
 } from "@shared/cache-hit";
 import type { UsageSummary } from "@shared/ipc";
 import { SettingsNotice, useAutoClearNotice } from "./SettingsNotice";
+import { useConfirm } from "@/lib/app-confirm";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export function UsageSettingsPage({ active }: Props) {
+  const confirm = useConfirm();
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -86,13 +88,14 @@ export function UsageSettingsPage({ active }: Props) {
   }, [active, refresh]);
 
   const onClear = async () => {
-    if (
-      !window.confirm(
+    const ok = await confirm({
+      title: "清空用量统计",
+      message:
         "确认清空本地用量统计？不会删除会话文件，仅清除按日/按模型汇总。",
-      )
-    ) {
-      return;
-    }
+      confirmLabel: "清空",
+      tone: "danger",
+    });
+    if (!ok) return;
     setClearing(true);
     setMsg(null);
     setError(null);
