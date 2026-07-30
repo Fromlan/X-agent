@@ -25,6 +25,8 @@ type Props = {
   onInstallPiCli?: () => void;
   onOpenPiLogin?: () => void;
   onApplyBash?: () => void;
+  onOpenGitDownload?: () => void;
+  onOpenNodeDownload?: () => void;
   onInstallRpcAddon?: () => void;
   onStartRpcBridge?: () => void;
   onLaunchGodotEditor?: () => void;
@@ -48,11 +50,15 @@ function actionForItem(
           ? "enableGodotTools"
           : item.id === "piCli"
             ? "installPi"
-            : item.id === "bash"
-              ? "applyBash"
-              : item.id === "auth" || item.id === "models"
-                ? "openSettings"
-                : "openSettings");
+            : item.id === "node"
+              ? "openNodeDownload"
+              : item.id === "bash"
+                ? "applyBash"
+                : item.id === "git"
+                  ? "openGitDownload"
+                  : item.id === "auth" || item.id === "models"
+                    ? "openSettings"
+                    : "openSettings");
 
   switch (kind) {
     case "installPi":
@@ -63,6 +69,11 @@ function actionForItem(
         };
       }
       break;
+    case "openNodeDownload":
+      if (props.onOpenNodeDownload) {
+        return { label: "打开 Node 下载页", onClick: props.onOpenNodeDownload };
+      }
+      break;
     case "openPiLogin":
       if (props.onOpenPiLogin) {
         return { label: "打开 Pi 登录", onClick: props.onOpenPiLogin };
@@ -71,6 +82,14 @@ function actionForItem(
     case "applyBash":
       if (props.onApplyBash) {
         return { label: "写入 shellPath", onClick: props.onApplyBash };
+      }
+      break;
+    case "openGitDownload":
+      if (props.onOpenGitDownload) {
+        return {
+          label: "下载 Git for Windows",
+          onClick: props.onOpenGitDownload,
+        };
       }
       break;
     case "installAddon":

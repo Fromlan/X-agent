@@ -31,7 +31,11 @@ type Props = {
   placeholder?: string;
 };
 
-type MenuPos = { top: number; left: number; width: number; maxHeight: number };
+type MenuPos = {
+  left: number;
+  width: number;
+  maxHeight: number;
+} & ({ top: number; bottom?: undefined } | { top?: undefined; bottom: number });
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -96,7 +100,8 @@ export function SelectMenu(props: Props) {
     const preferredHeight = Math.min(320, window.innerHeight * 0.5);
     const spaceBelow = window.innerHeight - rect.bottom - viewportPad - gap;
     const spaceAbove = rect.top - viewportPad - gap;
-    const placeBelow = spaceBelow >= Math.min(160, preferredHeight) || spaceBelow >= spaceAbove;
+    const placeBelow =
+      spaceBelow >= Math.min(160, preferredHeight) || spaceBelow >= spaceAbove;
     const maxHeight = Math.max(
       120,
       Math.min(preferredHeight, placeBelow ? spaceBelow : spaceAbove),
@@ -105,11 +110,23 @@ export function SelectMenu(props: Props) {
       Math.max(rect.width, variant === "pill" ? 200 : rect.width),
       window.innerWidth - viewportPad * 2,
     );
-    const left = clamp(rect.left, viewportPad, window.innerWidth - width - viewportPad);
-    const top = placeBelow
-      ? rect.bottom + gap
-      : Math.max(viewportPad, rect.top - gap - maxHeight);
-    setPos({ top, left, width, maxHeight });
+    const left = clamp(
+      rect.left,
+      viewportPad,
+      window.innerWidth - width - viewportPad,
+    );
+    // Prefer bottom anchoring when opening upward so a short panel hugs the
+    // trigger; top = rect.top - maxHeight leaves a gap when content < maxHeight.
+    if (placeBelow) {
+      setPos({ top: rect.bottom + gap, left, width, maxHeight });
+    } else {
+      setPos({
+        bottom: window.innerHeight - rect.top + gap,
+        left,
+        width,
+        maxHeight,
+      });
+    }
   }, [variant]);
 
   useLayoutEffect(() => {
@@ -238,6 +255,7 @@ export function SelectMenu(props: Props) {
             aria-label={ariaLabel}
             style={{
               top: pos.top,
+              bottom: pos.bottom,
               left: pos.left,
               width: pos.width,
               maxHeight: pos.maxHeight,

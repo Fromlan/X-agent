@@ -4,6 +4,7 @@
  */
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
+import type { GitCheckResult } from "../../shared/ipc";
 
 let cachedGitExecutable: string | null = null;
 let cachedAvailable: boolean | null = null;
@@ -105,8 +106,36 @@ export async function isGitAvailable(): Promise<boolean> {
   return cachedAvailable;
 }
 
-/** @internal */
-export function resetGitExecCacheForTests(): void {
+/** Clear path / availability cache so a later probe can see a newly installed git. */
+export function invalidateGitExecCache(): void {
   cachedGitExecutable = null;
   cachedAvailable = null;
+}
+
+/**
+ * User-facing git probe for the ready checklist / settings.
+ * Always invalidates cache first so 「检测」 works after installing Git.
+ */
+export async function checkGit(): Promise<GitCheckResult> {
+  invalidateGitExecCache();
+  const ok = await isGitAvailable();
+  if (ok) {
+    const gitPath = resolveGitExecutable();
+    return {
+      ok: true,
+      gitPath,
+      message: `已检测到 Git: ${gitPath}`,
+    };
+  }
+  return {
+    ok: false,
+    gitPath: null,
+    message:
+      "未检测到 git。Shadow Git 工作区检查点需要 Git。请安装 Git for Windows，安装后点击「检测」。",
+  };
+}
+
+/** @internal */
+export function resetGitExecCacheForTests(): void {
+  invalidateGitExecCache();
 }

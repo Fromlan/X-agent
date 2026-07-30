@@ -1,6 +1,7 @@
 import { dialog, ipcMain, shell, type BrowserWindow } from "electron";
 import { applyBashShellPath, checkBash } from "./agent/bash-check";
 import { checkAuth } from "./agent/auth-check";
+import { checkGit } from "./agent/git-exec";
 import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
 import { loadPrefs, loadPrefsWithRecovery, patchPrefs } from "./agent/prefs";
 import type { PrefsLoadResult } from "./agent/prefs";
@@ -140,6 +141,7 @@ function registerIpc(
     return { ok: true, path: result.filePaths[0]! };
   });
   ipcMain.handle(IPC_CHANNELS.checkAuth, async () => checkAuth());
+  ipcMain.handle(IPC_CHANNELS.checkGit, async () => checkGit());
   ipcMain.handle(IPC_CHANNELS.checkPiCli, async () => checkPiCli());
   ipcMain.handle(IPC_CHANNELS.installPiCli, async () => installPiCli());
   ipcMain.handle(IPC_CHANNELS.listProjectDir, async (_e, relPath?: string) =>

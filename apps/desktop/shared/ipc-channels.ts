@@ -34,6 +34,7 @@ export const IPC_CHANNELS = {
   checkBash: "checkBash",
   applyBashShellPath: "applyBashShellPath",
   pickBashShell: "pickBashShell",
+  checkGit: "checkGit",
   checkAuth: "checkAuth",
   checkPiCli: "checkPiCli",
   installPiCli: "installPiCli",
