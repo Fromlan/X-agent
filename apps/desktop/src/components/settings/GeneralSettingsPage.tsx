@@ -182,7 +182,7 @@ export function GeneralSettingsPage({
                       }}
                     />
                   </label>
-                  <div className="settings-row">
+                    <div className="settings-row">
                     <span className="settings-row-label">默认 Thinking</span>
                     <SelectMenu
                       variant="control"
@@ -194,17 +194,20 @@ export function GeneralSettingsPage({
                       onChange={(v) => {
                         void (async () => {
                           const level = v as ThinkingLevel;
+                          // Persist preference first so it survives even when no
+                          // session is open (setThinkingLevel requires a session).
+                          let next = await window.xAgent.setPrefs({
+                            thinkingLevel: level,
+                          });
                           const applied =
                             await window.xAgent.setThinkingLevel(level);
                           if (applied.ok) {
-                            const next = await window.xAgent.getPrefs();
+                            // Session path may clamp (e.g. DeepSeek V4 medium→high).
+                            next = await window.xAgent.getPrefs();
                             onPrefsChanged?.(next);
                             setGeneralMsg(null);
                             return;
                           }
-                          const next = await window.xAgent.setPrefs({
-                            thinkingLevel: level,
-                          });
                           onPrefsChanged?.(next);
                           setGeneralMsg(
                             "已保存默认 Thinking；打开项目后对当前会话生效。",

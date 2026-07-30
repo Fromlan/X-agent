@@ -14,6 +14,27 @@
 
 ### 改进
 
+### 修复
+
+## 0.3.5
+
+### 功能
+
+- **文件预览 Markdown**：右栏「文件」对 `.md` / `.mdx` / `.markdown` 默认渲染（GFM），可切换源码
+- **技能调用可见**：聊天中 `read` 加载 `SKILL.md` 时显示为「技能 · 名称」卡片，而非普通工具
+
+### 改进
+
+- **默认 Thinking 为 high**：更贴合 DeepSeek V4 等仅支持 off/high/max 的模型；打开/新建会话强制应用默认档，并回写钳制后的生效值
+- **DeepSeek models.json**：为自定义 id（如 `deepseek-v4-pro[1M]`）补写 `reasoning` / V4 `thinkingLevelMap`，启动时修复缺字段的旧条目，避免 Thinking 被钳成 off
+- **引用文件缩略**：发送后的 `<file>` 块在对话与撤回回填输入框中显示为 `@路径` 芯片（可展开）
+- **对话吸底跟随**：未上翻时持续跟随最新；仅向上滚动取消跟随，避免布局抖动误取消
+
+### 修复
+
+- **开发环境安装 Godot RPC 插件**：兼容 electron-vite `out/main/chunks` 路径，正确找到仓库内 `packages/godot-editor-rpc`
+- **打包版 addon 路径**：优先使用 `extraResources` 内置插件，避免 cwd 落在 monorepo 时误拷开发树
+
 ## 0.3.4
 
 ### 功能

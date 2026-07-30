@@ -4,6 +4,7 @@ export const PIN_THRESHOLD_PX = 80;
 
 export type ChatScrollPinState = {
   pinned: boolean;
+  /** True while we are programmatically scrolling to the bottom. */
   ignoreProgrammatic: boolean;
 };
 
@@ -33,11 +34,9 @@ export function reduceChatScrollPin(
     case "programmatic_follow_end":
       return { ...state, ignoreProgrammatic: false };
     case "scroll":
+      // While following programmatically, ignore scroll geometry — a mid-layout
+      // frame often reports !nearBottom and must not be treated as user unpin.
       if (state.ignoreProgrammatic) {
-        // User won a race against programmatic follow — clear pin + ignore.
-        if (!event.nearBottom) {
-          return { pinned: false, ignoreProgrammatic: false };
-        }
         return state;
       }
       return { ...state, pinned: event.nearBottom };
@@ -86,11 +85,15 @@ export function isVerticalScrollbarPointer(
   return clientX >= rect.left + el.clientWidth;
 }
 
-const UNPIN_KEYS = new Set([
-  "PageUp",
-  "Home",
-  "ArrowUp",
-]);
+/**
+ * Wheel / trackpad delta that means "scroll toward older messages" (up).
+ * Positive deltaY is typically scroll down (toward latest).
+ */
+export function isWheelUnpinDelta(deltaY: number): boolean {
+  return deltaY < 0;
+}
+
+const UNPIN_KEYS = new Set(["PageUp", "Home", "ArrowUp"]);
 
 export function isScrollUnpinKey(key: string): boolean {
   return UNPIN_KEYS.has(key);
