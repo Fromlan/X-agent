@@ -380,7 +380,7 @@ export interface FileRestoreReport {
 }
 
 export interface RetractOptions {
-  /** Restore write/edit baselines for the abandoned segment. Default true. */
+  /** Restore workspace files for the abandoned segment. Default true. */
   undoFiles?: boolean;
 }
 
@@ -388,13 +388,17 @@ export interface RetractPreview {
   ok: boolean;
   error?: string;
   editorText?: string;
-  /** Rel-paths that have a restorable baseline. */
+  /** Rel-paths that will be restored (shadow tree diff or write/edit baselines). */
   restorablePaths: string[];
-  /** Rel-paths touched by write/edit but missing baseline. */
+  /** Rel-paths touched by write/edit but missing baseline (baseline fallback only). */
   unrestorablePaths: string[];
   hasBash: boolean;
   hasGodot: boolean;
   warnings: string[];
+  /** How file restore will run. */
+  restoreMode?: "shadow" | "baseline" | "none";
+  /** True when Shadow Git checkpoints are active for this project. */
+  shadowAvailable?: boolean;
 }
 
 export interface RetractResult {

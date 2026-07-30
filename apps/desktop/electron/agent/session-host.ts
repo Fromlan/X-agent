@@ -42,6 +42,7 @@ import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
 import { createGodotDocsTools } from "./godot-docs-tools";
 import { TurnFileTracker } from "./turn-file-tracker";
+import { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
   normalizeProjectKey,
   pickFallbackSessionPath,
@@ -92,6 +93,7 @@ export class SessionHost {
   /** Untruncated (capped) tool payloads for right-panel detail view. */
   private toolDetails = new Map<string, ToolDetailRecord>();
   private fileTracker = new TurnFileTracker();
+  private shadowCheckpoints = new ShadowCheckpointTracker();
   /** Last successful assistant turn usage (for snapshot lastTurn). */
   private lastTurnUsage: TurnUsage | undefined;
   /** Session stats snapshot at compaction_start for daily-store delta. */
@@ -242,6 +244,7 @@ export class SessionHost {
       emitHistoryReplace: () => this.emitHistoryReplace(),
       messageIdFrom: (message) => this.messageIdFrom(message),
       fileTracker: this.fileTracker,
+      shadowCheckpoints: this.shadowCheckpoints,
       toolDetails: this.toolDetails,
       getSession: () => this.bundle?.session ?? null,
       setLastTurnUsage: (usage) => {
@@ -497,6 +500,7 @@ export class SessionHost {
     // Drop tool detail cache so IDs from a prior session cannot leak into the panel.
     this.toolDetails.clear();
     this.fileTracker.clear();
+    this.shadowCheckpoints.clear();
     this.autoTitleInFlight = false;
   }
 
@@ -605,6 +609,8 @@ export class SessionHost {
     this.fileTracker.setCwd(cwd);
     this.fileTracker.clear();
     this.fileTracker.loadFromSession(session.sessionManager);
+    await this.shadowCheckpoints.setCwd(cwd);
+    this.shadowCheckpoints.loadFromSession(session.sessionManager);
 
     const history: HistoryItem[] = branchEntriesToHistory(
       session.sessionManager.getBranch(),
@@ -893,6 +899,7 @@ export class SessionHost {
       if (session.isStreaming) {
         await session.prompt(trimmed, { streamingBehavior: "steer" });
       } else {
+        await this.shadowCheckpoints.preparePromptCheckpoint();
         await session.prompt(trimmed);
       }
       return { ok: true };
@@ -921,14 +928,47 @@ export class SessionHost {
         hasBash: false,
         hasGodot: false,
         warnings: [],
+        restoreMode: "none",
+        shadowAvailable: this.shadowCheckpoints.enabledShadow,
       };
     }
     const sm = this.bundle!.session.sessionManager;
-    const preview = this.fileTracker.previewRestore(sm, resolved.entryId);
+    const scan = this.fileTracker.scanSegmentSince(sm, resolved.entryId);
+    const shadowPreview = await this.shadowCheckpoints.previewRestore(
+      sm,
+      resolved.entryId,
+      scan,
+    );
+
+    if (shadowPreview.mode === "shadow") {
+      return {
+        ok: true,
+        editorText: resolved.editorText,
+        restorablePaths: shadowPreview.restorablePaths,
+        unrestorablePaths: [],
+        hasBash: shadowPreview.hasBash,
+        hasGodot: shadowPreview.hasGodot,
+        warnings: shadowPreview.warnings,
+        restoreMode: "shadow",
+        shadowAvailable: true,
+      };
+    }
+
+    const baseline = this.fileTracker.previewRestore(sm, resolved.entryId);
+    const warnings = [
+      ...shadowPreview.warnings,
+      ...baseline.warnings.filter((w) => !shadowPreview.warnings.includes(w)),
+    ];
     return {
       ok: true,
       editorText: resolved.editorText,
-      ...preview,
+      restorablePaths: baseline.restorablePaths,
+      unrestorablePaths: baseline.unrestorablePaths,
+      hasBash: baseline.hasBash,
+      hasGodot: baseline.hasGodot,
+      warnings,
+      restoreMode: "baseline",
+      shadowAvailable: this.shadowCheckpoints.enabledShadow,
     };
   }
 
@@ -938,7 +978,7 @@ export class SessionHost {
    *   1. abort 当前流（若有）。
    *   2. 只读 scan 即将废弃的 segment（不写盘）；navigate 取消时无需回滚。
    *   3. navigateTree；若 cancelled 则直接返回。
-   *   4. navigate 成功后按预扫路径 restorePaths（此时 branch 已不含废弃节点）。
+   *   4. navigate 成功后优先 Shadow checkout；否则按预扫路径 restorePaths。
    *   5. dropBaselines · persistDirty · 清空 activeUserEntryId · history replace。
    */
   async retractToUserMessage(
@@ -973,21 +1013,47 @@ export class SessionHost {
 
       let restoreReport: RetractResult["restoreReport"];
       if (undoFiles && pendingScan) {
-        restoreReport = this.fileTracker.restorePaths(
-          pendingScan.mutationPaths,
+        const shadow = await this.shadowCheckpoints.restoreToUserTurn(
+          sm,
+          resolved.entryId,
           pendingScan.userEntryIds,
         );
-        if (pendingScan.hasBash) {
-          restoreReport.skipped.push({ reason: "bash_unknown" });
-          restoreReport.warnings.push(
-            "该段包含 bash，命令副作用无法保证还原。",
+        if (shadow.used === "shadow" && shadow.report) {
+          restoreReport = shadow.report;
+          if (pendingScan.hasGodot) {
+            restoreReport.skipped.push({ reason: "godot" });
+            restoreReport.warnings.push(
+              "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
+            );
+          }
+          if (pendingScan.hasBash) {
+            restoreReport.warnings.push(
+              "该段包含 bash：cwd 内文件已尽量由 Shadow 还原；cwd 外副作用无法还原。",
+            );
+          }
+        } else {
+          restoreReport = this.fileTracker.restorePaths(
+            pendingScan.mutationPaths,
+            pendingScan.userEntryIds,
           );
-        }
-        if (pendingScan.hasGodot) {
-          restoreReport.skipped.push({ reason: "godot" });
-          restoreReport.warnings.push(
-            "该段包含 Godot 工具，编辑器状态无法还原。",
-          );
+          if (shadow.report?.warnings.length) {
+            restoreReport.warnings.push(
+              "Shadow 检查点还原失败，已降级为 write/edit 基线。",
+              ...shadow.report.warnings,
+            );
+          }
+          if (pendingScan.hasBash) {
+            restoreReport.skipped.push({ reason: "bash_unknown" });
+            restoreReport.warnings.push(
+              "该段包含 bash，命令副作用无法保证还原。",
+            );
+          }
+          if (pendingScan.hasGodot) {
+            restoreReport.skipped.push({ reason: "godot" });
+            restoreReport.warnings.push(
+              "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
+            );
+          }
         }
         this.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);
         this.fileTracker.persistDirty(sm);

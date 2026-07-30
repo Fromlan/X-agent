@@ -6,7 +6,7 @@
 
 X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.3.1`）。
 
-**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成、右栏（上下文压缩 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器 + Godot 文档）、Godot RPC、官方文档离线检索、应用内 Pi 登录引导与打包版自动更新。
+**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、右栏（上下文压缩 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器 + Godot 文档）、Godot RPC、官方文档离线检索、应用内 Pi 登录引导与打包版自动更新。
 
 运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
@@ -48,7 +48,7 @@ npm run release:dist           # 发版前本地 typecheck + test + 打 Windows 
 
 `npm test`（在 `apps/desktop`）串联：
 
-`test-history-mapper`、`test-turn-file-tracker`、`test-session-paths`、`test-session-title`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
 冒烟（需本机认证）：
 
@@ -87,7 +87,7 @@ Electron 三进程边界：
 6. 用量经 `usage_update` / `usage-store`；右栏可 `compactSession` → `session.compact()`。
 7. `session_info` / status / prefs（如 `lastSessionPath`）写入顶栏与偏好。
 
-流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
+流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
 
 上下文组装细节见 [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)。
 
@@ -140,6 +140,7 @@ Electron 三进程边界：
 | `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent-usage.json` | 用量汇总 |
 | `~/.pi/agent/x-agent/sessions/` | 本应用会话 |
+| `~/.pi/agent/x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离） |
 | `~/.pi/agent/x-agent/godot-docs/` | Godot 文档缓存 |
 | `auth.json` / `models.json` | Pi 认证与模型 |
 
