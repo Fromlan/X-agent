@@ -14,7 +14,12 @@
  *   GITEE_OWNER   optional — default fromlan
  *   GITEE_REPO    optional — default x-agent
  *   GITEE_TARGET  optional — target_commitish (default: repo default_branch)
+ *   GITEE_UPLOAD_ATTEMPTS  optional — default 5
+ *
+ * Large attach uploads use curl (30min max-time + retries). Plain fetch/undici
+ * defaults abort ~100MB bodies around 300s, which failed v0.3.2 on CI.
  */
+import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
@@ -22,6 +27,10 @@ const API = "https://gitee.com/api/v5";
 const OWNER = process.env.GITEE_OWNER || "fromlan";
 const REPO = process.env.GITEE_REPO || "x-agent";
 const TOKEN = process.env.GITEE_TOKEN || "";
+const UPLOAD_ATTEMPTS = Math.max(
+  1,
+  Number.parseInt(process.env.GITEE_UPLOAD_ATTEMPTS || "5", 10) || 5,
+);
 
 function usage() {
   console.error(
@@ -38,7 +47,58 @@ function normalizeVersion(raw) {
   return v;
 }
 
-async function gitee(pathname, { method = "GET", query, body, formData } = {}) {
+function formatError(err) {
+  if (!(err instanceof Error)) return String(err);
+  const parts = [err.message];
+  let cause = err.cause;
+  let depth = 0;
+  while (cause && depth < 4) {
+    if (cause instanceof Error) {
+      parts.push(`cause: ${cause.message}`);
+      cause = cause.cause;
+    } else {
+      parts.push(`cause: ${String(cause)}`);
+      break;
+    }
+    depth += 1;
+  }
+  return parts.join(" | ");
+}
+
+function sleep(ms) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function isRetryableUploadError(err) {
+  const text = formatError(err).toLowerCase();
+  return (
+    /fetch failed|curl |econnreset|etimedout|econnrefused|socket|network|timeout|aborted|UND_ERR|5\d\d\b|28\b|exit 2[28]\b/.test(
+      text,
+    )
+  );
+}
+
+async function withRetry(label, fn, { attempts = UPLOAD_ATTEMPTS } = {}) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const detail = formatError(err);
+      console.error(`  ${label} failed (attempt ${i}/${attempts}): ${detail}`);
+      if (i >= attempts || !isRetryableUploadError(err)) {
+        throw err;
+      }
+      const waitMs = Math.min(60_000, 3000 * 2 ** (i - 1));
+      console.log(`  retrying in ${Math.round(waitMs / 1000)}s…`);
+      await sleep(waitMs);
+    }
+  }
+  throw lastErr;
+}
+
+async function gitee(pathname, { method = "GET", query, body } = {}) {
   const url = new URL(`${API}${pathname}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -52,12 +112,7 @@ async function gitee(pathname, { method = "GET", query, body, formData } = {}) {
   /** @type {RequestInit} */
   const init = { method, headers: {} };
 
-  if (formData) {
-    if (!formData.has("access_token")) {
-      formData.append("access_token", TOKEN);
-    }
-    init.body = formData;
-  } else if (body !== undefined) {
+  if (body !== undefined) {
     const params = new URLSearchParams();
     params.set("access_token", TOKEN);
     for (const [k, v] of Object.entries(body)) {
@@ -85,6 +140,34 @@ async function gitee(pathname, { method = "GET", query, body, formData } = {}) {
     throw new Error(`${method} ${pathname} → ${res.status}: ${msg}`);
   }
   return json;
+}
+
+function runCurl(args) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn("curl", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolvePromise({ stdout, stderr });
+        return;
+      }
+      const detail = (stderr || stdout || "").trim() || `curl exit ${code}`;
+      reject(new Error(`curl failed (exit ${code}): ${detail}`));
+    });
+  });
 }
 
 async function getRepo() {
@@ -139,13 +222,41 @@ async function createRelease({ tag, name, body, targetCommitish }) {
 
 async function uploadAttach(releaseId, filePath) {
   const name = basename(filePath);
-  const bytes = readFileSync(filePath);
-  const form = new FormData();
-  form.append("access_token", TOKEN);
-  form.append("file", new Blob([bytes]), name);
-  return gitee(`/repos/${OWNER}/${REPO}/releases/${releaseId}/attach_files`, {
-    method: "POST",
-    formData: form,
+  const sizeMb = (statSync(filePath).size / (1024 * 1024)).toFixed(1);
+  const url = `${API}/repos/${OWNER}/${REPO}/releases/${releaseId}/attach_files`;
+  // Streaming multipart via curl — avoids undici's ~300s bodyTimeout on ~100MB exes.
+  await withRetry(`upload ${name} (${sizeMb} MB)`, async () => {
+    const { stdout } = await runCurl([
+      "-sS",
+      "-f",
+      "-X",
+      "POST",
+      url,
+      "-F",
+      `access_token=${TOKEN}`,
+      "-F",
+      `file=@${filePath};filename=${name}`,
+      "--connect-timeout",
+      "60",
+      "--max-time",
+      "1800",
+      "--retry",
+      "0",
+    ]);
+    if (stdout.trim()) {
+      try {
+        const json = JSON.parse(stdout);
+        if (json?.message && !json?.id && !json?.name) {
+          throw new Error(json.message);
+        }
+      } catch (err) {
+        if (err instanceof SyntaxError) {
+          // Some Gitee responses may be empty or non-JSON on success.
+          return;
+        }
+        throw err;
+      }
+    }
   });
 }
 
@@ -158,7 +269,12 @@ function collectArtifacts(dir) {
     if (!statSync(full).isFile()) continue;
     files.push(full);
   }
-  files.sort((a, b) => basename(a).localeCompare(basename(b)));
+  // Small metadata first; large installers last (longer upload + retries).
+  files.sort((a, b) => {
+    const sizeDiff = statSync(a).size - statSync(b).size;
+    if (sizeDiff !== 0) return sizeDiff;
+    return basename(a).localeCompare(basename(b));
+  });
   return files;
 }
 
@@ -182,7 +298,8 @@ async function ensureCleanRelease({ tag, name, body, targetCommitish }) {
 
 async function uploadAll(releaseId, files) {
   for (const file of files) {
-    console.log(`  upload ${basename(file)}`);
+    const sizeMb = (statSync(file).size / (1024 * 1024)).toFixed(1);
+    console.log(`  upload ${basename(file)} (${sizeMb} MB)`);
     await uploadAttach(releaseId, file);
   }
 }
@@ -253,6 +370,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(formatError(err));
   process.exit(1);
 });
