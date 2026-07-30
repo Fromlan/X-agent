@@ -34,7 +34,12 @@ export function RetractConfirmModal(props: Props) {
   const restoreCount = preview.restorablePaths.length;
   const unrestorableCount = preview.unrestorablePaths.length;
   const hasFiles = restoreCount > 0 || unrestorableCount > 0;
-  const hasRisk = preview.hasBash || preview.hasGodot || unrestorableCount > 0;
+  const shadowMode = preview.restoreMode === "shadow";
+  const hasRisk =
+    (!shadowMode && preview.hasBash) ||
+    preview.hasGodot ||
+    unrestorableCount > 0 ||
+    Boolean(preview.warnings.length);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={props.onCancel}>
@@ -61,14 +66,20 @@ export function RetractConfirmModal(props: Props) {
               <li>
                 <FilePenLine size={14} aria-hidden />
                 <span>
-                  还原 {restoreCount} 个 write/edit 文件
+                  {shadowMode
+                    ? `还原工作区 ${restoreCount} 个文件（Shadow 检查点）`
+                    : `还原 ${restoreCount} 个 write/edit 文件`}
                 </span>
               </li>
             )}
             {restoreCount === 0 && unrestorableCount === 0 && (
               <li>
                 <FilePenLine size={14} aria-hidden />
-                <span>无已知文件改动可还原</span>
+                <span>
+                  {shadowMode
+                    ? "工作区与检查点一致，无需改文件"
+                    : "无已知文件改动可还原"}
+                </span>
               </li>
             )}
             {unrestorableCount > 0 && (
@@ -103,11 +114,24 @@ export function RetractConfirmModal(props: Props) {
             <div className="retract-warn" role="note">
               <AlertTriangle size={14} aria-hidden />
               <ul>
-                {preview.hasBash && <li>含 bash：命令副作用无法保证还原</li>}
-                {preview.hasGodot && <li>含 Godot 工具：编辑器状态无法还原</li>}
-                {unrestorableCount > 0 && !preview.hasBash && !preview.hasGodot && (
-                  <li>部分文件无法自动还原</li>
-                )}
+                {preview.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+                {preview.hasGodot &&
+                  !preview.warnings.some((w) => w.includes("Godot")) && (
+                    <li>含 Godot 工具：编辑器状态无法还原</li>
+                  )}
+                {!shadowMode &&
+                  preview.hasBash &&
+                  !preview.warnings.some((w) => w.includes("bash")) && (
+                    <li>含 bash：命令副作用无法保证还原</li>
+                  )}
+                {unrestorableCount > 0 &&
+                  !preview.hasBash &&
+                  !preview.hasGodot &&
+                  preview.warnings.length === 0 && (
+                    <li>部分文件无法自动还原</li>
+                  )}
               </ul>
             </div>
           )}

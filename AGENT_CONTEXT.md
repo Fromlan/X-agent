@@ -222,7 +222,7 @@ session.setActiveToolsByName(prefs.tools);
 |---|---|---|
 | 空闲 `prompt(text)` | `SessionHost` | 正常用户轮次，消息进入会话历史 |
 | 流式中再发 | `streamingBehavior: "steer"` | 当前工具轮次后注入转向消息（否则 Pi 会报错） |
-| 撤回 / 编辑重发 / 重新生成 | `navigateTree` + `TurnFileTracker` | 对话改 leaf（append-only 树）；默认还原该段 `write`/`edit` 基线。**不**保证 bash / Godot / cwd 外副作用 |
+| 撤回 / 编辑重发 / 重新生成 | `navigateTree` + **Shadow Git**（优先）/ `TurnFileTracker`（无 Git 降级） | 对话改 leaf（append-only 树）。有本机 Git 时：`prompt` 前打 Shadow pre 检查点，`turn_end` 打 post；撤回时 `reset --hard` 到目标轮 pre（独立 `GIT_DIR` 在 `~/.pi/agent/x-agent/checkpoints/`，**不写用户 `.git`**）。无 Git 时仍只还原 `write`/`edit` 字节基线。**注意**：Pi 在 `message_end` 之后才 `appendMessage`，active user / Shadow pre 必须在 append 之后绑定（`tool_execution_start` / `queueMicrotask`），不能在 `message_start` 取 leaf。Godot 仅对会改编辑器状态的工具告警；cwd 外 bash 副作用仍不保证。 |
 | `compactSession` | 右栏上下文 | 手动 `session.compact()`；更新用量 snapshot |
 | `setActiveToolsByName` / `applyTools` | prefs 变更 | 当场改可用工具集并**重建 system prompt**；清空本会话 API 前缀缓存命中 |
 | `setModel` / `setThinkingLevel` | 顶栏 / 设置 | 影响后续请求；中途改 Thinking/换模型也可能改变历史消息序列化，破坏前缀缓存 |
