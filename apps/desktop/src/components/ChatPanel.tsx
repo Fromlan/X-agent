@@ -41,6 +41,9 @@ interface Props {
   onConfirmEdit?: () => void;
   onRetract?: (entryId: string) => void;
   onRegenerate?: (userEntryId: string) => void;
+  starters?: { id: string; label: string; prompt: string }[];
+  readinessHints?: { label: string; onClick: () => void }[];
+  onPickStarter?: (prompt: string) => void;
 }
 
 export function ChatPanel(props: Props) {
@@ -178,7 +181,11 @@ export function ChatPanel(props: Props) {
         showThinking={props.showThinking}
         status={props.status}
         disabledEmpty={props.disabled}
+        starters={props.starters}
+        readinessHints={props.readinessHints}
+        onPickStarter={props.onPickStarter}
         forceFollowKey={props.forceFollowKey}
+        degradeMarkdown={props.items.length > 40}
         onOpenToolInPanel={props.onOpenToolInPanel}
         editingEntryId={props.editingEntryId}
         editDraft={props.editDraft}

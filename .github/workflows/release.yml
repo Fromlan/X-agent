@@ -61,6 +61,8 @@ jobs:
 
       - run: npm run typecheck
       - run: npm test
+      # Optional Windows code signing: set repository secrets CSC_LINK + CSC_KEY_PASSWORD
+      # (or WIN_CSC_LINK). electron-builder signs automatically when present.
       - run: npm run dist
 
       - name: Upload GitHub Release
@@ -74,3 +76,13 @@ jobs:
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/*.yml
+
+      - name: Sync Gitee Release
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          node scripts/sync-gitee-release.mjs "${{ steps.version.outputs.version }}" apps/desktop/release

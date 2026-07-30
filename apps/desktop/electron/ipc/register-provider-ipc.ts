@@ -11,33 +11,34 @@ import {
 import { fetchProviderModels } from "../agent/model-fetch";
 import type { SessionHost } from "../agent/session-host";
 import type { ProviderUpsertInput } from "../../shared/ipc";
+import { IPC_CHANNELS } from "../../shared/ipc-channels";
 
 /** Provider / model catalog IPC. */
 export function registerProviderIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
-  ipcMain.handle("listProviderProfiles", async () => listProviderProfiles());
-  ipcMain.handle("getProviderProfile", async (_e, id: string) =>
+  ipcMain.handle(IPC_CHANNELS.listProviderProfiles, async () => listProviderProfiles());
+  ipcMain.handle(IPC_CHANNELS.getProviderProfile, async (_e, id: string) =>
     getProviderProfile(id),
   );
-  ipcMain.handle("upsertProviderProfile", async (_e, input: ProviderUpsertInput) =>
+  ipcMain.handle(IPC_CHANNELS.upsertProviderProfile, async (_e, input: ProviderUpsertInput) =>
     upsertProviderProfile(input),
   );
-  ipcMain.handle("deleteProviderProfile", async (_e, id: string) =>
+  ipcMain.handle(IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) =>
     deleteProviderProfile(id),
   );
-  ipcMain.handle("activateProviderProfile", async (_e, id: string) =>
+  ipcMain.handle(IPC_CHANNELS.activateProviderProfile, async (_e, id: string) =>
     activateProviderAndApply(id, (provider, model) =>
       sessionHost.applyActivatedProvider(provider, model),
     ),
   );
-  ipcMain.handle("listProviderPresets", async () => listProviderPresets());
-  ipcMain.handle("importExistingProviderProfiles", async () =>
+  ipcMain.handle(IPC_CHANNELS.listProviderPresets, async () => listProviderPresets());
+  ipcMain.handle(IPC_CHANNELS.importExistingProviderProfiles, async () =>
     importExistingProviderProfiles(),
   );
   ipcMain.handle(
-    "fetchProviderModels",
+    IPC_CHANNELS.fetchProviderModels,
     async (_e, input: { baseUrl: string; apiKey: string }) =>
       fetchProviderModels(input),
   );

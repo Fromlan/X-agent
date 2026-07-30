@@ -36,7 +36,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 - **Providers** — profiles, model list fetch; import Pi / cc-switch configs
 - **Plugins** — prompts, skills, extensions, themes, packages
 - **Tool allowlist** — built-in I/O & shell on by default; Godot editor/docs tools off until enabled
-- **Usage / auth / updates** — local usage; in-app Pi login; packaged auto-update
+- **Usage / auth / updates** — local usage; in-app Pi login; packaged auto-update (Settings → General: **GitHub** or **Gitee** source)
 
 ## Requirements
 
@@ -60,7 +60,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 
 | Settings | Contents |
 |---|---|
-| General | Theme, default Thinking, bash, Pi login, auto-update |
+| General | Theme, default Thinking, bash, Pi login, auto-update (GitHub / Gitee) |
 | Providers | Provider profiles and import |
 | Usage | Local usage summary |
 | Tools | Tool allowlist and group toggles |
@@ -87,5 +87,14 @@ Under `~/.pi/agent/`:
 |---|---|
 | [`packages/godot-editor-rpc`](packages/godot-editor-rpc) | Godot editor RPC addon |
 | [`packages/godot-pi`](packages/godot-pi) | Godot domain skills & prompts |
+
+## Updates & trust
+
+- **Update source**: Settings → General → **GitHub** (default) or **Gitee**. Gitee requires CI `GITEE_TOKEN` to sync the rolling `latest` tag (`latest.yml`); use GitHub if that secret is unset.
+- **Code signing**: Provide `CSC_LINK` + `CSC_KEY_PASSWORD` in the build env so electron-builder signs Windows installers (helps with SmartScreen). Builds still succeed without a certificate (unsigned).
+
+## UI language
+
+The desktop UI is currently **Chinese-only**. This English README documents the product; an in-app locale switch is not shipped yet.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`CLAUDE.md`](CLAUDE.md) for development guidance.

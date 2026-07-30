@@ -8,141 +8,142 @@ import type {
   ThinkingLevel,
   UiAgentEvent,
 } from "../shared/ipc";
+import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 
 const api: XAgentApi = {
   // session / workspace
-  openProject: (path?: string) => ipcRenderer.invoke("openProject", path),
-  prompt: (text: string) => ipcRenderer.invoke("prompt", text),
-  abort: () => ipcRenderer.invoke("abort"),
+  openProject: (path?: string) => ipcRenderer.invoke(IPC_CHANNELS.openProject, path),
+  prompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.prompt, text),
+  abort: () => ipcRenderer.invoke(IPC_CHANNELS.abort),
   previewRetract: (entryId: string) =>
-    ipcRenderer.invoke("previewRetract", entryId),
+    ipcRenderer.invoke(IPC_CHANNELS.previewRetract, entryId),
   retractToUserMessage: (
     entryId: string,
     options?: { undoFiles?: boolean },
-  ) => ipcRenderer.invoke("retractToUserMessage", entryId, options),
+  ) => ipcRenderer.invoke(IPC_CHANNELS.retractToUserMessage, entryId, options),
   editAndResend: (
     entryId: string,
     text: string,
     options?: { undoFiles?: boolean },
-  ) => ipcRenderer.invoke("editAndResend", entryId, text, options),
+  ) => ipcRenderer.invoke(IPC_CHANNELS.editAndResend, entryId, text, options),
   regenerateFromUser: (
     entryId: string,
     options?: { undoFiles?: boolean },
-  ) => ipcRenderer.invoke("regenerateFromUser", entryId, options),
-  newSession: () => ipcRenderer.invoke("newSession"),
+  ) => ipcRenderer.invoke(IPC_CHANNELS.regenerateFromUser, entryId, options),
+  newSession: () => ipcRenderer.invoke(IPC_CHANNELS.newSession),
   setModel: (provider: string, id: string) =>
-    ipcRenderer.invoke("setModel", provider, id),
+    ipcRenderer.invoke(IPC_CHANNELS.setModel, provider, id),
   setThinkingLevel: (level: ThinkingLevel) =>
-    ipcRenderer.invoke("setThinkingLevel", level),
-  listModels: () => ipcRenderer.invoke("listModels"),
-  listSessions: () => ipcRenderer.invoke("listSessions"),
+    ipcRenderer.invoke(IPC_CHANNELS.setThinkingLevel, level),
+  listModels: () => ipcRenderer.invoke(IPC_CHANNELS.listModels),
+  listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.listSessions),
   resumeSession: (sessionPath: string) =>
-    ipcRenderer.invoke("resumeSession", sessionPath),
+    ipcRenderer.invoke(IPC_CHANNELS.resumeSession, sessionPath),
   deleteSession: (sessionPath: string) =>
-    ipcRenderer.invoke("deleteSession", sessionPath),
+    ipcRenderer.invoke(IPC_CHANNELS.deleteSession, sessionPath),
   deleteProjectSessions: (projectCwd: string) =>
-    ipcRenderer.invoke("deleteProjectSessions", projectCwd),
-  closeWorkspace: () => ipcRenderer.invoke("closeWorkspace"),
+    ipcRenderer.invoke(IPC_CHANNELS.deleteProjectSessions, projectCwd),
+  closeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.closeWorkspace),
   renameSession: (sessionPath: string, name: string) =>
-    ipcRenderer.invoke("renameSession", sessionPath, name),
-  getPrefs: () => ipcRenderer.invoke("getPrefs"),
-  setPrefs: (patch: Partial<ClientPrefs>) => ipcRenderer.invoke("setPrefs", patch),
-  checkBash: () => ipcRenderer.invoke("checkBash"),
+    ipcRenderer.invoke(IPC_CHANNELS.renameSession, sessionPath, name),
+  getPrefs: () => ipcRenderer.invoke(IPC_CHANNELS.getPrefs),
+  setPrefs: (patch: Partial<ClientPrefs>) => ipcRenderer.invoke(IPC_CHANNELS.setPrefs, patch),
+  checkBash: () => ipcRenderer.invoke(IPC_CHANNELS.checkBash),
   applyBashShellPath: (shellPath?: string) =>
-    ipcRenderer.invoke("applyBashShellPath", shellPath),
-  pickBashShell: () => ipcRenderer.invoke("pickBashShell"),
-  checkAuth: () => ipcRenderer.invoke("checkAuth"),
-  checkPiCli: () => ipcRenderer.invoke("checkPiCli"),
-  installPiCli: () => ipcRenderer.invoke("installPiCli"),
-  getStatus: () => ipcRenderer.invoke("getStatus"),
+    ipcRenderer.invoke(IPC_CHANNELS.applyBashShellPath, shellPath),
+  pickBashShell: () => ipcRenderer.invoke(IPC_CHANNELS.pickBashShell),
+  checkAuth: () => ipcRenderer.invoke(IPC_CHANNELS.checkAuth),
+  checkPiCli: () => ipcRenderer.invoke(IPC_CHANNELS.checkPiCli),
+  installPiCli: () => ipcRenderer.invoke(IPC_CHANNELS.installPiCli),
+  getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getStatus),
   getToolDetail: (toolCallId: string) =>
-    ipcRenderer.invoke("getToolDetail", toolCallId),
+    ipcRenderer.invoke(IPC_CHANNELS.getToolDetail, toolCallId),
   listProjectDir: (relPath?: string) =>
-    ipcRenderer.invoke("listProjectDir", relPath),
+    ipcRenderer.invoke(IPC_CHANNELS.listProjectDir, relPath),
   readProjectFile: (relPath: string) =>
-    ipcRenderer.invoke("readProjectFile", relPath),
+    ipcRenderer.invoke(IPC_CHANNELS.readProjectFile, relPath),
   revealInFolder: (relPath: string) =>
-    ipcRenderer.invoke("revealInFolder", relPath),
+    ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, relPath),
   // godot
-  godotRpcStatus: () => ipcRenderer.invoke("godotRpcStatus"),
-  godotRpcStart: () => ipcRenderer.invoke("godotRpcStart"),
-  godotRpcStop: () => ipcRenderer.invoke("godotRpcStop"),
-  godotRpcPing: () => ipcRenderer.invoke("godotRpcPing"),
+  godotRpcStatus: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcStatus),
+  godotRpcStart: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcStart),
+  godotRpcStop: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcStop),
+  godotRpcPing: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcPing),
   godotRpcRequest: (call, options) =>
-    ipcRenderer.invoke("godotRpcRequest", call, options),
+    ipcRenderer.invoke(IPC_CHANNELS.godotRpcRequest, call, options),
   godotRpcSetActiveClient: (clientId) =>
-    ipcRenderer.invoke("godotRpcSetActiveClient", clientId),
-  pickGodotEditor: () => ipcRenderer.invoke("pickGodotEditor"),
-  launchGodotEditor: () => ipcRenderer.invoke("launchGodotEditor"),
+    ipcRenderer.invoke(IPC_CHANNELS.godotRpcSetActiveClient, clientId),
+  pickGodotEditor: () => ipcRenderer.invoke(IPC_CHANNELS.pickGodotEditor),
+  launchGodotEditor: () => ipcRenderer.invoke(IPC_CHANNELS.launchGodotEditor),
   installGodotRpcAddon: () =>
-    ipcRenderer.invoke("installGodotRpcAddon"),
-  pickGodotScene: () => ipcRenderer.invoke("pickGodotScene"),
-  godotDocsGetStatus: () => ipcRenderer.invoke("godotDocsGetStatus"),
+    ipcRenderer.invoke(IPC_CHANNELS.installGodotRpcAddon),
+  pickGodotScene: () => ipcRenderer.invoke(IPC_CHANNELS.pickGodotScene),
+  godotDocsGetStatus: () => ipcRenderer.invoke(IPC_CHANNELS.godotDocsGetStatus),
   godotDocsListRemoteBranches: (force?: boolean) =>
-    ipcRenderer.invoke("godotDocsListRemoteBranches", force),
+    ipcRenderer.invoke(IPC_CHANNELS.godotDocsListRemoteBranches, force),
   godotDocsSetBranch: (branch: string) =>
-    ipcRenderer.invoke("godotDocsSetBranch", branch),
+    ipcRenderer.invoke(IPC_CHANNELS.godotDocsSetBranch, branch),
   godotDocsOpenDownloadUrl: (branch?: string) =>
-    ipcRenderer.invoke("godotDocsOpenDownloadUrl", branch),
+    ipcRenderer.invoke(IPC_CHANNELS.godotDocsOpenDownloadUrl, branch),
   godotDocsImportZip: (branch?: string) =>
-    ipcRenderer.invoke("godotDocsImportZip", branch),
+    ipcRenderer.invoke(IPC_CHANNELS.godotDocsImportZip, branch),
   godotDocsRemoveLocal: (branch?: string) =>
-    ipcRenderer.invoke("godotDocsRemoveLocal", branch),
-  listPlugins: (cwd) => ipcRenderer.invoke("listPlugins", cwd),
-  listSessionSkills: () => ipcRenderer.invoke("listSessionSkills"),
-  readPlugin: (path) => ipcRenderer.invoke("readPlugin", path),
-  writePlugin: (path, content) => ipcRenderer.invoke("writePlugin", path, content),
+    ipcRenderer.invoke(IPC_CHANNELS.godotDocsRemoveLocal, branch),
+  listPlugins: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.listPlugins, cwd),
+  listSessionSkills: () => ipcRenderer.invoke(IPC_CHANNELS.listSessionSkills),
+  readPlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.readPlugin, path),
+  writePlugin: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.writePlugin, path, content),
   createPlugin: (input: PluginCreateInput) =>
-    ipcRenderer.invoke("createPlugin", input),
-  deletePlugin: (path) => ipcRenderer.invoke("deletePlugin", path),
-  revealPlugin: (path) => ipcRenderer.invoke("revealPlugin", path),
-  reloadResources: () => ipcRenderer.invoke("reloadResources"),
+    ipcRenderer.invoke(IPC_CHANNELS.createPlugin, input),
+  deletePlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.deletePlugin, path),
+  revealPlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealPlugin, path),
+  reloadResources: () => ipcRenderer.invoke(IPC_CHANNELS.reloadResources),
   // providers
-  listProviderProfiles: () => ipcRenderer.invoke("listProviderProfiles"),
-  getProviderProfile: (id) => ipcRenderer.invoke("getProviderProfile", id),
+  listProviderProfiles: () => ipcRenderer.invoke(IPC_CHANNELS.listProviderProfiles),
+  getProviderProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.getProviderProfile, id),
   upsertProviderProfile: (input: ProviderUpsertInput) =>
-    ipcRenderer.invoke("upsertProviderProfile", input),
-  deleteProviderProfile: (id) => ipcRenderer.invoke("deleteProviderProfile", id),
+    ipcRenderer.invoke(IPC_CHANNELS.upsertProviderProfile, input),
+  deleteProviderProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.deleteProviderProfile, id),
   activateProviderProfile: (id) =>
-    ipcRenderer.invoke("activateProviderProfile", id),
-  listProviderPresets: () => ipcRenderer.invoke("listProviderPresets"),
+    ipcRenderer.invoke(IPC_CHANNELS.activateProviderProfile, id),
+  listProviderPresets: () => ipcRenderer.invoke(IPC_CHANNELS.listProviderPresets),
   importExistingProviderProfiles: () =>
-    ipcRenderer.invoke("importExistingProviderProfiles"),
-  fetchProviderModels: (input) => ipcRenderer.invoke("fetchProviderModels", input),
-  listInstalledPackages: () => ipcRenderer.invoke("listInstalledPackages"),
-  installPackage: (source: string) => ipcRenderer.invoke("installPackage", source),
+    ipcRenderer.invoke(IPC_CHANNELS.importExistingProviderProfiles),
+  fetchProviderModels: (input) => ipcRenderer.invoke(IPC_CHANNELS.fetchProviderModels, input),
+  listInstalledPackages: () => ipcRenderer.invoke(IPC_CHANNELS.listInstalledPackages),
+  installPackage: (source: string) => ipcRenderer.invoke(IPC_CHANNELS.installPackage, source),
   uninstallPackage: (source: string) =>
-    ipcRenderer.invoke("uninstallPackage", source),
-  installGodotPiPackage: () => ipcRenderer.invoke("installGodotPiPackage"),
-  openPiLogin: () => ipcRenderer.invoke("openPiLogin"),
-  openExternalUrl: (url: string) => ipcRenderer.invoke("openExternalUrl", url),
-  getUpdateStatus: () => ipcRenderer.invoke("getUpdateStatus"),
-  checkForUpdates: () => ipcRenderer.invoke("checkForUpdates"),
-  downloadUpdate: () => ipcRenderer.invoke("downloadUpdate"),
-  installUpdate: () => ipcRenderer.invoke("installUpdate"),
-  getSessionUsage: () => ipcRenderer.invoke("getSessionUsage"),
+    ipcRenderer.invoke(IPC_CHANNELS.uninstallPackage, source),
+  installGodotPiPackage: () => ipcRenderer.invoke(IPC_CHANNELS.installGodotPiPackage),
+  openPiLogin: () => ipcRenderer.invoke(IPC_CHANNELS.openPiLogin),
+  openExternalUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternalUrl, url),
+  getUpdateStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getUpdateStatus),
+  checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.downloadUpdate),
+  installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.installUpdate),
+  getSessionUsage: () => ipcRenderer.invoke(IPC_CHANNELS.getSessionUsage),
   compactSession: (customInstructions?: string) =>
-    ipcRenderer.invoke("compactSession", customInstructions),
+    ipcRenderer.invoke(IPC_CHANNELS.compactSession, customInstructions),
   getUsageSummary: (options?: { days?: number }) =>
-    ipcRenderer.invoke("getUsageSummary", options),
-  clearUsageSummary: () => ipcRenderer.invoke("clearUsageSummary"),
-  notifyAppReady: () => ipcRenderer.invoke("appReady"),
+    ipcRenderer.invoke(IPC_CHANNELS.getUsageSummary, options),
+  clearUsageSummary: () => ipcRenderer.invoke(IPC_CHANNELS.clearUsageSummary),
+  notifyAppReady: () => ipcRenderer.invoke(IPC_CHANNELS.appReady),
   onEvent: (handler: (event: UiAgentEvent) => void) => {
     const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
       handler(event);
     };
-    ipcRenderer.on("agent:event", listener);
+    ipcRenderer.on(IPC_EVENTS.agentEvent, listener);
     return () => {
-      ipcRenderer.removeListener("agent:event", listener);
+      ipcRenderer.removeListener(IPC_EVENTS.agentEvent, listener);
     };
   },
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => {
     const listener = (_: Electron.IpcRendererEvent, status: AppUpdateStatus) => {
       handler(status);
     };
-    ipcRenderer.on("update:status", listener);
+    ipcRenderer.on(IPC_EVENTS.updateStatus, listener);
     return () => {
-      ipcRenderer.removeListener("update:status", listener);
+      ipcRenderer.removeListener(IPC_EVENTS.updateStatus, listener);
     };
   },
 };

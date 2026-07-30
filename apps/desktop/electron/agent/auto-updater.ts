@@ -1,11 +1,34 @@
 /**
- * Packaged-app auto-update via electron-updater + GitHub Releases.
+ * Packaged-app auto-update via electron-updater.
+ * GitHub Releases (provider) or Gitee mirror (generic latest Release).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, type BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
-import type { AppUpdateStatus } from "../../shared/ipc";
+import type {
+  AppUpdateStatus,
+  UpdateSource,
+} from "../../shared/ipc";
+import { normalizeUpdateSource } from "../../shared/ipc";
+import { IPC_EVENTS } from "../../shared/ipc-channels";
+import { loadPrefs } from "./prefs";
+import {
+  DEFAULT_GITHUB_OWNER,
+  DEFAULT_GITHUB_REPO,
+  feedMessage,
+  giteeGenericFeedUrl,
+  type GithubFeed,
+  parseGithubRepoUrl,
+} from "./update-feed";
+
+export {
+  feedMessage,
+  GITEE_LATEST_TAG,
+  GITEE_OWNER,
+  GITEE_REPO,
+  giteeGenericFeedUrl,
+} from "./update-feed";
 
 const { autoUpdater } = electronUpdater;
 
@@ -17,22 +40,6 @@ const DEV_STATUS: AppUpdateStatus = {
   downloaded: false,
   message: "自动更新仅在打包后的安装版中可用（开发模式请使用 npm run dist）。",
 };
-
-const DEFAULT_OWNER = "Fromlan";
-const DEFAULT_REPO = "X-agent";
-
-type GithubFeed = { owner: string; repo: string };
-
-function parseGithubRepoUrl(url: string): GithubFeed | null {
-  const trimmed = url.trim().replace(/\.git$/i, "");
-  const https = trimmed.match(
-    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i,
-  );
-  if (https) return { owner: https[1]!, repo: https[2]! };
-  const ssh = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
-  if (ssh) return { owner: ssh[1]!, repo: ssh[2]! };
-  return null;
-}
 
 /** Prefer package.json repository / publish; fall back to known release repo. */
 export function resolveGithubFeed(
@@ -78,13 +85,14 @@ export function resolveGithubFeed(
     }
   }
 
-  return { owner: DEFAULT_OWNER, repo: DEFAULT_REPO };
+  return { owner: DEFAULT_GITHUB_OWNER, repo: DEFAULT_GITHUB_REPO };
 }
 
 export class AppAutoUpdater {
   private status: AppUpdateStatus = { ...DEV_STATUS };
   private getWindow: () => BrowserWindow | null;
   private wired = false;
+  private activeSource: UpdateSource = "github";
 
   constructor(getWindow: () => BrowserWindow | null) {
     this.getWindow = getWindow;
@@ -92,6 +100,47 @@ export class AppAutoUpdater {
 
   getStatus(): AppUpdateStatus {
     return { ...this.status };
+  }
+
+  /** Apply feed for the given source (or current prefs). No-op in unpackaged/dev. */
+  applyFeed(source?: UpdateSource): void {
+    if (!app.isPackaged) {
+      this.status = { ...DEV_STATUS };
+      this.emit();
+      return;
+    }
+
+    const next = normalizeUpdateSource(
+      source ?? loadPrefs().updateSource,
+    );
+    this.activeSource = next;
+
+    if (next === "gitee") {
+      autoUpdater.setFeedURL({
+        provider: "generic",
+        url: giteeGenericFeedUrl(),
+      });
+      this.setStatus({
+        supported: true,
+        source: next,
+        message: feedMessage("gitee"),
+        error: undefined,
+      });
+      return;
+    }
+
+    const feed = resolveGithubFeed();
+    autoUpdater.setFeedURL({
+      provider: "github",
+      owner: feed.owner,
+      repo: feed.repo,
+    });
+    this.setStatus({
+      supported: true,
+      source: next,
+      message: feedMessage("github", feed),
+      error: undefined,
+    });
   }
 
   /** Call once after app is ready. No-op in unpackaged/dev builds. */
@@ -102,25 +151,10 @@ export class AppAutoUpdater {
       return;
     }
 
-    const feed = resolveGithubFeed();
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.setFeedURL({
-      provider: "github",
-      owner: feed.owner,
-      repo: feed.repo,
-    });
-
-    this.status = {
-      supported: true,
-      checking: false,
-      available: false,
-      downloading: false,
-      downloaded: false,
-      message: `已配置 GitHub 更新源：${feed.owner}/${feed.repo}`,
-    };
     this.wireEvents();
-    this.emit();
+    this.applyFeed();
   }
 
   private setStatus(patch: Partial<AppUpdateStatus>): void {
@@ -131,7 +165,7 @@ export class AppAutoUpdater {
   private emit(): void {
     const win = this.getWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send("update:status", this.getStatus());
+      win.webContents.send(IPC_EVENTS.updateStatus, this.getStatus());
     }
   }
 
@@ -143,6 +177,7 @@ export class AppAutoUpdater {
       this.setStatus({
         checking: true,
         error: undefined,
+        source: this.activeSource,
         message: "正在检查更新…",
       });
     });
@@ -152,6 +187,7 @@ export class AppAutoUpdater {
         checking: false,
         available: true,
         version: info.version,
+        source: this.activeSource,
         message: `发现新版本 ${info.version}`,
       });
     });
@@ -161,6 +197,7 @@ export class AppAutoUpdater {
         checking: false,
         available: false,
         version: info.version,
+        source: this.activeSource,
         message: `已是最新版本（${info.version}）`,
       });
     });
@@ -169,6 +206,7 @@ export class AppAutoUpdater {
       this.setStatus({
         downloading: true,
         progress: Math.round(progress.percent),
+        source: this.activeSource,
         message: `下载中 ${Math.round(progress.percent)}%`,
       });
     });
@@ -180,6 +218,7 @@ export class AppAutoUpdater {
         available: true,
         progress: 100,
         version: info.version,
+        source: this.activeSource,
         message: `已下载 ${info.version}，可重启安装`,
       });
     });
@@ -189,6 +228,7 @@ export class AppAutoUpdater {
         checking: false,
         downloading: false,
         error: err.message,
+        source: this.activeSource,
         message: `更新失败：${err.message}`,
       });
     });
@@ -201,9 +241,13 @@ export class AppAutoUpdater {
       return this.getStatus();
     }
     try {
+      this.applyFeed();
       this.setStatus({
         checking: true,
         error: undefined,
+        available: false,
+        downloaded: false,
+        downloading: false,
         message: "正在检查更新…",
       });
       await autoUpdater.checkForUpdates();
@@ -231,6 +275,7 @@ export class AppAutoUpdater {
       return this.getStatus();
     }
     try {
+      this.applyFeed(this.activeSource);
       this.setStatus({
         downloading: true,
         progress: 0,

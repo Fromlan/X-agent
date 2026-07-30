@@ -1,24 +1,25 @@
 import type { IpcMain } from "electron";
 import type { SessionHost } from "../agent/session-host";
 import type { ThinkingLevel } from "../../shared/ipc";
+import { IPC_CHANNELS } from "../../shared/ipc-channels";
 
 /** Session / workspace IPC — thin forwards to SessionHost. */
 export function registerSessionIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
-  ipcMain.handle("prompt", async (_e, text: string) => sessionHost.prompt(text));
-  ipcMain.handle("abort", async () => sessionHost.abort());
-  ipcMain.handle("previewRetract", async (_e, entryId: string) =>
+  ipcMain.handle(IPC_CHANNELS.prompt, async (_e, text: string) => sessionHost.prompt(text));
+  ipcMain.handle(IPC_CHANNELS.abort, async () => sessionHost.abort());
+  ipcMain.handle(IPC_CHANNELS.previewRetract, async (_e, entryId: string) =>
     sessionHost.previewRetract(entryId),
   );
   ipcMain.handle(
-    "retractToUserMessage",
+    IPC_CHANNELS.retractToUserMessage,
     async (_e, entryId: string, options?: { undoFiles?: boolean }) =>
       sessionHost.retractToUserMessage(entryId, options),
   );
   ipcMain.handle(
-    "editAndResend",
+    IPC_CHANNELS.editAndResend,
     async (
       _e,
       entryId: string,
@@ -27,39 +28,39 @@ export function registerSessionIpc(
     ) => sessionHost.editAndResend(entryId, text, options),
   );
   ipcMain.handle(
-    "regenerateFromUser",
+    IPC_CHANNELS.regenerateFromUser,
     async (_e, entryId: string, options?: { undoFiles?: boolean }) =>
       sessionHost.regenerateFromUser(entryId, options),
   );
-  ipcMain.handle("newSession", async () => sessionHost.newSession());
-  ipcMain.handle("setModel", async (_e, provider: string, id: string) =>
+  ipcMain.handle(IPC_CHANNELS.newSession, async () => sessionHost.newSession());
+  ipcMain.handle(IPC_CHANNELS.setModel, async (_e, provider: string, id: string) =>
     sessionHost.setModel(provider, id),
   );
-  ipcMain.handle("setThinkingLevel", async (_e, level: ThinkingLevel) =>
+  ipcMain.handle(IPC_CHANNELS.setThinkingLevel, async (_e, level: ThinkingLevel) =>
     sessionHost.setThinkingLevel(level),
   );
-  ipcMain.handle("listModels", async () => sessionHost.listModels());
-  ipcMain.handle("listSessions", async () => sessionHost.listSessions());
-  ipcMain.handle("resumeSession", async (_e, sessionPath: string) =>
+  ipcMain.handle(IPC_CHANNELS.listModels, async () => sessionHost.listModels());
+  ipcMain.handle(IPC_CHANNELS.listSessions, async () => sessionHost.listSessions());
+  ipcMain.handle(IPC_CHANNELS.resumeSession, async (_e, sessionPath: string) =>
     sessionHost.resumeSession(sessionPath),
   );
-  ipcMain.handle("deleteSession", async (_e, sessionPath: string) =>
+  ipcMain.handle(IPC_CHANNELS.deleteSession, async (_e, sessionPath: string) =>
     sessionHost.deleteSession(sessionPath),
   );
-  ipcMain.handle("deleteProjectSessions", async (_e, projectCwd: string) =>
+  ipcMain.handle(IPC_CHANNELS.deleteProjectSessions, async (_e, projectCwd: string) =>
     sessionHost.deleteProjectSessions(projectCwd),
   );
-  ipcMain.handle("closeWorkspace", async () => sessionHost.closeWorkspace());
-  ipcMain.handle("renameSession", async (_e, sessionPath: string, name: string) =>
+  ipcMain.handle(IPC_CHANNELS.closeWorkspace, async () => sessionHost.closeWorkspace());
+  ipcMain.handle(IPC_CHANNELS.renameSession, async (_e, sessionPath: string, name: string) =>
     sessionHost.renameSession(sessionPath, name),
   );
-  ipcMain.handle("getStatus", async () => sessionHost.getStatus());
-  ipcMain.handle("getToolDetail", async (_e, toolCallId: string) =>
+  ipcMain.handle(IPC_CHANNELS.getStatus, async () => sessionHost.getStatus());
+  ipcMain.handle(IPC_CHANNELS.getToolDetail, async (_e, toolCallId: string) =>
     sessionHost.getToolDetail(toolCallId),
   );
-  ipcMain.handle("getSessionUsage", async () => sessionHost.getSessionUsage());
-  ipcMain.handle("compactSession", async (_e, customInstructions?: string) =>
+  ipcMain.handle(IPC_CHANNELS.getSessionUsage, async () => sessionHost.getSessionUsage());
+  ipcMain.handle(IPC_CHANNELS.compactSession, async (_e, customInstructions?: string) =>
     sessionHost.compactSession(customInstructions),
   );
-  ipcMain.handle("reloadResources", async () => sessionHost.reloadResources());
+  ipcMain.handle(IPC_CHANNELS.reloadResources, async () => sessionHost.reloadResources());
 }

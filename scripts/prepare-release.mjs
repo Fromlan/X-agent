@@ -116,7 +116,14 @@ function main() {
       `  git tag v${version}`,
       `  git push origin HEAD && git push origin v${version}`,
       "",
-      "Tag push triggers .github/workflows/release.yml，Release 正文将使用该 CHANGELOG 章节。",
+      "Tag push triggers .github/workflows/release.yml：",
+      "  - 上传 GitHub Releases（安装包 + latest.yml）",
+      "  - 若已配置 Actions secret GITEE_TOKEN，同步到 gitee.com/fromlan/x-agent",
+      "    （版本标签 vX.Y.Z + 滚动标签 latest，供应用内「更新源 → Gitee」）",
+      "  - 无 GITEE_TOKEN 时仅跳过 Gitee；本地可：",
+      `      set GITEE_TOKEN=… && npm run release:sync-gitee -- ${version} apps/desktop/release`,
+      "",
+      "Release 正文将使用该 CHANGELOG 章节。",
     ].join("\n"),
   );
 }

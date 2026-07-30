@@ -12,6 +12,7 @@
     "desktop:reset-tutorial": "powershell -ExecutionPolicy Bypass -File scripts/reset-tutorial-env.ps1 -Yes",
     "release:prepare": "node scripts/prepare-release.mjs",
     "release:notes": "node scripts/extract-changelog.mjs",
-    "release:test-changelog": "node scripts/test-extract-changelog.mjs"
+    "release:test-changelog": "node scripts/test-extract-changelog.mjs",
+    "release:sync-gitee": "node scripts/sync-gitee-release.mjs"
   }
 }
