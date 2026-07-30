@@ -3,6 +3,7 @@ import {
   type AuthStatus,
   type BashCheckResult,
   type ClientPrefs,
+  type GitCheckResult,
   type GodotDocsStatusDto,
   type GodotRpcStatusDto,
   type PiCliStatus,
@@ -10,9 +11,11 @@ import {
 
 export type ReadyItemId =
   | "piCli"
+  | "node"
   | "auth"
   | "models"
   | "bash"
+  | "git"
   | "rpcAddon"
   | "rpcBridge"
   | "godotTools"
@@ -39,7 +42,9 @@ export type ReadyItem = {
     | "openSettings"
     | "installPi"
     | "applyBash"
-    | "openPiLogin";
+    | "openPiLogin"
+    | "openGitDownload"
+    | "openNodeDownload";
 };
 
 export type ReadyChecklistInput = {
@@ -47,6 +52,7 @@ export type ReadyChecklistInput = {
   auth: AuthStatus | null;
   modelCount: number;
   bash: BashCheckResult | null;
+  git: GitCheckResult | null;
   isGodotProject: boolean;
   prefs: ClientPrefs | null;
   rpc: GodotRpcStatusDto | null;
@@ -58,13 +64,25 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
   const items: ReadyItem[] = [];
 
   if (input.piCli && !input.piCli.ok) {
-    items.push({
-      id: "piCli",
-      label: "安装 Pi CLI",
-      detail: input.piCli.message,
-      done: false,
-      settingsTab: "general",
-    });
+    if (!input.piCli.canInstall) {
+      items.push({
+        id: "node",
+        label: "安装 Node.js 22+",
+        detail: input.piCli.message,
+        done: false,
+        settingsTab: "general",
+        actionKind: "openNodeDownload",
+      });
+    } else {
+      items.push({
+        id: "piCli",
+        label: "安装 Pi CLI",
+        detail: input.piCli.message,
+        done: false,
+        settingsTab: "general",
+        actionKind: "installPi",
+      });
+    }
   }
 
   if (input.auth && !input.auth.ok) {
@@ -92,6 +110,9 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
       detail: input.bash.message,
       done: false,
       settingsTab: "general",
+      actionKind: input.bash.suggestedShellPath
+        ? "applyBash"
+        : "openGitDownload",
     });
   } else if (
     input.bash?.ok &&
@@ -104,6 +125,18 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
       detail: "已检测到 bash，但尚未写入 Pi settings。",
       done: false,
       settingsTab: "general",
+      actionKind: "applyBash",
+    });
+  }
+
+  if (input.git && !input.git.ok) {
+    items.push({
+      id: "git",
+      label: "安装 Git（工作区检查点）",
+      detail: input.git.message,
+      done: false,
+      settingsTab: "general",
+      actionKind: "openGitDownload",
     });
   }
 

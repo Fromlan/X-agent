@@ -3,6 +3,7 @@ import type {
   AuthStatus,
   BashCheckResult,
   ClientPrefs,
+  GitCheckResult,
   GodotDocsStatusDto,
   GodotRpcStatusDto,
   PiCliStatus,
@@ -18,11 +19,12 @@ export function useProjectReadiness(options: {
   cwd: string | null;
   prefs: ClientPrefs | null;
   bash: BashCheckResult | null;
+  git: GitCheckResult | null;
   auth: AuthStatus | null;
   piCli: PiCliStatus | null;
   modelCount: number;
 }) {
-  const { cwd, prefs, bash, auth, piCli, modelCount } = options;
+  const { cwd, prefs, bash, git, auth, piCli, modelCount } = options;
   const [isGodotProject, setIsGodotProject] = useState(false);
   const [rpcStatus, setRpcStatus] = useState<GodotRpcStatusDto | null>(null);
   const [docsStatus, setDocsStatus] = useState<GodotDocsStatusDto | null>(null);
@@ -103,6 +105,7 @@ export function useProjectReadiness(options: {
         auth,
         modelCount,
         bash,
+        git,
         isGodotProject,
         prefs,
         rpc: rpcStatus,
@@ -114,6 +117,7 @@ export function useProjectReadiness(options: {
       auth,
       modelCount,
       bash,
+      git,
       isGodotProject,
       prefs,
       rpcStatus,
@@ -132,7 +136,9 @@ export function useProjectReadiness(options: {
       (i.id === "auth" ||
         i.id === "models" ||
         i.id === "piCli" ||
-        i.id === "bash"),
+        i.id === "node" ||
+        i.id === "bash" ||
+        i.id === "git"),
   );
   const projectReadyPending = readyItems.some(
     (i) =>

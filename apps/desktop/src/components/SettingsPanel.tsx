@@ -12,6 +12,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   type BashCheckResult,
   type ClientPrefs,
+  type GitCheckResult,
+  type PiCliStatus,
 } from "@shared/ipc";
 import { PluginsPage } from "./PluginsPage";
 import { UsageSettingsPage } from "./UsageSettingsPage";
@@ -42,6 +44,8 @@ interface Props {
   onProvidersChanged?: () => void;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onBashChanged?: (bash: BashCheckResult) => void;
+  onGitChanged?: (git: GitCheckResult) => void;
+  onPiCliChanged?: (piCli: PiCliStatus) => void;
   /** When set, switch to this tab when the panel opens */
   initialTab?: SettingsTab;
   /** When set with godot tab, select editor/docs sub-section. */
@@ -58,6 +62,8 @@ export function SettingsPanel({
   onProvidersChanged,
   onPrefsChanged,
   onBashChanged,
+  onGitChanged,
+  onPiCliChanged,
   initialTab,
   initialGodotSection,
 }: Props) {
@@ -166,6 +172,8 @@ export function SettingsPanel({
                 prefs={prefs}
                 onPrefsChanged={onPrefsChanged}
                 onBashChanged={onBashChanged}
+                onGitChanged={onGitChanged}
+                onPiCliChanged={onPiCliChanged}
                 onOpenProviders={() => setTab("providers")}
               />
             )}
