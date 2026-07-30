@@ -54,6 +54,7 @@ const api: XAgentApi = {
   applyBashShellPath: (shellPath?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.applyBashShellPath, shellPath),
   pickBashShell: () => ipcRenderer.invoke(IPC_CHANNELS.pickBashShell),
+  checkGit: () => ipcRenderer.invoke(IPC_CHANNELS.checkGit),
   checkAuth: () => ipcRenderer.invoke(IPC_CHANNELS.checkAuth),
   checkPiCli: () => ipcRenderer.invoke(IPC_CHANNELS.checkPiCli),
   installPiCli: () => ipcRenderer.invoke(IPC_CHANNELS.installPiCli),

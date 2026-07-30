@@ -8,9 +8,15 @@ import {
   type BashCheckResult,
   type ClientPrefs,
   type ColorMode,
+  type GitCheckResult,
+  type PiCliStatus,
   type ThemeId,
   type ThinkingLevel,
 } from "@shared/ipc";
+import {
+  GIT_FOR_WINDOWS_DOWNLOAD_URL,
+  NODE_JS_DOWNLOAD_URL,
+} from "@shared/runtime-deps";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -27,6 +33,8 @@ type Props = {
   prefs: ClientPrefs;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onBashChanged?: (bash: BashCheckResult) => void;
+  onGitChanged?: (git: GitCheckResult) => void;
+  onPiCliChanged?: (piCli: PiCliStatus) => void;
   onOpenProviders: () => void;
 };
 
@@ -35,12 +43,17 @@ export function GeneralSettingsPage({
   prefs,
   onPrefsChanged,
   onBashChanged,
+  onGitChanged,
+  onPiCliChanged,
   onOpenProviders,
 }: Props) {
   const [bash, setBash] = useState<BashCheckResult | null>(null);
+  const [git, setGit] = useState<GitCheckResult | null>(null);
+  const [piCli, setPiCli] = useState<PiCliStatus | null>(null);
   const [generalMsg, setGeneralMsg] = useState<string | null>(null);
   const [authHint, setAuthHint] = useState<string | null>(null);
   const [piLoginBusy, setPiLoginBusy] = useState(false);
+  const [piInstallBusy, setPiInstallBusy] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
 
@@ -48,13 +61,20 @@ export function GeneralSettingsPage({
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      const [bashStatus, update] = await Promise.all([
+      const [bashStatus, gitStatus, piStatus, update] = await Promise.all([
         window.xAgent.checkBash(),
+        window.xAgent.checkGit(),
+        window.xAgent.checkPiCli(),
         window.xAgent.getUpdateStatus(),
       ]);
       if (cancelled) return;
       setBash(bashStatus);
+      setGit(gitStatus);
+      setPiCli(piStatus);
       setUpdateStatus(update);
+      onBashChanged?.(bashStatus);
+      onGitChanged?.(gitStatus);
+      onPiCliChanged?.(piStatus);
     })();
     const off = window.xAgent.onUpdateStatus((status) => {
       setUpdateStatus(status);
@@ -63,6 +83,8 @@ export function GeneralSettingsPage({
       cancelled = true;
       off();
     };
+    // Intentionally only re-run when the page opens; callbacks are optional paint syncs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -75,11 +97,30 @@ export function GeneralSettingsPage({
   useAutoClearNotice(generalMsg, () => setGeneralMsg(null));
   useAutoClearNotice(authHint, () => setAuthHint(null));
 
+  const openGitDownloadPage = async () => {
+    const result = await window.xAgent.openExternalUrl(
+      GIT_FOR_WINDOWS_DOWNLOAD_URL,
+    );
+    setGeneralMsg(
+      result.ok
+        ? "已打开 Git 下载页。安装完成后请点击「检测」。"
+        : (result.error ?? "无法打开 Git 下载页"),
+    );
+  };
+
+  const openNodeDownloadPage = async () => {
+    const result = await window.xAgent.openExternalUrl(NODE_JS_DOWNLOAD_URL);
+    setGeneralMsg(
+      result.ok
+        ? "已打开 Node.js 下载页。安装 22+ 并确保 npm 在 PATH 后，再安装 Pi CLI。"
+        : (result.error ?? "无法打开 Node.js 下载页"),
+    );
+  };
   return (
               <section className="settings-page">
                 <div className="settings-page-head">
                   <h3>通用</h3>
-                  <p className="modal-hint">外观、对话、Shell、认证与更新</p>
+                  <p className="modal-hint">外观、对话、Shell、Git、认证与更新</p>
                 </div>
 
                 <div className="settings-block">
@@ -233,6 +274,17 @@ export function GeneralSettingsPage({
                     >
                       浏览…
                     </button>
+                    {bash && !bash.ok && !bash.suggestedShellPath && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          void openGitDownloadPage();
+                        }}
+                      >
+                        下载 Git for Windows
+                      </button>
+                    )}
                   </div>
                   {bash?.suggestedShellPath &&
                     bash.suggestedShellPath !== bash.shellPath && (
@@ -243,11 +295,88 @@ export function GeneralSettingsPage({
                 </div>
 
                 <div className="settings-block">
+                  <h4 className="settings-block-title">Git</h4>
+                  <p className="modal-hint">
+                    Shadow Git 工作区检查点需要 git。通常随 Git for Windows
+                    一并安装。
+                  </p>
+                  <div className="settings-inline-row">
+                    <input
+                      type="text"
+                      className="input input-mono"
+                      readOnly
+                      value={git?.gitPath ?? ""}
+                      placeholder="尚未检测到 git…"
+                      aria-label="当前 git 路径"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={async () => {
+                        const status = await window.xAgent.checkGit();
+                        setGit(status);
+                        onGitChanged?.(status);
+                        setGeneralMsg(status.message);
+                      }}
+                    >
+                      检测
+                    </button>
+                    {git && !git.ok && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          void openGitDownloadPage();
+                        }}
+                      >
+                        下载 Git for Windows
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="settings-block">
                   <h4 className="settings-block-title">认证</h4>
                   <p className="modal-hint">
                     可用 Pi CLI 的 /login，或在「供应商」页配置 API Key。
+                    {piCli && !piCli.ok
+                      ? piCli.canInstall
+                        ? " 未检测到 Pi CLI，可一键安装。"
+                        : " 安装 Pi CLI 前需先安装 Node.js 22+（含 npm）。"
+                      : null}
                   </p>
                   <div className="settings-inline-row">
+                    {piCli && !piCli.ok && !piCli.canInstall && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          void openNodeDownloadPage();
+                        }}
+                      >
+                        打开 Node 下载页
+                      </button>
+                    )}
+                    {piCli && !piCli.ok && piCli.canInstall && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={piInstallBusy}
+                        onClick={async () => {
+                          setPiInstallBusy(true);
+                          try {
+                            const status = await window.xAgent.installPiCli();
+                            setPiCli(status);
+                            onPiCliChanged?.(status);
+                            setGeneralMsg(status.message);
+                          } finally {
+                            setPiInstallBusy(false);
+                          }
+                        }}
+                      >
+                        {piInstallBusy ? "安装中…" : "安装 Pi CLI"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"

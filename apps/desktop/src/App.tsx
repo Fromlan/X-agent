@@ -14,6 +14,7 @@ import type {
   BashCheckResult,
   ClientPrefs,
   ColorMode,
+  GitCheckResult,
   ModelInfo,
   PiCliStatus,
   PrefsRecoveryNotice,
@@ -22,6 +23,10 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS } from "@shared/ipc";
+import {
+  GIT_FOR_WINDOWS_DOWNLOAD_URL,
+  NODE_JS_DOWNLOAD_URL,
+} from "@shared/runtime-deps";
 import { useConfirm } from "./lib/app-confirm";
 import { Sidebar } from "./components/Sidebar";
 import { ChatPanel } from "./components/ChatPanel";
@@ -94,6 +99,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [prefs, setPrefs] = useState<ClientPrefs | null>(null);
   const [bash, setBash] = useState<BashCheckResult | null>(null);
+  const [git, setGit] = useState<GitCheckResult | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [piCli, setPiCli] = useState<PiCliStatus | null>(null);
   const [piCliInstalling, setPiCliInstalling] = useState(false);
@@ -145,6 +151,7 @@ export default function App() {
     cwd,
     prefs,
     bash,
+    git,
     auth,
     piCli,
     modelCount: models.length,
@@ -281,6 +288,7 @@ export default function App() {
         if (recovery) setPrefsRecovery(recovery);
         applyTheme(p.themeId, p.colorMode);
         setBash(await window.xAgent.checkBash());
+        setGit(await window.xAgent.checkGit());
         setAuth(await window.xAgent.checkAuth());
         setPiCli(await window.xAgent.checkPiCli());
         if (cancelled) return;
@@ -674,6 +682,30 @@ export default function App() {
     else setError(null);
   };
 
+  const openGitDownload = async () => {
+    setError(null);
+    const result = await window.xAgent.openExternalUrl(
+      GIT_FOR_WINDOWS_DOWNLOAD_URL,
+    );
+    if (!result.ok) {
+      setError(result.error ?? "无法打开 Git 下载页");
+      return;
+    }
+    setReadyNotice("安装 Git 后，请在设置 → 通用中点击「检测」刷新状态。");
+  };
+
+  const openNodeDownload = async () => {
+    setError(null);
+    const result = await window.xAgent.openExternalUrl(NODE_JS_DOWNLOAD_URL);
+    if (!result.ok) {
+      setError(result.error ?? "无法打开 Node.js 下载页");
+      return;
+    }
+    setReadyNotice(
+      "安装 Node.js 22+ 后重新打开应用，即可一键安装 Pi CLI。",
+    );
+  };
+
   const openSettings = () => {
     setSettingsTab(undefined);
     setSettingsGodotSection(undefined);
@@ -904,6 +936,12 @@ export default function App() {
           onApplyBash={() => {
             void applyBash();
           }}
+          onOpenGitDownload={() => {
+            void openGitDownload();
+          }}
+          onOpenNodeDownload={() => {
+            void openNodeDownload();
+          }}
           onInstallRpcAddon={() => {
             void installRpcAddon();
           }}
@@ -1090,6 +1128,8 @@ export default function App() {
             applyTheme(p.themeId, p.colorMode);
           }}
           onBashChanged={setBash}
+          onGitChanged={setGit}
+          onPiCliChanged={setPiCli}
           onProvidersChanged={async () => {
             await refreshModels();
             const p = await window.xAgent.getPrefs();

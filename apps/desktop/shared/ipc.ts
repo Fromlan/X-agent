@@ -128,6 +128,12 @@ export interface BashCheckResult {
   suggestedShellPath?: string | null;
 }
 
+export interface GitCheckResult {
+  ok: boolean;
+  gitPath: string | null;
+  message: string;
+}
+
 export interface AuthStatus {
   ok: boolean;
   message: string;
@@ -839,6 +845,7 @@ export interface XAgentApi {
   checkBash: () => Promise<BashCheckResult>;
   applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
   pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
+  checkGit: () => Promise<GitCheckResult>;
   checkAuth: () => Promise<AuthStatus>;
   checkPiCli: () => Promise<PiCliStatus>;
   installPiCli: () => Promise<PiCliStatus>;
