@@ -1,7 +1,6 @@
 /**
  * 验证 DEFAULT_PREFS 不再持有虚构模型;
- * 验证 prefs 主题迁移（legacy `theme` / `cindy` → themeId + colorMode）;
- * 验证 updateSource 默认与归一化。
+ * 验证 prefs 主题迁移（legacy `theme` / `cindy` → themeId + colorMode）。
  */
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,7 +9,6 @@ import { join } from "node:path";
 import {
   DEFAULT_PREFS,
   normalizeThemePrefs,
-  normalizeUpdateSource,
 } from "../shared/ipc";
 
 // 1. DEFAULT_PREFS 现在使用 null
@@ -23,17 +21,11 @@ assert.equal(DEFAULT_PREFS.colorMode, "dark");
 assert.equal(DEFAULT_PREFS.thinkingLevel, "medium");
 assert.deepEqual(DEFAULT_PREFS.dismissedReadyChecklistKeys, []);
 assert.deepEqual(DEFAULT_PREFS.dismissedGodotToolsNudgeKeys, []);
-assert.equal(DEFAULT_PREFS.updateSource, "github");
+assert.equal(DEFAULT_PREFS.autoCompactPercent, 0);
+assert.ok(!("updateSource" in DEFAULT_PREFS));
 assert.deepEqual(DEFAULT_PREFS.tools, [
   "read", "bash", "edit", "write", "grep", "find", "ls",
 ]);
-
-// 2b. updateSource 归一化
-assert.equal(normalizeUpdateSource("gitee"), "gitee");
-assert.equal(normalizeUpdateSource("github"), "github");
-assert.equal(normalizeUpdateSource("other"), "github");
-assert.equal(normalizeUpdateSource(undefined), "github");
-assert.equal(normalizeUpdateSource(null), "github");
 
 // 3. legacy theme → colorMode 迁移
 assert.deepEqual(normalizeThemePrefs({ theme: "light" }), {

@@ -36,7 +36,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 - **Providers** — profiles, model list fetch; import Pi / cc-switch configs
 - **Plugins** — prompts, skills, extensions, themes, packages
 - **Tool allowlist** — built-in I/O & shell on by default; Godot editor/docs tools off until enabled
-- **Usage / auth / updates** — local usage; in-app Pi login; packaged auto-update (Settings → General: **GitHub** or **Gitee** source)
+- **Usage / auth / updates** — local usage; in-app Pi login; packaged auto-update from GitHub Releases
 
 ## Requirements
 
@@ -60,7 +60,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 
 | Settings | Contents |
 |---|---|
-| General | Theme, default Thinking, bash, Pi login, auto-update (GitHub / Gitee) |
+| General | Theme, default Thinking, bash, Pi login, auto-update |
 | Providers | Provider profiles and import |
 | Usage | Local usage summary |
 | Tools | Tool allowlist and group toggles |
@@ -90,11 +90,24 @@ Under `~/.pi/agent/`:
 
 ## Updates & trust
 
-- **Update source**: Settings → General → **GitHub** (default) or **Gitee**. Gitee requires CI `GITEE_TOKEN` to sync the rolling `latest` tag (`latest.yml`); use GitHub if that secret is unset.
+- **Auto-update**: packaged builds silently check **GitHub Releases** after launch; Settings → General also has check / download / install. Use **Open Releases** if auto-update fails (or the QQ group link for alternate downloads).
 - **Code signing**: Provide `CSC_LINK` + `CSC_KEY_PASSWORD` in the build env so electron-builder signs Windows installers (helps with SmartScreen). Builds still succeed without a certificate (unsigned).
+
+## Security & privacy
+
+This is a coding agent with substantial local power—tighten as needed:
+
+| Area | Notes |
+|---|---|
+| API keys | Stored in plaintext under `~/.pi/agent/x-agent-providers.json` (and Pi `auth.json` when activated) |
+| Tools | Default allowlist includes `bash` / `write` / `edit`; Settings → Tools has a **read-only safe profile** |
+| Sandbox | Files tab is cwd-sandboxed; Pi `bash` can still reach broader paths via the shell |
+| Godot RPC | Listens on `127.0.0.1` only; no shared-secret handshake yet |
+| Packages | `pi install` accepts arbitrary sources—treat as supply-chain sensitive |
+| Sessions | Isolated under `~/.pi/agent/x-agent/sessions/` |
 
 ## UI language
 
-The desktop UI is currently **Chinese-only**. This English README documents the product; an in-app locale switch is not shipped yet.
+The desktop UI is currently **Chinese-only**. This English README documents the product; an in-app locale switch is not shipped yet. macOS/Linux installers are not shipped yet (Windows-first).
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes and [`CLAUDE.md`](CLAUDE.md) for development guidance.

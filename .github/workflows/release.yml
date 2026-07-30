@@ -17,10 +17,6 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
-    # Expose optional Gitee token at job scope so steps can gate on `env`
-    # (GitHub rejects `secrets.*` inside step-level `if` expressions).
-    env:
-      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
     defaults:
       run:
         working-directory: apps/desktop
@@ -80,14 +76,3 @@ jobs:
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/*.yml
-
-      - name: Sync Gitee Release
-        if: env.GITEE_TOKEN != ''
-        # GitHub Release is already published; keep the overall job green if Gitee flakes.
-        continue-on-error: true
-        env:
-          GITEE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
-        working-directory: ${{ github.workspace }}
-        shell: bash
-        run: |
-          node scripts/sync-gitee-release.mjs "${{ steps.version.outputs.version }}" apps/desktop/release

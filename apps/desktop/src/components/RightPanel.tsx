@@ -31,6 +31,8 @@ interface Props {
   compacting: boolean;
   busy: boolean;
   sessionId: string | null;
+  autoCompactPercent?: number;
+  onAutoCompactPercentChange?: (percent: number) => void;
   onClose: () => void;
   onAddPathToChat: (relPath: string) => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
@@ -46,6 +48,8 @@ export function RightPanel({
   compacting,
   busy,
   sessionId,
+  autoCompactPercent = 0,
+  onAutoCompactPercentChange,
   onClose,
   onAddPathToChat,
   onResizePointerDown,
@@ -111,6 +115,8 @@ export function RightPanel({
             compacting={compacting}
             busy={busy}
             sessionId={sessionId}
+            autoCompactPercent={autoCompactPercent}
+            onAutoCompactPercentChange={onAutoCompactPercentChange}
           />
         )}
         {state.tab === "tools" && (

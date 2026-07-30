@@ -513,7 +513,7 @@ export function PluginsPage({ cwd }: Props) {
                         title={
                           selected.editable
                             ? "删除"
-                            : "来自 Package，请用 pi remove 卸载包"
+                            : "来自 Package，请在 Packages 中卸载"
                         }
                         onClick={() => void remove()}
                       >
@@ -540,8 +540,7 @@ export function PluginsPage({ cwd }: Props) {
                     <div className="banner warn">
                       只读：来自已安装 Package
                       {selected.packageName ? `（${selected.packageName}）` : ""}
-                      。Agent 会加载这些资源；卸载请用终端{" "}
-                      <code>pi remove</code>。
+                      。Agent 会加载这些资源；卸载请到本页 Packages 进行。
                     </div>
                   )}
                   {warnings.length > 0 && (

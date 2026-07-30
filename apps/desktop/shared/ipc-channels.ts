@@ -97,6 +97,8 @@ export const IPC_CHANNELS = {
   installUpdate: "installUpdate",
   getUsageSummary: "getUsageSummary",
   clearUsageSummary: "clearUsageSummary",
+  /** One-shot prefs recovery notice after corrupt x-agent.json backup. */
+  getPrefsRecoveryNotice: "getPrefsRecoveryNotice",
   /** Renderer signals first paint so splash can reveal the main window. */
   appReady: "appReady",
 } as const;

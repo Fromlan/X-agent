@@ -16,7 +16,10 @@ type Props = {
   title?: string;
   notice?: string | null;
   piCliInstalling?: boolean;
+  /** Session-only hide; checklist returns next time the project is opened. */
   onDismiss: () => void;
+  /** Persist “don’t remind” for this project’s Godot readiness steps. */
+  onDontRemind?: () => void;
   onDismissNotice?: () => void;
   onOpenSettings: (tab: SettingsTabTarget, godotSection?: "editor" | "docs") => void;
   onInstallPiCli?: () => void;
@@ -170,10 +173,23 @@ export function ReadyChecklist(props: Props) {
             {nextAction.label}
           </button>
         )}
+        {props.onDontRemind && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm ready-strip-mute"
+            title="此项目不再显示就绪清单中的 Godot 步骤"
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onDontRemind?.();
+            }}
+          >
+            不再提醒
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-ghost btn-sm btn-icon ready-strip-dismiss"
-          title="暂时隐藏"
+          title="暂时隐藏（下次打开项目仍会显示）"
           aria-label="暂时隐藏就绪清单"
           onClick={props.onDismiss}
         >
