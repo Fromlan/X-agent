@@ -83,6 +83,8 @@ jobs:
 
       - name: Sync Gitee Release
         if: env.GITEE_TOKEN != ''
+        # GitHub Release is already published; keep the overall job green if Gitee flakes.
+        continue-on-error: true
         env:
           GITEE_NOTES_FILE: ${{ runner.temp }}/release-notes.md
         working-directory: ${{ github.workspace }}
