@@ -2,7 +2,8 @@ import { dialog, ipcMain, shell, type BrowserWindow } from "electron";
 import { applyBashShellPath, checkBash } from "./agent/bash-check";
 import { checkAuth } from "./agent/auth-check";
 import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
-import { loadPrefs, patchPrefs } from "./agent/prefs";
+import { loadPrefs, loadPrefsWithRecovery, patchPrefs } from "./agent/prefs";
+import type { PrefsLoadResult } from "./agent/prefs";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
 import { SessionHost } from "./agent/session-host";
 import {
@@ -27,7 +28,11 @@ import {
   writePlugin,
 } from "./agent/plugin-host";
 import { clearUsageSummary, getUsageSummary } from "./agent/usage-store";
-import type { ClientPrefs, PluginCreateInput } from "../shared/ipc";
+import type {
+  ClientPrefs,
+  PluginCreateInput,
+  PrefsRecoveryNotice,
+} from "../shared/ipc";
 import { ALL_TOGGLEABLE_TOOLS } from "../shared/ipc";
 import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { registerSessionIpc } from "./ipc/register-session-ipc";
@@ -44,6 +49,30 @@ export type RuntimeHooks = {
 
 let godotRpc: GodotRpcBridge | null = null;
 let sessionHost: SessionHost | null = null;
+/** Cleared when renderer consumes via getPrefsRecoveryNotice. */
+let pendingPrefsRecovery: PrefsRecoveryNotice | null = null;
+
+function consumePrefsRecoveryNotice(): PrefsRecoveryNotice | null {
+  const notice = pendingPrefsRecovery;
+  pendingPrefsRecovery = null;
+  return notice;
+}
+
+function applyStartupPrefsLoad(result: PrefsLoadResult): void {
+  if (result.ok || !result.recovered) {
+    pendingPrefsRecovery = null;
+    return;
+  }
+  pendingPrefsRecovery = {
+    backedUp: result.recovered.backedUp,
+    backupPath: result.recovered.backupPath,
+    error: result.recovered.error,
+  };
+  // File was renamed away on successful backup — seed defaults so later loads work.
+  if (result.recovered.backedUp) {
+    patchPrefs({});
+  }
+}
 
 function registerIpc(
   host: SessionHost,
@@ -83,20 +112,9 @@ function registerIpc(
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
       await host.applyTools(patch.tools.filter((t) => allowed.has(t)));
       const { tools: _drop, ...rest } = patch;
-      if (Object.keys(rest).length === 0) {
-        return loadPrefs();
-      }
-      const next = patchPrefs(rest);
-      if (rest.updateSource !== undefined) {
-        updater.applyFeed(next.updateSource);
-      }
-      return next;
+      return Object.keys(rest).length === 0 ? loadPrefs() : patchPrefs(rest);
     }
-    const next = patchPrefs(patch);
-    if (patch.updateSource !== undefined) {
-      updater.applyFeed(next.updateSource);
-    }
-    return next;
+    return patchPrefs(patch);
   });
   ipcMain.handle(IPC_CHANNELS.checkBash, async () => checkBash());
   ipcMain.handle(IPC_CHANNELS.applyBashShellPath, async (_e, shellPath?: string) =>
@@ -197,6 +215,9 @@ function registerIpc(
   ipcMain.handle(IPC_CHANNELS.checkForUpdates, async () => updater.check());
   ipcMain.handle(IPC_CHANNELS.downloadUpdate, async () => updater.download());
   ipcMain.handle(IPC_CHANNELS.installUpdate, async () => updater.quitAndInstall());
+  ipcMain.handle(IPC_CHANNELS.getPrefsRecoveryNotice, async () =>
+    consumePrefsRecoveryNotice(),
+  );
   ipcMain.handle(IPC_CHANNELS.getUsageSummary, async (_e, options?: { days?: number }) =>
     getUsageSummary(options),
   );
@@ -209,6 +230,7 @@ function registerIpc(
 
 /** Call only after splash is visible. */
 export function bootRuntime(hooks: RuntimeHooks): void {
+  applyStartupPrefsLoad(loadPrefsWithRecovery());
   godotRpc = new GodotRpcBridge();
   sessionHost = new SessionHost(hooks.getMainWindow, godotRpc);
   const updater = new AppAutoUpdater(hooks.getMainWindow);

@@ -36,7 +36,7 @@
 - **供应商** — 多档案订阅、拉取模型列表；可导入 Pi / cc-switch 配置
 - **插件** — Prompt / Skill / Extension / Theme / Packages
 - **工具白名单** — 内置读写与终端默认开；Godot 编辑器 / 文档工具默认关，可按组开关
-- **用量 / 认证 / 更新** — 本地用量汇总；应用内 Pi 登录；安装版可检查更新（设置 → 通用可选 **GitHub** 或 **Gitee** 源）
+- **用量 / 认证 / 更新** — 本地用量汇总；应用内 Pi 登录；安装版可从 GitHub Releases 检查更新
 
 ## 环境要求
 
@@ -60,7 +60,7 @@
 
 | 设置分页 | 内容 |
 |---|---|
-| 通用 | 主题、Thinking 默认、bash、Pi 登录、自动更新（GitHub / Gitee） |
+| 通用 | 主题、Thinking 默认、bash、Pi 登录、自动更新 |
 | 供应商 | 模型供应商档案与导入 |
 | 用量 | 本地用量汇总 |
 | 工具 | 工具白名单与分组开关 |
@@ -90,7 +90,20 @@
 
 ## 更新与安装信任
 
-- **更新源**：设置 → 通用可选 **GitHub**（默认）或 **Gitee**。Gitee 源依赖发版 CI 的 `GITEE_TOKEN` 同步滚动标签 `latest`（含 `latest.yml`）；未配置时请用 GitHub。
+- **自动更新**：安装版启动后会静默检查 **GitHub Releases**；也可在设置 → 通用手动检查 / 下载 / 安装。检查失败时可点「打开 Releases」在浏览器下载（大陆网络不稳时可用加群通道）。
 - **代码签名**：打包时若环境提供 `CSC_LINK`（证书文件/base64）与 `CSC_KEY_PASSWORD`，electron-builder 会自动签名，减轻 SmartScreen 拦截。未配置证书时仍可产出未签名安装包。
+
+## 安全与隐私
+
+编码 Agent 默认具备较强本机能力，请按需收紧：
+
+| 面 | 说明 |
+|---|---|
+| API Key | 供应商密钥明文保存在 `~/.pi/agent/x-agent-providers.json`，启用时写入 Pi `auth.json`；勿把该目录同步到不可信位置 |
+| 工具 | 默认开启 `bash` / `write` / `edit`；设置 → 工具可用「只读安全档」关闭终端与写文件 |
+| 项目沙箱 | 右栏文件树受 cwd 沙箱约束；Pi `bash` 仍可在 shell 中访问更广路径 |
+| Godot RPC | 仅监听 `127.0.0.1`，当前无共享密钥握手；仅信任本机编辑器连入 |
+| Packages | `pi install` 可安装任意来源包，注意供应链风险 |
+| 会话 | 仅存储在 `~/.pi/agent/x-agent/sessions/`，与 Pi CLI 会话隔离 |
 
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。

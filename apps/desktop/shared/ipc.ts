@@ -250,14 +250,6 @@ export function normalizeThemePrefs(raw: {
   return { themeId, colorMode: "dark" };
 }
 
-/** Packaged-app auto-update feed: GitHub Releases or Gitee generic mirror. */
-export const UPDATE_SOURCES = ["github", "gitee"] as const;
-export type UpdateSource = (typeof UPDATE_SOURCES)[number];
-
-export function normalizeUpdateSource(value: unknown): UpdateSource {
-  return value === "gitee" ? "gitee" : "github";
-}
-
 export interface ClientPrefs {
   themeId: ThemeId;
   colorMode: ColorMode;
@@ -286,18 +278,20 @@ export interface ClientPrefs {
    * Session files are kept; opening the project again removes the key.
    */
   hiddenProjectKeys: string[];
-  /** Auto-update download source (GitHub or Gitee mirror). */
-  updateSource: UpdateSource;
   /**
-   * Project keys where the ready checklist was dismissed.
-   * Cleared automatically when the project is opened again after a dismiss
-   * only if the user clears prefs; otherwise persists per project.
+   * Project keys that opted out of the Godot ready-checklist steps (“不再提醒”).
+   * Closing the strip only hides it for the current session.
    */
   dismissedReadyChecklistKeys: string[];
   /**
    * Project keys where the "enable Godot editor tools" nudge was dismissed.
    */
   dismissedGodotToolsNudgeKeys: string[];
+  /**
+   * Auto-compact when context occupancy percent reaches this threshold (1–100).
+   * `0` disables automatic compression.
+   */
+  autoCompactPercent: number;
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -319,9 +313,9 @@ export const DEFAULT_PREFS: ClientPrefs = {
   sidebarWidth: 260,
   rightPanelWidth: 360,
   hiddenProjectKeys: [],
-  updateSource: "github",
   dismissedReadyChecklistKeys: [],
   dismissedGodotToolsNudgeKeys: [],
+  autoCompactPercent: 0,
 };
 
 export interface OpenProjectResult {
@@ -788,8 +782,15 @@ export interface AppUpdateStatus {
   progress?: number;
   error?: string;
   message?: string;
-  /** Active update feed after applyFeed / check. */
-  source?: UpdateSource;
+  /** GitHub Releases page for manual download fallback. */
+  releasesUrl?: string;
+}
+
+/** Shown once when x-agent.json was corrupt and backed up on startup. */
+export interface PrefsRecoveryNotice {
+  backedUp: boolean;
+  backupPath?: string;
+  error: string;
 }
 
 export interface XAgentApi {
@@ -829,6 +830,8 @@ export interface XAgentApi {
   ) => Promise<{ ok: boolean; error?: string }>;
   getPrefs: () => Promise<ClientPrefs>;
   setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
+  /** Returns and clears the startup prefs-recovery notice, if any. */
+  getPrefsRecoveryNotice: () => Promise<PrefsRecoveryNotice | null>;
   checkBash: () => Promise<BashCheckResult>;
   applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
   pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;

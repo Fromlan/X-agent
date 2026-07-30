@@ -8,6 +8,30 @@
 
 ## Unreleased
 
+### 变更
+
+### 功能
+
+### 改进
+
+## 0.3.3
+
+### 变更
+
+- **移除 Gitee 更新源**：删除设置内更新源切换、发版 CI / `sync-gitee-release` 同步；自动更新仅使用 GitHub Releases
+- **就绪清单**：关闭仅本会话隐藏；新增「不再提醒」才对本项目持久关闭 Godot 相关步骤
+
+### 功能
+
+- **更新体验**：打包版启动后静默检查；顶栏更新角标；设置内「打开 Releases」浏览器下载回退
+- **偏好恢复**：启动时若 `x-agent.json` 损坏则备份并提示；设置 Escape / `Ctrl+,`；上下文自动压缩阈值；工具「只读安全档」
+
+### 改进
+
+- **设置**：供应商页拆出 `ProvidersSettingsPage`；就绪 / 更新逻辑抽 hook
+- **文档**：README 补充安全与隐私说明；Godot 文档导入引导（镜像 / 本地 zip）
+- **测试**：prefs recovery、update-feed resolve
+
 ## 0.3.2
 
 ### 功能
@@ -15,14 +39,13 @@
 - **项目就绪清单**：单一可折叠条替代多层横幅（认证 / bash / RPC / Godot 工具 / 文档）；桥接启动有明确反馈，等待连入时可一键启动编辑器
 - **空聊天引导**：打开项目后展示 starter prompts，并可跳转 Godot / 设置
 - **Godot 工具渐进启用**：桥已连接但工具仍关时提示一键启用
-- **双更新源**：设置 → 通用可选 GitHub 或 Gitee；发版 CI 可同步 Gitee `latest` feed（需 `GITEE_TOKEN`）
 - **主题化确认框**：替换系统 `window.confirm`；warn/danger 默认高亮「取消」
 
 ### 改进
 
 - **长会话聊天**：超过阈值时折叠更早消息；流式/长历史时对非尾部气泡降级为纯文本渲染
 - **设置分页拆分**：通用 / 工具 / Godot 独立页面组件；Settings 壳层变薄
-- **更新与签名说明**：README / CLAUDE / 设置补充 Gitee feed 与可选 Windows 代码签名（`CSC_LINK`）
+- **更新与签名说明**：README / CLAUDE / 设置补充 GitHub 自动更新与可选 Windows 代码签名（`CSC_LINK`）
 - **工程**：`SessionHost` 拆出 helpers / event-bridge / usage；IPC channel 常量表；`project-fs` 与 Electron shell 解耦；sandbox / ready-checklist / update-feed 测试
 
 ## 0.3.1

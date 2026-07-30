@@ -48,6 +48,8 @@ const api: XAgentApi = {
     ipcRenderer.invoke(IPC_CHANNELS.renameSession, sessionPath, name),
   getPrefs: () => ipcRenderer.invoke(IPC_CHANNELS.getPrefs),
   setPrefs: (patch: Partial<ClientPrefs>) => ipcRenderer.invoke(IPC_CHANNELS.setPrefs, patch),
+  getPrefsRecoveryNotice: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getPrefsRecoveryNotice),
   checkBash: () => ipcRenderer.invoke(IPC_CHANNELS.checkBash),
   applyBashShellPath: (shellPath?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.applyBashShellPath, shellPath),

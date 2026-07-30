@@ -11,7 +11,6 @@ import {
   ClientPrefs,
   DEFAULT_PREFS,
   normalizeThemePrefs,
-  normalizeUpdateSource,
 } from "../../shared/ipc";
 import { normalizeGodotDocsBranch } from "./godot-docs-cache";
 
@@ -19,10 +18,25 @@ type RawPrefs = Partial<ClientPrefs> & {
   language?: unknown;
   /** @deprecated Prefer themeId + colorMode */
   theme?: unknown;
+  /** @deprecated Removed Gitee dual update source */
+  updateSource?: unknown;
 };
 
+/** Test-only override for ~/.pi/agent (absolute path). */
+let agentDirOverride: string | null = null;
+
+/** @internal Used by offline tests to isolate prefs I/O. */
+export function setAgentDirOverrideForTests(dir: string | null): void {
+  agentDirOverride = dir;
+}
+
 function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
-  const { language: _legacyLanguage, theme: _legacyTheme, ...rest } = raw;
+  const {
+    language: _legacyLanguage,
+    theme: _legacyTheme,
+    updateSource: _legacyUpdateSource,
+    ...rest
+  } = raw;
   const hiddenProjectKeys = Array.isArray(rest.hiddenProjectKeys)
     ? rest.hiddenProjectKeys.filter(
         (k): k is string => typeof k === "string" && k.trim().length > 0,
@@ -42,6 +56,13 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
         (k): k is string => typeof k === "string" && k.trim().length > 0,
       )
     : [];
+  const rawAutoCompact = rest.autoCompactPercent;
+  const autoCompactPercent =
+    typeof rawAutoCompact === "number" &&
+    Number.isFinite(rawAutoCompact) &&
+    rawAutoCompact >= 0
+      ? Math.min(100, Math.floor(rawAutoCompact))
+      : DEFAULT_PREFS.autoCompactPercent;
   const { themeId, colorMode } = normalizeThemePrefs(raw);
   return {
     ...DEFAULT_PREFS,
@@ -51,17 +72,17 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     hiddenProjectKeys,
     dismissedReadyChecklistKeys,
     dismissedGodotToolsNudgeKeys,
+    autoCompactPercent,
     godotDocsBranch: normalizeGodotDocsBranch(
       typeof rest.godotDocsBranch === "string"
         ? rest.godotDocsBranch
         : DEFAULT_PREFS.godotDocsBranch,
     ),
-    updateSource: normalizeUpdateSource(rest.updateSource),
   };
 }
 
 function agentDir(): string {
-  return join(homedir(), ".pi", "agent");
+  return agentDirOverride ?? join(homedir(), ".pi", "agent");
 }
 
 function prefsPath(): string {
@@ -173,8 +194,10 @@ export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
   if (typeof patch.godotDocsBranch === "string") {
     next.godotDocsBranch = normalizeGodotDocsBranch(patch.godotDocsBranch);
   }
-  if (patch.updateSource !== undefined) {
-    next.updateSource = normalizeUpdateSource(patch.updateSource);
+  if (typeof patch.autoCompactPercent === "number") {
+    next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
+      ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))
+      : DEFAULT_PREFS.autoCompactPercent;
   }
   return savePrefs(next);
 }

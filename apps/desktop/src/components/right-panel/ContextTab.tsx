@@ -5,6 +5,7 @@ import {
   formatCacheHitRatio,
 } from "@shared/cache-hit";
 import type { ContextSegmentId, SessionUsageSnapshot } from "@shared/ipc";
+import { SelectMenu } from "../SelectMenu";
 
 function formatTokens(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "—";
@@ -39,9 +40,18 @@ interface Props {
   busy: boolean;
   /** Clears local compact hint/error when the active session changes. */
   sessionId: string | null;
+  autoCompactPercent?: number;
+  onAutoCompactPercentChange?: (percent: number) => void;
 }
 
-export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
+export function ContextTab({
+  usage,
+  compacting,
+  busy,
+  sessionId,
+  autoCompactPercent = 0,
+  onAutoCompactPercentChange,
+}: Props) {
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
 
@@ -326,6 +336,28 @@ export function ContextTab({ usage, compacting, busy, sessionId }: Props) {
       </section>
 
       <div className="rp-context-footer">
+        {onAutoCompactPercentChange && (
+          <div className="rp-context-auto field block-field">
+            <span>自动压缩阈值</span>
+            <SelectMenu
+              variant="block"
+              value={String(autoCompactPercent)}
+              disabled={busy}
+              aria-label="自动压缩阈值"
+              options={[
+                { value: "0", label: "关闭" },
+                { value: "70", label: "70%" },
+                { value: "80", label: "80%" },
+                { value: "85", label: "85%" },
+                { value: "90", label: "90%" },
+                { value: "95", label: "95%" },
+              ]}
+              onChange={(v) => {
+                onAutoCompactPercentChange(Number(v));
+              }}
+            />
+          </div>
+        )}
         <button
           type="button"
           className="btn btn-secondary btn-sm rp-context-compact-btn"

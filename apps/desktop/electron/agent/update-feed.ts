@@ -1,25 +1,11 @@
 /**
  * Pure helpers for packaged-app update feeds (no Electron imports).
  */
-import type { UpdateSource } from "../../shared/ipc";
-
-/** Gitee mirror for China downloads (generic feed under rolling `latest` tag). */
-export const GITEE_OWNER = "fromlan";
-export const GITEE_REPO = "x-agent";
-export const GITEE_LATEST_TAG = "latest";
 
 export const DEFAULT_GITHUB_OWNER = "Fromlan";
 export const DEFAULT_GITHUB_REPO = "X-agent";
 
 export type GithubFeed = { owner: string; repo: string };
-
-export function giteeGenericFeedUrl(
-  owner = GITEE_OWNER,
-  repo = GITEE_REPO,
-  tag = GITEE_LATEST_TAG,
-): string {
-  return `https://gitee.com/${owner}/${repo}/releases/download/${tag}/`;
-}
 
 export function parseGithubRepoUrl(url: string): GithubFeed | null {
   const trimmed = url.trim().replace(/\.git$/i, "");
@@ -32,16 +18,19 @@ export function parseGithubRepoUrl(url: string): GithubFeed | null {
   return null;
 }
 
-export function feedMessage(
-  source: UpdateSource,
-  github?: GithubFeed,
-): string {
-  if (source === "gitee") {
-    return `已配置 Gitee 更新源：${GITEE_OWNER}/${GITEE_REPO}`;
-  }
+export function feedMessage(github?: GithubFeed): string {
   const feed = github ?? {
     owner: DEFAULT_GITHUB_OWNER,
     repo: DEFAULT_GITHUB_REPO,
   };
   return `已配置 GitHub 更新源：${feed.owner}/${feed.repo}`;
+}
+
+/** Browser page for manual download when GitHub auto-update fails or is unsupported. */
+export function githubReleasesUrl(github?: GithubFeed): string {
+  const feed = github ?? {
+    owner: DEFAULT_GITHUB_OWNER,
+    repo: DEFAULT_GITHUB_REPO,
+  };
+  return `https://github.com/${feed.owner}/${feed.repo}/releases`;
 }

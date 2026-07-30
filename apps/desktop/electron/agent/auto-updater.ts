@@ -1,34 +1,25 @@
 /**
- * Packaged-app auto-update via electron-updater.
- * GitHub Releases (provider) or Gitee mirror (generic latest Release).
+ * Packaged-app auto-update via electron-updater (GitHub Releases).
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, type BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
-import type {
-  AppUpdateStatus,
-  UpdateSource,
-} from "../../shared/ipc";
-import { normalizeUpdateSource } from "../../shared/ipc";
+import type { AppUpdateStatus } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
-import { loadPrefs } from "./prefs";
 import {
   DEFAULT_GITHUB_OWNER,
   DEFAULT_GITHUB_REPO,
   feedMessage,
-  giteeGenericFeedUrl,
+  githubReleasesUrl,
   type GithubFeed,
   parseGithubRepoUrl,
 } from "./update-feed";
 
-export {
-  feedMessage,
-  GITEE_LATEST_TAG,
-  GITEE_OWNER,
-  GITEE_REPO,
-  giteeGenericFeedUrl,
-} from "./update-feed";
+export { feedMessage, githubReleasesUrl } from "./update-feed";
+
+/** Delay before first silent check after packaged app ready. */
+const STARTUP_CHECK_DELAY_MS = 8_000;
 
 const { autoUpdater } = electronUpdater;
 
@@ -38,7 +29,7 @@ const DEV_STATUS: AppUpdateStatus = {
   available: false,
   downloading: false,
   downloaded: false,
-  message: "自动更新仅在打包后的安装版中可用（开发模式请使用 npm run dist）。",
+  releasesUrl: githubReleasesUrl(),
 };
 
 /** Prefer package.json repository / publish; fall back to known release repo. */
@@ -92,7 +83,6 @@ export class AppAutoUpdater {
   private status: AppUpdateStatus = { ...DEV_STATUS };
   private getWindow: () => BrowserWindow | null;
   private wired = false;
-  private activeSource: UpdateSource = "github";
 
   constructor(getWindow: () => BrowserWindow | null) {
     this.getWindow = getWindow;
@@ -102,30 +92,11 @@ export class AppAutoUpdater {
     return { ...this.status };
   }
 
-  /** Apply feed for the given source (or current prefs). No-op in unpackaged/dev. */
-  applyFeed(source?: UpdateSource): void {
+  /** Configure GitHub Releases feed. No-op in unpackaged/dev. */
+  applyFeed(): void {
     if (!app.isPackaged) {
       this.status = { ...DEV_STATUS };
       this.emit();
-      return;
-    }
-
-    const next = normalizeUpdateSource(
-      source ?? loadPrefs().updateSource,
-    );
-    this.activeSource = next;
-
-    if (next === "gitee") {
-      autoUpdater.setFeedURL({
-        provider: "generic",
-        url: giteeGenericFeedUrl(),
-      });
-      this.setStatus({
-        supported: true,
-        source: next,
-        message: feedMessage("gitee"),
-        error: undefined,
-      });
       return;
     }
 
@@ -137,8 +108,8 @@ export class AppAutoUpdater {
     });
     this.setStatus({
       supported: true,
-      source: next,
-      message: feedMessage("github", feed),
+      releasesUrl: githubReleasesUrl(feed),
+      message: feedMessage(feed),
       error: undefined,
     });
   }
@@ -146,7 +117,11 @@ export class AppAutoUpdater {
   /** Call once after app is ready. No-op in unpackaged/dev builds. */
   init(): void {
     if (!app.isPackaged) {
-      this.status = { ...DEV_STATUS };
+      this.status = {
+        ...DEV_STATUS,
+        releasesUrl: githubReleasesUrl(resolveGithubFeed()),
+        message: "开发版不支持自动更新；可打开 GitHub Releases 手动下载。",
+      };
       this.emit();
       return;
     }
@@ -155,6 +130,19 @@ export class AppAutoUpdater {
     autoUpdater.autoInstallOnAppQuit = true;
     this.wireEvents();
     this.applyFeed();
+    this.scheduleStartupCheck();
+  }
+
+  /** Silent check a few seconds after launch (packaged only). */
+  scheduleStartupCheck(): void {
+    if (!app.isPackaged) return;
+    setTimeout(() => {
+      void this.check({ silent: true });
+    }, STARTUP_CHECK_DELAY_MS);
+  }
+
+  releasesPageUrl(): string {
+    return githubReleasesUrl(resolveGithubFeed());
   }
 
   private setStatus(patch: Partial<AppUpdateStatus>): void {
@@ -177,7 +165,6 @@ export class AppAutoUpdater {
       this.setStatus({
         checking: true,
         error: undefined,
-        source: this.activeSource,
         message: "正在检查更新…",
       });
     });
@@ -187,7 +174,6 @@ export class AppAutoUpdater {
         checking: false,
         available: true,
         version: info.version,
-        source: this.activeSource,
         message: `发现新版本 ${info.version}`,
       });
     });
@@ -197,7 +183,6 @@ export class AppAutoUpdater {
         checking: false,
         available: false,
         version: info.version,
-        source: this.activeSource,
         message: `已是最新版本（${info.version}）`,
       });
     });
@@ -206,7 +191,6 @@ export class AppAutoUpdater {
       this.setStatus({
         downloading: true,
         progress: Math.round(progress.percent),
-        source: this.activeSource,
         message: `下载中 ${Math.round(progress.percent)}%`,
       });
     });
@@ -218,7 +202,6 @@ export class AppAutoUpdater {
         available: true,
         progress: 100,
         version: info.version,
-        source: this.activeSource,
         message: `已下载 ${info.version}，可重启安装`,
       });
     });
@@ -228,27 +211,32 @@ export class AppAutoUpdater {
         checking: false,
         downloading: false,
         error: err.message,
-        source: this.activeSource,
         message: `更新失败：${err.message}`,
       });
     });
   }
 
-  async check(): Promise<AppUpdateStatus> {
+  async check(options?: { silent?: boolean }): Promise<AppUpdateStatus> {
     if (!app.isPackaged) {
-      this.status = { ...DEV_STATUS };
+      this.status = {
+        ...DEV_STATUS,
+        releasesUrl: githubReleasesUrl(resolveGithubFeed()),
+        message: "开发版不支持自动更新；可打开 GitHub Releases 手动下载。",
+      };
       this.emit();
       return this.getStatus();
     }
+    const silent = options?.silent === true;
     try {
       this.applyFeed();
       this.setStatus({
         checking: true,
         error: undefined,
-        available: false,
-        downloaded: false,
-        downloading: false,
-        message: "正在检查更新…",
+        // Keep prior available/downloaded on silent re-check so TopBar badge stays.
+        ...(silent
+          ? {}
+          : { available: false, downloaded: false, downloading: false }),
+        message: silent ? this.status.message : "正在检查更新…",
       });
       await autoUpdater.checkForUpdates();
     } catch (err) {
@@ -256,7 +244,9 @@ export class AppAutoUpdater {
       this.setStatus({
         checking: false,
         error: message,
-        message: `检查更新失败：${message}`,
+        message: silent
+          ? `自动检查失败（可打开 Releases 手动下载）：${message}`
+          : `检查更新失败：${message}`,
       });
     }
     return this.getStatus();
@@ -275,7 +265,7 @@ export class AppAutoUpdater {
       return this.getStatus();
     }
     try {
-      this.applyFeed(this.activeSource);
+      this.applyFeed();
       this.setStatus({
         downloading: true,
         progress: 0,
@@ -296,7 +286,7 @@ export class AppAutoUpdater {
 
   quitAndInstall(): { ok: boolean; error?: string } {
     if (!app.isPackaged) {
-      return { ok: false, error: DEV_STATUS.message };
+      return { ok: false, error: "当前环境不支持安装更新" };
     }
     if (!this.status.downloaded) {
       return { ok: false, error: "尚未下载更新，请先下载。" };

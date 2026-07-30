@@ -13,6 +13,6 @@
     "release:prepare": "node scripts/prepare-release.mjs",
     "release:notes": "node scripts/extract-changelog.mjs",
     "release:test-changelog": "node scripts/test-extract-changelog.mjs",
-    "release:sync-gitee": "node scripts/sync-gitee-release.mjs"
+    "release:dist": "npm run desktop:typecheck && npm run desktop:test && npm run desktop:dist"
   }
 }
