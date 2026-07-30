@@ -7,8 +7,9 @@
  *
  * Does not commit or push. After success:
  *   1. Review CHANGELOG.md + package.json
- *   2. git add -A && git commit -m "release: vX.Y.Z"
- *   3. git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z
+ *   2. npm run release:dist   # local typecheck + test + Windows exe
+ *   3. git add … && git commit -m "release: vX.Y.Z"
+ *   4. git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -111,17 +112,16 @@ function main() {
           ]
         : []),
       "Next:",
+      `  npm run release:dist`,
+      `    # typecheck + test + electron-builder → apps/desktop/release/`,
+      `    # 例如 X-agent-${version}-x64.exe（勿把 release/ 提交进 git）`,
       `  git add CHANGELOG.md apps/desktop/package.json apps/desktop/package-lock.json`,
       `  git commit -m "release: v${version}"`,
       `  git tag v${version}`,
       `  git push origin HEAD && git push origin v${version}`,
       "",
       "Tag push triggers .github/workflows/release.yml：",
-      "  - 上传 GitHub Releases（安装包 + latest.yml）",
-      "  - 若已配置 Actions secret GITEE_TOKEN，同步到 gitee.com/fromlan/x-agent",
-      "    （版本标签 vX.Y.Z + 滚动标签 latest，供应用内「更新源 → Gitee」）",
-      "  - 无 GITEE_TOKEN 时仅跳过 Gitee；本地可：",
-      `      set GITEE_TOKEN=… && npm run release:sync-gitee -- ${version} apps/desktop/release`,
+      "  - CI 再构建并上传 GitHub Releases（安装包 + latest.yml）",
       "",
       "Release 正文将使用该 CHANGELOG 章节。",
     ].join("\n"),

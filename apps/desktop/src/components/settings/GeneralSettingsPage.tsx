@@ -10,7 +10,6 @@ import {
   type ColorMode,
   type ThemeId,
   type ThinkingLevel,
-  type UpdateSource,
 } from "@shared/ipc";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
@@ -292,37 +291,9 @@ export function GeneralSettingsPage({
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">更新</h4>
-                  <div className="settings-row">
-                    <span className="settings-row-label">更新源</span>
-                    <SelectMenu
-                      variant="control"
-                      value={prefs.updateSource ?? "github"}
-                      options={[
-                        { value: "github", label: "GitHub" },
-                        { value: "gitee", label: "Gitee" },
-                      ]}
-                      onChange={(v) => {
-                        void (async () => {
-                          const next = await window.xAgent.setPrefs({
-                            updateSource: v as UpdateSource,
-                          });
-                          onPrefsChanged?.(next);
-                          setUpdateStatus(await window.xAgent.getUpdateStatus());
-                        })();
-                      }}
-                      aria-label="更新源"
-                    />
-                  </div>
-                  <p className="modal-hint">
-                    {prefs.updateSource === "gitee"
-                      ? "Gitee：适合国内网络。需发版 CI 配置 GITEE_TOKEN 同步滚动标签 latest（含 latest.yml）。"
-                      : "GitHub：默认源，从 GitHub Releases 拉取更新。"}
-                  </p>
                   <p className="modal-hint">
                     {updateStatus?.message ??
-                      (prefs.updateSource === "gitee"
-                        ? "检查 Gitee Releases 上的新版本。"
-                        : "检查 GitHub Releases 上的新版本。")}
+                      "安装版启动后会从 GitHub Releases 静默检查更新；也可手动检查。失败时请打开 Releases 或加群下载。"}
                     {updateStatus?.version
                       ? `（当前目标：${updateStatus.version}）`
                       : ""}
@@ -395,6 +366,42 @@ export function GeneralSettingsPage({
                       }}
                     >
                       安装并重启
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        void (async () => {
+                          const url =
+                            updateStatus?.releasesUrl ??
+                            "https://github.com/Fromlan/X-agent/releases";
+                          const result =
+                            await window.xAgent.openExternalUrl(url);
+                          if (!result.ok) {
+                            setGeneralMsg(
+                              result.error ?? "无法打开 GitHub Releases",
+                            );
+                          }
+                        })();
+                      }}
+                    >
+                      打开 Releases
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        void (async () => {
+                          const result = await window.xAgent.openExternalUrl(
+                            "https://qm.qq.com/q/lY3yUwyF0I",
+                          );
+                          if (!result.ok) {
+                            setGeneralMsg(result.error ?? "无法打开加群链接");
+                          }
+                        })();
+                      }}
+                    >
+                      加群下载
                     </button>
                   </div>
                   {updateStatus?.error && (

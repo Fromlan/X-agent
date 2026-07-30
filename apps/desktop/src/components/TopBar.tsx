@@ -1,5 +1,6 @@
 import {
   Brain,
+  Download,
   FolderOpen,
   MessageSquarePlus,
   Moon,
@@ -9,6 +10,7 @@ import {
 } from "lucide-react";
 import type {
   AgentStatus,
+  AppUpdateStatus,
   ColorMode,
   ModelInfo,
   ThinkingLevel,
@@ -28,6 +30,7 @@ interface Props {
   busy: boolean;
   rightPanelOpen: boolean;
   compacting?: boolean;
+  updateStatus?: AppUpdateStatus | null;
   onOpenProject: () => void;
   onNewSession: () => void;
   onModelChange: (value: string) => void;
@@ -36,6 +39,7 @@ interface Props {
   onToggleTheme: () => void;
   onToggleRightPanel: () => void;
   onOpenSettings: () => void;
+  onOpenUpdateSettings?: () => void;
 }
 
 function statusLabel(status: AgentStatus): string {
@@ -140,11 +144,34 @@ export function TopBar(props: Props) {
           type="button"
           className="btn btn-ghost btn-sm"
           onClick={props.onOpenSettings}
-          title="设置"
+          title="设置（Ctrl+,）"
         >
           <Settings2 size={14} />
           <span className="btn-label">设置</span>
         </button>
+
+        {props.updateStatus?.available && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm topbar-update-badge"
+            onClick={props.onOpenUpdateSettings ?? props.onOpenSettings}
+            title={
+              props.updateStatus.downloaded
+                ? `已下载 ${props.updateStatus.version ?? "新版本"}，可安装`
+                : `发现新版本 ${props.updateStatus.version ?? ""}`
+            }
+            aria-label="有可用更新"
+          >
+            <Download size={14} />
+            <span className="btn-label">
+              {props.updateStatus.downloaded
+                ? "安装更新"
+                : props.updateStatus.version
+                  ? `更新 ${props.updateStatus.version}`
+                  : "有更新"}
+            </span>
+          </button>
+        )}
 
         <button
           type="button"

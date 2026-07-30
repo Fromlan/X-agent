@@ -14,10 +14,9 @@ import type {
   BashCheckResult,
   ClientPrefs,
   ColorMode,
-  GodotDocsStatusDto,
-  GodotRpcStatusDto,
   ModelInfo,
   PiCliStatus,
+  PrefsRecoveryNotice,
   SessionInfo,
   ThemeId,
   ThinkingLevel,
@@ -34,17 +33,18 @@ import {
 } from "./components/ReadyChecklist";
 import { TopBar } from "./components/TopBar";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
-import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  SettingsPanel,
+  type SettingsTab,
+} from "./components/SettingsPanel";
+import type { GodotSettingsSection } from "./components/settings/GodotSettingsPage";
 import {
   appendAtPath,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
 import { startersForProject } from "./lib/chat-starters";
 import { normalizeProjectKey } from "./lib/group-sessions";
-import {
-  allGodotEditorToolsEnabled,
-  buildReadyItems,
-} from "./lib/ready-checklist";
+import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
   RIGHT_PANEL_WIDTH_DEFAULT,
   RIGHT_PANEL_WIDTH_MAX,
@@ -56,7 +56,10 @@ import {
   useColumnResize,
 } from "./hooks/useColumnResize";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
+import { useAutoCompact } from "./hooks/useAutoCompact";
+import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
+import { useUpdateStatus } from "./hooks/useUpdateStatus";
 import { createEmptyState } from "./stores/chat-store";
 import {
   clearSessionUsage,
@@ -66,15 +69,6 @@ import {
   setSessionUsage,
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
-
-type SettingsTab =
-  | "general"
-  | "providers"
-  | "tools"
-  | "plugins"
-  | "godot"
-  | "usage";
-type GodotSettingsSection = "editor" | "docs";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -117,12 +111,10 @@ export default function App() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [followNonce, setFollowNonce] = useState(0);
-  const [isGodotProject, setIsGodotProject] = useState(false);
-  const [rpcStatus, setRpcStatus] = useState<GodotRpcStatusDto | null>(null);
-  const [docsStatus, setDocsStatus] = useState<GodotDocsStatusDto | null>(null);
-  const [addonInstalled, setAddonInstalled] = useState<boolean | null>(null);
   const [readyBusy, setReadyBusy] = useState(false);
   const [readyNotice, setReadyNotice] = useState<string | null>(null);
+  const [prefsRecovery, setPrefsRecovery] =
+    useState<PrefsRecoveryNotice | null>(null);
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const usageVersion = useSyncExternalStore(
@@ -133,6 +125,30 @@ export default function App() {
   void usageVersion;
   const sessionUsage = getSessionUsageState();
   const compacting = getCompacting();
+  const updateStatus = useUpdateStatus();
+
+  const {
+    isGodotProject,
+    rpcStatus,
+    docsStatus,
+    setDocsStatus,
+    setRpcStatus,
+    setAddonInstalled,
+    addonInstalled,
+    setReadyChecklistHidden,
+    refreshProjectReadiness,
+    projectKey,
+    readyItems,
+    showReadyChecklist,
+    showGodotToolsNudge,
+  } = useProjectReadiness({
+    cwd,
+    prefs,
+    bash,
+    auth,
+    piCli,
+    modelCount: models.length,
+  });
 
   const fetchSessionUsage = useCallback(() => {
     const gen = ++usageFetchGen.current;
@@ -183,6 +199,18 @@ export default function App() {
     refreshSessions,
   });
 
+  useAutoCompact({
+    thresholdPercent: prefs?.autoCompactPercent ?? 0,
+    usage: sessionUsage,
+    busy:
+      busy ||
+      status === "streaming" ||
+      status === "retrying" ||
+      retractBusy,
+    compacting,
+    sessionId,
+  });
+
   const syncFromHost = useCallback(async () => {
     const s = await window.xAgent.getStatus();
     setStatus(s.status);
@@ -231,128 +259,9 @@ export default function App() {
     refreshSessions,
   });
 
-  const refreshProjectReadiness = useCallback(async (projectCwd: string | null) => {
-    if (!projectCwd) {
-      setIsGodotProject(false);
-      setAddonInstalled(null);
-      setRpcStatus(null);
-      setDocsStatus(null);
-      return;
-    }
-    try {
-      const listed = await window.xAgent.listProjectDir("");
-      const godot = Boolean(
-        listed.ok &&
-          listed.entries?.some(
-            (e) => !e.isDir && e.name.toLowerCase() === "project.godot",
-          ),
-      );
-      setIsGodotProject(godot);
-      if (!godot) {
-        setAddonInstalled(null);
-        setRpcStatus(null);
-        setDocsStatus(null);
-        return;
-      }
-      const [rpc, docs, addonDir] = await Promise.all([
-        window.xAgent.godotRpcStatus(),
-        window.xAgent.godotDocsGetStatus(),
-        window.xAgent.listProjectDir("addons"),
-      ]);
-      setRpcStatus(rpc);
-      setDocsStatus(docs);
-      const hasAddon = Boolean(
-        addonDir.ok &&
-          addonDir.entries?.some(
-            (e) => e.isDir && e.name.toLowerCase() === "x_agent_rpc",
-          ),
-      );
-      setAddonInstalled(hasAddon);
-    } catch {
-      setIsGodotProject(false);
-      setAddonInstalled(null);
-    }
-  }, []);
-
   useEffect(() => {
-    void refreshProjectReadiness(cwd);
     setReadyNotice(null);
-  }, [cwd, refreshProjectReadiness]);
-
-  useEffect(() => {
-    if (!cwd || !isGodotProject) return;
-    const timer = window.setInterval(() => {
-      void window.xAgent.godotRpcStatus().then(setRpcStatus);
-    }, 4000);
-    return () => window.clearInterval(timer);
-  }, [cwd, isGodotProject]);
-
-  const projectKey = useMemo(
-    () => (cwd ? normalizeProjectKey(cwd) : ""),
-    [cwd],
-  );
-
-  const readyItems = useMemo(
-    () =>
-      buildReadyItems({
-        piCli,
-        auth,
-        modelCount: models.length,
-        bash,
-        isGodotProject,
-        prefs,
-        rpc: rpcStatus,
-        addonInstalled,
-        docs: docsStatus,
-      }),
-    [
-      piCli,
-      auth,
-      models.length,
-      bash,
-      isGodotProject,
-      prefs,
-      rpcStatus,
-      addonInstalled,
-      docsStatus,
-    ],
-  );
-
-  const checklistDismissed = Boolean(
-    projectKey &&
-      prefs?.dismissedReadyChecklistKeys?.includes(projectKey),
-  );
-  // Global auth/runtime issues always surface; project Godot steps respect dismiss.
-  const globalReadyPending = readyItems.some(
-    (i) =>
-      !i.done &&
-      (i.id === "auth" ||
-        i.id === "models" ||
-        i.id === "piCli" ||
-        i.id === "bash"),
-  );
-  const projectReadyPending = readyItems.some(
-    (i) =>
-      !i.done &&
-      (i.id === "rpcAddon" ||
-        i.id === "rpcBridge" ||
-        i.id === "godotTools" ||
-        i.id === "docs"),
-  );
-  const showReadyChecklist =
-    globalReadyPending || (projectReadyPending && !checklistDismissed);
-
-  const godotToolsNudgeDismissed = Boolean(
-    projectKey &&
-      prefs?.dismissedGodotToolsNudgeKeys?.includes(projectKey),
-  );
-  const showGodotToolsNudge =
-    isGodotProject &&
-    !godotToolsNudgeDismissed &&
-    Boolean(rpcStatus?.running) &&
-    (rpcStatus?.clients ?? 0) > 0 &&
-    !allGodotEditorToolsEnabled(prefs) &&
-    !showReadyChecklist;
+  }, [cwd]);
 
   const chatStarters = useMemo(
     () => startersForProject(isGodotProject),
@@ -363,9 +272,13 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const p = await window.xAgent.getPrefs();
+        const [p, recovery] = await Promise.all([
+          window.xAgent.getPrefs(),
+          window.xAgent.getPrefsRecoveryNotice(),
+        ]);
         if (cancelled) return;
         setPrefs(p);
+        if (recovery) setPrefsRecovery(recovery);
         applyTheme(p.themeId, p.colorMode);
         setBash(await window.xAgent.checkBash());
         setAuth(await window.xAgent.checkAuth());
@@ -411,6 +324,19 @@ export default function App() {
       cancelled = true;
     };
   }, [refreshModels, refreshSessions, syncFromHost]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsTab("general");
+        setSettingsGodotSection(undefined);
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const clearComposerEditState = useCallback(() => {
     setEditingEntryId(null);
@@ -763,7 +689,7 @@ export default function App() {
     setSettingsOpen(true);
   };
 
-  const dismissReadyChecklist = async () => {
+  const muteReadyChecklist = async () => {
     if (!prefs || !projectKey) return;
     const keys = new Set(prefs.dismissedReadyChecklistKeys ?? []);
     keys.add(projectKey);
@@ -771,6 +697,7 @@ export default function App() {
       dismissedReadyChecklistKeys: [...keys],
     });
     setPrefs(next);
+    setReadyChecklistHidden(true);
   };
 
   const dismissGodotToolsNudge = async () => {
@@ -930,10 +857,30 @@ export default function App() {
         onToggleTheme={toggleTheme}
         onToggleRightPanel={toggleRightPanel}
         onOpenSettings={openSettings}
+        onOpenUpdateSettings={() => openSettingsAt("general")}
+        updateStatus={updateStatus}
         rightPanelOpen={prefs?.rightPanelOpen ?? false}
         compacting={compacting}
         busy={busy}
       />
+      {prefsRecovery && (
+        <div className="banner warn">
+          <AlertTriangle size={14} />
+          <span>
+            偏好文件损坏，已使用默认设置
+            {prefsRecovery.backedUp && prefsRecovery.backupPath
+              ? `（备份：${prefsRecovery.backupPath}）`
+              : `（${prefsRecovery.error}）`}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setPrefsRecovery(null)}
+          >
+            关闭
+          </button>
+        </div>
+      )}
       {showReadyChecklist && (
         <ReadyChecklist
           items={readyItems}
@@ -942,7 +889,10 @@ export default function App() {
           notice={readyNotice}
           onDismissNotice={() => setReadyNotice(null)}
           onDismiss={() => {
-            void dismissReadyChecklist();
+            setReadyChecklistHidden(true);
+          }}
+          onDontRemind={() => {
+            void muteReadyChecklist();
           }}
           onOpenSettings={openSettingsAt}
           onInstallPiCli={() => {
@@ -1085,6 +1035,15 @@ export default function App() {
             usage={sessionUsage}
             compacting={compacting}
             sessionId={sessionId}
+            autoCompactPercent={prefs?.autoCompactPercent ?? 0}
+            onAutoCompactPercentChange={(percent) => {
+              void (async () => {
+                const next = await window.xAgent.setPrefs({
+                  autoCompactPercent: percent,
+                });
+                setPrefs(next);
+              })();
+            }}
             busy={
               busy ||
               status === "streaming" ||

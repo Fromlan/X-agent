@@ -397,6 +397,10 @@ input:not([type]):-webkit-autofill {
   flex-shrink: 0;
 }
 
+.topbar-update-badge {
+  max-width: 11rem;
+}
+
 .cwd {
   color: var(--text-muted);
   font-size: 12px;
@@ -1276,6 +1280,12 @@ body.is-resizing-column * {
 
 .ready-strip-cta {
   flex-shrink: 0;
+}
+
+.ready-strip-mute {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .ready-strip-dismiss {

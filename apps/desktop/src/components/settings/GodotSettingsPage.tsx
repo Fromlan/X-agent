@@ -522,8 +522,9 @@ export function GodotSettingsPage({
                         </span>
                       </div>
                       <p className="modal-hint">
-                        下载 GitHub 源码 zip（需含 .rst，不要 HTML offline
-                        包），导入后 Agent 工具 godot_docs_search 才能检索。
+                      下载 GitHub 源码 zip（需含 .rst，不要 HTML offline
+                      包），再点「导入 zip」。若 GitHub 较慢，可用浏览器下载镜像或从已有克隆目录打包 zip
+                      后导入；导入后需启用文档工具才能检索。
                       </p>
                 <div className="field">
                   <span>文档版本分支</span>
