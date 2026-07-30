@@ -5,7 +5,8 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type InstallGodotRpcAddonResult = {
@@ -18,34 +19,76 @@ export type InstallGodotRpcAddonResult = {
   hint?: string;
 };
 
-function repoRoot(): string {
-  const here = resolve(fileURLToPath(new URL(".", import.meta.url)));
-  // apps/desktop/electron/agent -> root
-  return resolve(here, "../../../../");
+const ADDON_REL = join("packages", "godot-editor-rpc", "addons", "x_agent_rpc");
+
+const requireElectron = createRequire(import.meta.url);
+
+function tryElectronPaths(): { resourcesPath?: string; appPath?: string } {
+  try {
+    const electron = requireElectron("electron") as {
+      app?: { getAppPath: () => string };
+    };
+    const app = electron.app;
+    if (!app) return {};
+    return {
+      resourcesPath:
+        typeof process.resourcesPath === "string"
+          ? process.resourcesPath
+          : undefined,
+      appPath: app.getAppPath(),
+    };
+  } catch {
+    return {};
+  }
 }
 
-function findSourceAddonDir(): string | null {
-  const candidates = [
-    // Packaged app: electron-builder extraResources
-    join(process.resourcesPath, "godot-addons", "x_agent_rpc"),
-    // Dev / monorepo: packages next to apps/desktop
-    join(
-      repoRoot(),
-      "packages",
-      "godot-editor-rpc",
-      "addons",
-      "x_agent_rpc",
-    ),
-    resolve(
-      process.cwd(),
-      "packages",
-      "godot-editor-rpc",
-      "addons",
-      "x_agent_rpc",
-    ),
-  ];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
+/** Walk parents of `start` looking for `packages/godot-editor-rpc/addons/x_agent_rpc`. */
+function findAddonUnderAncestors(start: string): string | null {
+  let dir = resolve(start);
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, ADDON_REL);
+    if (existsSync(join(candidate, "plugin.cfg"))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Resolve bundled / workspace x_agent_rpc addon directory.
+ * Packaged builds must prefer electron-builder `extraResources` over any
+ * monorepo tree that happens to sit under cwd/appPath.
+ * Dev: electron-vite may load from `out/main` or `out/main/chunks`, so we
+ * walk ancestors for `packages/godot-editor-rpc/addons/x_agent_rpc`.
+ */
+export function findSourceAddonDir(): string | null {
+  const { resourcesPath, appPath } = tryElectronPaths();
+
+  // 1) Packaged app resources (highest priority when present)
+  if (resourcesPath) {
+    const packaged = join(resourcesPath, "godot-addons", "x_agent_rpc");
+    if (existsSync(join(packaged, "plugin.cfg"))) return packaged;
+  }
+
+  // 2) Dev / monorepo: walk from appPath, bundle dir, then cwd
+  if (appPath) {
+    const fromApp = findAddonUnderAncestors(appPath);
+    if (fromApp) return fromApp;
+  }
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const fromHere = findAddonUnderAncestors(here);
+  if (fromHere) return fromHere;
+
+  const fromCwd = findAddonUnderAncestors(process.cwd());
+  if (fromCwd) return fromCwd;
+
+  for (const c of [
+    resolve(process.cwd(), ADDON_REL),
+    resolve(process.cwd(), "..", "..", ADDON_REL),
+  ]) {
+    if (existsSync(join(c, "plugin.cfg"))) return c;
   }
   return null;
 }

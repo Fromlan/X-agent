@@ -311,7 +311,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   // 迁移由 SessionHost.createSession 的 fallback 链通知 + 自动重写。
   provider: null,
   model: null,
-  thinkingLevel: "medium",
+  thinkingLevel: "high",
   tools: [...AVAILABLE_TOOLS],
   godotEditorPath: null,
   godotDocsBranch: "stable",

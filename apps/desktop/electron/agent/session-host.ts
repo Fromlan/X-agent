@@ -31,6 +31,7 @@ import {
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
+import { repairDeepSeekModelsJson } from "./provider-store";
 import { branchEntriesToHistory } from "./history";
 import { extractMessageText } from "./transcript-mapper";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
@@ -404,6 +405,8 @@ export class SessionHost {
   private async ensureRuntime(): Promise<ModelRuntime> {
     if (!this.modelRuntime) {
       const dir = getAgentDirPath();
+      // Fix legacy DeepSeek models.json entries missing reasoning (thinking→off).
+      repairDeepSeekModelsJson();
       this.modelRuntime = await ModelRuntime.create({
         authPath: join(dir, "auth.json"),
         modelsPath: join(dir, "models.json"),
@@ -550,6 +553,15 @@ export class SessionHost {
       }
     }
 
+    // Resumed sessions already have thinking_level_change in the file. If we
+    // pass thinkingLevel into createAgentSession, Pi sets agent state but skips
+    // appending when an entry exists — leaving the file stale. Omit the option
+    // so the agent restores the file level, then setThinkingLevel applies prefs
+    // and persists the change.
+    const hasThinkingEntry = sessionManager
+      .getBranch()
+      .some((entry) => entry.type === "thinking_level_change");
+
     const { session, modelFallbackMessage } = await createAgentSession({
       cwd,
       agentDir,
@@ -566,8 +578,14 @@ export class SessionHost {
         ...createGodotDocsTools(),
       ],
       ...(selectedModel ? { model: selectedModel } : {}),
-      thinkingLevel: prefs.thinkingLevel,
+      ...(!hasThinkingEntry ? { thinkingLevel: prefs.thinkingLevel } : {}),
     });
+    // Apply「默认 Thinking」to the live session (clamps to model capabilities).
+    session.setThinkingLevel(prefs.thinkingLevel);
+    const effectiveThinking = session.thinkingLevel as ThinkingLevel;
+    if (effectiveThinking !== prefs.thinkingLevel) {
+      patchPrefs({ thinkingLevel: effectiveThinking });
+    }
     session.setActiveToolsByName(prefs.tools);
 
     const unsubscribe = this.bridgeEvents(session);
@@ -621,7 +639,7 @@ export class SessionHost {
       cwd,
       sessionId: session.sessionId,
       model: modelFromSession(session),
-      thinkingLevel: session.thinkingLevel as ThinkingLevel,
+      thinkingLevel: effectiveThinking,
       ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
     };
 
@@ -852,7 +870,7 @@ export class SessionHost {
       sessionId: "",
       cwd: "",
       model: null,
-      thinkingLevel: "medium",
+      thinkingLevel: loadPrefs().thinkingLevel,
       sessionPath: null,
     });
     this.setStatus("idle");
@@ -1166,13 +1184,16 @@ export class SessionHost {
   async setThinkingLevel(level: ThinkingLevel): Promise<{ ok: boolean }> {
     if (!this.bundle) return { ok: false };
     this.bundle.session.setThinkingLevel(level);
-    patchPrefs({ thinkingLevel: level });
+    // Persist the model-clamped effective level so prefs / TopBar / Settings stay
+    // aligned (e.g. DeepSeek V4 maps medium→high; unsupported → nearest).
+    const effective = this.bundle.session.thinkingLevel as ThinkingLevel;
+    patchPrefs({ thinkingLevel: effective });
     this.emit({
       type: "session_info",
       sessionId: this.bundle.session.sessionId,
       cwd: this.bundle.cwd,
       model: modelFromSession(this.bundle.session),
-      thinkingLevel: level,
+      thinkingLevel: effective,
       sessionPath: this.bundle.sessionPath,
     });
     return { ok: true };
@@ -1288,7 +1309,8 @@ export class SessionHost {
       sessionPath: this.bundle?.sessionPath ?? null,
       model: this.bundle ? modelFromSession(this.bundle.session) : null,
       thinkingLevel:
-        (this.bundle?.session.thinkingLevel as ThinkingLevel) ?? "medium",
+        (this.bundle?.session.thinkingLevel as ThinkingLevel) ??
+        loadPrefs().thinkingLevel,
       error: this.lastError,
       hasSession: Boolean(this.bundle),
     };

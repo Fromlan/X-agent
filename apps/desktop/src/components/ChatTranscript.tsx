@@ -6,12 +6,14 @@ import {
   isScrollUnpinKey,
   isScrollable,
   isVerticalScrollbarPointer,
+  isWheelUnpinDelta,
   reduceChatScrollPin,
   shouldFollow,
   type ChatScrollPinState,
 } from "../lib/chat-scroll-pin";
 import { MarkdownBody } from "./MarkdownBody";
 import { ToolCard } from "./ToolCard";
+import { UserMessageBody } from "./UserMessageBody";
 import { ArrowDown, Brain, Pencil, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -153,12 +155,21 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     }
     setShowJump(false);
     requestAnimationFrame(() => {
-      applyPin(
-        reduceChatScrollPin(pinStateRef.current, {
-          type: "programmatic_follow_end",
-        }),
-      );
-      syncJumpVisibility();
+      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        applyPin(
+          reduceChatScrollPin(pinStateRef.current, {
+            type: "programmatic_follow_end",
+          }),
+        );
+        applyPin(
+          reduceChatScrollPin(pinStateRef.current, {
+            type: "scroll",
+            nearBottom: isNearBottom(metricsOf(el)),
+          }),
+        );
+        syncJumpVisibility();
+      });
     });
   };
 
@@ -175,12 +186,25 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       }),
     );
     el.scrollTop = el.scrollHeight;
+    // Second frame: layout may still grow (tool cards / markdown); keep pinned
+    // and only then clear the ignore window + sync jump button.
     requestAnimationFrame(() => {
-      applyPin(
-        reduceChatScrollPin(pinStateRef.current, {
-          type: "programmatic_follow_end",
-        }),
-      );
+      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        applyPin(
+          reduceChatScrollPin(pinStateRef.current, {
+            type: "programmatic_follow_end",
+          }),
+        );
+        // Re-assert pin from geometry after ignore clears.
+        applyPin(
+          reduceChatScrollPin(pinStateRef.current, {
+            type: "scroll",
+            nearBottom: isNearBottom(metricsOf(el)),
+          }),
+        );
+        syncJumpVisibility();
+      });
     });
   };
 
@@ -214,18 +238,57 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       syncJumpVisibility();
     };
 
-    const onWheel = () => {
-      unpinFromUser();
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (isVerticalScrollbarPointer(el, e.clientX, e.clientY)) {
+    // Only unpin when the user scrolls toward older content. Wheel-down toward
+    // latest must not break stick-to-bottom.
+    const onWheel = (e: WheelEvent) => {
+      if (isWheelUnpinDelta(e.deltaY)) {
         unpinFromUser();
       }
     };
 
-    const onTouchStart = () => {
-      unpinFromUser();
+    const onPointerDown = (e: PointerEvent) => {
+      if (!isVerticalScrollbarPointer(el, e.clientX, e.clientY)) return;
+      // While streaming, programmatic follow keeps ignoreProgrammatic true, so
+      // scroll events alone cannot unpin. Explicitly unpin once the thumb leaves
+      // the bottom during a scrollbar drag.
+      const onMove = () => {
+        if (!isNearBottom(metricsOf(el))) {
+          unpinFromUser();
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove, true);
+        window.removeEventListener("pointerup", onUp, true);
+        if (!isNearBottom(metricsOf(el))) {
+          unpinFromUser();
+        } else {
+          onScroll();
+        }
+      };
+      window.addEventListener("pointermove", onMove, {
+        capture: true,
+        passive: true,
+      });
+      window.addEventListener("pointerup", onUp, { capture: true });
+    };
+
+    let touchLastY: number | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      touchLastY = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY;
+      if (y == null || touchLastY == null) return;
+      // Finger moving down → content scrolls up (older messages) → unpin.
+      if (y - touchLastY > 8) {
+        unpinFromUser();
+        touchLastY = y;
+      } else if (y < touchLastY) {
+        touchLastY = y;
+      }
+    };
+    const onTouchEnd = () => {
+      touchLastY = null;
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -244,12 +307,22 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       passive: true,
       capture: true,
     });
+    el.addEventListener("touchmove", onTouchMove, {
+      passive: true,
+      capture: true,
+    });
+    el.addEventListener("touchend", onTouchEnd, {
+      passive: true,
+      capture: true,
+    });
     el.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel, true);
       el.removeEventListener("pointerdown", onPointerDown, true);
       el.removeEventListener("touchstart", onTouchStart, true);
+      el.removeEventListener("touchmove", onTouchMove, true);
+      el.removeEventListener("touchend", onTouchEnd, true);
       el.removeEventListener("keydown", onKeyDown, true);
     };
   }, []);
@@ -397,7 +470,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                       </div>
                     </div>
                   ) : (
-                    <pre>{item.text}</pre>
+                    <UserMessageBody text={item.text} />
                   )}
                 </div>
               );
@@ -462,7 +535,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                 key={item.id}
                 toolCallId={item.id}
                 toolName={item.toolName}
-                args={formatMaybeJson(item.args)}
+                args={item.args}
                 result={formatMaybeJson(item.result)}
                 isError={item.isError}
                 done={item.done}

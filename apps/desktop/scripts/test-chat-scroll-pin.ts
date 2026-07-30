@@ -5,6 +5,7 @@ import {
   isScrollUnpinKey,
   isScrollable,
   isVerticalScrollbarPointer,
+  isWheelUnpinDelta,
   reduceChatScrollPin,
   shouldFollow,
 } from "../src/lib/chat-scroll-pin.ts";
@@ -33,6 +34,10 @@ assert.equal(isScrollUnpinKey("ArrowUp"), true);
 assert.equal(isScrollUnpinKey("ArrowDown"), false);
 assert.equal(isScrollUnpinKey("Enter"), false);
 
+assert.equal(isWheelUnpinDelta(-40), true, "wheel up unpins");
+assert.equal(isWheelUnpinDelta(40), false, "wheel down keeps pin");
+assert.equal(isWheelUnpinDelta(0), false);
+
 {
   const el = {
     clientWidth: 200,
@@ -50,7 +55,10 @@ assert.equal(isScrollUnpinKey("Enter"), false);
   state = reduceChatScrollPin(state, { type: "programmatic_follow_start" });
   assert.equal(state.ignoreProgrammatic, true);
   assert.equal(shouldFollow(state), true);
-  // Programmatic scroll lands near bottom — pin stays
+  // Mid-layout !nearBottom must NOT unpin during programmatic follow
+  state = reduceChatScrollPin(state, { type: "scroll", nearBottom: false });
+  assert.equal(state.pinned, true);
+  assert.equal(state.ignoreProgrammatic, true);
   state = reduceChatScrollPin(state, { type: "scroll", nearBottom: true });
   assert.equal(state.pinned, true);
   state = reduceChatScrollPin(state, { type: "programmatic_follow_end" });
@@ -69,26 +77,6 @@ assert.equal(isScrollUnpinKey("Enter"), false);
   state = reduceChatScrollPin(state, { type: "programmatic_follow_start" });
   assert.equal(state.ignoreProgrammatic, false);
   assert.equal(shouldFollow(state), false);
-}
-
-// --- ignore window + scroll not near bottom → unpin ---
-{
-  let state = initialChatScrollPinState();
-  state = reduceChatScrollPin(state, { type: "programmatic_follow_start" });
-  assert.equal(state.ignoreProgrammatic, true);
-  state = reduceChatScrollPin(state, { type: "scroll", nearBottom: false });
-  assert.equal(state.pinned, false);
-  assert.equal(state.ignoreProgrammatic, false);
-  assert.equal(shouldFollow(state), false);
-}
-
-// --- scroll near bottom while ignore → stay pinned, still ignoring ---
-{
-  let state = initialChatScrollPinState();
-  state = reduceChatScrollPin(state, { type: "programmatic_follow_start" });
-  state = reduceChatScrollPin(state, { type: "scroll", nearBottom: true });
-  assert.equal(state.pinned, true);
-  assert.equal(state.ignoreProgrammatic, true);
 }
 
 // --- normal scroll updates pin when not ignoring ---

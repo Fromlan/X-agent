@@ -3,6 +3,7 @@ import {
   detectSkillSlash,
   filterSkillsByQuery,
 } from "../src/lib/skill-slash";
+import { parseSkillReadFromTool } from "../src/lib/skill-tool";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -72,6 +73,41 @@ function assert(cond: boolean, msg: string): void {
   assert(match.query === "x", "partial in middle");
   const out = applySkillSlashInsert(value, match, "x-tdd");
   assert(out.value === "please /skill:x-tdd  then", "preserves suffix");
+}
+
+// skill read detection (chat special display)
+{
+  const hit = parseSkillReadFromTool("read", {
+    path: "D:/UGit/X-agent/packages/godot-pi/skills/godot-scene-edit/SKILL.md",
+  });
+  assert(hit?.skillName === "godot-scene-edit", "object args skill name");
+}
+
+{
+  const hit = parseSkillReadFromTool(
+    "read",
+    JSON.stringify({
+      path: "C:\\Users\\x\\.pi\\agent\\skills\\x-grill\\SKILL.md",
+    }),
+  );
+  assert(hit?.skillName === "x-grill", "json string + windows path");
+}
+
+{
+  assert(
+    parseSkillReadFromTool("read", { path: "src/main.gd" }) === null,
+    "ordinary read",
+  );
+  assert(
+    parseSkillReadFromTool("bash", {
+      path: "skills/foo/SKILL.md",
+    }) === null,
+    "non-read tool",
+  );
+  assert(
+    parseSkillReadFromTool("read", { path: "notes/SKILL.md.bak" }) === null,
+    "not SKILL.md",
+  );
 }
 
 console.log("test-skill-slash: ok");

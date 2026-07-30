@@ -12,6 +12,7 @@ import {
   listProviderPresets,
   listProviderProfiles,
   looksLikeDeepSeekModelId,
+  repairDeepSeekModelsJson,
   type ProviderPaths,
   upsertProviderProfile,
 } from "../electron/agent/provider-store";
@@ -400,6 +401,15 @@ try {
       .thinkingFormat === "deepseek",
     "proxy extras thinkingFormat",
   );
+  assert(
+    deepseekProxyModelExtras("deepseek-v4-pro[1M]")?.reasoning === true,
+    "v4 custom id gets reasoning",
+  );
+  assert(
+    deepseekProxyModelExtras("deepseek-v4-pro[1M]")?.thinkingLevelMap
+      ?.medium === null,
+    "v4 custom id hides medium",
+  );
 
   const proxyRoot = mkdtempSync(join(tmpdir(), "alpha-providers-proxy-ds-"));
   const proxyPaths: ProviderPaths = {
@@ -514,11 +524,70 @@ try {
   ) as {
     providers: Record<
       string,
-      { models: Array<{ id: string; compat?: unknown }> }
+      {
+        models: Array<{
+          id: string;
+          reasoning?: boolean;
+          thinkingLevelMap?: Record<string, string | null>;
+          compat?: unknown;
+        }>;
+      }
     >;
   };
   const officialEntry = officialModels.providers["deepseek"]?.models?.[0];
   assert(officialEntry?.compat == null, "official deepseek skips written compat");
+  assert(officialEntry?.reasoning === true, "official deepseek writes reasoning");
+  assert(
+    officialEntry?.thinkingLevelMap?.medium === null,
+    "official v4 writes thinkingLevelMap",
+  );
+
+  // repairDeepSeekModelsJson upgrades legacy entries missing reasoning
+  const legacyRoot = mkdtempSync(join(tmpdir(), "alpha-providers-repair-ds-"));
+  const legacyPaths: ProviderPaths = {
+    agentDir: legacyRoot,
+    storePath: join(legacyRoot, "x-agent-providers.json"),
+    authPath: join(legacyRoot, "auth.json"),
+    modelsPath: join(legacyRoot, "models.json"),
+  };
+  writeFileSync(
+    legacyPaths.modelsPath,
+    JSON.stringify(
+      {
+        providers: {
+          deepseek: {
+            baseUrl: "https://api.deepseek.com",
+            api: "openai-completions",
+            models: [{ id: "deepseek-v4-pro[1M]", name: "Pro 1M" }],
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  assert(repairDeepSeekModelsJson(legacyPaths), "repair writes");
+  assert(!repairDeepSeekModelsJson(legacyPaths), "repair idempotent");
+  const repaired = JSON.parse(readFileSync(legacyPaths.modelsPath, "utf8")) as {
+    providers: Record<
+      string,
+      {
+        models: Array<{
+          id: string;
+          reasoning?: boolean;
+          thinkingLevelMap?: Record<string, string | null>;
+        }>;
+      }
+    >;
+  };
+  const repairedEntry = repaired.providers.deepseek?.models?.[0];
+  assert(repairedEntry?.reasoning === true, "repair sets reasoning");
+  assert(
+    repairedEntry?.thinkingLevelMap?.medium === null,
+    "repair sets v4 map",
+  );
+  rmSync(legacyRoot, { recursive: true, force: true });
 
   rmSync(proxyRoot, { recursive: true, force: true });
 
