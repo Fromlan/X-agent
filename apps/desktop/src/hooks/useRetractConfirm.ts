@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { RetractPreview } from "@shared/ipc";
 import type { RetractConfirmMode } from "../components/RetractConfirmModal";
-import { expandAtPathsInPrompt } from "../lib/expandAtPaths";
+import { expandAtPathsInPrompt, collapseFileBlocksToAtPaths } from "../lib/expandAtPaths";
 
 type ConfirmState = {
   mode: RetractConfirmMode;
@@ -77,7 +77,7 @@ export function useRetractConfirm(deps: RetractDeps) {
           result.editorText?.trim() ||
           confirmState.preview.editorText?.trim() ||
           "";
-        if (text) setInput(text);
+        if (text) setInput(collapseFileBlocksToAtPaths(text));
       }
 
       const report = result.restoreReport;

@@ -16,8 +16,14 @@ import {
 } from "lucide-react";
 import { setPreviewPath } from "../../stores/right-panel-store";
 import { joinProjectAbs } from "../../lib/group-sessions";
+import { MarkdownBody } from "../MarkdownBody";
 
 type DirEntry = { name: string; isDir: boolean };
+
+function isMarkdownPath(relPath: string | null): boolean {
+  if (!relPath) return false;
+  return /\.(md|mdx|markdown)$/i.test(relPath.replace(/\\/g, "/"));
+}
 
 type ContextMenuState = {
   x: number;
@@ -156,9 +162,15 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
   const [content, setContent] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mdSource, setMdSource] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
+  const markdown = isMarkdownPath(previewPath);
+
+  useEffect(() => {
+    setMdSource(false);
+  }, [previewPath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,19 +304,36 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
           <span className="rp-files-path" title={previewPath ?? ""}>
             {previewPath ?? "未选择文件"}
           </span>
-          {previewPath && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => void window.xAgent.revealInFolder(previewPath)}
-            >
-              在资源管理器中显示
-            </button>
-          )}
+          <div className="rp-files-preview-actions">
+            {previewPath && markdown && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setMdSource((v) => !v)}
+                title={mdSource ? "切换为渲染预览" : "切换为源码"}
+              >
+                {mdSource ? "渲染" : "源码"}
+              </button>
+            )}
+            {previewPath && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void window.xAgent.revealInFolder(previewPath)}
+              >
+                在资源管理器中显示
+              </button>
+            )}
+          </div>
         </div>
         {loading && <div className="rp-empty">读取中…</div>}
         {error && <div className="rp-banner-soft">{error}</div>}
-        {!loading && !error && previewPath && (
+        {!loading && !error && previewPath && markdown && !mdSource && (
+          <div className="rp-file-content rp-file-content-md">
+            <MarkdownBody content={content} />
+          </div>
+        )}
+        {!loading && !error && previewPath && (!markdown || mdSource) && (
           <pre className="rp-file-content">{content}</pre>
         )}
         {!previewPath && !loading && (

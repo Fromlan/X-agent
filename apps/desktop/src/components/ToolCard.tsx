@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  BookOpen,
   CheckCircle2,
   ChevronRight,
   Loader2,
@@ -7,15 +8,27 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
+import { parseSkillReadFromTool } from "../lib/skill-tool";
 
 interface Props {
   toolCallId: string;
   toolName: string;
-  args: string;
+  /** Raw tool args or already pretty-printed JSON string. */
+  args: unknown;
   result: string;
   isError?: boolean;
   done: boolean;
   onOpenInPanel?: () => void;
+}
+
+function formatArgsDisplay(args: unknown): string {
+  if (args == null) return "";
+  if (typeof args === "string") return args;
+  try {
+    return JSON.stringify(args, null, 2);
+  } catch {
+    return String(args);
+  }
 }
 
 export function ToolCard({
@@ -29,6 +42,14 @@ export function ToolCard({
 }: Props) {
   // Running: keep expanded and show body. After done: auto-collapse; user can re-open.
   const [open, setOpen] = useState(!done);
+  const skill = useMemo(
+    () => parseSkillReadFromTool(toolName, args),
+    [toolName, args],
+  );
+  const argsText = useMemo(() => {
+    if (skill) return skill.path;
+    return formatArgsDisplay(args);
+  }, [skill, args]);
 
   useEffect(() => {
     setOpen(!done);
@@ -43,12 +64,15 @@ export function ToolCard({
   );
 
   const stateText = done ? (isError ? "失败" : "完成") : "执行中…";
-  const hasBody = Boolean(args || result);
+  const hasBody = Boolean(argsText || result || skill);
+  const titleLabel = skill ? `技能 · ${skill.skillName}` : toolName;
+  const Icon = skill ? BookOpen : Wrench;
 
   return (
     <details
       className={[
         "bubble-tool",
+        skill ? "is-skill" : "",
         done ? "toolcall-done" : "",
         isError ? "toolcall-error" : "",
       ]
@@ -57,14 +81,15 @@ export function ToolCard({
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
       data-tool-call-id={toolCallId}
+      data-skill-name={skill?.skillName}
     >
       <summary className="tool-head">
         <span className="tool-name">
           {hasBody && (
             <ChevronRight size={12} className="tool-chevron" aria-hidden />
           )}
-          <Wrench size={12} />
-          {toolName}
+          <Icon size={12} />
+          {titleLabel}
         </span>
         <span className="tool-state" title={stateText}>
           {onOpenInPanel && (
@@ -86,13 +111,31 @@ export function ToolCard({
           <span className="tool-state-label">{stateText}</span>
         </span>
       </summary>
-      {args && (
+      {skill && (
         <div className="tool-section">
-          <div className="tool-section-label">参数</div>
-          <pre>{args}</pre>
+          <div className="tool-section-label">技能</div>
+          <pre>{skill.skillName}</pre>
         </div>
       )}
-      {result && (
+      {argsText && (
+        <div className="tool-section">
+          <div className="tool-section-label">{skill ? "路径" : "参数"}</div>
+          <pre>{argsText}</pre>
+        </div>
+      )}
+      {skill && done && !isError && (
+        <div className="tool-section">
+          <div className="tool-section-label">结果</div>
+          <pre className="tool-skill-loaded">已加载技能说明</pre>
+        </div>
+      )}
+      {!skill && result && (
+        <div className="tool-section">
+          <div className="tool-section-label">结果</div>
+          <pre>{result}</pre>
+        </div>
+      )}
+      {skill && isError && result && (
         <div className="tool-section">
           <div className="tool-section-label">结果</div>
           <pre>{result}</pre>

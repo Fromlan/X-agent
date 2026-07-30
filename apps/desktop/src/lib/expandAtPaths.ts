@@ -6,11 +6,28 @@
 
 const AT_PATH_RE = /(?<![\w.])@([A-Za-z0-9_./\\-]+)/g;
 
+const FILE_BLOCK_RE =
+  /<file\s+name="([^"]*)"\s*>\r?\n?[\s\S]*?\r?\n?<\/file>/g;
+
 export function appendAtPath(input: string, relPath: string): string {
   const token = `@${relPath.replace(/\\/g, "/")}`;
   if (!input) return token;
   if (/\s$/.test(input)) return `${input}${token}`;
   return `${input} ${token}`;
+}
+
+/**
+ * Inverse of expand for UI: put `@path` back so composer / edit drafts stay
+ * compact. Re-send will expand again via {@link expandAtPathsInPrompt}.
+ */
+export function collapseFileBlocksToAtPaths(text: string): string {
+  if (!text.includes("<file")) return text;
+  return text.replace(FILE_BLOCK_RE, (_full, name: string) => {
+    const rel = String(name ?? "")
+      .trim()
+      .replace(/\\/g, "/");
+    return rel ? `@${rel}` : "@";
+  });
 }
 
 export async function expandAtPathsInPrompt(text: string): Promise<string> {

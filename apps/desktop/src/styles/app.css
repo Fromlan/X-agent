@@ -1745,6 +1745,99 @@ body.is-resizing-column * {
   max-width: 100%;
 }
 
+.user-message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.user-message-body > .user-message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  width: max-content;
+  max-width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.user-file-ref {
+  margin: 0;
+  max-width: 100%;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.user-file-ref:not([open]) {
+  border-radius: var(--radius-pill);
+}
+
+.user-file-ref-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.user-file-ref-summary::-webkit-details-marker {
+  display: none;
+}
+
+.user-file-ref-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.user-file-ref[open] .user-file-ref-chevron {
+  transform: rotate(90deg);
+}
+
+.user-file-ref-at {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--accent-blue);
+}
+
+.user-file-ref-meta {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.user-file-ref-body {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-primary);
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: var(--bg-result);
+}
+
 .bubble-text {
   align-self: flex-start;
   background: var(--bubble-text);
@@ -1814,6 +1907,23 @@ body.is-resizing-column * {
 
 .bubble-tool.toolcall-done:not(.toolcall-error) {
   border-left-color: var(--accent-green);
+}
+
+.bubble-tool.is-skill {
+  border-left-color: var(--accent-blue);
+}
+
+.bubble-tool.is-skill.toolcall-done:not(.toolcall-error) {
+  border-left-color: var(--accent-blue);
+}
+
+.bubble-tool.is-skill .tool-name {
+  font-family: var(--font-sans);
+}
+
+.tool-skill-loaded {
+  color: var(--text-secondary);
+  font-family: var(--font-sans) !important;
 }
 
 .tool-head {
@@ -4069,6 +4179,24 @@ body.is-resizing-column * {
   border-radius: 0;
   border: none;
   border-top: 1px solid var(--border-primary);
+}
+
+.rp-file-content-md {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.rp-file-content-md .markdown {
+  font-size: inherit;
+}
+
+.rp-files-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .rp-tools {

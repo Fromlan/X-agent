@@ -45,6 +45,7 @@ import {
 import type { GodotSettingsSection } from "./components/settings/GodotSettingsPage";
 import {
   appendAtPath,
+  collapseFileBlocksToAtPaths,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
 import { startersForProject } from "./lib/chat-starters";
@@ -513,7 +514,7 @@ export default function App() {
 
   const onStartEdit = (entryId: string, text: string) => {
     setEditingEntryId(entryId);
-    setEditDraft(text);
+    setEditDraft(collapseFileBlocksToAtPaths(text));
   };
 
   const onCancelEdit = () => {
@@ -551,7 +552,8 @@ export default function App() {
       setError("切换 Thinking 失败（请先打开项目）");
       return;
     }
-    setPrefs((prev) => (prev ? { ...prev, thinkingLevel: level } : prev));
+    const next = await window.xAgent.getPrefs();
+    setPrefs(next);
   };
 
   const toggleThinking = async () => {
@@ -877,7 +879,7 @@ export default function App() {
         status={status}
         models={models}
         currentModelKey={currentModelKey}
-        thinkingLevel={prefs?.thinkingLevel ?? "medium"}
+        thinkingLevel={prefs?.thinkingLevel ?? "high"}
         thinkingLevels={THINKING_LEVELS}
         showThinking={prefs?.showThinking ?? true}
         theme={prefs?.colorMode ?? "dark"}

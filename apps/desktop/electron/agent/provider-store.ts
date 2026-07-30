@@ -62,17 +62,32 @@ export function isPiAutoDetectedDeepSeekEndpoint(
   return id === "deepseek" || url.includes("deepseek.com");
 }
 
-/** Model entry fields written into Pi models.json for proxy DeepSeek models. */
+/** Model entry fields written into Pi models.json for DeepSeek-family models. */
 export function deepseekProxyModelExtras(modelId: string): {
   reasoning: true;
+  thinkingLevelMap?: Record<string, string | null>;
   compat: {
     thinkingFormat: "deepseek";
     requiresReasoningContentOnAssistantMessages: true;
   };
 } | null {
   if (!looksLikeDeepSeekModelId(modelId)) return null;
+  const id = modelId.trim().toLowerCase();
+  // Match Pi built-in DeepSeek V4 maps (medium/low/minimal unsupported).
+  const isV4 = id.includes("deepseek-v4") || id.includes("deepseek_v4");
   return {
     reasoning: true,
+    ...(isV4
+      ? {
+          thinkingLevelMap: {
+            minimal: null,
+            low: null,
+            medium: null,
+            high: "high",
+            max: "max",
+          },
+        }
+      : {}),
     compat: {
       thinkingFormat: "deepseek",
       requiresReasoningContentOnAssistantMessages: true,
@@ -94,17 +109,95 @@ function modelEntryForPiModelsJson(
   if (enriched.contextWindow != null) {
     entry.contextWindow = enriched.contextWindow;
   }
-  if (
-    api === "openai-completions" &&
-    !isPiAutoDetectedDeepSeekEndpoint(providerId, baseUrl)
-  ) {
-    const extras = deepseekProxyModelExtras(enriched.id);
-    if (extras) {
-      entry.reasoning = extras.reasoning;
+  const extras = deepseekProxyModelExtras(enriched.id);
+  if (extras) {
+    // Custom ids (e.g. deepseek-v4-pro[1M]) do not inherit built-in reasoning;
+    // without it Pi clamps every thinking level to off.
+    entry.reasoning = extras.reasoning;
+    if (extras.thinkingLevelMap) {
+      entry.thinkingLevelMap = extras.thinkingLevelMap;
+    }
+    // Pi auto-detects thinkingFormat on official deepseek.com openai-completions.
+    // Still write compat for proxies / anthropic-messages / custom base URLs.
+    if (
+      api !== "openai-completions" ||
+      !isPiAutoDetectedDeepSeekEndpoint(providerId, baseUrl)
+    ) {
       entry.compat = extras.compat;
     }
   }
   return entry;
+}
+
+/**
+ * Patch existing ~/.pi/agent/models.json DeepSeek entries that lack `reasoning`.
+ * Custom ids (e.g. deepseek-v4-pro[1M]) written before this fix clamp thinking to off.
+ * Returns true when the file was rewritten.
+ */
+export function repairDeepSeekModelsJson(
+  paths: ProviderPaths = defaultProviderPaths(),
+): boolean {
+  if (!existsSync(paths.modelsPath)) return false;
+  let modelsFile: { providers?: Record<string, unknown> };
+  try {
+    modelsFile = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+      providers?: Record<string, unknown>;
+    };
+  } catch {
+    return false;
+  }
+  const providers = modelsFile.providers;
+  if (!providers || typeof providers !== "object") return false;
+
+  let changed = false;
+  for (const [providerId, rawProvider] of Object.entries(providers)) {
+    if (!rawProvider || typeof rawProvider !== "object") continue;
+    const provider = rawProvider as {
+      baseUrl?: string;
+      api?: string;
+      models?: Array<Record<string, unknown>>;
+    };
+    if (!Array.isArray(provider.models)) continue;
+    const api = (
+      API_KINDS.includes(provider.api as ProviderApiKind)
+        ? provider.api
+        : "openai-completions"
+    ) as ProviderApiKind;
+    const baseUrl = typeof provider.baseUrl === "string" ? provider.baseUrl : "";
+
+    provider.models = provider.models.map((model) => {
+      const id = typeof model.id === "string" ? model.id : "";
+      if (!id || !looksLikeDeepSeekModelId(id)) return model;
+      const extras = deepseekProxyModelExtras(id);
+      if (!extras) return model;
+      const next = { ...model };
+      if (next.reasoning !== true) {
+        next.reasoning = true;
+        changed = true;
+      }
+      if (
+        extras.thinkingLevelMap &&
+        (next.thinkingLevelMap == null ||
+          typeof next.thinkingLevelMap !== "object")
+      ) {
+        next.thinkingLevelMap = extras.thinkingLevelMap;
+        changed = true;
+      }
+      const needsCompat =
+        api !== "openai-completions" ||
+        !isPiAutoDetectedDeepSeekEndpoint(providerId, baseUrl);
+      if (needsCompat && next.compat == null) {
+        next.compat = extras.compat;
+        changed = true;
+      }
+      return next;
+    });
+    providers[providerId] = provider;
+  }
+
+  if (!changed) return false;
+  writeFileSync(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
+  return true;
 }
 
 export function defaultProviderPaths(): ProviderPaths {

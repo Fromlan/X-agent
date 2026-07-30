@@ -18,7 +18,7 @@ assert.equal(DEFAULT_PREFS.model, null, "DEFAULT_PREFS.model 必须是 null");
 // 2. 其他默认字段保持稳定
 assert.equal(DEFAULT_PREFS.themeId, "default");
 assert.equal(DEFAULT_PREFS.colorMode, "dark");
-assert.equal(DEFAULT_PREFS.thinkingLevel, "medium");
+assert.equal(DEFAULT_PREFS.thinkingLevel, "high");
 assert.deepEqual(DEFAULT_PREFS.dismissedReadyChecklistKeys, []);
 assert.deepEqual(DEFAULT_PREFS.dismissedGodotToolsNudgeKeys, []);
 assert.equal(DEFAULT_PREFS.autoCompactPercent, 0);
@@ -53,7 +53,7 @@ const legacy = {
   lastSessionPath: null,
   provider: "deepseek",
   model: "deepseek-v4-flash",
-  thinkingLevel: "medium",
+  thinkingLevel: "high",
   tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
   godotEditorPath: null,
   godotDocsBranch: "stable",
