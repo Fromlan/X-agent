@@ -10,24 +10,32 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
-  AgentStatus,
   ALL_TOGGLEABLE_TOOLS,
-  ClientPrefs,
-  CompactSessionResult,
-  HistoryItem,
-  HostStatus,
-  ModelInfo,
-  OpenProjectResult,
-  PromptResult,
-  RetractOptions,
-  RetractPreview,
-  RetractResult,
-  SessionInfo,
-  SessionSkillInfo,
-  SessionUsageSnapshot,
-  ThinkingLevel,
-  TurnUsage,
-  UiAgentEvent,
+  SESSION_TOOL_REGISTRY,
+  type AgentSessionMode,
+  type AgentStatus,
+  type ClientPrefs,
+  type CompactSessionResult,
+  type GoalInfo,
+  type GoalResult,
+  type HistoryItem,
+  type HostStatus,
+  type ModelInfo,
+  type OpenProjectResult,
+  type PlanContentResult,
+  type PlanMutateResult,
+  type PromptResult,
+  type RetractOptions,
+  type RetractPreview,
+  type RetractResult,
+  type SessionInfo,
+  type SessionModeInfo,
+  type SessionModeResult,
+  type SessionSkillInfo,
+  type SessionUsageSnapshot,
+  type ThinkingLevel,
+  type TurnUsage,
+  type UiAgentEvent,
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
@@ -42,6 +50,27 @@ import {
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
 import { createGodotDocsTools } from "./godot-docs-tools";
+import {
+  buildImplementPrompt,
+  classifyPlanLocation,
+  computePlanModeTools,
+  createWritePlanTools,
+  isAllowedPlanPath,
+  readPlanMarkdown,
+  savePlanToWorkspacePath,
+  writePlanMarkdown,
+} from "./plan-tools";
+import { createPlanModeGuardExtension } from "./plan-mode-guard";
+import {
+  buildGoalContinuePrompt,
+  buildGoalEvalPrompt,
+  buildGoalTranscript,
+  parseGoalEvalResponse,
+} from "./goal-evaluator";
+import {
+  buildGoalModeSystemAppend,
+  buildPlanModeSystemAppend,
+} from "../../shared/mode-prompt";
 import { TurnFileTracker } from "./turn-file-tracker";
 import { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
@@ -101,6 +130,16 @@ export class SessionHost {
   private compactionStatsBaseline: CompactionStatsBaseline | null = null;
   /** Skip per-message daily recording while compaction LLM usage is in flight. */
   private compactionRecording = false;
+  /** Session-scoped Plan/Goal state (not written to prefs.tools). */
+  private agentMode: AgentSessionMode = "agent";
+  private savedTools: string[] | null = null;
+  private planPath: string | null = null;
+  private goal: GoalInfo | null = null;
+  private goalContinueInFlight = false;
+  /** Live resource loader for mutating mode system-append without full recreate. */
+  private resourceLoader: DefaultResourceLoader | null = null;
+  /** Base APPEND_SYSTEM.md entries (without mode inject); refreshed on loader.reload. */
+  private baseAppendPrompt: string[] = [];
 
   constructor(
     getWindow: () => BrowserWindow | null,
@@ -262,6 +301,9 @@ export class SessionHost {
       },
       maybeAutoTitleSession: () => this.maybeAutoTitleSession(),
       currentUserEntryId: () => this.currentUserEntryId(),
+      onAgentSettled: () => {
+        void this.handleAgentSettled();
+      },
     };
     return bridgeSessionEvents(session, deps);
   }
@@ -456,26 +498,25 @@ export class SessionHost {
         } else {
           // 重载成功但运行时没找到模型:明确告诉用户,避免"已启用"假象。
           const current = modelFromSession(this.bundle.session);
-          this.emit({
-            type: "notice",
-            text: `已激活档案,但会话模型仍为 ${current?.id ?? "未设置"}（未找到 ${provider}/${modelId}）`,
-            level: "warn",
-          });
+          this.emitReplaceableNotice(
+            "model",
+            `已激活档案,但会话模型仍为 ${current?.id ?? "未设置"}（未找到 ${provider}/${modelId}）`,
+            "warn",
+          );
         }
       }
-      this.emit({
-        type: "notice",
-        text: `已启用供应商 ${provider} / ${modelId}`,
-        level: "info",
-      });
+      this.emitReplaceableNotice(
+        "model",
+        `已启用供应商 ${provider} / ${modelId}`,
+      );
       return { ok: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      this.emit({
-        type: "notice",
-        text: `启用供应商失败：${error}`,
-        level: "error",
-      });
+      this.emitReplaceableNotice(
+        "model",
+        `启用供应商失败：${error}`,
+        "error",
+      );
       return { ok: false, error };
     }
   }
@@ -505,6 +546,505 @@ export class SessionHost {
     this.fileTracker.clear();
     this.shadowCheckpoints.clear();
     this.autoTitleInFlight = false;
+    // Do NOT clear resourceLoader here — createSession assigns the next loader
+    // before disposing the previous bundle; wiping it would break Plan/Goal
+    // system-append refresh and setActiveToolsByName via refreshModeSystemPrompt.
+    this.resetPlanGoalState({ emit: false });
+  }
+
+  /** Clear loader/state when the host no longer has an active session. */
+  private clearResourceLoader(): void {
+    this.resourceLoader = null;
+    this.baseAppendPrompt = [];
+  }
+
+  private resetPlanGoalState(opts?: { emit?: boolean }): void {
+    this.agentMode = "agent";
+    this.savedTools = null;
+    this.planPath = null;
+    this.goal = null;
+    this.goalContinueInFlight = false;
+    if (opts?.emit !== false && this.bundle) {
+      this.emitSessionMode();
+      this.emitGoal();
+    }
+  }
+
+  /** Compose APPEND_SYSTEM + active Plan/Goal mode instructions. */
+  private composeModeAppend(base: string[]): string[] {
+    const out = [...base];
+    if (this.agentMode === "plan") {
+      out.push(buildPlanModeSystemAppend());
+    } else if (
+      this.agentMode === "goal" &&
+      this.goal?.status === "pursuing" &&
+      this.goal.condition
+    ) {
+      out.push(buildGoalModeSystemAppend(this.goal.condition));
+    }
+    return out;
+  }
+
+  /**
+   * Patch the loader's cached append list in place, then rebuild the system
+   * prompt via setActiveToolsByName (Pi re-reads getAppendSystemPrompt()).
+   * Tool switching always runs even if the loader is briefly unavailable.
+   */
+  private refreshModeSystemPrompt(toolNames?: string[]): void {
+    if (!this.bundle) return;
+    if (this.resourceLoader) {
+      const cached = this.resourceLoader.getAppendSystemPrompt();
+      const next = this.composeModeAppend(this.baseAppendPrompt);
+      cached.splice(0, cached.length, ...next);
+    }
+    this.bundle.session.setActiveToolsByName(
+      toolNames ?? this.bundle.session.getActiveToolNames(),
+    );
+  }
+
+  private emitSessionMode(): void {
+    const tools = this.bundle
+      ? this.bundle.session.getActiveToolNames()
+      : [];
+    this.emit({
+      type: "session_mode",
+      mode: this.agentMode,
+      planPath: this.planPath,
+      tools,
+    });
+  }
+
+  private emitGoal(): void {
+    this.emit({ type: "goal_update", goal: this.goal });
+  }
+
+  /**
+   * Status-style notices that should not stack in the transcript.
+   * Same replaceKey replaces the previous bubble (mode / model / tools / …).
+   */
+  private emitReplaceableNotice(
+    replaceKey:
+      | "session_mode"
+      | "model"
+      | "tools"
+      | "resources"
+      | "plan"
+      | "goal_eval"
+      | "session",
+    text: string,
+    level: "info" | "warn" | "error" = "info",
+  ): void {
+    this.emit({ type: "notice", text, level, replaceKey });
+  }
+
+  private emitModeNotice(
+    text: string,
+    level: "info" | "warn" | "error" = "info",
+  ): void {
+    this.emitReplaceableNotice("session_mode", text, level);
+  }
+
+  getSessionMode(): SessionModeInfo {
+    return {
+      mode: this.agentMode,
+      planPath: this.planPath,
+      tools: this.bundle ? this.bundle.session.getActiveToolNames() : [],
+    };
+  }
+
+  getGoal(): GoalInfo | null {
+    return this.goal;
+  }
+
+  async setSessionMode(mode: AgentSessionMode): Promise<SessionModeResult> {
+    if (!this.bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    if (this.bundle.session.isStreaming) {
+      return { ok: false, error: "请等待当前回合结束后再切换模式" };
+    }
+    if (mode === this.agentMode) {
+      return {
+        ok: true,
+        info: this.getSessionMode(),
+        needGoalCondition:
+          mode === "goal" && this.goal?.status !== "pursuing",
+      };
+    }
+
+    if (mode === "plan") {
+      // Mutual exclusion: drop Goal. Keep existing planPath so switching
+      // Agent ↔ Plan does not lose the right-panel plan artifact.
+      this.clearGoalState("cleared", { silent: true });
+      const prefs = loadPrefs();
+      this.savedTools = [
+        ...this.bundle.session.getActiveToolNames(),
+      ].filter((n) => n !== "write_plan");
+      if (this.savedTools.length === 0) {
+        this.savedTools = [...prefs.tools];
+      }
+      const planTools = computePlanModeTools(prefs.tools);
+      this.agentMode = "plan";
+      this.refreshModeSystemPrompt(planTools);
+      const active = this.bundle.session.getActiveToolNames();
+      if (!active.includes("write_plan")) {
+        // Roll back to Agent so UI/tools stay consistent.
+        const restore = this.savedTools ?? prefs.tools;
+        this.savedTools = null;
+        this.agentMode = "agent";
+        this.refreshModeSystemPrompt(restore);
+        this.emitSessionMode();
+        this.emitGoal();
+        this.emitReplaceableNotice(
+          "plan",
+          "Plan 模式未能激活 write_plan（工具未注册）。请重开项目后再试。",
+          "error",
+        );
+        return {
+          ok: false,
+          error: "write_plan 未激活，无法写出计划文件",
+          info: this.getSessionMode(),
+        };
+      }
+      this.emitSessionMode();
+      this.emitGoal();
+      this.emitModeNotice(
+        this.planPath
+          ? `已进入 Plan 模式。当前计划仍保留在右栏「计划」：${this.planPath}`
+          : "已进入 Plan 模式（只读研究 + write_plan）。完成后在右栏审阅并「执行计划」。",
+      );
+      return { ok: true, info: this.getSessionMode() };
+    }
+
+    if (mode === "goal") {
+      // Mutual exclusion: leave Plan tools, keep planPath for the Plan tab.
+      let tools: string[] | undefined;
+      if (this.agentMode === "plan") {
+        tools = this.savedTools ?? loadPrefs().tools;
+        this.savedTools = null;
+      }
+      this.agentMode = "goal";
+      this.refreshModeSystemPrompt(tools);
+      this.emitSessionMode();
+      const needGoalCondition = this.goal?.status !== "pursuing";
+      this.emitModeNotice(
+        needGoalCondition
+          ? "已进入目标模式。请输入可验证的完成条件后发送。"
+          : `目标模式：继续推进「${this.goal!.condition}」`,
+      );
+      return {
+        ok: true,
+        info: this.getSessionMode(),
+        needGoalCondition,
+      };
+    }
+
+    // mode === "agent" — leave Plan tools + Goal; keep planPath for review/re-run.
+    let tools: string[] | undefined;
+    if (this.agentMode === "plan") {
+      tools = this.savedTools ?? loadPrefs().tools;
+    }
+    this.savedTools = null;
+    this.clearGoalState("cleared", { silent: true });
+    this.agentMode = "agent";
+    this.refreshModeSystemPrompt(tools);
+    this.emitSessionMode();
+    this.emitGoal();
+    this.emitModeNotice(
+      this.planPath
+        ? "已切换到 Agent 模式。右栏「计划」仍可查看或执行当前计划。"
+        : "已切换到 Agent 模式。",
+    );
+    return { ok: true, info: this.getSessionMode() };
+  }
+
+  /** Clear in-memory goal without requiring a bundle; optionally skip notices. */
+  private clearGoalState(
+    status: "cleared" | "achieved",
+    opts?: { silent?: boolean; reason?: string },
+  ): void {
+    if (!this.goal) {
+      this.goalContinueInFlight = false;
+      return;
+    }
+    const snapshot = this.goal;
+    snapshot.status = status;
+    this.goal = null;
+    this.goalContinueInFlight = false;
+    if (!opts?.silent) {
+      this.emitModeNotice(
+        status === "achieved"
+          ? `目标已达成${opts?.reason ? `：${opts.reason}` : ""}`
+          : `目标已清除：${snapshot.condition}`,
+      );
+    }
+  }
+
+  async buildPlan(): Promise<PromptResult> {
+    if (!this.bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    if (!this.planPath) {
+      return {
+        ok: false,
+        error: "尚无计划文件。请先在 Plan 模式下让 Agent 调用 write_plan。",
+      };
+    }
+    if (this.bundle.session.isStreaming) {
+      return { ok: false, error: "请等待当前回合结束后再执行计划" };
+    }
+    const planPath = this.planPath;
+    const restore = this.savedTools ?? loadPrefs().tools;
+    this.agentMode = "agent";
+    this.savedTools = null;
+    this.refreshModeSystemPrompt(restore);
+    this.emitSessionMode();
+    this.emitModeNotice(`开始按计划实施：${planPath}`);
+    return this.prompt(buildImplementPrompt(planPath));
+  }
+
+  getPlanContent(): PlanContentResult {
+    if (!this.bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    if (!this.planPath) {
+      return { ok: false, error: "尚无计划文件" };
+    }
+    const cwd = this.bundle.cwd;
+    if (!isAllowedPlanPath(this.planPath, cwd)) {
+      return { ok: false, error: "计划路径不在允许的目录内" };
+    }
+    try {
+      const markdown = readPlanMarkdown(this.planPath);
+      const loc = classifyPlanLocation(this.planPath, cwd);
+      return {
+        ok: true,
+        path: this.planPath,
+        markdown,
+        location: loc === "workspace" ? "workspace" : "home",
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  savePlanContent(markdown: string): PlanMutateResult {
+    if (!this.bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    if (!this.planPath) {
+      return { ok: false, error: "尚无计划文件" };
+    }
+    const cwd = this.bundle.cwd;
+    if (!isAllowedPlanPath(this.planPath, cwd)) {
+      return { ok: false, error: "计划路径不在允许的目录内" };
+    }
+    try {
+      writePlanMarkdown(this.planPath, markdown);
+      const loc = classifyPlanLocation(this.planPath, cwd);
+      return {
+        ok: true,
+        path: this.planPath,
+        location: loc === "workspace" ? "workspace" : "home",
+        info: this.getSessionMode(),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  savePlanToWorkspace(): PlanMutateResult {
+    if (!this.bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    if (!this.planPath) {
+      return { ok: false, error: "尚无计划文件" };
+    }
+    const cwd = this.bundle.cwd;
+    if (!isAllowedPlanPath(this.planPath, cwd)) {
+      return { ok: false, error: "计划路径不在允许的目录内" };
+    }
+    try {
+      const nextPath = savePlanToWorkspacePath(this.planPath, cwd);
+      this.planPath = nextPath;
+      this.emitSessionMode();
+      this.emitReplaceableNotice(
+        "plan",
+        `计划已保存到项目：${nextPath}`,
+      );
+      return {
+        ok: true,
+        path: nextPath,
+        location: "workspace",
+        info: this.getSessionMode(),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /** Drop the session plan pointer (does not delete the file on disk). */
+  clearPlan(): PlanMutateResult {
+    if (!this.planPath) {
+      return { ok: true, info: this.getSessionMode() };
+    }
+    this.planPath = null;
+    this.emitSessionMode();
+    this.emitReplaceableNotice("plan", "已清除当前计划引用（文件仍保留在磁盘）");
+    return { ok: true, info: this.getSessionMode() };
+  }
+
+  async setGoal(condition: string): Promise<GoalResult> {
+    if (!this.bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    // Mutual exclusion: leave Plan tools if needed; keep planPath for the Plan tab.
+    let toolsAfterPlan: string[] | undefined;
+    if (this.agentMode === "plan") {
+      toolsAfterPlan = this.savedTools ?? loadPrefs().tools;
+      this.savedTools = null;
+    }
+    const trimmed = condition.trim();
+    if (!trimmed) {
+      return { ok: false, error: "目标条件不能为空" };
+    }
+    if (trimmed.length > 4000) {
+      return { ok: false, error: "目标条件过长（最多 4000 字符）" };
+    }
+    this.goal = {
+      condition: trimmed,
+      status: "pursuing",
+      turns: 0,
+      startedAt: Date.now(),
+    };
+    this.agentMode = "goal";
+    this.refreshModeSystemPrompt(toolsAfterPlan);
+    this.emitSessionMode();
+    this.emitGoal();
+    this.emitModeNotice(`目标已设置：${trimmed}`);
+    const prompted = await this.prompt(trimmed);
+    if (!prompted.ok) {
+      return { ok: false, error: prompted.error, goal: this.goal };
+    }
+    return { ok: true, goal: this.goal };
+  }
+
+  async clearGoal(): Promise<GoalResult> {
+    const had = Boolean(this.goal);
+    this.clearGoalState("cleared");
+    if (this.agentMode === "goal") {
+      this.agentMode = "agent";
+    }
+    this.refreshModeSystemPrompt();
+    this.emitSessionMode();
+    this.emitGoal();
+    if (!had) {
+      this.emitModeNotice("当前无活跃目标");
+    }
+    return { ok: true, goal: null };
+  }
+
+  private async handleAgentSettled(): Promise<void> {
+    if (!this.bundle || this.goal?.status !== "pursuing") return;
+    if (this.goalContinueInFlight) return;
+    if (this.bundle.session.isStreaming) return;
+
+    this.goalContinueInFlight = true;
+    const bundle = this.bundle;
+    const goal = this.goal;
+    try {
+      const transcript = buildGoalTranscript(
+        bundle.session.messages as readonly unknown[],
+      );
+      const evalPrompt = buildGoalEvalPrompt(goal.condition, transcript);
+      const model = bundle.session.model;
+      if (!model) {
+        this.emitReplaceableNotice(
+          "goal_eval",
+          "目标评估跳过：当前无可用模型",
+          "warn",
+        );
+        return;
+      }
+      const runtime = await this.ensureRuntime();
+      if (this.bundle !== bundle || this.goal !== goal) return;
+      const result = await runtime.completeSimple(
+        model,
+        {
+          messages: [
+            {
+              role: "user",
+              content: evalPrompt,
+              timestamp: Date.now(),
+            },
+          ],
+          tools: [],
+        },
+        { maxTokens: 128, temperature: 0 },
+      );
+      if (this.bundle !== bundle || this.goal !== goal) return;
+      if (result.stopReason === "error" || result.stopReason === "aborted") {
+        this.emitReplaceableNotice(
+          "goal_eval",
+          "目标评估失败，已暂停自动续轮",
+          "warn",
+        );
+        return;
+      }
+      const raw = result.content
+        .filter(
+          (p): p is { type: "text"; text: string } =>
+            !!p &&
+            typeof p === "object" &&
+            (p as { type?: string }).type === "text" &&
+            typeof (p as { text?: unknown }).text === "string",
+        )
+        .map((p) => p.text)
+        .join("")
+        .trim();
+      const parsed = parseGoalEvalResponse(raw);
+      goal.turns += 1;
+      goal.lastReason = parsed.reason;
+      if (parsed.met) {
+        goal.status = "achieved";
+        this.goal = null;
+        if (this.agentMode === "goal") {
+          this.agentMode = "agent";
+        }
+        this.refreshModeSystemPrompt();
+        this.emitSessionMode();
+        this.emitGoal();
+        this.emitModeNotice(
+          `目标已达成（${goal.turns} 轮）：${parsed.reason}`,
+        );
+        return;
+      }
+      this.emitGoal();
+      if (this.bundle.session.isStreaming) return;
+      // Release lock before continue prompt so that turn's agent_end can evaluate.
+      this.goalContinueInFlight = false;
+      await this.prompt(
+        buildGoalContinuePrompt(goal.condition, parsed.reason),
+      );
+      return;
+    } catch (err) {
+      this.emitReplaceableNotice(
+        "goal_eval",
+        `目标评估异常：${err instanceof Error ? err.message : String(err)}`,
+        "warn",
+      );
+    } finally {
+      this.goalContinueInFlight = false;
+    }
   }
 
   private async createSession(
@@ -514,6 +1054,9 @@ export class SessionHost {
     const prefs = loadPrefs();
     const modelRuntime = await this.ensureRuntime();
     const agentDir = getAgentDir();
+    // Mode resets with each new session bundle.
+    this.agentMode = "agent";
+    this.baseAppendPrompt = [];
     const loader = new DefaultResourceLoader({
       cwd,
       agentDir,
@@ -524,8 +1067,23 @@ export class SessionHost {
         skills: applyXAgentSkillsFilter(base.skills, cwd),
         diagnostics: base.diagnostics,
       }),
+      // Plan/Goal instructions live in system append (not per user message).
+      // SessionHost mutates the returned array on mode change, then rebuilds
+      // via setActiveToolsByName → getAppendSystemPrompt().
+      appendSystemPromptOverride: (base) => {
+        this.baseAppendPrompt = [...base];
+        return this.composeModeAppend(base);
+      },
+      extensionFactories: [
+        createPlanModeGuardExtension({
+          getMode: () => this.agentMode,
+          getAllowedTools: () =>
+            computePlanModeTools(loadPrefs().tools),
+        }),
+      ],
     });
     await loader.reload();
+    this.resourceLoader = loader;
 
     let selectedModel =
       prefs.provider && prefs.model
@@ -545,11 +1103,11 @@ export class SessionHost {
           prefs.provider && prefs.model
             ? `${prefs.provider}/${prefs.model}`
             : "未配置";
-        this.emit({
-          type: "notice",
-          text: `偏好模型 ${usedKey} 不可用,已切换到 ${selectedModel.provider}/${selectedModel.id}`,
-          level: "warn",
-        });
+        this.emitReplaceableNotice(
+          "model",
+          `偏好模型 ${usedKey} 不可用,已切换到 ${selectedModel.provider}/${selectedModel.id}`,
+          "warn",
+        );
       }
     }
 
@@ -568,14 +1126,25 @@ export class SessionHost {
       resourceLoader: loader,
       modelRuntime,
       sessionManager,
-      // Pi uses `tools` as both registry allowlist and initial active set.
-      // Register the full toggleable set so later prefs changes (e.g. enabling
-      // Godot tools) can activate via setActiveToolsByName; unknown names are
-      // otherwise silently ignored.
-      tools: [...ALL_TOGGLEABLE_TOOLS],
+      // Pi uses `tools` as both registry allowlist AND initial active set.
+      // Register the full toggleable set + write_plan so later prefs / Plan mode
+      // can activate via setActiveToolsByName; unknown names are silently ignored
+      // and would otherwise drop custom tools from the registry entirely.
+      tools: [...SESSION_TOOL_REGISTRY],
       customTools: [
         ...(this.godotRpc ? createGodotTools(this.godotRpc) : []),
         ...createGodotDocsTools(),
+        ...createWritePlanTools(
+          (path) => {
+            this.planPath = path;
+            this.emitSessionMode();
+            this.emitReplaceableNotice(
+              "plan",
+              `计划已写入：${path}。可在右栏「计划」中编辑，或点击「执行计划」。`,
+            );
+          },
+          () => this.planPath,
+        ),
       ],
       ...(selectedModel ? { model: selectedModel } : {}),
       ...(!hasThinkingEntry ? { thinkingLevel: prefs.thinkingLevel } : {}),
@@ -586,6 +1155,8 @@ export class SessionHost {
     if (effectiveThinking !== prefs.thinkingLevel) {
       patchPrefs({ thinkingLevel: effectiveThinking });
     }
+    // Initial active set = user prefs only (write_plan stays registered but inactive
+    // until Plan mode). Must run after createAgentSession so registry is built.
     session.setActiveToolsByName(prefs.tools);
 
     const unsubscribe = this.bridgeEvents(session);
@@ -599,6 +1170,11 @@ export class SessionHost {
     const previous = this.bundle;
     this.bundle = nextBundle;
     await this.disposeBundle(previous);
+    // Re-bind after disposeBundle — must stay set for Plan/Goal mode switches.
+    this.resourceLoader = loader;
+    // Fresh session: plan/goal cleared by disposeBundle; emit for UI.
+    this.emitSessionMode();
+    this.emitGoal();
 
     const sessionPath = this.sessionFileOf(session);
     if (session.model) {
@@ -611,11 +1187,11 @@ export class SessionHost {
         model: session.model.id,
       });
       if (previousWasLegacyDefault) {
-        this.emit({
-          type: "notice",
-          text: `已重置默认模型：旧值 deepseek/deepseek-v4-flash 不可用，已切换到 ${session.model.provider}/${session.model.id}`,
-          level: "warn",
-        });
+        this.emitReplaceableNotice(
+          "model",
+          `已重置默认模型：旧值 deepseek/deepseek-v4-flash 不可用，已切换到 ${session.model.provider}/${session.model.id}`,
+          "warn",
+        );
       }
     }
     patchPrefs({
@@ -653,11 +1229,7 @@ export class SessionHost {
     });
     this.emit({ type: "history_replace", items: history });
     if (modelFallbackMessage) {
-      this.emit({
-        type: "notice",
-        text: modelFallbackMessage,
-        level: "warn",
-      });
+      this.emitReplaceableNotice("model", modelFallbackMessage, "warn");
     }
     this.lastTurnUsage = undefined;
     this.setStatus("idle");
@@ -749,6 +1321,7 @@ export class SessionHost {
       if (wasActive) {
         await this.disposeBundle(this.bundle);
         this.bundle = null;
+        this.clearResourceLoader();
       }
 
       unlinkSync(sessionPath);
@@ -816,6 +1389,7 @@ export class SessionHost {
       if (activeInProject) {
         await this.disposeBundle(this.bundle);
         this.bundle = null;
+        this.clearResourceLoader();
       }
 
       let deleted = 0;
@@ -849,6 +1423,7 @@ export class SessionHost {
       const cwd = this.bundle?.cwd ?? null;
       await this.disposeBundle(this.bundle);
       this.bundle = null;
+      this.clearResourceLoader();
       this.lastTurnUsage = undefined;
       this.compactionStatsBaseline = null;
       this.compactionRecording = false;
@@ -1158,7 +1733,7 @@ export class SessionHost {
       const model = runtime.getModel(provider, id);
       if (!model) {
         const error = `未找到模型 ${provider}/${id}`;
-        this.emit({ type: "notice", text: error, level: "error" });
+        this.emitReplaceableNotice("model", error, "error");
         return { ok: false, error };
       }
       // 先下发到 session，再持久化 prefs；任一步失败都不污染 prefs。
@@ -1173,10 +1748,18 @@ export class SessionHost {
         sessionPath: this.bundle.sessionPath,
       });
       this.emitUsageUpdate();
+      this.emitReplaceableNotice(
+        "model",
+        `已切换模型：${provider}/${id}`,
+      );
       return { ok: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      this.emit({ type: "notice", text: `切换模型失败：${error}`, level: "error" });
+      this.emitReplaceableNotice(
+        "model",
+        `切换模型失败：${error}`,
+        "error",
+      );
       return { ok: false, error };
     }
   }
@@ -1206,13 +1789,38 @@ export class SessionHost {
   async applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
     patchPrefs({ tools });
     if (!this.bundle) return { ok: true };
+
+    // Plan mode: update prefs + savedTools snapshot, keep ephemeral plan tools.
+    if (this.agentMode === "plan") {
+      this.savedTools = [...tools];
+      const planTools = computePlanModeTools(tools);
+      try {
+        this.refreshModeSystemPrompt(planTools);
+        this.emitSessionMode();
+        this.emitReplaceableNotice(
+          "tools",
+          "已更新工具偏好；Plan 模式仍使用只读工具集，执行计划后恢复。",
+          "warn",
+        );
+        return { ok: true };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        this.emitReplaceableNotice(
+          "tools",
+          `应用工具失败：${error}`,
+          "error",
+        );
+        return { ok: false, error };
+      }
+    }
+
     try {
       this.bundle.session.setActiveToolsByName(tools);
-      this.emit({
-        type: "notice",
-        text: "已更新工具白名单（系统提示已重建）。本会话前缀缓存将从下一轮重新积累。",
-        level: "warn",
-      });
+      this.emitReplaceableNotice(
+        "tools",
+        "已更新工具白名单（系统提示已重建）。本会话前缀缓存将从下一轮重新积累。",
+        "warn",
+      );
       const active = new Set(this.bundle.session.getActiveToolNames());
       const missing = tools.filter((name) => !active.has(name));
       if (missing.length === 0) return { ok: true };
@@ -1223,11 +1831,11 @@ export class SessionHost {
       );
       const rebuildable = missing.filter((name) => registrable.has(name));
       if (rebuildable.length === 0) {
-        this.emit({
-          type: "notice",
-          text: `以下工具不在可用清单中，已忽略：${missing.join(", ")}`,
-          level: "warn",
-        });
+        this.emitReplaceableNotice(
+          "tools",
+          `以下工具不在可用清单中，已忽略：${missing.join(", ")}`,
+          "warn",
+        );
         return { ok: true };
       }
 
@@ -1235,11 +1843,10 @@ export class SessionHost {
       // narrower tools list). Recreate so newly enabled tools can register.
       const sessionPath = this.bundle.sessionPath;
       const cwd = this.bundle.cwd;
-      this.emit({
-        type: "notice",
-        text: `正在重建会话以启用工具：${rebuildable.join(", ")}（历史保留）`,
-        level: "info",
-      });
+      this.emitReplaceableNotice(
+        "tools",
+        `正在重建会话以启用工具：${rebuildable.join(", ")}（历史保留）`,
+      );
       const result = sessionPath
         ? await this.resumeSession(sessionPath)
         : await this.openProject(cwd);
@@ -1247,17 +1854,17 @@ export class SessionHost {
         const error =
           result.error ??
           `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`;
-        this.emit({ type: "notice", text: error, level: "error" });
+        this.emitReplaceableNotice("tools", error, "error");
         return { ok: false, error };
       }
       return { ok: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      this.emit({
-        type: "notice",
-        text: `应用工具失败：${error}`,
-        level: "error",
-      });
+      this.emitReplaceableNotice(
+        "tools",
+        `应用工具失败：${error}`,
+        "error",
+      );
       return { ok: false, error };
     }
   }
@@ -1292,11 +1899,11 @@ export class SessionHost {
         }));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.emit({
-        type: "notice",
-        text: `列出会话失败: ${message}`,
-        level: "warn",
-      });
+      this.emitReplaceableNotice(
+        "session",
+        `列出会话失败: ${message}`,
+        "warn",
+      );
       return [];
     }
   }
@@ -1394,14 +2001,21 @@ export class SessionHost {
     try {
       const prefs = loadPrefs();
       await this.bundle.session.reload();
-      // Pi's reload may refresh the tool registry; re-apply user prefs so
-      // active tools stay identical to createSession/openProject flow.
-      this.bundle.session.setActiveToolsByName(prefs.tools);
-      this.emit({
-        type: "notice",
-        text: "已重载 prompts / skills / extensions",
-        level: "info",
-      });
+      // Pi's reload may refresh the tool registry / loader append; re-apply mode
+      // system append + active tools so Plan/Goal instructions stay attached.
+      if (this.resourceLoader) {
+        await this.resourceLoader.reload();
+      }
+      if (this.agentMode === "plan") {
+        this.refreshModeSystemPrompt(computePlanModeTools(prefs.tools));
+      } else {
+        this.refreshModeSystemPrompt(prefs.tools);
+      }
+      this.emitSessionMode();
+      this.emitReplaceableNotice(
+        "resources",
+        "已重载 prompts / skills / extensions",
+      );
       this.emitUsageUpdate();
       return { ok: true, reloaded: true };
     } catch (err) {
@@ -1417,6 +2031,7 @@ export class SessionHost {
     return this.runReplaceExclusive(async () => {
       await this.disposeBundle(this.bundle);
       this.bundle = null;
+      this.clearResourceLoader();
       this.lastTurnUsage = undefined;
       this.compactionStatsBaseline = null;
       this.compactionRecording = false;

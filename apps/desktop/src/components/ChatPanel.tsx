@@ -1,4 +1,9 @@
-import type { AgentStatus, SessionSkillInfo } from "@shared/ipc";
+import type {
+  AgentSessionMode,
+  AgentStatus,
+  GoalInfo,
+  SessionSkillInfo,
+} from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { SkillSlashMenu } from "./SkillSlashMenu";
@@ -8,7 +13,7 @@ import {
   filterSkillsByQuery,
   type SkillSlashMatch,
 } from "../lib/skill-slash";
-import { Send, Square } from "lucide-react";
+import { Flag, Hammer, Send, Square } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -44,12 +49,20 @@ interface Props {
   starters?: { id: string; label: string; prompt: string }[];
   readinessHints?: { label: string; onClick: () => void }[];
   onPickStarter?: (prompt: string) => void;
+  sessionMode?: AgentSessionMode;
+  planPath?: string | null;
+  goal?: GoalInfo | null;
+  onSessionModeChange?: (mode: AgentSessionMode) => void;
+  onBuildPlan?: () => void;
+  onClearGoal?: () => void;
 }
 
 export function ChatPanel(props: Props) {
   const streaming =
     props.status === "streaming" || props.status === "retrying";
   const composerLocked = props.disabled || Boolean(props.editingEntryId);
+  const sessionMode = props.sessionMode ?? "agent";
+  const modeSwitchDisabled = composerLocked || streaming;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [cursor, setCursor] = useState(0);
@@ -174,6 +187,16 @@ export function ChatPanel(props: Props) {
     }
   };
 
+  const goalActive = props.goal?.status === "pursuing";
+
+  // 切入目标模式时聚焦输入框，便于直接写完成条件
+  useEffect(() => {
+    if (sessionMode !== "goal" || props.disabled) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+  }, [sessionMode, props.disabled, props.forceFollowKey]);
+
   return (
     <section className="chat-panel">
       <ChatTranscript
@@ -195,6 +218,9 @@ export function ChatPanel(props: Props) {
         onConfirmEdit={props.onConfirmEdit}
         onRetract={props.onRetract}
         onRegenerate={props.onRegenerate}
+        sessionMode={sessionMode}
+        planPath={props.planPath}
+        onBuildPlan={props.onBuildPlan}
       />
 
       {props.queuedSteering && props.queuedSteering.length > 0 && (
@@ -203,7 +229,88 @@ export function ChatPanel(props: Props) {
         </div>
       )}
 
+      {goalActive && props.goal && (
+        <div className="goal-banner" role="status">
+          <div className="goal-banner-main">
+            <Flag size={14} aria-hidden />
+            <span className="goal-banner-label">目标</span>
+            <span className="goal-banner-condition" title={props.goal.condition}>
+              {props.goal.condition}
+            </span>
+            <span className="goal-banner-meta">
+              {props.goal.turns} 轮
+              {props.goal.lastReason ? ` · ${props.goal.lastReason}` : ""}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={props.onClearGoal}
+            disabled={!props.onClearGoal || streaming}
+            title="清除目标并回到 Agent 模式"
+          >
+            清除 · Agent
+          </button>
+        </div>
+      )}
+
       <div className="composer">
+        <div className="composer-mode-bar">
+          <div className="composer-mode-pills" role="group" aria-label="会话模式">
+            <button
+              type="button"
+              className={
+                sessionMode === "agent"
+                  ? "composer-mode-pill is-active"
+                  : "composer-mode-pill"
+              }
+              disabled={modeSwitchDisabled || !props.onSessionModeChange}
+              onClick={() => props.onSessionModeChange?.("agent")}
+            >
+              Agent
+            </button>
+            <button
+              type="button"
+              className={
+                sessionMode === "plan"
+                  ? "composer-mode-pill is-active"
+                  : "composer-mode-pill"
+              }
+              disabled={modeSwitchDisabled || !props.onSessionModeChange}
+              onClick={() => props.onSessionModeChange?.("plan")}
+              title="只读研究并写出计划"
+            >
+              Plan
+            </button>
+            <button
+              type="button"
+              className={
+                sessionMode === "goal"
+                  ? "composer-mode-pill is-active"
+                  : "composer-mode-pill"
+              }
+              disabled={modeSwitchDisabled || !props.onSessionModeChange}
+              onClick={() => props.onSessionModeChange?.("goal")}
+              title="设定完成条件并自动续轮"
+            >
+              目标
+            </button>
+          </div>
+          <div className="composer-mode-actions">
+            {sessionMode === "plan" && props.planPath && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={props.onBuildPlan}
+                disabled={streaming || !props.onBuildPlan}
+                title={props.planPath}
+              >
+                <Hammer size={14} />
+                执行计划
+              </button>
+            )}
+          </div>
+        </div>
         <div className="composer-shell">
           <SkillSlashMenu
             open={menuOpen}
@@ -230,9 +337,15 @@ export function ChatPanel(props: Props) {
                 ? "请先打开项目…"
                 : props.editingEntryId
                   ? "正在编辑历史消息 — 请先确认或取消编辑"
-                  : streaming
-                    ? "运行中：Enter 发送 steer，Shift+Enter 换行，/ 选择技能"
-                    : "输入消息，Enter 发送，Shift+Enter 换行，/ 选择技能"
+                  : sessionMode === "plan"
+                    ? "Plan 模式：描述任务，Agent 只读研究并写计划…"
+                    : sessionMode === "goal"
+                      ? goalActive
+                        ? "目标进行中：可补充说明，或点清除退出"
+                        : "目标模式：输入可验证的完成条件后发送…"
+                      : streaming
+                        ? "运行中：Enter 发送 steer，Shift+Enter 换行，/ 选择技能"
+                        : "输入消息，Enter 发送，Shift+Enter 换行，/ 选择技能"
             }
             disabled={composerLocked}
             rows={2}
@@ -242,9 +355,19 @@ export function ChatPanel(props: Props) {
           />
           <div className="composer-toolbar">
             <span className="composer-hint" aria-hidden="true">
-              {streaming
-                ? "Steer · / 技能 · Shift+Enter 换行"
-                : "Enter 发送 · / 选择技能 · Shift+Enter 换行"}
+              {sessionMode === "plan"
+                ? props.planPath
+                  ? "Plan · 当前计划在右栏 · write_plan 可覆盖"
+                  : "Plan · 只读 · write_plan 后点「执行计划」"
+                : sessionMode === "goal"
+                  ? goalActive
+                    ? "目标 · 自动续轮直到条件满足"
+                    : "目标 · 发送完成条件开始"
+                  : props.planPath
+                    ? "Agent · 右栏仍可查看/执行计划"
+                    : streaming
+                      ? "Steer · / 技能 · Shift+Enter 换行"
+                      : "Enter 发送 · Agent/Plan/目标 互斥"}
             </span>
             <div className="composer-actions">
               {streaming && (

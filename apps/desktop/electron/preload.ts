@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AgentSessionMode,
   AppUpdateStatus,
   XAgentApi,
   ClientPrefs,
@@ -35,6 +36,20 @@ const api: XAgentApi = {
     ipcRenderer.invoke(IPC_CHANNELS.setModel, provider, id),
   setThinkingLevel: (level: ThinkingLevel) =>
     ipcRenderer.invoke(IPC_CHANNELS.setThinkingLevel, level),
+  setSessionMode: (mode: AgentSessionMode) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setSessionMode, mode),
+  getSessionMode: () => ipcRenderer.invoke(IPC_CHANNELS.getSessionMode),
+  buildPlan: () => ipcRenderer.invoke(IPC_CHANNELS.buildPlan),
+  getPlanContent: () => ipcRenderer.invoke(IPC_CHANNELS.getPlanContent),
+  savePlanContent: (markdown: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.savePlanContent, markdown),
+  savePlanToWorkspace: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.savePlanToWorkspace),
+  clearPlan: () => ipcRenderer.invoke(IPC_CHANNELS.clearPlan),
+  setGoal: (condition: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setGoal, condition),
+  clearGoal: () => ipcRenderer.invoke(IPC_CHANNELS.clearGoal),
+  getGoal: () => ipcRenderer.invoke(IPC_CHANNELS.getGoal),
   listModels: () => ipcRenderer.invoke(IPC_CHANNELS.listModels),
   listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.listSessions),
   resumeSession: (sessionPath: string) =>

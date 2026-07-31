@@ -4,6 +4,8 @@
  * the original `@path` so the model can use tools.
  */
 
+import { stripModeBlocks } from "@shared/mode-prompt";
+
 const AT_PATH_RE = /(?<![\w.])@([A-Za-z0-9_./\\-]+)/g;
 
 const FILE_BLOCK_RE =
@@ -17,12 +19,14 @@ export function appendAtPath(input: string, relPath: string): string {
 }
 
 /**
- * Inverse of expand for UI: put `@path` back so composer / edit drafts stay
- * compact. Re-send will expand again via {@link expandAtPathsInPrompt}.
+ * Inverse of expand for UI: put `@path` back and drop mode instruction blocks
+ * so composer / edit drafts stay compact. Re-send expands `@path` again and
+ * re-wraps Plan/Goal mode instructions from the current session mode.
  */
 export function collapseFileBlocksToAtPaths(text: string): string {
-  if (!text.includes("<file")) return text;
-  return text.replace(FILE_BLOCK_RE, (_full, name: string) => {
+  let out = text.includes("<mode") ? stripModeBlocks(text) : text;
+  if (!out.includes("<file")) return out;
+  return out.replace(FILE_BLOCK_RE, (_full, name: string) => {
     const rel = String(name ?? "")
       .trim()
       .replace(/\\/g, "/");

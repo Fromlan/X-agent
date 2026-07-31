@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@shared/ipc";
+import type { AgentSessionMode, AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import {
   initialChatScrollPinState,
@@ -14,8 +14,14 @@ import {
 import { MarkdownBody } from "./MarkdownBody";
 import { ToolCard } from "./ToolCard";
 import { UserMessageBody } from "./UserMessageBody";
-import { ArrowDown, Brain, Pencil, RotateCcw, Undo2 } from "lucide-react";
+import { ArrowDown, Brain, Hammer, Pencil, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+function planFileLabel(path: string): string {
+  const norm = path.replace(/\\/g, "/");
+  const i = norm.lastIndexOf("/");
+  return i >= 0 ? norm.slice(i + 1) : norm;
+}
 
 const VIRTUALIZE_THRESHOLD = 60;
 const VIRTUALIZE_TAIL = 40;
@@ -95,6 +101,9 @@ export interface ChatTranscriptProps {
   onRegenerate?: (userEntryId: string) => void;
   /** When true, skip heavy Markdown for non-tail bubbles. */
   degradeMarkdown?: boolean;
+  sessionMode?: AgentSessionMode;
+  planPath?: string | null;
+  onBuildPlan?: () => void;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
@@ -531,20 +540,46 @@ export function ChatTranscript(props: ChatTranscriptProps) {
             }
 
             return (
-              <ToolCard
-                key={item.id}
-                toolCallId={item.id}
-                toolName={item.toolName}
-                args={item.args}
-                result={formatMaybeJson(item.result)}
-                isError={item.isError}
-                done={item.done}
-                onOpenInPanel={
-                  props.onOpenToolInPanel
-                    ? () => props.onOpenToolInPanel?.(item.id, item.args)
-                    : undefined
-                }
-              />
+              <div key={item.id} className="tool-with-actions">
+                <ToolCard
+                  toolCallId={item.id}
+                  toolName={item.toolName}
+                  args={item.args}
+                  result={formatMaybeJson(item.result)}
+                  isError={item.isError}
+                  done={item.done}
+                  onOpenInPanel={
+                    props.onOpenToolInPanel
+                      ? () => props.onOpenToolInPanel?.(item.id, item.args)
+                      : undefined
+                  }
+                />
+                {item.toolName === "write_plan" &&
+                  item.done &&
+                  !item.isError &&
+                  props.sessionMode === "plan" &&
+                  props.planPath &&
+                  props.onBuildPlan && (
+                    <div className="plan-execute-bar">
+                      <button
+                        type="button"
+                        className="btn btn-cta btn-sm"
+                        disabled={streaming}
+                        title={props.planPath}
+                        onClick={props.onBuildPlan}
+                      >
+                        <Hammer size={14} aria-hidden />
+                        执行计划
+                      </button>
+                      <span
+                        className="plan-execute-path"
+                        title={props.planPath}
+                      >
+                        {planFileLabel(props.planPath)}
+                      </span>
+                    </div>
+                  )}
+              </div>
             );
           })}
         </div>

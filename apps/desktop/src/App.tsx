@@ -9,12 +9,14 @@ import {
   type CSSProperties,
 } from "react";
 import type {
+  AgentSessionMode,
   AgentStatus,
   AuthStatus,
   BashCheckResult,
   ClientPrefs,
   ColorMode,
   GitCheckResult,
+  GoalInfo,
   ModelInfo,
   PiCliStatus,
   PrefsRecoveryNotice,
@@ -23,6 +25,7 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS } from "@shared/ipc";
+import { setRightPanelTab } from "./stores/right-panel-store";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
   NODE_JS_DOWNLOAD_URL,
@@ -107,6 +110,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
+  const [planPath, setPlanPath] = useState<string | null>(null);
+  const [goal, setGoal] = useState<GoalInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
     undefined,
@@ -264,6 +270,9 @@ export default function App() {
     setQueuedSteering,
     setEditingEntryId,
     setItems,
+    setSessionMode,
+    setPlanPath,
+    setGoal,
     refreshSessions,
   });
 
@@ -496,16 +505,105 @@ export default function App() {
 
   const send = async () => {
     if (!input.trim() || !cwd) return;
-    const text = input;
+    const text = input.trim();
     setInput("");
     setError(null);
     setFollowNonce((n) => n + 1);
+
+    // Slash: /goal — host IPC, not model prompt.
+    if (/^\/goal\s+clear\b/i.test(text) || /^\/goal\s*$/i.test(text)) {
+      if (/clear/i.test(text)) {
+        const result = await window.xAgent.clearGoal();
+        if (!result.ok) setError(result.error ?? "清除目标失败");
+        else {
+          setGoal(null);
+          setSessionMode("agent");
+        }
+      } else {
+        const g = await window.xAgent.getGoal();
+        setGoal(g);
+        setError(
+          g
+            ? `目标 (${g.status}): ${g.condition}`
+            : "当前无活跃目标。切换到「目标」模式后输入完成条件并发送。",
+        );
+      }
+      return;
+    }
+    const goalSet = text.match(/^\/goal\s+(.+)$/is);
+    if (goalSet?.[1] && !/^clear\b/i.test(goalSet[1].trim())) {
+      const result = await window.xAgent.setGoal(goalSet[1].trim());
+      if (!result.ok) setError(result.error ?? "设置目标失败");
+      else {
+        if (result.goal) setGoal(result.goal);
+        setSessionMode("goal");
+      }
+      return;
+    }
+
+    // Goal 模式且尚未设置条件：整条消息即完成条件。
+    if (sessionMode === "goal" && goal?.status !== "pursuing") {
+      const result = await window.xAgent.setGoal(text);
+      if (!result.ok) setError(result.error ?? "设置目标失败");
+      else {
+        if (result.goal) setGoal(result.goal);
+        setSessionMode("goal");
+      }
+      return;
+    }
+
     const expanded = await expandAtPathsInPrompt(text);
     const result = await window.xAgent.prompt(expanded);
     if (!result.ok) {
       setError(result.error ?? "发送失败");
     }
     await refreshSessions();
+  };
+
+  const onSessionModeChange = async (mode: AgentSessionMode) => {
+    const result = await window.xAgent.setSessionMode(mode);
+    if (!result.ok) {
+      setError(result.error ?? "切换模式失败");
+      return;
+    }
+    if (result.info) {
+      setSessionMode(result.info.mode);
+      setPlanPath(result.info.planPath);
+    }
+    if (mode === "agent" || mode === "plan") {
+      setGoal(null);
+      // 离开目标模式时清掉输入框里残留的 /goal 命令草稿
+      setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
+    }
+    if (mode === "goal" && result.needGoalCondition) {
+      // 不预填 /goal；仅清空误留的 slash 草稿，让用户直接写完成条件
+      setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
+      setFollowNonce((n) => n + 1);
+    }
+  };
+
+  const onBuildPlan = async () => {
+    setError(null);
+    const result = await window.xAgent.buildPlan();
+    if (!result.ok) setError(result.error ?? "执行计划失败");
+    else {
+      const mode = await window.xAgent.getSessionMode();
+      setSessionMode(mode.mode);
+      setPlanPath(mode.planPath);
+    }
+    await refreshSessions();
+  };
+
+  // write_plan / session_mode → open right-panel Plan tab for review.
+  const prevPlanPathRef = useRef<string | null>(null);
+
+  const onClearGoal = async () => {
+    const result = await window.xAgent.clearGoal();
+    if (!result.ok) setError(result.error ?? "清除目标失败");
+    else {
+      setGoal(null);
+      setSessionMode("agent");
+    }
   };
 
   const abort = async () => {
@@ -655,6 +753,16 @@ export default function App() {
     const next = await window.xAgent.setPrefs({ rightPanelOpen: true });
     setPrefs(next);
   };
+
+  useEffect(() => {
+    const prev = prevPlanPathRef.current;
+    prevPlanPathRef.current = planPath;
+    if (!planPath || planPath === prev) return;
+    setRightPanelTab("plan");
+    void ensureRightPanelOpen();
+    // Only react to planPath identity; open helpers read latest prefs via closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planPath]);
 
   const toggleTool = async (tool: string) => {
     if (!prefs) return;
@@ -1066,6 +1174,18 @@ export default function App() {
           onConfirmEdit={onConfirmEdit}
           onRetract={onRetract}
           onRegenerate={onRegenerate}
+          sessionMode={sessionMode}
+          planPath={planPath}
+          goal={goal}
+          onSessionModeChange={(mode) => {
+            void onSessionModeChange(mode);
+          }}
+          onBuildPlan={() => {
+            void onBuildPlan();
+          }}
+          onClearGoal={() => {
+            void onClearGoal();
+          }}
         />
         {prefs?.rightPanelOpen && (
           <RightPanel
@@ -1075,6 +1195,7 @@ export default function App() {
             usage={sessionUsage}
             compacting={compacting}
             sessionId={sessionId}
+            planPath={planPath}
             autoCompactPercent={prefs?.autoCompactPercent ?? 0}
             onAutoCompactPercentChange={(percent) => {
               void (async () => {
@@ -1092,6 +1213,10 @@ export default function App() {
             }
             onClose={() => void toggleRightPanel()}
             onAddPathToChat={addPathToChat}
+            onBuildPlan={() => {
+              void onBuildPlan();
+            }}
+            onPlanPathChange={setPlanPath}
             onResizePointerDown={onRightPanelResizePointerDown}
             onResizeDoubleClick={onRightPanelResizeDoubleClick}
             resizing={rightPanelResizing}

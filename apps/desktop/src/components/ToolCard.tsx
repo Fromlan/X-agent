@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -31,6 +31,21 @@ function formatArgsDisplay(args: unknown): string {
   }
 }
 
+/**
+ * Decide details open state when `done` changes.
+ * - running → keep/force open
+ * - just finished → force closed (once)
+ * - already done → leave user toggle alone (`null`)
+ */
+export function toolDetailsOpenForDoneTransition(
+  prevDone: boolean,
+  done: boolean,
+): boolean | null {
+  if (!done) return true;
+  if (!prevDone && done) return false;
+  return null;
+}
+
 export function ToolCard({
   toolCallId,
   toolName,
@@ -40,8 +55,11 @@ export function ToolCard({
   done,
   onOpenInPanel,
 }: Props) {
-  // Running: keep expanded and show body. After done: auto-collapse; user can re-open.
-  const [open, setOpen] = useState(!done);
+  // Uncontrolled <details>: controlling `open` + onToggle races in Chromium and
+  // often leaves finished tools stuck expanded. Imperatively sync on done edges.
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const prevDoneRef = useRef(done);
+
   const skill = useMemo(
     () => parseSkillReadFromTool(toolName, args),
     [toolName, args],
@@ -52,8 +70,23 @@ export function ToolCard({
   }, [skill, args]);
 
   useEffect(() => {
-    setOpen(!done);
+    const el = detailsRef.current;
+    if (!el) return;
+    const next = toolDetailsOpenForDoneTransition(prevDoneRef.current, done);
+    prevDoneRef.current = done;
+    if (next === null) return;
+    el.open = next;
   }, [done]);
+
+  // History / late-mount: if already done on first paint, start collapsed.
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    el.open = !done;
+    prevDoneRef.current = done;
+    // intentionally mount-only for initial open; subsequent edges use the effect above
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stateIcon = !done ? (
     <Loader2 size={12} className="icon-spin" />
@@ -70,6 +103,7 @@ export function ToolCard({
 
   return (
     <details
+      ref={detailsRef}
       className={[
         "bubble-tool",
         skill ? "is-skill" : "",
@@ -78,8 +112,6 @@ export function ToolCard({
       ]
         .filter(Boolean)
         .join(" ")}
-      open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
       data-tool-call-id={toolCallId}
       data-skill-name={skill?.skillName}
     >

@@ -190,6 +190,86 @@ export const ALL_TOGGLEABLE_TOOLS = [
   ...GODOT_DOCS_TOOLS,
 ] as const;
 
+/**
+ * Custom Plan tool — registered on the session but not prefs-toggleable.
+ * Must be included in createAgentSession `tools` allowlist or Pi silently
+ * drops it from the tool registry.
+ */
+export const WRITE_PLAN_TOOL = "write_plan" as const;
+
+/** Full tool registry names for createAgentSession (toggleable + write_plan). */
+export const SESSION_TOOL_REGISTRY = [
+  ...ALL_TOGGLEABLE_TOOLS,
+  WRITE_PLAN_TOOL,
+] as const;
+
+/** Session interaction mode — mutually exclusive. */
+export type AgentSessionMode = "agent" | "plan" | "goal";
+
+/** Core tools active while in Plan mode (write_plan is a custom tool, not prefs-toggleable). */
+export const PLAN_MODE_CORE_TOOLS = [
+  "read",
+  "grep",
+  "find",
+  "ls",
+  WRITE_PLAN_TOOL,
+] as const;
+
+/** Read-only Godot tools allowed in Plan mode when already enabled in prefs. */
+export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
+  "godot_editor_info",
+  "godot_docs_search",
+  "godot_docs_status",
+] as const;
+
+export type GoalStatus = "pursuing" | "achieved" | "cleared";
+
+export interface GoalInfo {
+  condition: string;
+  status: GoalStatus;
+  turns: number;
+  lastReason?: string;
+  startedAt: number;
+}
+
+export interface SessionModeInfo {
+  mode: AgentSessionMode;
+  planPath: string | null;
+  tools: string[];
+}
+
+export type PlanFileLocation = "home" | "workspace";
+
+export interface PlanContentResult {
+  ok: boolean;
+  error?: string;
+  path?: string;
+  markdown?: string;
+  location?: PlanFileLocation;
+}
+
+export interface PlanMutateResult {
+  ok: boolean;
+  error?: string;
+  path?: string;
+  location?: PlanFileLocation;
+  info?: SessionModeInfo;
+}
+
+export interface SessionModeResult {
+  ok: boolean;
+  error?: string;
+  info?: SessionModeInfo;
+  /** Entered Goal mode but no condition yet — UI should prompt for one. */
+  needGoalCondition?: boolean;
+}
+
+export interface GoalResult {
+  ok: boolean;
+  error?: string;
+  goal?: GoalInfo | null;
+}
+
 /** Preset godot-docs git branches for settings UI fallback. */
 export const GODOT_DOCS_PRESET_BRANCHES = [
   "stable",
@@ -368,6 +448,8 @@ export type HistoryItem =
       id: string;
       text: string;
       level?: "info" | "warn" | "error";
+      /** When set, a later notice with the same key replaces this bubble. */
+      replaceKey?: string;
     };
 
 export type FileRestoreSkipReason =
@@ -518,12 +600,27 @@ export type UiAgentEvent =
       type: "notice";
       text: string;
       level?: "info" | "warn" | "error";
+      /**
+       * Same-key notices replace the previous bubble in the transcript
+       * (e.g. session mode switches) instead of stacking.
+       */
+      replaceKey?: string;
     }
   | {
       type: "session_title";
       sessionId: string;
       name: string;
       sessionPath?: string | null;
+    }
+  | {
+      type: "session_mode";
+      mode: AgentSessionMode;
+      planPath: string | null;
+      tools: string[];
+    }
+  | {
+      type: "goal_update";
+      goal: GoalInfo | null;
     };
 
 export interface HostStatus {
@@ -824,6 +921,16 @@ export interface XAgentApi {
   newSession: () => Promise<OpenProjectResult>;
   setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
   setThinkingLevel: (level: ThinkingLevel) => Promise<{ ok: boolean }>;
+  setSessionMode: (mode: AgentSessionMode) => Promise<SessionModeResult>;
+  getSessionMode: () => Promise<SessionModeInfo>;
+  buildPlan: () => Promise<PromptResult>;
+  getPlanContent: () => Promise<PlanContentResult>;
+  savePlanContent: (markdown: string) => Promise<PlanMutateResult>;
+  savePlanToWorkspace: () => Promise<PlanMutateResult>;
+  clearPlan: () => Promise<PlanMutateResult>;
+  setGoal: (condition: string) => Promise<GoalResult>;
+  clearGoal: () => Promise<GoalResult>;
+  getGoal: () => Promise<GoalInfo | null>;
   listModels: () => Promise<ModelInfo[]>;
   listSessions: () => Promise<SessionInfo[]>;
   resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;

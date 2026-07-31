@@ -16,6 +16,23 @@
 
 ### 修复
 
+## 0.3.6
+
+### 功能
+
+- **Plan Mode**：只读研究 + `write_plan`；右栏「计划」可编辑 / 保存到项目；「执行计划」切回 Agent 实施；tool_call 硬闸防误写
+- **Goal Mode**：与 Agent / Plan 并列；完成条件 + 独立评估续轮，直至条件满足
+
+### 改进
+
+- **Plan 指令**：system append 注入（不污染用户气泡）；先研究再一次写出完整计划，拒绝 placeholder / 过短 stub；同会话修订覆盖当前计划文件
+- **模式切换**：切换 Agent / Plan / Goal 时保留已有计划在右栏，需「清除引用」才丢掉
+
+### 修复
+
+- **工具卡片收起**：结束后强制折叠；修复受控 `<details>` 与 Chromium toggle 抢状态导致卡住展开
+- **write_plan 注册**：自定义工具列入 session 白名单；新建会话后正确激活 Plan 工具集
+
 ## 0.3.5
 
 ### 功能
