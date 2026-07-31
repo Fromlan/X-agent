@@ -166,16 +166,40 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
       };
       return next;
     }
-    case "notice":
+    case "notice": {
+      const level = event.level ?? "info";
+      const replaceKey = event.replaceKey;
+      if (replaceKey) {
+        const idx = items.findLastIndex(
+          (i) => i.kind === "system" && i.replaceKey === replaceKey,
+        );
+        const nextItem: ChatItem = {
+          kind: "system",
+          id:
+            idx >= 0 && items[idx]!.kind === "system"
+              ? items[idx]!.id
+              : `notice-${replaceKey}`,
+          text: event.text,
+          level,
+          replaceKey,
+        };
+        if (idx >= 0) {
+          const next = items.slice();
+          next[idx] = nextItem;
+          return next;
+        }
+        return [...items, nextItem];
+      }
       return [
         ...items,
         {
           kind: "system",
           id: `notice-${Date.now()}-${items.length}`,
           text: event.text,
-          level: event.level ?? "info",
+          level,
         },
       ];
+    }
     case "auto_retry":
       if (event.phase === "start") {
         return [

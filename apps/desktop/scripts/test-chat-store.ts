@@ -39,6 +39,46 @@ items = applyAgentEvent(items, {
 assert(items.some((i) => i.kind === "system"), "notice becomes system");
 
 items = applyAgentEvent(items, {
+  type: "notice",
+  text: "已进入 Plan 模式",
+  replaceKey: "session_mode",
+});
+items = applyAgentEvent(items, {
+  type: "notice",
+  text: "已切换到 Agent 模式。",
+  replaceKey: "session_mode",
+});
+const modeNotices = items.filter(
+  (i) => i.kind === "system" && i.replaceKey === "session_mode",
+);
+assert(modeNotices.length === 1, "same replaceKey should replace prior notice");
+assert(
+  modeNotices[0]!.kind === "system" &&
+    modeNotices[0]!.text === "已切换到 Agent 模式。",
+  "replaced notice text",
+);
+
+items = applyAgentEvent(items, {
+  type: "notice",
+  text: "已切换模型：a/b",
+  replaceKey: "model",
+});
+items = applyAgentEvent(items, {
+  type: "notice",
+  text: "已切换模型：c/d",
+  replaceKey: "model",
+});
+assert(
+  items.filter((i) => i.kind === "system" && i.replaceKey === "model").length ===
+    1,
+  "model notices should replace within their key",
+);
+assert(
+  items.filter((i) => i.kind === "system").length === 3,
+  "fallback + session_mode + model should coexist as separate keys",
+);
+
+items = applyAgentEvent(items, {
   type: "history_replace",
   items: [{ kind: "user", id: "x", text: "reset" }],
 });

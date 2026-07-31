@@ -1,7 +1,14 @@
-import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type {
+  AgentSessionMode,
   AgentStatus,
   ClientPrefs,
+  GoalInfo,
   UiAgentEvent,
 } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
@@ -23,6 +30,9 @@ type EventRouterDeps = {
   setQueuedSteering: Dispatch<SetStateAction<string[]>>;
   setEditingEntryId: Dispatch<SetStateAction<string | null>>;
   setItems: Dispatch<SetStateAction<ChatItem[]>>;
+  setSessionMode: Dispatch<SetStateAction<AgentSessionMode>>;
+  setPlanPath: Dispatch<SetStateAction<string | null>>;
+  setGoal: Dispatch<SetStateAction<GoalInfo | null>>;
   refreshSessions: () => Promise<void>;
 };
 
@@ -42,6 +52,9 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setQueuedSteering,
     setEditingEntryId,
     setItems,
+    setSessionMode,
+    setPlanPath,
+    setGoal,
     refreshSessions,
   } = deps;
 
@@ -85,6 +98,15 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
         void refreshSessions();
         return;
       }
+      if (event.type === "session_mode") {
+        setSessionMode(event.mode);
+        setPlanPath(event.planPath);
+        return;
+      }
+      if (event.type === "goal_update") {
+        setGoal(event.goal);
+        return;
+      }
       if (event.type === "agent_end" && !event.willRetry) {
         void refreshSessions();
       }
@@ -123,10 +145,13 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setCwd,
     setEditingEntryId,
     setError,
+    setGoal,
     setItems,
+    setPlanPath,
     setPrefs,
     setQueuedSteering,
     setSessionId,
+    setSessionMode,
     setStatus,
     usageFetchGen,
   ]);

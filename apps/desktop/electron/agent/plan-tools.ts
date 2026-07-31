@@ -1,0 +1,272 @@
+/**
+ * Plan-mode helpers: plans directory, tool allowlist, write_plan custom tool.
+ */
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { Type } from "typebox";
+import { defineTool } from "@earendil-works/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+  PLAN_MODE_CORE_TOOLS,
+  PLAN_MODE_OPTIONAL_READONLY_TOOLS,
+} from "../../shared/ipc";
+import {
+  PLAN_MODE_INSTRUCTIONS,
+  wrapWithModeBlock,
+} from "../../shared/mode-prompt";
+import { getAgentDirPath } from "./prefs";
+
+export { PLAN_MODE_INSTRUCTIONS, wrapWithModeBlock };
+
+export type PlanLocation = "home" | "workspace" | "other";
+
+export function buildImplementPrompt(planPath: string): string {
+  return wrapWithModeBlock(
+    "build",
+    [
+      "Implement the approved plan strictly.",
+      `Plan file (read it first): ${planPath}`,
+      "Follow Steps in order. Stay within Files / Out of scope.",
+      "Run Validation commands when listed; fix failures or report a clear blocker.",
+      "Do not expand scope beyond the plan.",
+    ].join("\n"),
+  );
+}
+
+export function getPlansDir(): string {
+  return join(getAgentDirPath(), "x-agent", "plans");
+}
+
+/** Project-local plans (Cursor-style "Save to workspace"). */
+export function getWorkspacePlansDir(cwd: string): string {
+  return join(cwd, ".pi", "plans");
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  const root = resolve(parent);
+  const target = resolve(child);
+  if (target === root) return true;
+  const prefix = root.endsWith(sep) ? root : root + sep;
+  return target.startsWith(prefix);
+}
+
+export function classifyPlanLocation(
+  planPath: string,
+  cwd: string | null,
+): PlanLocation {
+  if (isPathInside(getPlansDir(), planPath)) return "home";
+  if (cwd && isPathInside(getWorkspacePlansDir(cwd), planPath)) {
+    return "workspace";
+  }
+  return "other";
+}
+
+/** Only home or workspace plan roots are editable via IPC. */
+export function isAllowedPlanPath(
+  planPath: string,
+  cwd: string | null,
+): boolean {
+  const loc = classifyPlanLocation(planPath, cwd);
+  return loc === "home" || loc === "workspace";
+}
+
+export function readPlanMarkdown(planPath: string): string {
+  return readFileSync(planPath, "utf8");
+}
+
+export function writePlanMarkdown(planPath: string, markdown: string): void {
+  const body = markdown.endsWith("\n") ? markdown : `${markdown}\n`;
+  mkdirSync(dirname(planPath), { recursive: true });
+  writeFileSync(planPath, body, "utf8");
+}
+
+/**
+ * Copy plan into `<cwd>/.pi/plans/` and return the new path.
+ * Removes the home-dir original when the source was under the home plans dir.
+ */
+export function savePlanToWorkspacePath(
+  planPath: string,
+  cwd: string,
+): string {
+  if (!existsSync(planPath)) {
+    throw new Error("计划文件不存在");
+  }
+  const dir = getWorkspacePlansDir(cwd);
+  mkdirSync(dir, { recursive: true });
+  const dest = join(dir, basename(planPath));
+  const srcResolved = resolve(planPath);
+  const destResolved = resolve(dest);
+  if (srcResolved !== destResolved) {
+    copyFileSync(planPath, dest);
+    if (isPathInside(getPlansDir(), planPath)) {
+      try {
+        unlinkSync(planPath);
+      } catch {
+        // keep dest even if home cleanup fails
+      }
+    }
+  }
+  return dest;
+}
+
+/** Slugify a plan title for the filename (safe ASCII / alnum). */
+export function slugifyPlanTitle(title: string): string {
+  const raw = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return raw || "plan";
+}
+
+export function formatPlanTimestamp(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
+    `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  );
+}
+
+export function buildPlanFilePath(title: string, d = new Date()): string {
+  const name = `${formatPlanTimestamp(d)}-${slugifyPlanTitle(title)}.md`;
+  return join(getPlansDir(), name);
+}
+
+/**
+ * Tools active in Plan mode: core read-only + write_plan, plus optional
+ * Godot read-only tools that are already enabled in user prefs.
+ */
+export function computePlanModeTools(prefsTools: readonly string[]): string[] {
+  const prefs = new Set(prefsTools);
+  const tools: string[] = [...PLAN_MODE_CORE_TOOLS];
+  for (const name of PLAN_MODE_OPTIONAL_READONLY_TOOLS) {
+    if (prefs.has(name)) tools.push(name);
+  }
+  return tools;
+}
+
+const STUB_PLAN_TITLES = new Set([
+  "placeholder",
+  "draft",
+  "todo",
+  "temp",
+  "tmp",
+  "plan",
+  "stub",
+  "tbd",
+  "占位",
+  "占位计划",
+  "草稿",
+  "临时",
+]);
+
+/**
+ * Reject early stub write_plan calls that leave empty/placeholder plans in the UI.
+ * Returns an error message, or null if the plan looks usable.
+ */
+export function stubPlanRejection(title: string, markdown: string): string | null {
+  const trimmedTitle = title.trim();
+  const titleKey = trimmedTitle.toLowerCase();
+  if (!trimmedTitle || STUB_PLAN_TITLES.has(titleKey)) {
+    return (
+      "Rejected: title looks like a placeholder. Finish research, then call " +
+      "write_plan once with a descriptive title and a complete Markdown plan."
+    );
+  }
+
+  const body = markdown.trim();
+  if (body.length < 160) {
+    return (
+      "Rejected: plan body is too short / incomplete. Do not write stubs. " +
+      "Research first, then provide Goal, Approach, Steps, Files, Validation, Out of scope."
+    );
+  }
+
+  const stubBody =
+    /^(#\s*)?(placeholder|draft|todo|stub|tbd|占位|草稿)\b/i.test(body) &&
+    body.length < 400;
+  if (stubBody) {
+    return (
+      "Rejected: plan body is a placeholder. Research with read/grep/find/ls, " +
+      "then write_plan with concrete paths and steps."
+    );
+  }
+
+  const hasGoal = /##\s*(goal|目标)\b/i.test(body);
+  const hasSteps = /##\s*(steps|步骤)\b/i.test(body);
+  if (!hasGoal || !hasSteps) {
+    return (
+      "Rejected: missing required sections. Include at least ## Goal and ## Steps " +
+      "(Chinese ## 目标 / ## 步骤 also ok), plus Approach, Files, Validation, Out of scope."
+    );
+  }
+
+  return null;
+}
+
+export function createWritePlanTools(
+  onPlanWritten: (path: string) => void,
+  getCurrentPlanPath?: () => string | null,
+): ToolDefinition[] {
+  return [
+    defineTool({
+      name: "write_plan",
+      label: "Write plan",
+      description:
+        "Write the final Markdown implementation plan after research is done. " +
+        "Call once with a complete plan (never placeholders/stubs). " +
+        "Same-session calls overwrite the current plan file. " +
+        "After success the user edits it in the right panel and clicks 「执行计划」.",
+      parameters: Type.Object({
+        title: Type.String({
+          description:
+            "Short descriptive plan title for the filename (not placeholder/draft)",
+        }),
+        markdown: Type.String({
+          description:
+            "Complete Markdown plan: Goal, Approach, Steps, Files, Validation, Out of scope — with real paths and actionable steps",
+        }),
+      }),
+      async execute(_toolCallId, params) {
+        const title =
+          typeof params.title === "string" && params.title.trim()
+            ? params.title.trim()
+            : "";
+        const markdown =
+          typeof params.markdown === "string" ? params.markdown : "";
+        const rejection = stubPlanRejection(title || "plan", markdown);
+        if (rejection) {
+          throw new Error(rejection);
+        }
+
+        const dir = getPlansDir();
+        mkdirSync(dir, { recursive: true });
+        const existing = getCurrentPlanPath?.() ?? null;
+        const path =
+          existing && existsSync(existing) ? existing : buildPlanFilePath(title);
+        const body = markdown.startsWith("#")
+          ? markdown
+          : `# ${title}\n\n${markdown}`;
+        writeFileSync(path, body.endsWith("\n") ? body : `${body}\n`, "utf8");
+        onPlanWritten(path);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Plan written to ${path}. Ask the user to review it in the right-panel Plan tab and click 「执行计划」 when ready.`,
+            },
+          ],
+          details: { path, title },
+        };
+      },
+    }),
+  ];
+}

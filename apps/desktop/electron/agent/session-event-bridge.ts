@@ -45,6 +45,8 @@ export interface SessionEventBridgeDeps {
   clearCompactionBaseline(): void;
   maybeAutoTitleSession(): Promise<void>;
   currentUserEntryId(): string | undefined;
+  /** Called after agent_end when not retrying — Goal Mode continuation hook. */
+  onAgentSettled?: () => void;
 }
 
 /**
@@ -93,6 +95,7 @@ export function bridgeSessionEvents(
         } else {
           deps.setStatus("idle");
           void deps.maybeAutoTitleSession();
+          deps.onAgentSettled?.();
         }
         deps.emit({ type: "agent_end", willRetry });
         deps.emitUsageUpdate();
