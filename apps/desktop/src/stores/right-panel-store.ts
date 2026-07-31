@@ -1,4 +1,4 @@
-export type RightPanelTab = "tools" | "files" | "godot" | "context";
+export type RightPanelTab = "plan" | "tools" | "files" | "godot" | "context";
 
 export type PanelState = {
   tab: RightPanelTab;
@@ -7,7 +7,7 @@ export type PanelState = {
 };
 
 const DEFAULT_STATE: PanelState = {
-  tab: "tools",
+  tab: "context",
   selectedToolId: null,
   previewPath: null,
 };

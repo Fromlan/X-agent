@@ -416,7 +416,15 @@ https://pi.dev/docs/latest/packages#scope-and-deduplication 规则：项目条�
 
 ---
 
-## 十一、关键参考链接汇总
+## 十一、附录：计划模式 / 目标模式调研
+
+主流 Agent（Cursor / Claude Code / Codex / Windsurf）的 **Plan Mode** 与 **Goal Mode** 对照、Pi Extension / X-agent 钩子映射，以及半硬 `/plan`+`/build` MVP 规格，见：
+
+[`docs/research-plan-goal-modes.md`](docs/research-plan-goal-modes.md)
+
+---
+
+## 十二、关键参考链接汇总
 
 - Pi 文档首页：https://pi.dev/docs/latest
 - Quickstart：https://pi.dev/docs/latest/quickstart

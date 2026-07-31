@@ -1,6 +1,6 @@
 import type { IpcMain } from "electron";
 import type { SessionHost } from "../agent/session-host";
-import type { ThinkingLevel } from "../../shared/ipc";
+import type { AgentSessionMode, ThinkingLevel } from "../../shared/ipc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
 
 /** Session / workspace IPC — thin forwards to SessionHost. */
@@ -39,6 +39,26 @@ export function registerSessionIpc(
   ipcMain.handle(IPC_CHANNELS.setThinkingLevel, async (_e, level: ThinkingLevel) =>
     sessionHost.setThinkingLevel(level),
   );
+  ipcMain.handle(IPC_CHANNELS.setSessionMode, async (_e, mode: AgentSessionMode) =>
+    sessionHost.setSessionMode(mode),
+  );
+  ipcMain.handle(IPC_CHANNELS.getSessionMode, async () => sessionHost.getSessionMode());
+  ipcMain.handle(IPC_CHANNELS.buildPlan, async () => sessionHost.buildPlan());
+  ipcMain.handle(IPC_CHANNELS.getPlanContent, async () =>
+    sessionHost.getPlanContent(),
+  );
+  ipcMain.handle(IPC_CHANNELS.savePlanContent, async (_e, markdown: string) =>
+    sessionHost.savePlanContent(markdown),
+  );
+  ipcMain.handle(IPC_CHANNELS.savePlanToWorkspace, async () =>
+    sessionHost.savePlanToWorkspace(),
+  );
+  ipcMain.handle(IPC_CHANNELS.clearPlan, async () => sessionHost.clearPlan());
+  ipcMain.handle(IPC_CHANNELS.setGoal, async (_e, condition: string) =>
+    sessionHost.setGoal(condition),
+  );
+  ipcMain.handle(IPC_CHANNELS.clearGoal, async () => sessionHost.clearGoal());
+  ipcMain.handle(IPC_CHANNELS.getGoal, async () => sessionHost.getGoal());
   ipcMain.handle(IPC_CHANNELS.listModels, async () => sessionHost.listModels());
   ipcMain.handle(IPC_CHANNELS.listSessions, async () => sessionHost.listSessions());
   ipcMain.handle(IPC_CHANNELS.resumeSession, async (_e, sessionPath: string) =>

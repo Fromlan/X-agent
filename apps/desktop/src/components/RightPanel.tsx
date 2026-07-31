@@ -15,9 +15,11 @@ import { ToolsTab } from "./right-panel/ToolsTab";
 import { FilesTab } from "./right-panel/FilesTab";
 import { GodotTab } from "./right-panel/GodotTab";
 import { ContextTab } from "./right-panel/ContextTab";
+import { PlanTab } from "./right-panel/PlanTab";
 
 const TABS: { id: RightPanelTab; label: string }[] = [
   { id: "context", label: "上下文" },
+  { id: "plan", label: "计划" },
   { id: "tools", label: "工具" },
   { id: "files", label: "文件" },
   { id: "godot", label: "Godot" },
@@ -31,10 +33,13 @@ interface Props {
   compacting: boolean;
   busy: boolean;
   sessionId: string | null;
+  planPath?: string | null;
   autoCompactPercent?: number;
   onAutoCompactPercentChange?: (percent: number) => void;
   onClose: () => void;
   onAddPathToChat: (relPath: string) => void;
+  onBuildPlan?: () => void;
+  onPlanPathChange?: (path: string | null) => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
   onResizeDoubleClick?: () => void;
   resizing?: boolean;
@@ -48,10 +53,13 @@ export function RightPanel({
   compacting,
   busy,
   sessionId,
+  planPath = null,
   autoCompactPercent = 0,
   onAutoCompactPercentChange,
   onClose,
   onAddPathToChat,
+  onBuildPlan,
+  onPlanPathChange,
   onResizePointerDown,
   onResizeDoubleClick,
   resizing,
@@ -105,6 +113,9 @@ export function RightPanel({
             onClick={() => setRightPanelTab(t.id)}
           >
             {t.label}
+            {t.id === "plan" && planPath ? (
+              <span className="rp-tab-dot" aria-hidden />
+            ) : null}
           </button>
         ))}
       </nav>
@@ -117,6 +128,14 @@ export function RightPanel({
             sessionId={sessionId}
             autoCompactPercent={autoCompactPercent}
             onAutoCompactPercentChange={onAutoCompactPercentChange}
+          />
+        )}
+        {state.tab === "plan" && (
+          <PlanTab
+            planPath={planPath}
+            busy={busy}
+            onBuildPlan={() => onBuildPlan?.()}
+            onPlanPathChange={onPlanPathChange}
           />
         )}
         {state.tab === "tools" && (
