@@ -5,6 +5,8 @@
 import { app, BrowserWindow, Menu, shell } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { validateExternalHttpUrl } from "./agent/external-url";
 
 const BG = "#141414";
 const SPLASH_TIMEOUT_MS = 30_000;
@@ -53,12 +55,10 @@ function revealMain(): void {
 async function openExternalHttpUrl(
   url: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const checked = validateExternalHttpUrl(url);
+  if (!checked.ok) return checked;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return { ok: false, error: "仅支持 http/https 链接" };
-    }
-    await shell.openExternal(parsed.toString());
+    await shell.openExternal(checked.href);
     return { ok: true };
   } catch (err) {
     return {
@@ -132,7 +132,19 @@ function createMain(): void {
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (url === mainWindow?.webContents.getURL()) return;
     if (rendererUrl && url.startsWith(rendererUrl)) return;
-    if (url.startsWith("file:")) return;
+    if (url.startsWith("file:")) {
+      // Packaged app: only allow navigation within our renderer directory.
+      try {
+        const rendererRoot = pathToFileURL(
+          join(__dirname, "../renderer") + "/",
+        ).href;
+        if (url.startsWith(rendererRoot)) return;
+      } catch {
+        // fall through to deny
+      }
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     void openExternalHttpUrl(url);
   });
@@ -162,6 +174,22 @@ async function bootApp(): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+    return;
+  }
+  app.on("second-instance", () => {
+    if (!alive(mainWindow)) {
+      createSplash();
+      setImmediate(() => void bootApp());
+      return;
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    revealMain();
+  });
+
   Menu.setApplicationMenu(null);
   createSplash();
   setImmediate(() => void bootApp());

@@ -158,6 +158,7 @@ export class SessionHost {
       prompt: (text) => this.prompt(text),
       ensureRuntime: () => this.ensureRuntime(),
       getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
+      getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
     };
   }
 
@@ -171,6 +172,8 @@ export class SessionHost {
       emitHistoryReplace: () => this.emitHistoryReplace(),
       emitUsageUpdate: () => this.emitUsageUpdate(),
       prompt: (text) => this.prompt(text),
+      onRetractSuccess: (abandonedUserEntryIds) =>
+        this.sessionMode.rollbackGoalAfterRetract(abandonedUserEntryIds),
     };
   }
 
@@ -192,8 +195,40 @@ export class SessionHost {
     }
   }
 
+  private lastHistoryFingerprint: string | null = null;
+
+  private historyFingerprint(items: HistoryItem[]): string {
+    return items
+      .map((item) => {
+        switch (item.kind) {
+          case "user":
+            return `u:${item.id}:${item.entryId ?? ""}:${item.text.length}`;
+          case "assistant":
+            return `a:${item.id}:${item.entryId ?? ""}:${item.userEntryId ?? ""}:${item.text.length}:${item.thinking.length}:${item.done ? 1 : 0}`;
+          case "tool": {
+            const resultLen =
+              typeof item.result === "string"
+                ? item.result.length
+                : item.result == null
+                  ? 0
+                  : 1;
+            return `t:${item.id}:${item.toolName}:${resultLen}:${item.done ? 1 : 0}`;
+          }
+          case "system":
+            return `s:${item.id}:${item.text.length}`;
+          default:
+            return `?:${(item as { id?: string }).id ?? ""}`;
+        }
+      })
+      .join("|");
+  }
+
   private emitHistoryReplace(): void {
-    this.emit({ type: "history_replace", items: this.historyFromBundle() });
+    const items = this.historyFromBundle();
+    const fingerprint = this.historyFingerprint(items);
+    if (fingerprint === this.lastHistoryFingerprint) return;
+    this.lastHistoryFingerprint = fingerprint;
+    this.emit({ type: "history_replace", items });
   }
 
   private buildUsageSnapshot(): SessionUsageSnapshot | null {
@@ -577,6 +612,7 @@ export class SessionHost {
     this.fileTracker.clear();
     this.shadowCheckpoints.clear();
     this.autoTitleInFlight = false;
+    this.lastHistoryFingerprint = null;
     // Do NOT clear resourceLoader here — createSession assigns the next loader
     // before disposing the previous bundle; wiping it would break Plan/Goal
     // system-append refresh and setActiveToolsByName via sessionMode.refreshSystemPrompt.
@@ -1092,7 +1128,8 @@ export class SessionHost {
   }
 
   async prompt(text: string): Promise<PromptResult> {
-    if (!this.bundle) {
+    const bundle = this.bundle;
+    if (!bundle) {
       return { ok: false, error: "尚未打开项目" };
     }
     const trimmed = text.trim();
@@ -1101,24 +1138,34 @@ export class SessionHost {
     }
 
     try {
-      const { session } = this.bundle;
+      const { session } = bundle;
       if (session.isStreaming) {
         await session.prompt(trimmed, { streamingBehavior: "steer" });
       } else {
         await this.shadowCheckpoints.preparePromptCheckpoint();
+        if (this.bundle !== bundle) {
+          return { ok: false, error: "会话已切换" };
+        }
         await session.prompt(trimmed);
+      }
+      if (this.bundle !== bundle) {
+        return { ok: false, error: "会话已切换" };
       }
       return { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.setStatus("error", message);
+      if (this.bundle === bundle) {
+        this.setStatus("error", message);
+      }
       return { ok: false, error: message };
     }
   }
 
   async abort(): Promise<{ ok: boolean }> {
-    if (!this.bundle) return { ok: false };
-    await this.bundle.session.abort();
+    const bundle = this.bundle;
+    if (!bundle) return { ok: false };
+    await bundle.session.abort();
+    if (this.bundle !== bundle) return { ok: true };
     this.setStatus("idle");
     return { ok: true };
   }

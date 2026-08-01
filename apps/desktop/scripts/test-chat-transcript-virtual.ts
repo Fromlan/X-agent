@@ -1,5 +1,6 @@
 /**
  * Transcript display helpers + guards against the old history-slice / plain degrade path.
+ * Also locks the streaming→flow / idle→virtual layout contract.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -50,17 +51,70 @@ function readSrc(rel: string): string {
 
 {
   const transcript = readSrc("src/components/ChatTranscript.tsx");
-  assert.equal(transcript.includes("VIRTUALIZE_THRESHOLD"), false);
   assert.equal(transcript.includes("history-virtualize-bar"), false);
   assert.equal(transcript.includes("degradeMarkdown"), false);
   assert.equal(transcript.includes("plainMarkdownCutoff"), false);
   assert.match(transcript, /useVirtualizer/);
+  assert.match(
+    transcript,
+    /VIRTUALIZE_MIN_ITEMS/,
+    "must gate virtualization on a min item count",
+  );
+  assert.match(
+    transcript,
+    /!streaming && displayItems\.length >= VIRTUALIZE_MIN_ITEMS/,
+    "must disable absolute virtual rows while streaming (overlap)",
+  );
+  assert.match(
+    transcript,
+    /message-stream-flow/,
+    "streaming / short lists use document-flow layout",
+  );
 
   const panel = readSrc("src/components/ChatPanel.tsx");
   assert.equal(panel.includes("degradeMarkdown"), false);
 
   const css = readSrc("src/styles/app.css");
   assert.equal(css.includes("history-virtualize-bar"), false);
+  // Scrollport must stay block-level so the virtualizer can measure rows.
+  const streamBlock = css.match(/\.message-stream\s*\{[^}]+\}/);
+  assert.ok(streamBlock, "message-stream rule");
+  assert.equal(
+    /\bdisplay\s*:\s*flex\b/.test(streamBlock![0]!),
+    false,
+    "message-stream must not be display:flex (breaks virtual row range)",
+  );
+
+  const virtualRowBlock = css.match(/\.virtual-row\s*\{[^}]+\}/);
+  assert.ok(virtualRowBlock, "virtual-row rule");
+  assert.match(
+    virtualRowBlock![0]!,
+    /\bdisplay\s*:\s*flex\b/,
+    "virtual-row must be flex so bubble align-self works",
+  );
+
+  const flowRowBlock = css.match(/\.transcript-flow-row\s*\{[^}]+\}/);
+  assert.ok(flowRowBlock, "transcript-flow-row rule");
+  assert.match(
+    flowRowBlock![0]!,
+    /\bdisplay\s*:\s*flex\b/,
+    "flow rows must be flex so bubble align-self works",
+  );
+
+  const userBubbleBlock = css.match(/\.bubble-user\s*\{[^}]+\}/);
+  assert.ok(userBubbleBlock, "bubble-user rule");
+  assert.equal(
+    /\balign-self\s*:\s*flex-end\b/.test(userBubbleBlock![0]!) ||
+      /\bmargin-inline-start\s*:\s*auto\b/.test(userBubbleBlock![0]!),
+    true,
+    "bubble-user must right-align via align-self or margin-inline-start",
+  );
+
+  assert.match(
+    css,
+    /\.message-stream-flow[\s\S]*?\.transcript-flow-row:has/,
+    "flow mode must compact consecutive collapsed tools",
+  );
 }
 
 console.log("test-chat-transcript-virtual ok");

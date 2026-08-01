@@ -25,6 +25,16 @@ assert.equal(isReadonlyBashCommand("node -e '1'"), false);
 assert.equal(isReadonlyBashCommand("find . -delete"), false);
 assert.equal(isReadonlyBashCommand(""), false);
 
+// Newline / substitution / over-broad heads must not bypass the hard gate.
+assert.equal(isReadonlyBashCommand("ls\nrm -rf important"), false);
+assert.equal(isReadonlyBashCommand("ls\r\nrm -rf important"), false);
+assert.equal(isReadonlyBashCommand("echo $(rm -rf .)"), false);
+assert.equal(isReadonlyBashCommand("echo `rm -rf .`"), false);
+assert.equal(isReadonlyBashCommand("echo ${HOME}"), false);
+assert.equal(isReadonlyBashCommand("godot --headless -s write.gd"), false);
+assert.equal(isReadonlyBashCommand("dotnet build"), false);
+assert.equal(isReadonlyBashCommand("dotnet run"), false);
+
 const cwd = "D:\\proj";
 assert.equal(bashCommandEscapesCwd("ls src", cwd), false);
 assert.equal(bashCommandEscapesCwd("cat ../secret", cwd), true);

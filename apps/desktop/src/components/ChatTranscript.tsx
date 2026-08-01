@@ -30,6 +30,12 @@ import {
 const ESTIMATE_ROW_PX = 72;
 const ROW_GAP_PX = 16;
 const OVERSCAN = 8;
+/**
+ * Absolute virtual rows mis-measure while content height races (streaming
+ * text / thinking / tools), especially in a narrow pane — items overlap.
+ * Use document flow until idle with a long transcript.
+ */
+const VIRTUALIZE_MIN_ITEMS = 48;
 
 function prefersReducedMotion(): boolean {
   return (
@@ -389,13 +395,61 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     [props.items, props.showThinking],
   );
 
+  // Flow layout while streaming (or short lists): heights change every delta and
+  // absolute virtual rows overlap when measure lags. Virtualize only when idle.
+  const useVirtualList =
+    !streaming && displayItems.length >= VIRTUALIZE_MIN_ITEMS;
+
   const virtualizer = useVirtualizer({
-    count: displayItems.length,
+    count: useVirtualList ? displayItems.length : 0,
     getScrollElement: () => streamRef.current,
     estimateSize: () => ESTIMATE_ROW_PX,
     overscan: OVERSCAN,
     getItemKey: (index) => displayItems[index]?.id ?? index,
   });
+
+  const renderItem = (item: ChatItem) => {
+    if (item.kind === "user") {
+      return (
+        <UserBubble
+          item={item}
+          canAct={canAct}
+          editing={props.editingEntryId === (item.entryId ?? item.id)}
+          editDraft={props.editDraft}
+          onEditDraftChange={props.onEditDraftChange}
+          onStartEdit={props.onStartEdit}
+          onCancelEdit={props.onCancelEdit}
+          onConfirmEdit={props.onConfirmEdit}
+          onRetract={props.onRetract}
+        />
+      );
+    }
+    if (item.kind === "system") {
+      return <SystemBubble item={item} />;
+    }
+    if (item.kind === "assistant") {
+      return (
+        <AssistantBubble
+          item={item}
+          showThinking={props.showThinking}
+          canAct={canAct}
+          sessionMode={props.sessionMode}
+          onRegenerate={props.onRegenerate}
+          onClarifySelect={props.onClarifySelect}
+        />
+      );
+    }
+    return (
+      <ToolRow
+        item={item}
+        sessionMode={props.sessionMode}
+        planPath={props.planPath}
+        streaming={streaming}
+        onOpenToolInPanel={props.onOpenToolInPanel}
+        onBuildPlan={props.onBuildPlan}
+      />
+    );
+  };
 
   const syncJumpVisibility = () => {
     const el = streamRef.current;
@@ -417,7 +471,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
     const last = displayItems.length - 1;
-    if (last >= 0) {
+    if (useVirtualList && last >= 0) {
       virtualizer.scrollToIndex(last, {
         align: "end",
         behavior: resolved === "smooth" ? "smooth" : "auto",
@@ -610,11 +664,19 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     });
     ro.observe(content);
     return () => ro.disconnect();
-  }, []);
+    // Re-attach when empty ↔ flow ↔ virtual swaps the contentRef target.
+  }, [props.items.length === 0, useVirtualList]);
 
   useLayoutEffect(() => {
     scheduleFollow();
   }, [props.items, props.status, displayItems.length]);
+
+  useLayoutEffect(() => {
+    if (!useVirtualList) return;
+    // First paint after enabling virtual mode can miss the scrollport size.
+    virtualizer.measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- length/mode is the signal
+  }, [displayItems.length, useVirtualList]);
 
   useLayoutEffect(() => {
     if (props.forceFollowKey == null) return;
@@ -627,8 +689,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     scrollToBottom("smooth");
   };
 
-  const virtualItems = virtualizer.getVirtualItems();
-  const totalSize = virtualizer.getTotalSize();
+  const virtualItems = useVirtualList ? virtualizer.getVirtualItems() : [];
+  const totalSize = useVirtualList ? virtualizer.getTotalSize() : 0;
 
   return (
     <div className="chat-transcript">
@@ -678,7 +740,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                 </div>
               )}
           </div>
-        ) : (
+        ) : useVirtualList ? (
           <div
             className="message-stream-inner message-stream-virtual"
             ref={contentRef}
@@ -703,42 +765,18 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                     paddingBottom: isLast ? 0 : ROW_GAP_PX,
                   }}
                 >
-                  {item.kind === "user" ? (
-                    <UserBubble
-                      item={item}
-                      canAct={canAct}
-                      editing={props.editingEntryId === (item.entryId ?? item.id)}
-                      editDraft={props.editDraft}
-                      onEditDraftChange={props.onEditDraftChange}
-                      onStartEdit={props.onStartEdit}
-                      onCancelEdit={props.onCancelEdit}
-                      onConfirmEdit={props.onConfirmEdit}
-                      onRetract={props.onRetract}
-                    />
-                  ) : item.kind === "system" ? (
-                    <SystemBubble item={item} />
-                  ) : item.kind === "assistant" ? (
-                    <AssistantBubble
-                      item={item}
-                      showThinking={props.showThinking}
-                      canAct={canAct}
-                      sessionMode={props.sessionMode}
-                      onRegenerate={props.onRegenerate}
-                      onClarifySelect={props.onClarifySelect}
-                    />
-                  ) : (
-                    <ToolRow
-                      item={item}
-                      sessionMode={props.sessionMode}
-                      planPath={props.planPath}
-                      streaming={streaming}
-                      onOpenToolInPanel={props.onOpenToolInPanel}
-                      onBuildPlan={props.onBuildPlan}
-                    />
-                  )}
+                  {renderItem(item)}
                 </div>
               );
             })}
+          </div>
+        ) : (
+          <div className="message-stream-inner message-stream-flow" ref={contentRef}>
+            {displayItems.map((item) => (
+              <div key={item.id} className="transcript-flow-row">
+                {renderItem(item)}
+              </div>
+            ))}
           </div>
         )}
       </div>
