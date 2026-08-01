@@ -94,6 +94,10 @@ export function bridgeSessionEvents(
   deps: SessionEventBridgeDeps,
 ): () => void {
   return session.subscribe((event) => {
+    // Drop events after the host switched (or cleared) the active bundle.
+    // Otherwise abort/turn_end from a disposed session can re-inject bubbles
+    // into a brand-new empty chat (delete → 新对话 leak).
+    if (deps.getSession() !== session) return;
     switch (event.type) {
       case "agent_start":
         deps.setStatus("streaming");

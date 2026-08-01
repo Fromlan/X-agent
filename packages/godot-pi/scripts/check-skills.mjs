@@ -24,14 +24,7 @@ const CORE_SKILLS = [
 ];
 
 const GODOT_SKILLS = [
-  "godot-project-audit",
-  "godot-scene-edit",
-  "godot-rpc-playtest",
-  "godot-gdscript-patterns",
-  "godot-autoload-patterns",
-  "godot-state-machine",
-  "godot-ecs-component",
-  "godot-shader-patterns",
+  "godot-docs-4-7",
 ];
 
 const EXPECTED = new Set([...CORE_SKILLS, ...GODOT_SKILLS]);

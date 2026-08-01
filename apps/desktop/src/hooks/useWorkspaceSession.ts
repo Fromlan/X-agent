@@ -167,6 +167,8 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         typeof path === "string" && path.trim() ? path.trim() : undefined;
       setBusy(true);
       setError(null);
+      setItems(createEmptyState());
+      setQueuedSteering([]);
       try {
         const result = await window.xAgent.workspace.open(projectPath);
         if (!result.ok) {
@@ -197,7 +199,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setCwd,
       setError,
       setInput,
+      setItems,
       setPrefs,
+      setQueuedSteering,
       setSessionId,
       syncFromHost,
     ],
@@ -206,6 +210,10 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
   const newSession = useCallback(async () => {
     setBusy(true);
     setError(null);
+    // Clear immediately — do not wait for history_replace; stale bubbles from
+    // the previous session must not linger if host events race with abort.
+    setItems(createEmptyState());
+    setQueuedSteering([]);
     try {
       const result = await window.xAgent.workspace.newSession();
       if (!result.ok) {
@@ -228,6 +236,8 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setError,
     setFollowNonce,
     setInput,
+    setItems,
+    setQueuedSteering,
     setSessionId,
     syncFromHost,
   ]);
@@ -236,6 +246,8 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     async (path: string) => {
       setBusy(true);
       setError(null);
+      setItems(createEmptyState());
+      setQueuedSteering([]);
       try {
         const result = await window.xAgent.workspace.resume(path);
         if (!result.ok) {
@@ -264,7 +276,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setError,
       setFollowNonce,
       setInput,
+      setItems,
       setPrefs,
+      setQueuedSteering,
       setSessionId,
       syncFromHost,
     ],
@@ -275,10 +289,20 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setBusy(true);
       setError(null);
       try {
+        const before = await window.xAgent.workspace.getStatus();
+        const deletingActive = before.sessionPath === path;
         const result = await window.xAgent.workspace.deleteSession(path);
         if (!result.ok) {
           setError(result.error ?? "删除失败");
           return;
+        }
+        if (deletingActive) {
+          // Active delete: clear before abort races can re-inject bubbles.
+          // Fallback resume (if any) re-fills via history_replace.
+          setItems(createEmptyState());
+          setQueuedSteering([]);
+          setInput("");
+          clearComposerEditState();
         }
         await syncFromHost();
         await refreshSessions();
@@ -286,7 +310,16 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setBusy(false);
       }
     },
-    [refreshSessions, setBusy, setError, syncFromHost],
+    [
+      clearComposerEditState,
+      refreshSessions,
+      setBusy,
+      setError,
+      setInput,
+      setItems,
+      setQueuedSteering,
+      syncFromHost,
+    ],
   );
 
   const deleteProjectSessions = useCallback(
@@ -294,10 +327,21 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setBusy(true);
       setError(null);
       try {
+        const before = await window.xAgent.workspace.getStatus();
+        const activeInProject =
+          Boolean(before.cwd) &&
+          normalizeProjectKey(before.cwd ?? "") ===
+            normalizeProjectKey(projectCwd);
         const result = await window.xAgent.workspace.deleteProjectSessions(projectCwd);
         if (!result.ok) {
           setError(result.error ?? "删除项目对话失败");
           return;
+        }
+        if (activeInProject) {
+          setItems(createEmptyState());
+          setQueuedSteering([]);
+          setInput("");
+          clearComposerEditState();
         }
         await syncFromHost();
         await refreshSessions();
@@ -305,7 +349,16 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setBusy(false);
       }
     },
-    [refreshSessions, setBusy, setError, syncFromHost],
+    [
+      clearComposerEditState,
+      refreshSessions,
+      setBusy,
+      setError,
+      setInput,
+      setItems,
+      setQueuedSteering,
+      syncFromHost,
+    ],
   );
 
   const closeWorkspace = useCallback(async () => {
@@ -386,24 +439,22 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         await refreshSessions();
         if (cancelled) return;
 
-        let restored = false;
-        if (p.lastSessionPath) {
-          const result = await window.xAgent.workspace.resume(p.lastSessionPath);
+        // Always start on a fresh empty chat for the last project — do not
+        // resume lastSessionPath (sidebar still lists history for manual open).
+        if (p.lastProjectPath) {
+          setItems(createEmptyState());
+          setQueuedSteering([]);
+          const result = await window.xAgent.workspace.open(
+            p.lastProjectPath,
+            "new",
+          );
           if (cancelled) return;
           if (result.ok) {
             setCwd(result.cwd);
             setSessionId(result.sessionId);
-            restored = true;
+            setFollowNonce((n) => n + 1);
             if (result.warning) setError(result.warning);
-          }
-        }
-        if (!restored && p.lastProjectPath) {
-          const result = await window.xAgent.workspace.open(p.lastProjectPath);
-          if (cancelled) return;
-          if (result.ok) {
-            setCwd(result.cwd);
-            setSessionId(result.sessionId);
-            if (result.warning) setError(result.warning);
+            await refreshProjectReadiness(result.cwd);
           } else if (result.error && result.error !== "已取消") {
             setError(result.error);
             await syncFromHost();
@@ -422,15 +473,19 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     };
   }, [
     refreshModels,
+    refreshProjectReadiness,
     refreshSessions,
     setAuth,
     setBash,
     setCwd,
     setError,
+    setFollowNonce,
     setGit,
+    setItems,
     setPiCli,
     setPrefs,
     setPrefsRecovery,
+    setQueuedSteering,
     setSessionId,
     syncFromHost,
   ]);

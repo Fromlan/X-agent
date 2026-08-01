@@ -50,7 +50,6 @@ import {
 } from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
-import { createGodotDocsTools } from "./godot-docs-tools";
 import {
   computeAskModeTools,
   computePlanModeTools,
@@ -708,8 +707,13 @@ export class SessionHost {
       // Pi auto-loads ~/.agents/skills (Cursor/Claude skills). X-agent only
       // uses ~/.pi/agent/skills + project .pi/skills (+ installed packages).
       // Godot-tier skills (godot-*) are indexed only when cwd has project.godot.
+      // User-disabled skills (prefs.disabledSkills) are dropped from the index.
       skillsOverride: (base) => ({
-        skills: applyXAgentSkillsFilter(base.skills, cwd),
+        skills: applyXAgentSkillsFilter(
+          base.skills,
+          cwd,
+          loadPrefs().disabledSkills,
+        ),
         diagnostics: base.diagnostics,
       }),
       // Plan/Goal instructions live in system append (not per user message).
@@ -784,7 +788,6 @@ export class SessionHost {
       tools: [...SESSION_TOOL_REGISTRY],
       customTools: [
         ...(this.godotRpc ? createGodotTools(this.godotRpc) : []),
-        ...createGodotDocsTools(),
         ...createWritePlanTools(
           (path) => {
             this.sessionMode.onPlanWritten(path);
@@ -874,6 +877,7 @@ export class SessionHost {
       thinkingLevel: info.thinkingLevel,
       sessionPath,
     });
+    this.lastHistoryFingerprint = this.historyFingerprint(history);
     this.emit({ type: "history_replace", items: history });
     if (modelFallbackMessage) {
       this.emitReplaceableNotice("model", modelFallbackMessage, "warn");
@@ -966,8 +970,11 @@ export class SessionHost {
       const cwd = wasActive ? this.bundle!.cwd : null;
 
       if (wasActive) {
-        await this.disposeBundle(this.bundle);
+        // Null the bundle before dispose so bridgeSessionEvents ignores abort
+        // traffic from the doomed session (getSession() !== session).
+        const doomed = this.bundle;
         this.bundle = null;
+        await this.disposeBundle(doomed);
         this.clearResourceLoader();
       }
 
@@ -1035,8 +1042,9 @@ export class SessionHost {
           : normalizeProjectKey(activeCwd ?? "") === key);
 
       if (activeInProject) {
-        await this.disposeBundle(this.bundle);
+        const doomed = this.bundle;
         this.bundle = null;
+        await this.disposeBundle(doomed);
         this.clearResourceLoader();
       }
 
@@ -1070,8 +1078,9 @@ export class SessionHost {
   async closeWorkspace(): Promise<{ ok: boolean; error?: string }> {
     return this.runReplaceExclusive(async () => {
       const cwd = this.bundle?.cwd ?? null;
-      await this.disposeBundle(this.bundle);
+      const doomed = this.bundle;
       this.bundle = null;
+      await this.disposeBundle(doomed);
       this.clearResourceLoader();
       this.lastTurnUsage = undefined;
       this.compactionStatsBaseline = null;
@@ -1088,6 +1097,7 @@ export class SessionHost {
       patch.lastProjectPath = null;
     }
     patchPrefs(patch);
+    this.lastHistoryFingerprint = this.historyFingerprint([]);
     this.emit({ type: "history_replace", items: [] });
     this.emit({
       type: "session_info",
@@ -1385,7 +1395,8 @@ export class SessionHost {
 
   /**
    * Skills available for the active session cwd after X-agent filters
-   * (home ~/.agents excluded + godot-* only when project.godot exists).
+   * (home ~/.agents excluded + godot-* only when project.godot exists +
+   * prefs.disabledSkills).
    */
   listSessionSkills(): SessionSkillInfo[] {
     const cwd = this.bundle?.cwd;
@@ -1398,6 +1409,7 @@ export class SessionHost {
         filePath: join(p.path, "SKILL.md"),
       })),
       cwd,
+      loadPrefs().disabledSkills,
     );
     const byName = new Map<string, SessionSkillInfo>();
     for (const s of filtered) {
@@ -1483,8 +1495,9 @@ export class SessionHost {
 
   async dispose(): Promise<void> {
     return this.runReplaceExclusive(async () => {
-      await this.disposeBundle(this.bundle);
+      const doomed = this.bundle;
       this.bundle = null;
+      await this.disposeBundle(doomed);
       this.clearResourceLoader();
       this.lastTurnUsage = undefined;
       this.compactionStatsBaseline = null;

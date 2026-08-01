@@ -1,20 +1,17 @@
 import { CheckSquare, Square } from "lucide-react";
 import {
   AVAILABLE_TOOLS,
-  GODOT_DOCS_TOOLS,
   GODOT_TOOLS,
   type ClientPrefs,
 } from "@shared/ipc";
 import { useConfirm } from "../../lib/app-confirm";
-
-type GodotSettingsSection = "editor" | "docs";
 
 type Props = {
   prefs: ClientPrefs;
   hasActiveSession: boolean;
   onToggleTool: (tool: string) => void;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
-  onOpenGodotSection: (section: GodotSettingsSection) => void;
+  onOpenGodotSettings: () => void;
 };
 
 export function ToolsSettingsPage({
@@ -22,16 +19,13 @@ export function ToolsSettingsPage({
   hasActiveSession,
   onToggleTool,
   onPrefsChanged,
-  onOpenGodotSection,
+  onOpenGodotSettings,
 }: Props) {
   const confirm = useConfirm();
   const allBuiltinToolsEnabled = AVAILABLE_TOOLS.every((tool) =>
     prefs.tools.includes(tool),
   );
   const allGodotEditorToolsEnabled = GODOT_TOOLS.every((tool) =>
-    prefs.tools.includes(tool),
-  );
-  const allGodotDocsToolsEnabled = GODOT_DOCS_TOOLS.every((tool) =>
     prefs.tools.includes(tool),
   );
 
@@ -128,7 +122,7 @@ export function ToolsSettingsPage({
             <button
               type="button"
               className="btn btn-ghost btn-sm settings-link-btn"
-              onClick={() => onOpenGodotSection("editor")}
+              onClick={onOpenGodotSettings}
             >
               连接与 RPC 设置
             </button>
@@ -137,55 +131,6 @@ export function ToolsSettingsPage({
         <p className="modal-hint">需 RPC 已连接；默认关</p>
         <div className="tool-grid">
           {GODOT_TOOLS.map((tool) => {
-            const checked = prefs.tools.includes(tool);
-            return (
-              <label key={tool} className="tool-check">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => onToggleTool(tool)}
-                />
-                <span>{tool}</span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="settings-block">
-        <div className="settings-block-head">
-          <h4 className="settings-block-title">Godot 文档</h4>
-          <div className="settings-toolbar">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              title={allGodotDocsToolsEnabled ? "全部关闭" : "全部开启"}
-              aria-label={allGodotDocsToolsEnabled ? "全部关闭" : "全部开启"}
-              onClick={() => {
-                void setToolGroupEnabled(
-                  GODOT_DOCS_TOOLS,
-                  !allGodotDocsToolsEnabled,
-                );
-              }}
-            >
-              {allGodotDocsToolsEnabled ? (
-                <CheckSquare size={14} />
-              ) : (
-                <Square size={14} />
-              )}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm settings-link-btn"
-              onClick={() => onOpenGodotSection("docs")}
-            >
-              文档缓存设置
-            </button>
-          </div>
-        </div>
-        <p className="modal-hint">需先导入文档；默认关</p>
-        <div className="tool-grid">
-          {GODOT_DOCS_TOOLS.map((tool) => {
             const checked = prefs.tools.includes(tool);
             return (
               <label key={tool} className="tool-check">

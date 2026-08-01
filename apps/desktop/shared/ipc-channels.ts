@@ -69,12 +69,6 @@ export const IPC_CHANNELS = {
   pickGodotScene: "pickGodotScene",
 
   // Godot official docs cache (see electron/ipc/register-godot-ipc.ts)
-  godotDocsGetStatus: "godotDocsGetStatus",
-  godotDocsListRemoteBranches: "godotDocsListRemoteBranches",
-  godotDocsSetBranch: "godotDocsSetBranch",
-  godotDocsOpenDownloadUrl: "godotDocsOpenDownloadUrl",
-  godotDocsImportZip: "godotDocsImportZip",
-  godotDocsRemoveLocal: "godotDocsRemoveLocal",
 
   // plugins (prompt / skill / extension / theme) (see electron/main.ts)
   listPlugins: "listPlugins",

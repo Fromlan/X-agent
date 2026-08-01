@@ -6,7 +6,7 @@
 
 X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.3.1`）。
 
-**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器 + Godot 文档）、Godot RPC、官方文档离线检索、应用内 Pi 登录引导与打包版自动更新。
+**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
 
 运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
@@ -48,7 +48,7 @@ npm run release:dist           # 发版前本地 typecheck + test + 打 Windows 
 
 `npm test`（在 `apps/desktop`）串联：
 
-`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-event-bridge-stale`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
 冒烟（需本机认证）：
 
@@ -73,7 +73,7 @@ Electron 三进程边界：
 | Sidebar | 按项目分组会话；重命名 / 删除；「从侧栏移除」写 `hiddenProjectKeys` |
 | Chat | 流式、steer、中止；撤回 / 编辑重发 / 重新生成；`@路径` 展开 |
 | RightPanel | 上下文（占用拆解 + 手动压缩）、工具、文件树、Godot 桥状态 |
-| Settings | 通用 / 供应商 / 用量 / 工具 / 插件 / Godot（编辑器连接 · 官方文档） |
+| Settings | 通用 / 供应商 / 用量 / 工具 / 插件 / Godot（编辑器连接） |
 
 ### Agent 与事件
 
@@ -110,12 +110,11 @@ Electron 三进程边界：
 | 协议 | `apps/desktop/shared/godot-rpc.ts` |
 | 桥接 | `electron/agent/godot-rpc-bridge.ts`（多客户端 id / 活动选路） |
 | 编辑器工具 | `electron/agent/godot-tools.ts`（`GODOT_TOOLS`，默认关） |
-| 文档工具 | `electron/agent/godot-docs-tools.ts`（`GODOT_DOCS_TOOLS`，默认关） |
-| 文档缓存 | `godot-docs-cache.ts` / `godot-docs-search.ts` → `~/.pi/agent/x-agent/godot-docs/` |
+| 惯例技能 | `packages/godot-pi/skills/godot-docs-4-7`（仅 Godot 项目索引） |
 | Addon 安装 | `electron/agent/godot-addon-install.ts` |
 | Addon | `packages/godot-editor-rpc` |
 
-要点：默认端口 `8765`（回退 `8765–8774`），endpoint 写入 `x-agent-godot-rpc.json`；`run_current_scene` / `play_main_scene` 短时收集报错；`import_resources` 扫描或按路径 reimport。设置入口：**设置 → Godot → 编辑器连接 / 官方文档**。详见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
+要点：默认端口 `8765`（回退 `8765–8774`），endpoint 写入 `x-agent-godot-rpc.json`；`run_current_scene` / `play_main_scene` 短时收集报错；`import_resources` 扫描或按路径 reimport。设置入口：**设置 → Godot → 编辑器连接**。详见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
 
 ### 用量与上下文面板
 
@@ -143,7 +142,6 @@ Electron 三进程边界：
 | `~/.pi/agent/x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离） |
 | `~/.pi/agent/x-agent/plans/` | Plan Mode 默认写出的 Markdown 计划（可「保存到项目」迁至 `<cwd>/.pi/plans/`） |
 | `~/.pi/agent/x-agent/goals/` | Goal Mode 跨恢复日记（按 session 路径哈希） |
-| `~/.pi/agent/x-agent/godot-docs/` | Godot 文档缓存 |
 | `auth.json` / `models.json` | Pi 认证与模型（密钥明文，与 Pi CLI 共用） |
 
 会话列表只读 X-agent 会话目录；恢复须拒绝目录外路径。

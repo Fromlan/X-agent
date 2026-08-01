@@ -4,7 +4,6 @@ import type {
   BashCheckResult,
   ClientPrefs,
   GitCheckResult,
-  GodotDocsStatusDto,
   GodotRpcStatusDto,
   PiCliStatus,
 } from "@shared/ipc";
@@ -27,7 +26,6 @@ export function useProjectReadiness(options: {
   const { cwd, prefs, bash, git, auth, piCli, modelCount } = options;
   const [isGodotProject, setIsGodotProject] = useState(false);
   const [rpcStatus, setRpcStatus] = useState<GodotRpcStatusDto | null>(null);
-  const [docsStatus, setDocsStatus] = useState<GodotDocsStatusDto | null>(null);
   const [addonInstalled, setAddonInstalled] = useState<boolean | null>(null);
   const [readyChecklistHidden, setReadyChecklistHidden] = useState(false);
 
@@ -37,7 +35,6 @@ export function useProjectReadiness(options: {
         setIsGodotProject(false);
         setAddonInstalled(null);
         setRpcStatus(null);
-        setDocsStatus(null);
         return;
       }
       try {
@@ -52,16 +49,13 @@ export function useProjectReadiness(options: {
         if (!godot) {
           setAddonInstalled(null);
           setRpcStatus(null);
-          setDocsStatus(null);
           return;
         }
-        const [rpc, docs, addonDir] = await Promise.all([
+        const [rpc, addonDir] = await Promise.all([
           window.xAgent.godotRpcStatus(),
-          window.xAgent.godotDocsGetStatus(),
           window.xAgent.listProjectDir("addons"),
         ]);
         setRpcStatus(rpc);
-        setDocsStatus(docs);
         const hasAddon = Boolean(
           addonDir.ok &&
             addonDir.entries?.some(
@@ -110,7 +104,6 @@ export function useProjectReadiness(options: {
         prefs,
         rpc: rpcStatus,
         addonInstalled,
-        docs: docsStatus,
       }),
     [
       piCli,
@@ -122,7 +115,6 @@ export function useProjectReadiness(options: {
       prefs,
       rpcStatus,
       addonInstalled,
-      docsStatus,
     ],
   );
 
@@ -143,10 +135,7 @@ export function useProjectReadiness(options: {
   const projectReadyPending = readyItems.some(
     (i) =>
       !i.done &&
-      (i.id === "rpcAddon" ||
-        i.id === "rpcBridge" ||
-        i.id === "godotTools" ||
-        i.id === "docs"),
+      (i.id === "rpcAddon" || i.id === "rpcBridge" || i.id === "godotTools"),
   );
   const showReadyChecklist =
     !readyChecklistHidden &&
@@ -166,8 +155,6 @@ export function useProjectReadiness(options: {
   return {
     isGodotProject,
     rpcStatus,
-    docsStatus,
-    setDocsStatus,
     setRpcStatus,
     setAddonInstalled,
     addonInstalled,

@@ -92,7 +92,6 @@ Under `~/.pi/agent/`:
 | `x-agent-godot-rpc.json` | Godot RPC endpoint |
 | `x-agent-packages.json` | Installed Packages record |
 | `x-agent-usage.json` | Usage stats |
-| `x-agent/godot-docs/` | Godot docs cache |
 | `auth.json` / `models.json` | Shared Pi auth & models |
 
 ## Related packages

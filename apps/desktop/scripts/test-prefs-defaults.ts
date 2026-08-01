@@ -1,11 +1,17 @@
 /**
  * 验证 DEFAULT_PREFS 不再持有虚构模型;
  * 验证 prefs 主题迁移（legacy `theme` / `cindy` → themeId + colorMode）。
+ * 验证 disabledSkills 归一化。
  */
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  loadPrefs,
+  patchPrefs,
+  setAgentDirOverrideForTests,
+} from "../electron/agent/prefs";
 import {
   DEFAULT_PREFS,
   normalizeThemePrefs,
@@ -21,6 +27,7 @@ assert.equal(DEFAULT_PREFS.colorMode, "dark");
 assert.equal(DEFAULT_PREFS.thinkingLevel, "high");
 assert.deepEqual(DEFAULT_PREFS.dismissedReadyChecklistKeys, []);
 assert.deepEqual(DEFAULT_PREFS.dismissedGodotToolsNudgeKeys, []);
+assert.deepEqual(DEFAULT_PREFS.disabledSkills, []);
 assert.equal(DEFAULT_PREFS.autoCompactPercent, 0);
 assert.equal(DEFAULT_PREFS.goalMaxTurns, 20);
 assert.equal(DEFAULT_PREFS.goalMaxTokens, 500_000);
@@ -58,7 +65,6 @@ const legacy = {
   thinkingLevel: "high",
   tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
   godotEditorPath: null,
-  godotDocsBranch: "stable",
   rightPanelOpen: false,
   sidebarWidth: 260,
   rightPanelWidth: 360,
@@ -78,6 +84,31 @@ try {
   assert.ok(existsSync(p), "prefs 文件存在");
 } finally {
   rmSync(dir, { recursive: true, force: true });
+}
+
+// 5. disabledSkills 归一化（空白 / 非字符串 → 干净 string[]）
+const skillPrefsDir = mkdtempSync(join(tmpdir(), "x-agent-skill-prefs-"));
+try {
+  setAgentDirOverrideForTests(skillPrefsDir);
+  writeFileSync(
+    join(skillPrefsDir, "x-agent.json"),
+    JSON.stringify({
+      ...DEFAULT_PREFS,
+      disabledSkills: ["  x-grill  ", "", 12, "x-tdd"],
+    }),
+    "utf8",
+  );
+  const loaded = loadPrefs();
+  assert.deepEqual(
+    loaded.disabledSkills,
+    ["x-grill", "x-tdd"],
+    "disabledSkills trims and drops invalid entries",
+  );
+  const patched = patchPrefs({ disabledSkills: ["  Foo ", ""] });
+  assert.deepEqual(patched.disabledSkills, ["Foo"], "patchPrefs normalizes");
+} finally {
+  setAgentDirOverrideForTests(null);
+  rmSync(skillPrefsDir, { recursive: true, force: true });
 }
 
 console.log("DEFAULT_PREFS migration: ok");

@@ -21,7 +21,7 @@ type Props = {
   /** Persist “don’t remind” for this project’s Godot readiness steps. */
   onDontRemind?: () => void;
   onDismissNotice?: () => void;
-  onOpenSettings: (tab: SettingsTabTarget, godotSection?: "editor" | "docs") => void;
+  onOpenSettings: (tab: SettingsTabTarget) => void;
   onInstallPiCli?: () => void;
   onOpenPiLogin?: () => void;
   onApplyBash?: () => void;
@@ -109,8 +109,7 @@ function actionForItem(
       if (item.settingsTab) {
         return {
           label: "Godot 设置",
-          onClick: () =>
-            props.onOpenSettings(item.settingsTab!, item.godotSection),
+          onClick: () => props.onOpenSettings(item.settingsTab!),
         };
       }
       break;
@@ -127,8 +126,7 @@ function actionForItem(
   if (item.settingsTab) {
     return {
       label: item.id === "auth" ? "配置供应商" : "前往设置",
-      onClick: () =>
-        props.onOpenSettings(item.settingsTab!, item.godotSection),
+      onClick: () => props.onOpenSettings(item.settingsTab!),
     };
   }
   return null;
