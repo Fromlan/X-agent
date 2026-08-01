@@ -22,6 +22,8 @@ assert.equal(DEFAULT_PREFS.thinkingLevel, "high");
 assert.deepEqual(DEFAULT_PREFS.dismissedReadyChecklistKeys, []);
 assert.deepEqual(DEFAULT_PREFS.dismissedGodotToolsNudgeKeys, []);
 assert.equal(DEFAULT_PREFS.autoCompactPercent, 0);
+assert.equal(DEFAULT_PREFS.goalMaxTurns, 20);
+assert.equal(DEFAULT_PREFS.goalMaxTokens, 500_000);
 assert.ok(!("updateSource" in DEFAULT_PREFS));
 assert.deepEqual(DEFAULT_PREFS.tools, [
   "read", "bash", "edit", "write", "grep", "find", "ls",

@@ -24,7 +24,7 @@ import type {
   ThemeId,
   ThinkingLevel,
 } from "@shared/ipc";
-import { GODOT_TOOLS } from "@shared/ipc";
+import { GODOT_TOOLS, isRestorableGoalStatus } from "@shared/ipc";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
   NODE_JS_DOWNLOAD_URL,
@@ -313,14 +313,29 @@ export default function App() {
         setGoal(g);
         setError(
           g
-            ? `目标 (${g.status}): ${g.condition}`
+            ? `目标 (${g.status}): ${g.condition} · ${g.turns}/${g.maxTurns} 轮 · ${g.tokensUsed}/${g.maxTokens} tok`
             : "当前无活跃目标。切换到「目标」模式后输入完成条件并发送。",
         );
       }
       return;
     }
+    if (/^\/goal\s+pause\b/i.test(text)) {
+      const result = await window.xAgent.plan.pauseGoal();
+      if (!result.ok) setError(result.error ?? "暂停目标失败");
+      else if (result.goal) setGoal(result.goal);
+      return;
+    }
+    if (/^\/goal\s+resume\b/i.test(text) || /^\/goal\s+continue\b/i.test(text)) {
+      const result = await window.xAgent.plan.resumeGoal();
+      if (!result.ok) setError(result.error ?? "继续目标失败");
+      else {
+        if (result.goal) setGoal(result.goal);
+        setSessionMode("goal");
+      }
+      return;
+    }
     const goalSet = text.match(/^\/goal\s+(.+)$/is);
-    if (goalSet?.[1] && !/^clear\b/i.test(goalSet[1].trim())) {
+    if (goalSet?.[1] && !/^(clear|pause|resume|continue)\b/i.test(goalSet[1].trim())) {
       const result = await window.xAgent.plan.setGoal(goalSet[1].trim());
       if (!result.ok) setError(result.error ?? "设置目标失败");
       else {
@@ -331,7 +346,7 @@ export default function App() {
     }
 
     // Goal 模式且尚未设置条件：整条消息即完成条件。
-    if (sessionMode === "goal" && goal?.status !== "pursuing") {
+    if (sessionMode === "goal" && !isRestorableGoalStatus(goal?.status)) {
       const result = await window.xAgent.plan.setGoal(text);
       if (!result.ok) setError(result.error ?? "设置目标失败");
       else {
@@ -390,6 +405,30 @@ export default function App() {
       setGoal(null);
       setSessionMode("agent");
     }
+  };
+
+  const onPauseGoal = async () => {
+    const result = await window.xAgent.plan.pauseGoal();
+    if (!result.ok) setError(result.error ?? "暂停目标失败");
+    else if (result.goal) setGoal(result.goal);
+  };
+
+  const onResumeGoal = async () => {
+    const result = await window.xAgent.plan.resumeGoal();
+    if (!result.ok) setError(result.error ?? "继续目标失败");
+    else {
+      if (result.goal) setGoal(result.goal);
+      setSessionMode("goal");
+    }
+  };
+
+  const MODE_CYCLE: AgentSessionMode[] = ["agent", "ask", "plan", "goal"];
+
+  const onCycleSessionMode = () => {
+    if (status === "streaming" || status === "retrying" || !cwd) return;
+    const idx = MODE_CYCLE.indexOf(sessionMode);
+    const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length]!;
+    void onSessionModeChange(next);
   };
 
   const abort = async () => {
@@ -551,8 +590,7 @@ export default function App() {
     if (sessionId) {
       const ok = await confirm({
         title: "更改工具白名单",
-        message:
-          "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
+        message: "会重建工具定义并清空本会话 API 缓存。确定继续？",
         confirmLabel: "继续",
         tone: "warn",
       });
@@ -967,6 +1005,27 @@ export default function App() {
           }}
           onClearGoal={() => {
             void onClearGoal();
+          }}
+          onPauseGoal={() => {
+            void onPauseGoal();
+          }}
+          onResumeGoal={() => {
+            void onResumeGoal();
+          }}
+          onCycleSessionMode={onCycleSessionMode}
+          onClarifySelect={(reply) => {
+            void (async () => {
+              if (!cwd || !reply.trim()) return;
+              setError(null);
+              setFollowNonce((n) => n + 1);
+              const expanded = await expandAtPathsInPrompt(reply.trim());
+              const result = await window.xAgent.turn.prompt(expanded);
+              if (!result.ok) {
+                setError(result.error ?? "发送失败");
+                setInput(reply);
+              }
+              await refreshSessions();
+            })();
           }}
         />
         {prefs?.rightPanelOpen && (

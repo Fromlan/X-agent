@@ -50,13 +50,14 @@ assert.ok(slugifyPlanTitle("添加用户认证").length > 0);
 const ts = formatPlanTimestamp(new Date("2026-07-31T14:05:06"));
 assert.match(ts, /^20260731-140506$/);
 
-assert.deepEqual([...READONLY_CORE_TOOLS], ["read", "grep", "find", "ls"]);
+assert.deepEqual([...READONLY_CORE_TOOLS], ["read", "grep", "find", "ls", "bash"]);
 
 assert.deepEqual(computeAskModeTools(["read", "bash", "write", "edit"]), [
   "read",
   "grep",
   "find",
   "ls",
+  "bash",
 ]);
 assert.ok(!computeAskModeTools(["read", "bash"]).includes("write_plan"));
 assert.deepEqual(
@@ -66,7 +67,7 @@ assert.deepEqual(
     "godot_run_scene",
     "godot_editor_info",
   ]),
-  ["read", "grep", "find", "ls", "godot_editor_info", "godot_docs_search"],
+  ["read", "grep", "find", "ls", "bash", "godot_editor_info", "godot_docs_search"],
 );
 
 assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
@@ -74,6 +75,7 @@ assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
   "grep",
   "find",
   "ls",
+  "bash",
   "write_plan",
 ]);
 assert.deepEqual(
@@ -88,6 +90,7 @@ assert.deepEqual(
     "grep",
     "find",
     "ls",
+    "bash",
     "write_plan",
     "godot_editor_info",
     "godot_docs_search",
@@ -102,7 +105,7 @@ assert.equal(stripModeBlocks(prompt).trim(), "");
 
 const askAppend = buildAskModeSystemAppend();
 assert.ok(askAppend.includes("# X-agent Ask mode"));
-assert.ok(askAppend.includes("Do not use bash"));
+assert.ok(askAppend.includes("read-only bash"));
 assert.ok(!askAppend.includes("call write_plan once"));
 
 const append = buildPlanModeSystemAppend();
@@ -111,6 +114,8 @@ assert.ok(append.includes("write_plan"));
 assert.ok(append.includes("执行计划"));
 assert.ok(append.includes("Never call write_plan with placeholders"));
 assert.ok(append.includes("research"));
+assert.ok(append.includes("<clarify>"));
+assert.ok(append.includes("- [ ]"));
 
 assert.ok(stubPlanRejection("placeholder", "# placeholder\n\nplaceholder\n"));
 assert.ok(stubPlanRejection("草稿", "## Goal\nx\n## Steps\ny\n"));

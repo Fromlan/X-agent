@@ -430,18 +430,19 @@ type PlanModeState = {
 
 ### Goal Mode（与 Agent / Plan 并列）
 
-- UI：模式 pill「目标」；进行中显示条件条（轮次 / reason / **清除 · Agent**）
-- 进入目标模式后若无条件：输入框**不**预填 `/goal`，用户直接写完成条件后发送（亦可 `/goal …` / `/goal clear`）
-- 主进程：`setGoal` / `clearGoal` / `getGoal`；`agent_end` 后 `completeSimple` 评估；未满足则自动续轮
+- UI：模式 pill「目标」；进行中显示条件条（轮次预算 / reason / **暂停·继续** / **清除 · Agent**）
+- 进入目标模式后若无条件：输入框**不**预填 `/goal`，用户直接写完成条件后发送（亦可 `/goal …` / `/goal pause|resume|clear`）
+- 主进程：`setGoal` / `pauseGoal` / `resumeGoal` / `clearGoal` / `getGoal`；`agent_end` 后 `completeSimple` 评估；未满足则自动续轮
+- 护栏：`goalMaxTurns` 预算 → `budget_limited`；评估失败 → 自动 `paused`；跨会话 journal（`~/.pi/agent/x-agent/goals/`）
 - 互斥：进 调研 / Plan / Agent 会清除目标；进目标会退出 Ask/Plan（恢复工具）；达成后回到 Agent
 - 指令注入：system append（含 GOAL CONDITION）；续轮为普通用户消息
-- 未做：pause/budget/跨会话 journal、bash 只读分类器、澄清多选 UI / todos 勾选 / Shift+Tab
+- Ask/Plan：bash 只读分类器；Plan 澄清多选 UI（`<clarify>`）；计划 todos 勾选；Shift+Tab 切模式
 
 ### IPC
 
-`setSessionMode` · `getSessionMode` · `buildPlan` · `getPlanContent` · `savePlanContent` · `savePlanToWorkspace` · `setGoal` · `clearGoal` · `getGoal`  
+`setSessionMode` · `getSessionMode` · `buildPlan` · `getPlanContent` · `savePlanContent` · `savePlanToWorkspace` · `setGoal` · `pauseGoal` · `resumeGoal` · `clearGoal` · `getGoal`  
 事件：`session_mode` · `goal_update`
 
 ### 测试
 
-`apps/desktop/scripts/test-plan-mode-tools.ts` · `test-plan-mode-guard.ts` · `test-goal-evaluator.ts`
+`apps/desktop/scripts/test-plan-mode-tools.ts` · `test-plan-mode-guard.ts` · `test-goal-evaluator.ts` · `test-session-mode-controller.ts` · `test-bash-readonly.ts` · `test-plan-todos.ts` · `test-plan-clarify.ts` · `test-session-mode-smoke.ts`

@@ -22,6 +22,8 @@ type ClientState = {
   projectPath?: string;
   godotVersion?: string;
   connectedAt: string;
+  /** True after editor_ready with matching endpoint token. */
+  authenticated: boolean;
 };
 
 export type GodotRpcStartOptions = {
@@ -63,6 +65,8 @@ export class GodotRpcBridge {
   private socketToId = new WeakMap<Socket, string>();
   private activeClientId: string | null = null;
   private port = GODOT_RPC_DEFAULT_PORT;
+  /** Shared secret written to endpoint file; required on editor_ready. */
+  private authToken = "";
   private lastEvent: GodotRpcEvent | undefined;
   private lastError: string | undefined;
   private lastWarning: string | undefined;
@@ -72,6 +76,11 @@ export class GodotRpcBridge {
     { resolve: (v: GodotRpcResponse) => void; timer: NodeJS.Timeout }
   >();
   private buffers = new WeakMap<Socket, string>();
+
+  /** Test/helper: current auth token (empty before start). */
+  getAuthToken(): string {
+    return this.authToken;
+  }
 
   onStatus(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -125,7 +134,12 @@ export class GodotRpcBridge {
       writeFileSync(
         godotRpcEndpointPath(),
         JSON.stringify(
-          { host: "127.0.0.1", port: this.port, updatedAt: new Date().toISOString() },
+          {
+            host: "127.0.0.1",
+            port: this.port,
+            token: this.authToken,
+            updatedAt: new Date().toISOString(),
+          },
           null,
           2,
         ),
@@ -189,10 +203,10 @@ export class GodotRpcBridge {
         id,
         socket,
         connectedAt: new Date().toISOString(),
+        authenticated: false,
       };
       this.clients.set(id, state);
       this.socketToId.set(socket, id);
-      if (!this.activeClientId) this.activeClientId = id;
       this.buffers.set(socket, "");
       this.emitStatus();
       socket.setEncoding("utf8");
@@ -236,6 +250,7 @@ export class GodotRpcBridge {
     const attempts = Math.max(1, fallbackPorts + 1);
     this.lastError = undefined;
     this.lastWarning = undefined;
+    this.authToken = randomUUID().replace(/-/g, "");
 
     let lastErr: unknown;
     for (let i = 0; i < attempts; i++) {
@@ -276,6 +291,7 @@ export class GodotRpcBridge {
     for (const client of this.clients.values()) client.socket.destroy();
     this.clients.clear();
     this.activeClientId = null;
+    this.authToken = "";
     this.lastError = undefined;
     this.lastWarning = undefined;
     await new Promise<void>((resolve) => {
@@ -321,10 +337,20 @@ export class GodotRpcBridge {
         const event = { ...(msg as GodotRpcEvent), ...(clientId ? { clientId } : {}) };
         if (event.type === "editor_ready" && clientId) {
           const state = this.clients.get(clientId);
-          if (state) {
-            state.projectPath = event.projectPath;
-            state.godotVersion = event.godotVersion;
+          if (!state) return;
+          const token =
+            typeof (msg as { token?: unknown }).token === "string"
+              ? (msg as { token: string }).token
+              : "";
+          if (!this.authToken || token !== this.authToken) {
+            this.lastWarning = "Godot RPC 握手失败：token 不匹配（请更新编辑器插件）";
+            socket.destroy();
+            return;
           }
+          state.authenticated = true;
+          state.projectPath = event.projectPath;
+          state.godotVersion = event.godotVersion;
+          if (!this.activeClientId) this.activeClientId = clientId;
         }
         this.lastEvent = event;
         this.emitStatus();
@@ -341,10 +367,10 @@ export class GodotRpcBridge {
     const preferred = options?.clientId ?? this.activeClientId;
     if (preferred) {
       const hit = this.clients.get(preferred);
-      if (hit && !hit.socket.destroyed) return hit;
+      if (hit && !hit.socket.destroyed && hit.authenticated) return hit;
     }
     for (const client of this.clients.values()) {
-      if (!client.socket.destroyed) return client;
+      if (!client.socket.destroyed && client.authenticated) return client;
     }
     return null;
   }

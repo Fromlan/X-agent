@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   activateProviderProfile,
+  dedupeModelInfosForUi,
   deepseekProxyModelExtras,
   deleteProviderProfile,
   getProviderProfile,
@@ -12,6 +13,7 @@ import {
   listProviderPresets,
   listProviderProfiles,
   looksLikeDeepSeekModelId,
+  pruneStaleProviderKeys,
   repairDeepSeekModelsJson,
   type ProviderPaths,
   upsertProviderProfile,
@@ -590,6 +592,78 @@ try {
   rmSync(legacyRoot, { recursive: true, force: true });
 
   rmSync(proxyRoot, { recursive: true, force: true });
+
+  // —— 启用时清理大小写冲突的旧 provider 键；编辑后模型列表全量替换 ——
+  {
+    const stale = { DeepSeek: { models: [] }, deepseek: { models: [] }, other: {} };
+    const removed = pruneStaleProviderKeys(stale, "deepseek");
+    assert(removed.includes("DeepSeek"), "prune case-variant");
+    assert(!("DeepSeek" in stale), "DeepSeek removed");
+    assert("deepseek" in stale && "other" in stale, "keep exact + unrelated");
+
+    const deduped = dedupeModelInfosForUi(
+      [
+        { provider: "DeepSeek", id: "deepseek-v4-flash", name: "a" },
+        { provider: "deepseek", id: "deepseek-v4-flash", name: "b" },
+        { provider: "deepseek", id: "deepseek-v4-pro", name: "c" },
+      ],
+      "deepseek",
+    );
+    assert(deduped.length === 2, "dedupe to 2");
+    assert(
+      deduped.some((m) => m.provider === "deepseek" && m.id === "deepseek-v4-flash"),
+      "prefer preferred provider casing",
+    );
+
+    writeFileSync(
+      paths.modelsPath,
+      JSON.stringify({
+        providers: {
+          DeepSeek: {
+            baseUrl: "https://api.deepseek.com",
+            api: "openai-completions",
+            models: [{ id: "deepseek-chat" }],
+          },
+        },
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      paths.authPath,
+      JSON.stringify({ DeepSeek: { type: "api_key", key: "old" } }),
+      "utf8",
+    );
+    const edited = upsertProviderProfile(
+      {
+        name: "DeepSeek",
+        providerId: "deepseek",
+        api: "anthropic-messages",
+        baseUrl: "https://api.deepseek.com/anthropic",
+        apiKey: "sk-new",
+        models: [
+          { id: "deepseek-v4-pro" },
+          { id: "deepseek-v4-flash" },
+        ],
+      },
+      paths,
+    );
+    assert(edited.ok && edited.profile, "upsert anthropic profile");
+    activateProviderProfile(edited.profile!.id, paths, { updatePrefs: false });
+    const modelsAfter = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+      providers: Record<string, { models: Array<{ id: string }> }>;
+    };
+    assert(!modelsAfter.providers.DeepSeek, "old DeepSeek key gone");
+    assert(modelsAfter.providers.deepseek, "deepseek key present");
+    assert(
+      modelsAfter.providers.deepseek.models.map((m) => m.id).join(",") ===
+        "deepseek-v4-pro,deepseek-v4-flash",
+      "model list fully replaced",
+    );
+    assert(
+      !modelsAfter.providers.deepseek.models.some((m) => m.id === "deepseek-chat"),
+      "pre-edit model id removed",
+    );
+  }
 
   console.log("test-provider-store: ok");
 } finally {

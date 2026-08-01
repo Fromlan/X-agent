@@ -63,6 +63,20 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     rawAutoCompact >= 0
       ? Math.min(100, Math.floor(rawAutoCompact))
       : DEFAULT_PREFS.autoCompactPercent;
+  const rawGoalMax = rest.goalMaxTurns;
+  const goalMaxTurns =
+    typeof rawGoalMax === "number" &&
+    Number.isFinite(rawGoalMax) &&
+    rawGoalMax >= 1
+      ? Math.min(200, Math.floor(rawGoalMax))
+      : DEFAULT_PREFS.goalMaxTurns;
+  const rawGoalTokens = rest.goalMaxTokens;
+  const goalMaxTokens =
+    typeof rawGoalTokens === "number" &&
+    Number.isFinite(rawGoalTokens) &&
+    rawGoalTokens >= 10_000
+      ? Math.min(10_000_000, Math.floor(rawGoalTokens))
+      : DEFAULT_PREFS.goalMaxTokens;
   const { themeId, colorMode } = normalizeThemePrefs(raw);
   return {
     ...DEFAULT_PREFS,
@@ -73,6 +87,8 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     dismissedReadyChecklistKeys,
     dismissedGodotToolsNudgeKeys,
     autoCompactPercent,
+    goalMaxTurns,
+    goalMaxTokens,
     godotDocsBranch: normalizeGodotDocsBranch(
       typeof rest.godotDocsBranch === "string"
         ? rest.godotDocsBranch
@@ -198,6 +214,16 @@ export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
     next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
       ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))
       : DEFAULT_PREFS.autoCompactPercent;
+  }
+  if (typeof patch.goalMaxTurns === "number") {
+    next.goalMaxTurns = Number.isFinite(patch.goalMaxTurns)
+      ? Math.min(200, Math.max(1, Math.floor(patch.goalMaxTurns)))
+      : DEFAULT_PREFS.goalMaxTurns;
+  }
+  if (typeof patch.goalMaxTokens === "number") {
+    next.goalMaxTokens = Number.isFinite(patch.goalMaxTokens)
+      ? Math.min(10_000_000, Math.max(10_000, Math.floor(patch.goalMaxTokens)))
+      : DEFAULT_PREFS.goalMaxTokens;
   }
   return savePrefs(next);
 }

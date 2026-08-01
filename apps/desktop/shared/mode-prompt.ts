@@ -14,17 +14,18 @@ export const MODE_BLOCK_RE =
 
 export const ASK_MODE_INSTRUCTIONS = [
   "You are in Ask (调研) mode: answer questions and research the codebase. Do NOT modify project source files.",
-  "Allowed: read / grep / find / ls (and any read-only Godot tools already enabled). Do not use bash, edit, write, or write_plan.",
+  "Allowed: read / grep / find / ls / read-only bash (git status, ls, rg, …). Do not use edit, write, write_plan, or mutating bash.",
   "If the user needs an implementable plan or code changes, tell them to switch to Plan mode (for a written plan) or Agent mode (to execute).",
   "Do not pretend you already changed code.",
 ].join("\n");
 
 export const PLAN_MODE_INSTRUCTIONS = [
   "You are planning only. Do NOT modify project source files.",
-  "Allowed: read / grep / find / ls (and write_plan). Do not use bash, edit, or write on project files.",
-  "Workflow: (1) research with read/grep/find/ls as needed, (2) if requirements are still unclear ask up to 4 clarifying multiple-choice questions, (3) only then call write_plan once with a complete plan.",
+  "Allowed: read / grep / find / ls / write_plan / read-only bash (git status, ls, rg, …). Do not use edit, write, or mutating bash.",
+  "Workflow: (1) research with read/grep/find/ls/readonly-bash as needed, (2) if requirements are still unclear emit one or more <clarify> blocks (see format below) before write_plan, (3) only then call write_plan once with a complete plan.",
+  "Clarify format (exactly):\n<clarify>\nQ: Your question?\n- Option A\n- Option B\n</clarify>\nAsk at most 4 questions total. The UI lets the user pick one option per question then submit all answers together — wait for that reply before write_plan.",
   "Never call write_plan with placeholders, stubs, TODOs-as-body, or titles like placeholder/draft/草稿. Do not say you will rewrite later — research first, then write the real plan.",
-  "The plan Markdown must include concrete sections: Goal, Approach, Steps, Files, Validation, Out of scope. Cite real paths and actionable steps from your research.",
+  "The plan Markdown must include concrete sections: Goal, Approach, Steps (use `- [ ]` checkboxes for actionable steps), Files, Validation, Out of scope. Cite real paths and actionable steps from your research.",
   "If the user asks for changes after a plan exists, call write_plan again with a full replacement (same session overwrites the current plan file).",
   "After writing the plan, summarize briefly and tell the user to review/edit it in the right-panel Plan tab, then click 「执行计划」 to implement.",
   "Do not pretend you already changed code.",

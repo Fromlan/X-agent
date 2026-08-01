@@ -49,6 +49,8 @@ const flatApi: XAgentApiFlat = {
   clearPlan: () => ipcRenderer.invoke(IPC_CHANNELS.clearPlan),
   setGoal: (condition: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.setGoal, condition),
+  pauseGoal: () => ipcRenderer.invoke(IPC_CHANNELS.pauseGoal),
+  resumeGoal: () => ipcRenderer.invoke(IPC_CHANNELS.resumeGoal),
   clearGoal: () => ipcRenderer.invoke(IPC_CHANNELS.clearGoal),
   getGoal: () => ipcRenderer.invoke(IPC_CHANNELS.getGoal),
   listModels: () => ipcRenderer.invoke(IPC_CHANNELS.listModels),
@@ -197,6 +199,8 @@ const api: XAgentApi = {
     saveToWorkspace: flatApi.savePlanToWorkspace,
     clear: flatApi.clearPlan,
     setGoal: flatApi.setGoal,
+    pauseGoal: flatApi.pauseGoal,
+    resumeGoal: flatApi.resumeGoal,
     clearGoal: flatApi.clearGoal,
     getGoal: flatApi.getGoal,
   },
