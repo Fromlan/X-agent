@@ -176,18 +176,9 @@ export const GODOT_TOOLS = [
 
 export type GodotToolName = (typeof GODOT_TOOLS)[number];
 
-/** Offline Godot docs search tools (opt-in; not in DEFAULT_PREFS). */
-export const GODOT_DOCS_TOOLS = [
-  "godot_docs_search",
-  "godot_docs_status",
-] as const;
-
-export type GodotDocsToolName = (typeof GODOT_DOCS_TOOLS)[number];
-
 export const ALL_TOGGLEABLE_TOOLS = [
   ...AVAILABLE_TOOLS,
   ...GODOT_TOOLS,
-  ...GODOT_DOCS_TOOLS,
 ] as const;
 
 /**
@@ -218,8 +209,6 @@ export const PLAN_MODE_CORE_TOOLS = [
 /** Read-only Godot tools allowed in Ask/Plan when already enabled in prefs. */
 export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_editor_info",
-  "godot_docs_search",
-  "godot_docs_status",
 ] as const;
 
 export type GoalStatus =
@@ -299,18 +288,6 @@ export interface GoalResult {
   goal?: GoalInfo | null;
 }
 
-/** Preset godot-docs git branches for settings UI fallback. */
-export const GODOT_DOCS_PRESET_BRANCHES = [
-  "stable",
-  "master",
-  "4.7",
-  "4.6",
-  "4.5",
-  "4.4",
-  "4.3",
-  "3.6",
-] as const;
-
 /** GUI theme family (color + style tokens). Independent of Pi TUI Theme plugins. */
 export const THEME_IDS = [
   "default",
@@ -375,13 +352,17 @@ export interface ClientPrefs {
   model: string | null;
   thinkingLevel: ThinkingLevel;
   tools: string[];
+  /**
+   * Skill ids excluded from the session `<available_skills>` index and slash menu.
+   * Empty = all discovered skills enabled (after Godot / home filters).
+   */
+  disabledSkills: string[];
   /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
   godotEditorPath: string | null;
   /**
    * godot-docs git branch to clone/search (e.g. stable, master, 3.6).
    * Cached under ~/.pi/agent/x-agent/godot-docs/<branch>/.
    */
-  godotDocsBranch: string;
   /** Whether the right tool panel is open. */
   rightPanelOpen: boolean;
   /** Left session sidebar width in px. */
@@ -432,8 +413,8 @@ export const DEFAULT_PREFS: ClientPrefs = {
   model: null,
   thinkingLevel: "high",
   tools: [...AVAILABLE_TOOLS],
+  disabledSkills: [],
   godotEditorPath: null,
-  godotDocsBranch: "stable",
   rightPanelOpen: false,
   sidebarWidth: 260,
   rightPanelWidth: 360,
@@ -725,37 +706,6 @@ export interface InstallGodotRpcAddonResult {
   hint?: string;
 }
 
-export type GodotDocsBranchStatus =
-  | "missing"
-  | "ready"
-  | "downloading"
-  | "error";
-
-export interface GodotDocsStatusDto {
-  branch: string;
-  root: string;
-  status: GodotDocsBranchStatus;
-  localBranches: string[];
-  /** Docs-useful remote branches from GitHub (stable / master / x.y). */
-  remoteBranches: string[];
-  /** GitHub source zip URL for the selected branch. */
-  downloadUrl: string;
-  docsSiteVersion: string;
-  error?: string;
-}
-
-export interface GodotDocsListRemoteResult {
-  ok: boolean;
-  branches: string[];
-  error?: string;
-  status?: GodotDocsStatusDto;
-}
-
-export interface GodotDocsMutateResult {
-  ok: boolean;
-  status?: GodotDocsStatusDto;
-  error?: string;
-}
 
 export type PluginKind = "prompt" | "skill" | "extension" | "theme";
 export type PluginScope = "global" | "project";
@@ -941,6 +891,8 @@ export interface PrefsRecoveryNotice {
   error: string;
 }
 
+export type OpenProjectMode = "continue" | "new";
+
 /** Coarse workspace / session lifecycle facade (flat methods remain on XAgentApi). */
 export type WorkspaceApi = {
   open: XAgentApiFlat["openProject"];
@@ -982,7 +934,10 @@ export type PlanApi = {
 
 /** Flat IPC surface (legacy; prefer workspace / turn / plan facades). */
 export interface XAgentApiFlat {
-  openProject: (path?: string) => Promise<OpenProjectResult>;
+  openProject: (
+    path?: string,
+    mode?: OpenProjectMode,
+  ) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
   previewRetract: (entryId: string) => Promise<RetractPreview>;
@@ -1069,18 +1024,6 @@ export interface XAgentApiFlat {
     canceled?: boolean;
     error?: string;
   }>;
-  godotDocsGetStatus: () => Promise<GodotDocsStatusDto>;
-  godotDocsListRemoteBranches: (force?: boolean) => Promise<GodotDocsListRemoteResult>;
-  godotDocsSetBranch: (branch: string) => Promise<GodotDocsMutateResult>;
-  /** Open GitHub source zip URL in the system browser. */
-  godotDocsOpenDownloadUrl: (
-    branch?: string,
-  ) => Promise<{ ok: boolean; url?: string; error?: string }>;
-  /** Pick and import a user-downloaded godot-docs .zip. */
-  godotDocsImportZip: (
-    branch?: string,
-  ) => Promise<GodotDocsMutateResult & { canceled?: boolean }>;
-  godotDocsRemoveLocal: (branch?: string) => Promise<GodotDocsMutateResult>;
   listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
   /** Skills indexed for the current session cwd (godot-* filtered when not a Godot project). */
   listSessionSkills: () => Promise<SessionSkillInfo[]>;

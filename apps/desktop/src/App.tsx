@@ -44,7 +44,6 @@ import {
   SettingsPanel,
   type SettingsTab,
 } from "./components/SettingsPanel";
-import type { GodotSettingsSection } from "./components/settings/GodotSettingsPage";
 import {
   appendAtPath,
   collapseFileBlocksToAtPaths,
@@ -120,9 +119,6 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
     undefined,
   );
-  const [settingsGodotSection, setSettingsGodotSection] = useState<
-    GodotSettingsSection | undefined
-  >(undefined);
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -146,8 +142,6 @@ export default function App() {
   const {
     isGodotProject,
     rpcStatus,
-    docsStatus,
-    setDocsStatus,
     setRpcStatus,
     setAddonInstalled,
     addonInstalled,
@@ -289,7 +283,6 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === ",") {
         e.preventDefault();
         setSettingsTab("general");
-        setSettingsGodotSection(undefined);
         setSettingsOpen(true);
       }
     };
@@ -649,16 +642,11 @@ export default function App() {
 
   const openSettings = () => {
     setSettingsTab(undefined);
-    setSettingsGodotSection(undefined);
     setSettingsOpen(true);
   };
 
-  const openSettingsAt = (
-    tab: SettingsTabTarget,
-    godotSection?: GodotSettingsSection,
-  ) => {
+  const openSettingsAt = (tab: SettingsTabTarget) => {
     setSettingsTab(tab);
-    setSettingsGodotSection(godotSection);
     setSettingsOpen(true);
   };
 
@@ -984,10 +972,7 @@ export default function App() {
                   {
                     label: isGodotProject ? "Godot 设置" : "打开设置",
                     onClick: () =>
-                      openSettingsAt(
-                        isGodotProject ? "godot" : "general",
-                        isGodotProject ? "editor" : undefined,
-                      ),
+                      openSettingsAt(isGodotProject ? "godot" : "general"),
                   },
                 ]
           }
@@ -1098,11 +1083,9 @@ export default function App() {
           prefs={prefs}
           cwd={cwd}
           initialTab={settingsTab}
-          initialGodotSection={settingsGodotSection}
           onClose={() => {
             setSettingsOpen(false);
             setSettingsTab(undefined);
-            setSettingsGodotSection(undefined);
           }}
           onToggleTool={toggleTool}
           hasActiveSession={Boolean(sessionId)}

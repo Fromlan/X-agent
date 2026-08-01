@@ -23,9 +23,9 @@ export const CHAT_STARTERS: ChatStarter[] = [
   },
   {
     id: "docs-lookup",
-    label: "查官方文档",
+    label: "Godot 文档要点",
     prompt:
-      "请用 Godot 官方文档检索，解释 Node 生命周期（_ready / _process / _physics_process）及常见误用。",
+      "请阅读技能 godot-docs-4-7，解释 Node 生命周期（_ready / _process / _physics_process）及常见误用，并给出推荐写法。",
     godotOnly: true,
   },
   {

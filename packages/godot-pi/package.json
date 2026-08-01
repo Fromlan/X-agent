@@ -1,7 +1,7 @@
 {
   "name": "@x-agent/godot-pi",
   "version": "0.1.0",
-  "description": "X-agent native Pi package: core engineering skills + Godot 4 domain skills, prompts, and helpers",
+  "description": "X-agent native Pi package: core engineering skills + Godot 4.7 docs skill, prompts, and helpers",
   "keywords": ["pi-package", "godot", "x-agent"],
   "license": "MIT",
   "pi": {

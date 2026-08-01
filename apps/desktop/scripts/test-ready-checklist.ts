@@ -56,7 +56,6 @@ const itemsGlobal = buildReadyItems({
   prefs: DEFAULT_PREFS,
   rpc: null,
   addonInstalled: null,
-  docs: null,
 });
 assert.ok(
   itemsGlobal.some((i) => i.id === "auth" && !i.done),
@@ -84,20 +83,11 @@ const godotItems = buildReadyItems({
     activeClientId: null,
   },
   addonInstalled: false,
-  docs: {
-    status: "missing",
-    branch: "stable",
-    root: "",
-    localBranches: [],
-    remoteBranches: [],
-    downloadUrl: "",
-    docsSiteVersion: "",
-  },
 });
 assert.ok(godotItems.some((i) => i.id === "rpcAddon" && !i.done));
 assert.ok(godotItems.some((i) => i.id === "rpcBridge" && i.done));
 assert.ok(godotItems.some((i) => i.id === "godotTools" && !i.done));
-assert.ok(godotItems.some((i) => i.id === "docs" && i.optional && !i.done));
+assert.ok(!godotItems.some((i) => (i.id as string) === "docs"), "no docs item");
 assert.ok(readyChecklistHasBlocking(godotItems));
 
 const waiting = buildReadyItems({
@@ -116,15 +106,6 @@ const waiting = buildReadyItems({
     activeClientId: null,
   },
   addonInstalled: true,
-  docs: {
-    status: "missing",
-    branch: "stable",
-    root: "",
-    localBranches: [],
-    remoteBranches: [],
-    downloadUrl: "",
-    docsSiteVersion: "",
-  },
 });
 const waitingBridge = waiting.find((i) => i.id === "rpcBridge");
 assert.ok(waitingBridge && !waitingBridge.done, "waiting for client");
@@ -147,15 +128,6 @@ const offline = buildReadyItems({
     activeClientId: null,
   },
   addonInstalled: true,
-  docs: {
-    status: "missing",
-    branch: "stable",
-    root: "",
-    localBranches: [],
-    remoteBranches: [],
-    downloadUrl: "",
-    docsSiteVersion: "",
-  },
 });
 assert.equal(
   offline.find((i) => i.id === "rpcBridge")?.actionKind,
@@ -185,7 +157,6 @@ const noNpm = buildReadyItems({
   prefs: DEFAULT_PREFS,
   rpc: null,
   addonInstalled: null,
-  docs: null,
 });
 const nodeItem = noNpm.find((i) => i.id === "node");
 assert.ok(nodeItem && !nodeItem.done, "node item when npm missing");
@@ -208,7 +179,6 @@ const withNpm = buildReadyItems({
   prefs: DEFAULT_PREFS,
   rpc: null,
   addonInstalled: null,
-  docs: null,
 });
 const piItem = withNpm.find((i) => i.id === "piCli");
 assert.ok(piItem && !piItem.done);
@@ -225,7 +195,6 @@ const writeBash = buildReadyItems({
   prefs: DEFAULT_PREFS,
   rpc: null,
   addonInstalled: null,
-  docs: null,
 });
 assert.equal(
   writeBash.find((i) => i.id === "bash")?.actionKind,
@@ -243,7 +212,6 @@ const gitOnly = buildReadyItems({
   prefs: DEFAULT_PREFS,
   rpc: null,
   addonInstalled: null,
-  docs: null,
 });
 assert.ok(!gitOnly.some((i) => i.id === "bash"), "no bash item when bash ok");
 const gitItem = gitOnly.find((i) => i.id === "git");

@@ -14,7 +14,8 @@ import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 
 const flatApi: XAgentApiFlat = {
   // session / workspace
-  openProject: (path?: string) => ipcRenderer.invoke(IPC_CHANNELS.openProject, path),
+  openProject: (path?: string, mode?: "continue" | "new") =>
+    ipcRenderer.invoke(IPC_CHANNELS.openProject, path, mode),
   prompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.prompt, text),
   abort: () => ipcRenderer.invoke(IPC_CHANNELS.abort),
   previewRetract: (entryId: string) =>
@@ -99,17 +100,6 @@ const flatApi: XAgentApiFlat = {
   installGodotRpcAddon: () =>
     ipcRenderer.invoke(IPC_CHANNELS.installGodotRpcAddon),
   pickGodotScene: () => ipcRenderer.invoke(IPC_CHANNELS.pickGodotScene),
-  godotDocsGetStatus: () => ipcRenderer.invoke(IPC_CHANNELS.godotDocsGetStatus),
-  godotDocsListRemoteBranches: (force?: boolean) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotDocsListRemoteBranches, force),
-  godotDocsSetBranch: (branch: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotDocsSetBranch, branch),
-  godotDocsOpenDownloadUrl: (branch?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotDocsOpenDownloadUrl, branch),
-  godotDocsImportZip: (branch?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotDocsImportZip, branch),
-  godotDocsRemoveLocal: (branch?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotDocsRemoveLocal, branch),
   listPlugins: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.listPlugins, cwd),
   listSessionSkills: () => ipcRenderer.invoke(IPC_CHANNELS.listSessionSkills),
   readPlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.readPlugin, path),

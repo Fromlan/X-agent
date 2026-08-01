@@ -19,10 +19,7 @@ import { PluginsPage } from "./PluginsPage";
 import { UsageSettingsPage } from "./UsageSettingsPage";
 import { GeneralSettingsPage } from "./settings/GeneralSettingsPage";
 import { ToolsSettingsPage } from "./settings/ToolsSettingsPage";
-import {
-  GodotSettingsPage,
-  type GodotSettingsSection,
-} from "./settings/GodotSettingsPage";
+import { GodotSettingsPage } from "./settings/GodotSettingsPage";
 import { ProvidersSettingsPage } from "./settings/ProvidersSettingsPage";
 
 export type SettingsTab =
@@ -48,8 +45,6 @@ interface Props {
   onPiCliChanged?: (piCli: PiCliStatus) => void;
   /** When set, switch to this tab when the panel opens */
   initialTab?: SettingsTab;
-  /** When set with godot tab, select editor/docs sub-section. */
-  initialGodotSection?: GodotSettingsSection;
 }
 
 export function SettingsPanel({
@@ -65,21 +60,14 @@ export function SettingsPanel({
   onGitChanged,
   onPiCliChanged,
   initialTab,
-  initialGodotSection,
 }: Props) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? "providers");
-  const [godotSection, setGodotSection] =
-    useState<GodotSettingsSection>(initialGodotSection ?? "editor");
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (open && initialTab) setTab(initialTab);
   }, [open, initialTab]);
-
-  useEffect(() => {
-    if (open && initialGodotSection) setGodotSection(initialGodotSection);
-  }, [open, initialGodotSection]);
 
   useEffect(() => {
     if (!open) return;
@@ -113,11 +101,6 @@ export function SettingsPanel({
     { id: "plugins", label: "插件", icon: Puzzle },
     { id: "godot", label: "Godot", icon: Gamepad2 },
   ];
-
-  const openGodotSection = (section: GodotSettingsSection) => {
-    setTab("godot");
-    setGodotSection(section);
-  };
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -186,7 +169,7 @@ export function SettingsPanel({
                 hasActiveSession={hasActiveSession}
                 onToggleTool={onToggleTool}
                 onPrefsChanged={onPrefsChanged}
-                onOpenGodotSection={openGodotSection}
+                onOpenGodotSettings={() => setTab("godot")}
               />
             )}
 
@@ -195,13 +178,18 @@ export function SettingsPanel({
                 open={open && tab === "godot"}
                 prefs={prefs}
                 cwd={cwd}
-                section={godotSection}
-                onSectionChange={setGodotSection}
                 onPrefsChanged={onPrefsChanged}
               />
             )}
 
-            {tab === "plugins" && <PluginsPage cwd={cwd} />}
+            {tab === "plugins" && (
+              <PluginsPage
+                cwd={cwd}
+                prefs={prefs}
+                hasActiveSession={hasActiveSession}
+                onPrefsChanged={onPrefsChanged}
+              />
+            )}
 
             <ProvidersSettingsPage
               open={open && tab === "providers"}

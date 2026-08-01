@@ -63,11 +63,10 @@ assert.ok(!computeAskModeTools(["read", "bash"]).includes("write_plan"));
 assert.deepEqual(
   computeAskModeTools([
     "read",
-    "godot_docs_search",
     "godot_run_scene",
     "godot_editor_info",
   ]),
-  ["read", "grep", "find", "ls", "bash", "godot_editor_info", "godot_docs_search"],
+  ["read", "grep", "find", "ls", "bash", "godot_editor_info"],
 );
 
 assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
@@ -81,7 +80,6 @@ assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
 assert.deepEqual(
   computePlanModeTools([
     "read",
-    "godot_docs_search",
     "godot_run_scene",
     "godot_editor_info",
   ]),
@@ -93,7 +91,6 @@ assert.deepEqual(
     "bash",
     "write_plan",
     "godot_editor_info",
-    "godot_docs_search",
   ],
 );
 

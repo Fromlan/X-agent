@@ -130,7 +130,6 @@ await createAgentSession({
   tools: [...ALL_TOGGLEABLE_TOOLS],
   customTools: [
     ...(godotRpc ? createGodotTools(godotRpc) : []),
-    ...createGodotDocsTools(),
   ],
   model: selectedModel,
   thinkingLevel: prefs.thinkingLevel,
@@ -145,7 +144,7 @@ session.setActiveToolsByName(prefs.tools);
 | `resourceLoader` | `DefaultResourceLoader` + `reload()` + `skillsOverride` | skills / extensions / prompts / themes / context files |
 | `tools`（注册） | `ALL_TOGGLEABLE_TOOLS` | 可切换全集；否则后续勾选会被静默忽略 |
 | 实际启用 | `prefs.tools` via `setActiveToolsByName` | 当前白名单 |
-| `customTools` | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts)、[`godot-docs-tools.ts`](apps/desktop/electron/agent/godot-docs-tools.ts) | Godot RPC / 文档工具（是否可调用仍看白名单） |
+| `customTools` | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot RPC 工具（是否可调用仍看白名单） |
 | `model` / `thinkingLevel` | prefs + `ModelRuntime`（auth / models） | 选用模型与推理级别 |
 | `sessionManager` | `create` / `continueRecent` / `open`，根在 `x-agent/sessions/` | 对话持久化与恢复 |
 
@@ -163,7 +162,7 @@ session.setActiveToolsByName(prefs.tools);
 | `showThinking` | 否（仅 UI） |
 | `theme` | 否 |
 | `lastProjectPath` / `lastSessionPath` | 否（启动恢复；由当前 `SessionHost` 写回） |
-| `godotEditorPath` / `godotDocsBranch` | 否（启编辑器 / 文档缓存用） |
+| `godotEditorPath` | 否（启编辑器用） |
 | `rightPanelOpen` / `sidebarWidth` / `rightPanelWidth` | 否（布局） |
 | `hiddenProjectKeys` | 否（侧栏隐藏） |
 
@@ -190,9 +189,6 @@ session.setActiveToolsByName(prefs.tools);
    - 桥接存在时 **注册**；prefs 勾选对应名后才 **active**（`GODOT_TOOLS`，默认不在白名单）。  
    - `promptSnippet` / `promptGuidelines` 进入工具说明，引导模型何时调用。
 
-2. **官方文档 `customTools`**（[`godot-docs-tools.ts`](apps/desktop/electron/agent/godot-docs-tools.ts)）  
-   - 始终注册；`godot_docs_search` / `godot_docs_status`（`GODOT_DOCS_TOOLS`，默认关）。  
-   - 缓存目录：`~/.pi/agent/x-agent/godot-docs/<branch>/`；设置 → Godot → 官方文档导入 zip。
 
 3. **godot-pi Package**  
    - 技能教领域流程与何时用 RPC；扩展可注册如 `godot_detect_project` 等工具（仍受白名单过滤）。  
@@ -268,6 +264,5 @@ DeepSeek 等供应商对**完全一致的请求前缀**计为 cache hit（Pi 记
 | [`plugin-host.ts`](apps/desktop/electron/agent/plugin-host.ts) | 插件 CRUD → Pi 目录 |
 | [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts) | `pi install` / uninstall |
 | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot 编辑器 customTools |
-| [`godot-docs-tools.ts`](apps/desktop/electron/agent/godot-docs-tools.ts) | Godot 文档检索 customTools |
 | [`chat-store.ts`](apps/desktop/src/stores/chat-store.ts) | UI 事件归并 |
 | [`shared/ipc.ts`](apps/desktop/shared/ipc.ts) | 工具名、prefs 类型 |

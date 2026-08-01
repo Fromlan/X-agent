@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
 
 /** Max skill description length injected into `<available_skills>` (chars). */
-export const SKILL_INDEX_DESCRIPTION_MAX = 100;
+export const SKILL_INDEX_DESCRIPTION_MAX = 240;
 
 /** True when cwd looks like a Godot project root. */
 export function isGodotProjectRoot(cwd: string): boolean {
@@ -75,17 +75,36 @@ export function truncateSkillsForIndex<
   }));
 }
 
+/** Drop skills whose id is in the user disabled list (case-insensitive). */
+export function filterDisabledSkills<
+  T extends { name?: string; filePath?: string },
+>(skills: T[], disabledSkills: readonly string[] = []): T[] {
+  if (disabledSkills.length === 0) return skills;
+  const disabled = new Set(
+    disabledSkills.map((id) => id.trim().toLowerCase()).filter(Boolean),
+  );
+  if (disabled.size === 0) return skills;
+  return skills.filter((s) => {
+    const id = skillIdForFilter(s).toLowerCase();
+    return !id || !disabled.has(id);
+  });
+}
+
 /**
  * X-agent DefaultResourceLoader skillsOverride pipeline:
  * exclude ~/.agents/skills → hide godot-* outside Godot projects →
- * dedupe by name → truncate descriptions for the index.
+ * drop user-disabled skills → dedupe by name → truncate descriptions for the index.
  */
 export function applyXAgentSkillsFilter<
   T extends { name?: string; filePath: string; description?: string },
->(skills: T[], cwd: string): T[] {
-  const filtered = filterGodotSkillsForCwd(
-    excludeUserAgentsHomeSkills(skills),
-    cwd,
+>(
+  skills: T[],
+  cwd: string,
+  disabledSkills: readonly string[] = [],
+): T[] {
+  const filtered = filterDisabledSkills(
+    filterGodotSkillsForCwd(excludeUserAgentsHomeSkills(skills), cwd),
+    disabledSkills,
   );
   return truncateSkillsForIndex(dedupeSkillsByName(filtered));
 }
