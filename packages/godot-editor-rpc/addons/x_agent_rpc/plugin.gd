@@ -21,6 +21,7 @@ var _buffer: String = ""
 var _reconnect_in: float = 0.0
 var _host: String = DEFAULT_HOST
 var _primary_port: int = DEFAULT_PORT
+var _auth_token: String = ""
 var _ports_to_try: Array[int] = []
 var _port_try_index: int = 0
 var _connect_started_ms: int = 0
@@ -66,6 +67,7 @@ func _process(_delta: float) -> void:
 				"type": "editor_ready",
 				"godotVersion": str(Engine.get_version_info().get("string", "unknown")),
 				"projectPath": ProjectSettings.globalize_path("res://"),
+				"token": _auth_token,
 			})
 		_poll_messages()
 		return
@@ -219,6 +221,7 @@ func _endpoint_config_path() -> String:
 func _resolve_endpoint() -> void:
 	_host = DEFAULT_HOST
 	_primary_port = DEFAULT_PORT
+	_auth_token = ""
 	var path := _endpoint_config_path()
 	if path == "" or not FileAccess.file_exists(path):
 		return
@@ -230,6 +233,7 @@ func _resolve_endpoint() -> void:
 		return
 	_host = str(data.get("host", DEFAULT_HOST))
 	_primary_port = int(data.get("port", DEFAULT_PORT))
+	_auth_token = str(data.get("token", ""))
 
 func _build_ports_to_try() -> void:
 	_ports_to_try.clear()

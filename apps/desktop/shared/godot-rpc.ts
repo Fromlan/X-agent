@@ -62,6 +62,8 @@ export type GodotRpcEvent =
       type: "editor_ready";
       godotVersion: string;
       projectPath: string;
+      /** Shared secret from x-agent-godot-rpc.json (required by bridge). */
+      token?: string;
       clientId?: string;
     }
   | { type: "scene_changed"; path: string; clientId?: string }

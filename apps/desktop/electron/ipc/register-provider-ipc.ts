@@ -22,9 +22,14 @@ export function registerProviderIpc(
   ipcMain.handle(IPC_CHANNELS.getProviderProfile, async (_e, id: string) =>
     getProviderProfile(id),
   );
-  ipcMain.handle(IPC_CHANNELS.upsertProviderProfile, async (_e, input: ProviderUpsertInput) =>
-    upsertProviderProfile(input),
-  );
+  ipcMain.handle(IPC_CHANNELS.upsertProviderProfile, async (_e, input: ProviderUpsertInput) => {
+    const result = upsertProviderProfile(input);
+    // Active profile edit rewrites models.json — reload so TopBar drops the pre-edit list.
+    if (result.ok && result.syncedActive) {
+      await sessionHost.reloadRuntime();
+    }
+    return result;
+  });
   ipcMain.handle(IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) =>
     deleteProviderProfile(id),
   );

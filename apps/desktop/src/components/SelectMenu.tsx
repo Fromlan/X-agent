@@ -273,7 +273,7 @@ export function SelectMenu(props: Props) {
           <div
             ref={panelRef}
             id={listId}
-            className="select-menu-panel"
+            className={["select-menu-panel", className].filter(Boolean).join(" ")}
             role="listbox"
             aria-label={ariaLabel}
             style={{

@@ -132,9 +132,6 @@ export function GodotSettingsPage({
               <section className="settings-page">
                 <div className="settings-page-head">
                   <h3>Godot</h3>
-                  <p className="modal-hint">
-                    编辑器 RPC 与官方文档离线检索，分别在下方页签配置。
-                  </p>
                 </div>
 
                 <div className="settings-subtabs" role="tablist" aria-label="Godot 设置分类">
@@ -176,9 +173,6 @@ export function GodotSettingsPage({
                   <>
                     <div className="settings-block">
                       <h4 className="settings-block-title">引擎</h4>
-                      <p className="modal-hint">
-                        选择本机 Godot 可执行文件，并可从此处启动编辑器。
-                      </p>
                       <div className="settings-inline-row">
                   <input
                     type="text"
@@ -234,8 +228,8 @@ export function GodotSettingsPage({
                         </span>
                       </div>
                       <p className="modal-hint">
-                        端口 {rpc?.port ?? 8765}。先安装插件并启动桥接，再在 Godot
-                        中启用 X-agent RPC（不要用 godot_agent）。
+                        端口 {rpc?.port ?? 8765}。安装并启用 X-agent RPC 插件（非
+                        godot_agent）。桥接写入 endpoint 含共享 token；插件握手校验后才接受调用。
                       </p>
                 {(rpc?.clientInfos?.length ?? 0) > 0 && (
                   <div className="field">
@@ -336,8 +330,8 @@ export function GodotSettingsPage({
                       </div>
                       {rpc?.running && rpc.clients === 0 && (
                         <p className="modal-hint">
-                          桥接已运行但尚无客户端。请安装插件、启用 X-agent RPC
-                          后重启 Godot。
+                          桥接已运行，等待客户端。请启用 X-agent RPC 后重启
+                          Godot。
                         </p>
                       )}
                       {rpc?.warning && (
@@ -351,7 +345,7 @@ export function GodotSettingsPage({
                           最近事件：{JSON.stringify(rpc.lastEvent)}
                         </p>
                       )}
-                      <p className="modal-hint">调试（需编辑器已连接）</p>
+                      <p className="modal-hint">调试</p>
                       <div className="settings-toolbar">
                         <button
                           type="button"
@@ -417,14 +411,13 @@ export function GodotSettingsPage({
 
                     <div className="settings-block">
                       <h4 className="settings-block-title">场景</h4>
-                      <p className="modal-hint">需编辑器已连接。</p>
                       <div className="settings-inline-row">
                   <input
                     type="text"
                     className="input"
                     value={scenePath}
                     onChange={(e) => setScenePath(e.target.value)}
-                    placeholder="res://scenes/main.tscn"
+                    placeholder="res://scenes/main.tscn（需已连接）"
                     aria-label="Scene path"
                   />
                   <button
@@ -466,16 +459,13 @@ export function GodotSettingsPage({
 
                     <div className="settings-block">
                       <h4 className="settings-block-title">资源导入</h4>
-                      <p className="modal-hint">
-                        空路径则全量扫描；多路径用逗号分隔。
-                      </p>
                       <div className="settings-inline-row">
                   <input
                     type="text"
                     className="input"
                     value={importPaths}
                     onChange={(e) => setImportPaths(e.target.value)}
-                    placeholder="res://icon.svg（空则全量 scan；多路径用逗号分隔）"
+                    placeholder="空则全量扫描；多路径逗号分隔"
                     aria-label="Import paths"
                   />
                   <button
@@ -522,9 +512,7 @@ export function GodotSettingsPage({
                         </span>
                       </div>
                       <p className="modal-hint">
-                      下载 GitHub 源码 zip（需含 .rst，不要 HTML offline
-                      包），再点「导入 zip」。若 GitHub 较慢，可用浏览器下载镜像或从已有克隆目录打包 zip
-                      后导入；导入后需启用文档工具才能检索。
+                        导入含 .rst 的源码 zip（非 HTML 包）；导入后启用文档工具。
                       </p>
                 <div className="field">
                   <span>文档版本分支</span>

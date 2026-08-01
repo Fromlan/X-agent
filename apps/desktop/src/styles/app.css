@@ -37,6 +37,17 @@
   --accent-purple: var(--text-secondary);
   --accent-gray: #737373;
 
+  /* Context breakdown / turn stack (Cindy muted hues) */
+  --ctx-system: #6b8fce;
+  --ctx-project: #5ba87a;
+  --ctx-skills: #9b7ebd;
+  --ctx-tools: #c49a4a;
+  --ctx-messages: #7a9eae;
+  --ctx-overhead: #737373;
+  --ctx-turn-input: #6b8fce;
+  --ctx-turn-output: #5ba87a;
+  --ctx-turn-cache: #7a9eae;
+
   --border-primary: #3c3c3a;
   --border-input: #3c3c3a;
   --border-focus: var(--focus-ring);
@@ -469,6 +480,47 @@ input:not([type]):-webkit-autofill {
 .select-menu-pill.select-menu-compact .select-menu-trigger {
   width: clamp(72px, 10vw, 110px);
   max-width: 110px;
+}
+
+/* Pill selects with centered label (model / Thinking); caret on the right */
+.select-menu-pill.select-menu-centered .select-menu-trigger {
+  position: relative;
+  justify-content: center;
+  padding-right: 28px;
+}
+
+.select-menu-pill.select-menu-centered .select-menu-value {
+  flex: 1 1 auto;
+  text-align: center;
+}
+
+.select-menu-pill.select-menu-centered .select-menu-caret {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.select-menu-pill.select-menu-centered.is-open .select-menu-caret {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* Portaled panel also gets className */
+.select-menu-panel.select-menu-centered .select-menu-option {
+  position: relative;
+  justify-content: center;
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.select-menu-panel.select-menu-centered .select-menu-option-label {
+  text-align: center;
+  flex: 1 1 auto;
+}
+
+.select-menu-panel.select-menu-centered .select-menu-check {
+  position: absolute;
+  left: 10px;
 }
 
 .select-menu-control .select-menu-trigger {
@@ -2282,8 +2334,15 @@ body.is-resizing-column * {
 }
 
 .goal-banner-label {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.goal-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -3966,6 +4025,88 @@ body.is-resizing-column * {
   min-width: 0;
 }
 
+.rp-plan-todos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  padding: 6px 8px;
+  background: var(--bg-surface);
+}
+
+.rp-plan-todo-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 2px;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.rp-plan-todo-toggle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.rp-plan-todo-toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.rp-plan-todo-text.is-done {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.clarify-panel {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-input);
+}
+
+.clarify-q {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.clarify-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.clarify-option.is-selected {
+  border-color: var(--border-focus, var(--border-primary));
+  background: var(--bg-list-hover);
+  color: var(--text-primary);
+}
+
+.clarify-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
 .rp-plan-name {
   min-width: 0;
   overflow: hidden;
@@ -4182,35 +4323,35 @@ body.is-resizing-column * {
   min-width: 2px;
 }
 
-/* Near-monochrome stack: ascending lightness steps */
+/* Theme chart tokens — see --ctx-* in themes.css */
 .rp-context-stack-seg.is-system,
 .rp-context-dot.is-system {
-  background: color-mix(in srgb, var(--text-primary) 88%, transparent);
+  background: var(--ctx-system);
 }
 
 .rp-context-stack-seg.is-project,
 .rp-context-dot.is-project {
-  background: color-mix(in srgb, var(--text-primary) 68%, transparent);
+  background: var(--ctx-project);
 }
 
 .rp-context-stack-seg.is-skills,
 .rp-context-dot.is-skills {
-  background: color-mix(in srgb, var(--text-primary) 50%, transparent);
+  background: var(--ctx-skills);
 }
 
 .rp-context-stack-seg.is-tools,
 .rp-context-dot.is-tools {
-  background: color-mix(in srgb, var(--text-primary) 34%, transparent);
+  background: var(--ctx-tools);
 }
 
 .rp-context-stack-seg.is-messages,
 .rp-context-dot.is-messages {
-  background: color-mix(in srgb, var(--text-primary) 20%, transparent);
+  background: var(--ctx-messages);
 }
 
 .rp-context-stack-seg.is-overhead,
 .rp-context-dot.is-overhead {
-  background: color-mix(in srgb, var(--text-muted) 75%, transparent);
+  background: var(--ctx-overhead);
 }
 
 .rp-context-turn-stack {
@@ -4228,15 +4369,15 @@ body.is-resizing-column * {
 }
 
 .rp-context-turn-seg.is-input {
-  background: color-mix(in srgb, var(--text-primary) 72%, transparent);
+  background: var(--ctx-turn-input);
 }
 
 .rp-context-turn-seg.is-output {
-  background: color-mix(in srgb, var(--text-primary) 42%, transparent);
+  background: var(--ctx-turn-output);
 }
 
 .rp-context-turn-seg.is-cache {
-  background: color-mix(in srgb, var(--text-muted) 80%, transparent);
+  background: var(--ctx-turn-cache);
 }
 
 .rp-context-legend {
@@ -4255,6 +4396,10 @@ body.is-resizing-column * {
   gap: 8px;
   padding: 5px 2px;
   font-size: 12px;
+}
+
+.rp-context-legend-row.is-empty {
+  opacity: 0.4;
 }
 
 .rp-context-dot {

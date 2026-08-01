@@ -3,12 +3,18 @@ import type {
   AgentSessionMode,
   GoalInfo,
   GoalResult,
+  GoalStatus,
   PlanContentResult,
   PlanMutateResult,
   PromptResult,
   SessionModeInfo,
   SessionModeResult,
   UiAgentEvent,
+} from "../../shared/ipc";
+import {
+  DEFAULT_GOAL_MAX_TOKENS,
+  DEFAULT_GOAL_MAX_TURNS,
+  isRestorableGoalStatus,
 } from "../../shared/ipc";
 import { loadPrefs } from "./prefs";
 import {
@@ -31,13 +37,22 @@ import {
   parseGoalEvalResponse,
 } from "./goal-evaluator";
 import {
+  clearGoalJournal,
+  loadGoalJournal,
+  saveGoalJournal,
+} from "./goal-journal";
+import {
   buildAskModeSystemAppend,
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
 } from "../../shared/mode-prompt";
 
 export type SessionModeHost = {
-  getBundle(): { session: AgentSession; cwd: string } | null;
+  getBundle(): {
+    session: AgentSession;
+    cwd: string;
+    sessionPath?: string | null;
+  } | null;
   getResourceLoader(): DefaultResourceLoader | null;
   getBaseAppendPrompt(): string[];
   setBaseAppendPrompt(base: string[]): void;
@@ -56,7 +71,21 @@ export type SessionModeHost = {
   ): void;
   prompt(text: string): Promise<PromptResult>;
   ensureRuntime(): Promise<ModelRuntime>;
+  /** Last assistant turn token total (0 if unknown). */
+  getLastTurnTokenTotal(): number;
 };
+
+function clampMaxTurns(n: number | undefined): number {
+  if (typeof n !== "number" || !Number.isFinite(n)) return DEFAULT_GOAL_MAX_TURNS;
+  return Math.min(200, Math.max(1, Math.floor(n)));
+}
+
+function clampMaxTokens(n: number | undefined): number {
+  if (typeof n !== "number" || !Number.isFinite(n)) {
+    return DEFAULT_GOAL_MAX_TOKENS;
+  }
+  return Math.min(10_000_000, Math.max(10_000, Math.floor(n)));
+}
 
 export class SessionModeController {
   private agentMode: AgentSessionMode = "agent";
@@ -126,6 +155,39 @@ export class SessionModeController {
     return tools;
   }
 
+  private sessionPath(): string | null {
+    const bundle = this.host().getBundle();
+    const path = bundle?.sessionPath;
+    return typeof path === "string" && path.trim() ? path : null;
+  }
+
+  private persistGoalJournal(): void {
+    const path = this.sessionPath();
+    if (!path) return;
+    if (this.goal && isRestorableGoalStatus(this.goal.status)) {
+      saveGoalJournal(path, this.goal);
+    } else {
+      clearGoalJournal(path);
+    }
+  }
+
+  /**
+   * Restore a pursuing/paused/budget_limited goal from disk after resumeSession.
+   */
+  restoreGoalFromJournal(): void {
+    const path = this.sessionPath();
+    if (!path) return;
+    const stored = loadGoalJournal(path);
+    if (!stored) return;
+    this.goal = stored;
+    if (isRestorableGoalStatus(stored.status)) {
+      this.agentMode = "goal";
+      this.refreshSystemPrompt();
+    }
+    this.emitSessionMode();
+    this.emitGoal();
+  }
+
   /**
    * Patch the loader's cached append list in place, then rebuild the system
    * prompt via setActiveToolsByName (Pi re-reads getAppendSystemPrompt()).
@@ -151,6 +213,7 @@ export class SessionModeController {
     this.planPath = null;
     this.goal = null;
     this.goalContinueInFlight = false;
+    // Do not clear on-disk journal here — resumeSession restores it after bind.
     if (opts?.emit !== false && this.host().getBundle()) {
       this.emitSessionMode();
       this.emitGoal();
@@ -183,12 +246,11 @@ export class SessionModeController {
         ok: true,
         info: this.getInfo(),
         needGoalCondition:
-          mode === "goal" && this.goal?.status !== "pursuing",
+          mode === "goal" && !isRestorableGoalStatus(this.goal?.status),
       };
     }
 
     if (mode === "ask") {
-      // Mutual exclusion: drop Goal. Keep planPath across Agent ↔ 调研 ↔ Plan.
       this.clearGoalState("cleared", { silent: true });
       this.captureSavedToolsFromSession();
       const prefs = loadPrefs();
@@ -205,8 +267,6 @@ export class SessionModeController {
     }
 
     if (mode === "plan") {
-      // Mutual exclusion: drop Goal. Keep existing planPath so switching
-      // Agent ↔ Plan does not lose the right-panel plan artifact.
       this.clearGoalState("cleared", { silent: true });
       this.captureSavedToolsFromSession();
       const prefs = loadPrefs();
@@ -214,7 +274,6 @@ export class SessionModeController {
       this.refreshSystemPrompt(computePlanModeTools(prefs.tools));
       const active = bundle.session.getActiveToolNames();
       if (!active.includes("write_plan")) {
-        // Roll back to Agent so UI/tools stay consistent.
         const restore = this.takeRestoredTools();
         this.agentMode = "agent";
         this.refreshSystemPrompt(restore);
@@ -242,7 +301,6 @@ export class SessionModeController {
     }
 
     if (mode === "goal") {
-      // Mutual exclusion: leave ask/plan tools, keep planPath for the Plan tab.
       let tools: string[] | undefined;
       if (isReadonlySessionMode(this.agentMode)) {
         tools = this.takeRestoredTools();
@@ -250,12 +308,18 @@ export class SessionModeController {
       this.agentMode = "goal";
       this.refreshSystemPrompt(tools);
       this.emitSessionMode();
-      const needGoalCondition = this.goal?.status !== "pursuing";
-      this.emitModeNotice(
-        needGoalCondition
-          ? "已进入目标模式。请输入可验证的完成条件后发送。"
-          : `目标模式：继续推进「${this.goal!.condition}」`,
-      );
+      const needGoalCondition = !isRestorableGoalStatus(this.goal?.status);
+      let notice = "已进入目标模式。请输入可验证的完成条件后发送。";
+      if (!needGoalCondition && this.goal) {
+        if (this.goal.status === "paused") {
+          notice = `目标已暂停：「${this.goal.condition}」。可点「继续」恢复自动续轮。`;
+        } else if (this.goal.status === "budget_limited") {
+          notice = `目标已达预算（轮次 ${this.goal.turns}/${this.goal.maxTurns}，token ${this.goal.tokensUsed}/${this.goal.maxTokens}）。提高上限后可继续。`;
+        } else {
+          notice = `目标模式：继续推进「${this.goal.condition}」（${this.goal.turns}/${this.goal.maxTurns} 轮，${this.goal.tokensUsed}/${this.goal.maxTokens} tokens）`;
+        }
+      }
+      this.emitModeNotice(notice);
       return {
         ok: true,
         info: this.getInfo(),
@@ -263,7 +327,6 @@ export class SessionModeController {
       };
     }
 
-    // mode === "agent" — leave ask/plan tools + Goal; keep planPath for review/re-run.
     let tools: string[] | undefined;
     if (isReadonlySessionMode(this.agentMode)) {
       tools = this.takeRestoredTools();
@@ -283,19 +346,20 @@ export class SessionModeController {
     return { ok: true, info: this.getInfo() };
   }
 
-  /** Clear in-memory goal without requiring a bundle; optionally skip notices. */
   private clearGoalState(
-    status: "cleared" | "achieved",
+    status: Extract<GoalStatus, "cleared" | "achieved">,
     opts?: { silent?: boolean; reason?: string },
   ): void {
     if (!this.goal) {
       this.goalContinueInFlight = false;
+      this.persistGoalJournal();
       return;
     }
     const snapshot = this.goal;
     snapshot.status = status;
     this.goal = null;
     this.goalContinueInFlight = false;
+    this.persistGoalJournal();
     if (!opts?.silent) {
       this.emitModeNotice(
         status === "achieved"
@@ -421,7 +485,6 @@ export class SessionModeController {
     }
   }
 
-  /** Drop the session plan pointer (does not delete the file on disk). */
   clearPlan(): PlanMutateResult {
     if (!this.planPath) {
       return { ok: true, info: this.getInfo() };
@@ -440,7 +503,6 @@ export class SessionModeController {
     if (!bundle) {
       return { ok: false, error: "尚未打开项目" };
     }
-    // Mutual exclusion: leave ask/plan tools if needed; keep planPath for the Plan tab.
     let toolsAfterReadonly: string[] | undefined;
     if (isReadonlySessionMode(this.agentMode)) {
       toolsAfterReadonly = this.takeRestoredTools();
@@ -452,18 +514,112 @@ export class SessionModeController {
     if (trimmed.length > 4000) {
       return { ok: false, error: "目标条件过长（最多 4000 字符）" };
     }
+    const prefs = loadPrefs();
+    const maxTurns = clampMaxTurns(prefs.goalMaxTurns);
+    const maxTokens = clampMaxTokens(prefs.goalMaxTokens);
     this.goal = {
       condition: trimmed,
       status: "pursuing",
       turns: 0,
+      maxTurns,
+      tokensUsed: 0,
+      maxTokens,
       startedAt: Date.now(),
     };
     this.agentMode = "goal";
     this.refreshSystemPrompt(toolsAfterReadonly);
+    this.persistGoalJournal();
     this.emitSessionMode();
     this.emitGoal();
-    this.emitModeNotice(`目标已设置：${trimmed}`);
+    this.emitModeNotice(
+      `目标已设置（最多 ${maxTurns} 轮 / ${maxTokens} tokens 自动续）：${trimmed}`,
+    );
     const prompted = await this.host().prompt(trimmed);
+    if (!prompted.ok) {
+      return { ok: false, error: prompted.error, goal: this.goal };
+    }
+    return { ok: true, goal: this.goal };
+  }
+
+  async pauseGoal(): Promise<GoalResult> {
+    if (!this.goal) {
+      return { ok: false, error: "当前无活跃目标" };
+    }
+    if (this.goal.status === "paused") {
+      return { ok: true, goal: this.goal };
+    }
+    if (this.goal.status !== "pursuing") {
+      return { ok: false, error: `目标状态为 ${this.goal.status}，无法暂停` };
+    }
+    this.goal.status = "paused";
+    this.goalContinueInFlight = false;
+    this.persistGoalJournal();
+    this.emitGoal();
+    this.emitModeNotice(`目标已暂停：${this.goal.condition}`);
+    return { ok: true, goal: this.goal };
+  }
+
+  async resumeGoal(): Promise<GoalResult> {
+    const bundle = this.host().getBundle();
+    if (!bundle) {
+      return { ok: false, error: "尚未打开项目" };
+    }
+    if (!this.goal) {
+      return { ok: false, error: "当前无活跃目标" };
+    }
+    if (
+      this.goal.status !== "paused" &&
+      this.goal.status !== "budget_limited"
+    ) {
+      if (this.goal.status === "pursuing") {
+        return { ok: true, goal: this.goal };
+      }
+      return { ok: false, error: `目标状态为 ${this.goal.status}，无法继续` };
+    }
+    if (this.goal.status === "budget_limited") {
+      const prefs = loadPrefs();
+      const nextMaxTurns = clampMaxTurns(prefs.goalMaxTurns);
+      const nextMaxTokens = clampMaxTokens(prefs.goalMaxTokens);
+      if (
+        nextMaxTurns <= this.goal.turns &&
+        nextMaxTokens <= this.goal.tokensUsed
+      ) {
+        return {
+          ok: false,
+          error: `预算仍不足（轮次 ${this.goal.turns}/${nextMaxTurns}，token ${this.goal.tokensUsed}/${nextMaxTokens}）。请在设置中提高上限后再继续。`,
+          goal: this.goal,
+        };
+      }
+      if (nextMaxTurns <= this.goal.turns) {
+        return {
+          ok: false,
+          error: `轮次预算仍不足（已用 ${this.goal.turns}，上限 ${nextMaxTurns}）。请在设置中提高「目标最大轮次」后再继续。`,
+          goal: this.goal,
+        };
+      }
+      if (nextMaxTokens <= this.goal.tokensUsed) {
+        return {
+          ok: false,
+          error: `Token 预算仍不足（已用 ${this.goal.tokensUsed}，上限 ${nextMaxTokens}）。请在设置中提高「目标最大 token」后再继续。`,
+          goal: this.goal,
+        };
+      }
+      this.goal.maxTurns = nextMaxTurns;
+      this.goal.maxTokens = nextMaxTokens;
+    }
+    this.goal.status = "pursuing";
+    this.agentMode = "goal";
+    this.refreshSystemPrompt();
+    this.persistGoalJournal();
+    this.emitSessionMode();
+    this.emitGoal();
+    this.emitModeNotice(
+      `目标已继续（${this.goal.turns}/${this.goal.maxTurns} 轮，${this.goal.tokensUsed}/${this.goal.maxTokens} tokens）：${this.goal.condition}`,
+    );
+    const reason = this.goal.lastReason ?? "resumed by user";
+    const prompted = await this.host().prompt(
+      buildGoalContinuePrompt(this.goal.condition, reason),
+    );
     if (!prompted.ok) {
       return { ok: false, error: prompted.error, goal: this.goal };
     }
@@ -485,6 +641,31 @@ export class SessionModeController {
     return { ok: true, goal: null };
   }
 
+  private hitBudgetLimit(goal: GoalInfo, reason: string): void {
+    goal.status = "budget_limited";
+    goal.lastReason = reason;
+    this.goal = goal;
+    this.persistGoalJournal();
+    this.emitGoal();
+    this.emitModeNotice(
+      `已达目标预算（轮次 ${goal.turns}/${goal.maxTurns}，token ${goal.tokensUsed}/${goal.maxTokens}）。可提高设置中的上限后点「继续」，或清除目标。`,
+      "warn",
+    );
+  }
+
+  private pauseAfterEvalFailure(goal: GoalInfo, reason: string): void {
+    goal.status = "paused";
+    goal.lastReason = reason;
+    this.goal = goal;
+    this.persistGoalJournal();
+    this.emitGoal();
+    this.host().emitReplaceableNotice(
+      "goal_eval",
+      `目标评估失败，已自动暂停续轮：${reason}`,
+      "warn",
+    );
+  }
+
   async onAgentSettled(): Promise<void> {
     const bundle = this.host().getBundle();
     if (!bundle || this.goal?.status !== "pursuing") return;
@@ -494,21 +675,30 @@ export class SessionModeController {
     this.goalContinueInFlight = true;
     const goal = this.goal;
     try {
+      const turnTokens = Math.max(0, this.host().getLastTurnTokenTotal());
+      goal.tokensUsed += turnTokens;
+      this.persistGoalJournal();
+      this.emitGoal();
+      if (goal.tokensUsed >= goal.maxTokens) {
+        this.hitBudgetLimit(
+          goal,
+          `已用 ${goal.tokensUsed} tokens（上限 ${goal.maxTokens}）`,
+        );
+        return;
+      }
+
       const transcript = buildGoalTranscript(
         bundle.session.messages as readonly unknown[],
       );
       const evalPrompt = buildGoalEvalPrompt(goal.condition, transcript);
       const model = bundle.session.model;
       if (!model) {
-        this.host().emitReplaceableNotice(
-          "goal_eval",
-          "目标评估跳过：当前无可用模型",
-          "warn",
-        );
+        this.pauseAfterEvalFailure(goal, "当前无可用模型");
         return;
       }
       const runtime = await this.host().ensureRuntime();
       if (this.host().getBundle() !== bundle || this.goal !== goal) return;
+      if (this.goal.status !== "pursuing") return;
       const result = await runtime.completeSimple(
         model,
         {
@@ -524,12 +714,9 @@ export class SessionModeController {
         { maxTokens: 128, temperature: 0 },
       );
       if (this.host().getBundle() !== bundle || this.goal !== goal) return;
+      if (this.goal.status !== "pursuing") return;
       if (result.stopReason === "error" || result.stopReason === "aborted") {
-        this.host().emitReplaceableNotice(
-          "goal_eval",
-          "目标评估失败，已暂停自动续轮",
-          "warn",
-        );
+        this.pauseAfterEvalFailure(goal, result.stopReason);
         return;
       }
       const raw = result.content
@@ -546,9 +733,11 @@ export class SessionModeController {
       const parsed = parseGoalEvalResponse(raw);
       goal.turns += 1;
       goal.lastReason = parsed.reason;
+      this.persistGoalJournal();
       if (parsed.met) {
         goal.status = "achieved";
         this.goal = null;
+        this.persistGoalJournal();
         if (this.agentMode === "goal") {
           this.agentMode = "agent";
         }
@@ -560,29 +749,43 @@ export class SessionModeController {
         );
         return;
       }
+      if (goal.turns >= goal.maxTurns) {
+        this.hitBudgetLimit(
+          goal,
+          parsed.reason || `已完成 ${goal.turns} 轮仍未达标`,
+        );
+        return;
+      }
+      if (goal.tokensUsed >= goal.maxTokens) {
+        this.hitBudgetLimit(
+          goal,
+          `已用 ${goal.tokensUsed} tokens（上限 ${goal.maxTokens}）`,
+        );
+        return;
+      }
       this.emitGoal();
       if (bundle.session.isStreaming) return;
-      // Release lock before continue prompt so that turn's agent_end can evaluate.
       this.goalContinueInFlight = false;
       await this.host().prompt(
         buildGoalContinuePrompt(goal.condition, parsed.reason),
       );
       return;
     } catch (err) {
-      this.host().emitReplaceableNotice(
-        "goal_eval",
-        `目标评估异常：${err instanceof Error ? err.message : String(err)}`,
-        "warn",
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      if (this.goal === goal && goal.status === "pursuing") {
+        this.pauseAfterEvalFailure(goal, message);
+      } else {
+        this.host().emitReplaceableNotice(
+          "goal_eval",
+          `目标评估异常：${message}`,
+          "warn",
+        );
+      }
     } finally {
       this.goalContinueInFlight = false;
     }
   }
 
-  /**
-   * Ask/Plan branch for applyTools: update savedTools and refresh the
-   * temporary read-only tool set for the current mode.
-   */
   applyReadonlyModeTools(
     tools: string[],
   ): { ok: true } | { ok: false; error: string } {
@@ -610,14 +813,6 @@ export class SessionModeController {
     }
   }
 
-  /** @deprecated Prefer applyReadonlyModeTools */
-  applyPlanModeTools(
-    tools: string[],
-  ): { ok: true } | { ok: false; error: string } {
-    return this.applyReadonlyModeTools(tools);
-  }
-
-  /** After resource reload: re-apply mode system append + active tools. */
   refreshAfterResourceReload(): void {
     const prefs = loadPrefs();
     if (this.agentMode === "ask") {

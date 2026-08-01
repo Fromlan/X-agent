@@ -126,9 +126,7 @@ export function UsageSettingsPage({ active }: Props) {
       <div className="settings-page-head usage-page-head">
         <div>
           <h3>用量</h3>
-          <p className="modal-hint">
-            近 30 天本地统计 · 按日历日累计 · 费用依赖模型费率
-          </p>
+          <p className="modal-hint">近 30 天 · 按日累计</p>
         </div>
         <button
           type="button"
@@ -293,9 +291,7 @@ export function UsageSettingsPage({ active }: Props) {
       <div className="usage-danger">
         <div className="usage-danger-copy">
           <span className="usage-danger-title">清空统计</span>
-          <span className="usage-danger-hint">
-            仅清除本地汇总文件，不影响会话记录
-          </span>
+          <span className="usage-danger-hint">仅清本地汇总，不影响会话</span>
         </div>
         <button
           type="button"

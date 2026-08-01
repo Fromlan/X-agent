@@ -57,6 +57,8 @@ export function registerSessionIpc(
   ipcMain.handle(IPC_CHANNELS.setGoal, async (_e, condition: string) =>
     sessionHost.setGoal(condition),
   );
+  ipcMain.handle(IPC_CHANNELS.pauseGoal, async () => sessionHost.pauseGoal());
+  ipcMain.handle(IPC_CHANNELS.resumeGoal, async () => sessionHost.resumeGoal());
   ipcMain.handle(IPC_CHANNELS.clearGoal, async () => sessionHost.clearGoal());
   ipcMain.handle(IPC_CHANNELS.getGoal, async () => sessionHost.getGoal());
   ipcMain.handle(IPC_CHANNELS.listModels, async () => sessionHost.listModels());

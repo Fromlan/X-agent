@@ -20,6 +20,11 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 
 import { isWritePlanTool, planFileLabel } from "../hooks/usePlanSession";
 import { isDisplayableTranscriptItem } from "../lib/chat-transcript-items";
+import {
+  formatClarifyReply,
+  parseClarifyBlocks,
+  type ClarifyQuestion,
+} from "../lib/plan-clarify";
 
 /** Estimated row height before measure (px); includes inter-row gap. */
 const ESTIMATE_ROW_PX = 72;
@@ -151,8 +156,73 @@ type AssistantBubbleProps = {
   item: Extract<ChatItem, { kind: "assistant" }>;
   showThinking: boolean;
   canAct: boolean;
+  sessionMode?: AgentSessionMode;
   onRegenerate?: (userEntryId: string) => void;
+  onClarifySelect?: (reply: string) => void;
 };
+
+function ClarifyPanel(props: {
+  questions: ClarifyQuestion[];
+  canAct: boolean;
+  onSubmit: (reply: string) => void;
+}) {
+  const [selected, setSelected] = useState<Record<string, string>>({});
+  const allAnswered = props.questions.every((q) => Boolean(selected[q.question]));
+
+  return (
+    <div className="clarify-panel" role="group" aria-label="澄清选项">
+      {props.questions.map((q) => (
+        <div key={q.question} className="clarify-question">
+          <div className="clarify-q">{q.question}</div>
+          <div className="clarify-options">
+            {q.options.map((opt) => {
+              const isSelected = selected[q.question] === opt;
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  className={
+                    isSelected
+                      ? "btn btn-secondary btn-sm clarify-option is-selected"
+                      : "btn btn-secondary btn-sm clarify-option"
+                  }
+                  disabled={!props.canAct}
+                  aria-pressed={isSelected}
+                  onClick={() =>
+                    setSelected((prev) => ({ ...prev, [q.question]: opt }))
+                  }
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="clarify-actions">
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          disabled={!props.canAct || !allAnswered}
+          title={
+            allAnswered
+              ? "发送全部所选答案"
+              : "请为每个问题选择一项后再发送"
+          }
+          onClick={() => {
+            const selections = props.questions.map((q) => ({
+              question: q.question,
+              option: selected[q.question],
+            }));
+            props.onSubmit(formatClarifyReply(selections));
+          }}
+        >
+          发送所选
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const AssistantBubble = memo(function AssistantBubble(
   props: AssistantBubbleProps,
@@ -161,6 +231,10 @@ const AssistantBubble = memo(function AssistantBubble(
   const showThinkingBlock = Boolean(
     props.showThinking && props.item.thinking,
   );
+  const clarifies =
+    props.sessionMode === "plan" && props.item.done
+      ? parseClarifyBlocks(props.item.text)
+      : [];
   return (
     <div
       className={`bubble bubble-text${props.item.isError ? " is-error" : ""}`}
@@ -187,6 +261,13 @@ const AssistantBubble = memo(function AssistantBubble(
         />
       )}
       <MarkdownBody content={props.item.text} streaming={!props.item.done} />
+      {clarifies.length > 0 && props.onClarifySelect && (
+        <ClarifyPanel
+          questions={clarifies}
+          canAct={props.canAct}
+          onSubmit={(reply) => props.onClarifySelect?.(reply)}
+        />
+      )}
     </div>
   );
 });
@@ -284,6 +365,7 @@ export interface ChatTranscriptProps {
   sessionMode?: AgentSessionMode;
   planPath?: string | null;
   onBuildPlan?: () => void;
+  onClarifySelect?: (reply: string) => void;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
@@ -564,9 +646,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                 (props.readinessHints && props.readinessHints.length > 0)) && (
                 <div className="empty-state empty-state-starters">
                   <p className="empty-state-title">开始对话</p>
-                  <p className="empty-state-hint">
-                    选择下方提示，或直接在输入框提问。
-                  </p>
+                  <p className="empty-state-hint">选择提示或直接提问</p>
                   {props.readinessHints && props.readinessHints.length > 0 && (
                     <div className="empty-ready-hints">
                       {props.readinessHints.map((hint) => (
@@ -642,7 +722,9 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                       item={item}
                       showThinking={props.showThinking}
                       canAct={canAct}
+                      sessionMode={props.sessionMode}
                       onRegenerate={props.onRegenerate}
+                      onClarifySelect={props.onClarifySelect}
                     />
                   ) : (
                     <ToolRow

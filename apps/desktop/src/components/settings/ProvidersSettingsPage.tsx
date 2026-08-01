@@ -355,7 +355,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         setError(result.error ?? "保存失败");
         return;
       }
-      if (andActivate) {
+      if (andActivate && !result.syncedActive) {
         const act = await window.xAgent.activateProviderProfile(
           result.profile.id,
         );
@@ -366,8 +366,13 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         }
         setMessage(`已保存并启用：${result.profile.name}`);
         onProvidersChanged?.();
+      } else if (andActivate && result.syncedActive) {
+        setMessage(`已保存并启用：${result.profile.name}`);
+        onProvidersChanged?.();
       } else {
         setMessage(`已保存：${result.profile.name}`);
+        // 编辑的是当前启用档案时，upsert 已同步 models.json；刷新顶栏模型列表。
+        onProvidersChanged?.();
       }
       setEditing(false);
       resetFetchPanel();
@@ -486,8 +491,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
             <div>
               <h3>供应商 / 订阅</h3>
               <p className="modal-hint">
-                首次打开会自动从 Pi 认证与 cc-switch 导入已有订阅；也可随时手动同步。预设列表参考
-                cc-switch，覆盖国内厂商、聚合中转与官方兼容模板。
+                可从 Pi 认证与 cc-switch 导入；预设覆盖常见厂商与兼容模板。
+                API Key 在本机用系统凭据加密落盘（Electron safeStorage）；激活时仍写入 Pi auth.json。
               </p>
             </div>
             <div className="modal-actions">
@@ -752,8 +757,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               </div>
             </div>
             <p className="modal-hint">
-              上下文写入 Pi models.json 的 contextWindow；留空则 Pi
-              默认 128k。已知模型与拉取结果会自动填入。
+              写入 models.json 的 contextWindow；留空默认 128k。
             </p>
             <div className="models-table-wrap">
               <table className="models-table">

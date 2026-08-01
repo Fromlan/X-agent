@@ -42,8 +42,7 @@ export function ToolsSettingsPage({
     if (hasActiveSession) {
       const ok = await confirm({
         title: "更改工具白名单",
-        message:
-          "更改工具白名单会重建当前会话的系统提示与工具定义，导致 DeepSeek/API 前缀缓存失效（本会话后续轮次需重新积累命中）。\n\n确定继续？",
+        message: "会重建工具定义并清空本会话 API 缓存。确定继续？",
         confirmLabel: "继续",
         tone: "warn",
       });
@@ -60,11 +59,9 @@ export function ToolsSettingsPage({
       <div className="settings-page-head">
         <h3>启用工具</h3>
         <p className="modal-hint">
-          此处控制 Agent（与目标）模式的默认工具白名单。临时只读请用会话「调研」或
-          Plan，不会改写本页勾选。更改会立即应用到当前会话（若已打开项目），并重建系统提示与工具定义
-          — 这会清空本会话的 API
-          前缀缓存命中。长会话请尽量在新会话前调好白名单。右侧「工具」面板显示已启用列表；实际调用记录在
-          Agent 运行后出现。
+          Agent / 目标默认白名单；更改会清空本会话 API 缓存。
+          调研 / Plan 模式另有只读硬闸（含 bash 只读分类器）。文件类工具受项目
+          cwd 沙箱约束；bash 仍可能访问 cwd 外路径。
         </p>
       </div>
 
@@ -137,7 +134,7 @@ export function ToolsSettingsPage({
             </button>
           </div>
         </div>
-        <p className="modal-hint">需启用 RPC 插件并连接桌面桥；默认关闭。</p>
+        <p className="modal-hint">需 RPC 已连接；默认关</p>
         <div className="tool-grid">
           {GODOT_TOOLS.map((tool) => {
             const checked = prefs.tools.includes(tool);
@@ -186,9 +183,7 @@ export function ToolsSettingsPage({
             </button>
           </div>
         </div>
-        <p className="modal-hint">
-          离线检索官方 godot-docs；需先导入 zip。默认关闭。
-        </p>
+        <p className="modal-hint">需先导入文档；默认关</p>
         <div className="tool-grid">
           {GODOT_DOCS_TOOLS.map((tool) => {
             const checked = prefs.tools.includes(tool);

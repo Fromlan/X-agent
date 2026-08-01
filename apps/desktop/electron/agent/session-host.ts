@@ -39,7 +39,8 @@ import {
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
-import { repairDeepSeekModelsJson } from "./provider-store";
+import { clearGoalJournal } from "./goal-journal";
+import { dedupeModelInfosForUi, repairDeepSeekModelsJson } from "./provider-store";
 import { branchEntriesToHistory } from "./history";
 import { extractMessageText } from "./transcript-mapper";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
@@ -156,6 +157,7 @@ export class SessionHost {
         this.emitReplaceableNotice(replaceKey, text, level),
       prompt: (text) => this.prompt(text),
       ensureRuntime: () => this.ensureRuntime(),
+      getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
     };
   }
 
@@ -261,9 +263,13 @@ export class SessionHost {
   }
 
   /** SessionModeHost — bundle + loader access for Plan/Goal controller. */
-  getBundle(): { session: AgentSession; cwd: string } | null {
+  getBundle(): { session: AgentSession; cwd: string; sessionPath?: string | null } | null {
     return this.bundle
-      ? { session: this.bundle.session, cwd: this.bundle.cwd }
+      ? {
+          session: this.bundle.session,
+          cwd: this.bundle.cwd,
+          sessionPath: this.bundle.sessionPath,
+        }
       : null;
   }
 
@@ -638,6 +644,14 @@ export class SessionHost {
     return this.sessionMode.setGoal(condition);
   }
 
+  async pauseGoal(): Promise<GoalResult> {
+    return this.sessionMode.pauseGoal();
+  }
+
+  async resumeGoal(): Promise<GoalResult> {
+    return this.sessionMode.resumeGoal();
+  }
+
   async clearGoal(): Promise<GoalResult> {
     return this.sessionMode.clearGoal();
   }
@@ -679,6 +693,7 @@ export class SessionHost {
             if (mode === "plan") return computePlanModeTools(prefsTools);
             return prefsTools;
           },
+          getCwd: () => this.bundle?.cwd ?? null,
         }),
       ],
     });
@@ -767,9 +782,10 @@ export class SessionHost {
     await this.disposeBundle(previous);
     // Re-bind after disposeBundle — must stay set for Plan/Goal mode switches.
     this.resourceLoader = loader;
-    // Fresh session: plan/goal cleared by disposeBundle; emit for UI.
+    // Fresh in-memory mode; restore pursuing/paused goal from journal if any.
     this.sessionMode.emitSessionMode();
     this.sessionMode.emitGoal();
+    this.sessionMode.restoreGoalFromJournal();
 
     const sessionPath = this.sessionFileOf(session);
     if (session.model) {
@@ -920,6 +936,7 @@ export class SessionHost {
       }
 
       unlinkSync(sessionPath);
+      clearGoalJournal(sessionPath);
 
       const prefs = loadPrefs();
       if (prefs.lastSessionPath === sessionPath) {
@@ -994,6 +1011,7 @@ export class SessionHost {
         if (!isXAgentSessionPath(sessionPath)) continue;
         if (!existsSync(sessionPath)) continue;
         unlinkSync(sessionPath);
+        clearGoalJournal(sessionPath);
         deleted += 1;
         if (prefs.lastSessionPath === sessionPath) {
           clearLastSession = true;
@@ -1265,11 +1283,13 @@ export class SessionHost {
   async listModels(): Promise<ModelInfo[]> {
     const runtime = await this.ensureRuntime();
     const available = await runtime.getAvailable();
-    return available.map((m) => ({
+    const prefs = loadPrefs();
+    const mapped = available.map((m) => ({
       provider: m.provider,
       id: m.id,
       name: (m as { name?: string }).name ?? m.id,
     }));
+    return dedupeModelInfosForUi(mapped, prefs.provider);
   }
 
   async listSessions(): Promise<SessionInfo[]> {

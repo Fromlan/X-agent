@@ -23,6 +23,10 @@ Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌�
 
 升级插件后请重新安装/拷贝，并 **重载项目或重启 Godot**。
 
+### 握手 token
+
+桌面桥每次 `start` 会在 endpoint JSON 写入一次性 `token`；插件在 `editor_ready` 中回传同一 token。旧版插件（无 token 字段）会被拒绝，设置页/桥状态会提示「token 不匹配」——请用应用内「安装/更新 RPC 插件」覆盖 addon 后重启 Godot。
+
 ## Agent 工具
 
 在 **设置 → 工具** 中勾选 **Godot 编辑器** 相关项（默认关闭）：

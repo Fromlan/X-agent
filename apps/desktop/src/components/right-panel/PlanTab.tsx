@@ -1,5 +1,7 @@
-import { FolderInput, Hammer, Loader2, Save, X } from "lucide-react";
+import { CheckSquare, FolderInput, Hammer, Loader2, Save, Square, X } from "lucide-react";
+import { useMemo } from "react";
 import { usePlanSession, planFileLabel } from "../../hooks/usePlanSession";
+import { parsePlanTodos, togglePlanTodo } from "../../lib/plan-todos";
 
 interface Props {
   planPath: string | null;
@@ -31,14 +33,13 @@ export function PlanTab({
     disabled,
   } = usePlanSession({ planPath, busy, onBuildPlan, onPlanPathChange });
 
+  const todos = useMemo(() => parsePlanTodos(markdown), [markdown]);
+
   if (!planPath) {
     return (
       <div className="rp-plan-empty">
         <p>尚无计划文件。</p>
-        <p className="rp-muted">
-          只需问答请用「调研」；要可执行方案请切 Plan，让 Agent 研究后调用
-          write_plan。生成后可在此编辑；切换 Agent / 调研 / 目标不会丢失当前计划。
-        </p>
+        <p className="rp-muted">切 Plan 后由 Agent 调用 write_plan 生成。</p>
       </div>
     );
   }
@@ -54,6 +55,39 @@ export function PlanTab({
           {dirty ? " · 未保存" : ""}
         </span>
       </div>
+      {todos.length > 0 && (
+        <ul className="rp-plan-todos" aria-label="计划步骤">
+          {todos.map((todo) => (
+            <li key={todo.lineIndex} className="rp-plan-todo">
+              <button
+                type="button"
+                className="rp-plan-todo-toggle"
+                disabled={disabled || loading}
+                aria-pressed={todo.checked}
+                title={todo.checked ? "标记未完成" : "标记完成"}
+                onClick={() => {
+                  onMarkdownChange(
+                    togglePlanTodo(markdown, todo.lineIndex),
+                  );
+                }}
+              >
+                {todo.checked ? (
+                  <CheckSquare size={14} aria-hidden />
+                ) : (
+                  <Square size={14} aria-hidden />
+                )}
+                <span
+                  className={
+                    todo.checked ? "rp-plan-todo-text is-done" : "rp-plan-todo-text"
+                  }
+                >
+                  {todo.text}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {loading ? (
         <div className="rp-plan-loading">
           <Loader2 size={14} className="icon-spin" />

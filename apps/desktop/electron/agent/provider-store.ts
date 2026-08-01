@@ -18,6 +18,7 @@ import {
   normalizePositiveInt,
 } from "../../shared/model-context";
 import { getAgentDirPath, patchPrefs } from "./prefs";
+import { decryptSecret, encryptSecret } from "./secret-codec";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -614,16 +615,29 @@ function ensureParent(filePath: string): void {
 function loadStore(paths: ProviderPaths): ProviderStoreFile {
   ensureParent(paths.storePath);
   const raw = readJsonFile<Partial<ProviderStoreFile>>(paths.storePath, emptyStore());
+  const profiles = (Array.isArray(raw.profiles) ? raw.profiles : []).map(
+    (p) => ({
+      ...p,
+      apiKey: decryptSecret(typeof p.apiKey === "string" ? p.apiKey : ""),
+    }),
+  );
   return {
     version: 1,
     activeId: raw.activeId ?? null,
-    profiles: Array.isArray(raw.profiles) ? raw.profiles : [],
+    profiles,
   };
 }
 
 function saveStore(paths: ProviderPaths, store: ProviderStoreFile): void {
   ensureParent(paths.storePath);
-  writeFileSync(paths.storePath, JSON.stringify(store, null, 2), "utf8");
+  const serialized: ProviderStoreFile = {
+    ...store,
+    profiles: store.profiles.map((p) => ({
+      ...p,
+      apiKey: encryptSecret(p.apiKey),
+    })),
+  };
+  writeFileSync(paths.storePath, JSON.stringify(serialized, null, 2), "utf8");
 }
 
 export function maskApiKey(key: string): string {
@@ -695,7 +709,13 @@ export function getProviderProfile(
 export function upsertProviderProfile(
   input: ProviderUpsertInput,
   paths: ProviderPaths = defaultProviderPaths(),
-): { ok: boolean; profile?: ProviderProfile; error?: string } {
+): {
+  ok: boolean;
+  profile?: ProviderProfile;
+  error?: string;
+  /** True when an already-active profile was rewritten into Pi auth/models. */
+  syncedActive?: boolean;
+} {
   const err = validateUpsert(input);
   if (err) return { ok: false, error: err };
 
@@ -730,13 +750,17 @@ export function upsertProviderProfile(
       updatedAt: now,
     };
     store.profiles[idx] = next;
-    // 编辑已激活档案时,同步刷新 prefs 中的 provider/model,
-    // 避免编辑后 activate/profile 不一致。
+    // 编辑已激活档案时,同步刷新 prefs 与 Pi auth/models.json，
+    // 避免「档案已改、顶栏仍是编辑前模型列表」。
     if (store.activeId === next.id) {
-      patchPrefs({
-        provider: next.providerId,
-        model: next.models[0]?.id ?? null,
+      saveStore(paths, store);
+      const synced = activateProviderProfile(next.id, paths, {
+        updatePrefs: true,
       });
+      if (!synced.ok) {
+        return { ok: false, error: synced.error ?? "同步启用配置失败" };
+      }
+      return { ok: true, profile: next, syncedActive: true };
     }
     saveStore(paths, store);
     return { ok: true, profile: next };
@@ -782,6 +806,53 @@ export function deactivateProviderProfile(
 }
 
 /**
+ * Remove models.json / auth.json keys that would shadow the active provider:
+ * - exact previous providerId (after rename)
+ * - case-insensitive duplicates of keepProviderId (e.g. DeepSeek vs deepseek)
+ */
+export function pruneStaleProviderKeys(
+  providers: Record<string, unknown>,
+  keepProviderId: string,
+  alsoRemove: readonly string[] = [],
+): string[] {
+  const keep = keepProviderId.trim();
+  if (!keep) return [];
+  const keepLower = keep.toLowerCase();
+  const removeExact = new Set(
+    alsoRemove.map((k) => k.trim()).filter((k) => k && k !== keep),
+  );
+  const removed: string[] = [];
+  for (const key of Object.keys(providers)) {
+    if (key === keep) continue;
+    if (removeExact.has(key) || key.toLowerCase() === keepLower) {
+      delete providers[key];
+      removed.push(key);
+    }
+  }
+  return removed;
+}
+
+/** UI list: collapse case-variant provider duplicates, prefer preferredProvider. */
+export function dedupeModelInfosForUi<
+  T extends { provider: string; id: string },
+>(models: readonly T[], preferredProvider: string | null | undefined): T[] {
+  const preferred = preferredProvider?.trim() ?? "";
+  const byKey = new Map<string, T>();
+  for (const m of models) {
+    const key = `${m.provider.toLowerCase()}/${m.id.toLowerCase()}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, m);
+      continue;
+    }
+    if (preferred && m.provider === preferred && existing.provider !== preferred) {
+      byKey.set(key, m);
+    }
+  }
+  return [...byKey.values()];
+}
+
+/**
  * Write profile into Pi auth.json + models.json and mark active.
  * Does not reload ModelRuntime — caller should.
  */
@@ -801,6 +872,9 @@ export function activateProviderProfile(
   ensureParent(paths.modelsPath);
 
   const auth = readJsonFile<Record<string, unknown>>(paths.authPath, {});
+  // Drop DeepSeek vs deepseek style shadows only — never remove a different
+  // providerId (e.g. deepseek vs deepseek-anthropic must coexist).
+  pruneStaleProviderKeys(auth, profile.providerId);
   auth[profile.providerId] = {
     type: "api_key",
     key: profile.apiKey,
@@ -814,6 +888,8 @@ export function activateProviderProfile(
   if (!modelsFile.providers || typeof modelsFile.providers !== "object") {
     modelsFile.providers = {};
   }
+  pruneStaleProviderKeys(modelsFile.providers, profile.providerId);
+  // Full replace of this provider's model list (edit must drop removed ids).
   modelsFile.providers[profile.providerId] = {
     baseUrl: profile.baseUrl,
     api: profile.api,

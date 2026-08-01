@@ -49,6 +49,11 @@ function statusLabel(status: AgentStatus): string {
   return "空闲";
 }
 
+function capitalizeLabel(text: string): string {
+  if (!text) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function TopBar(props: Props) {
   const modelOptions =
     props.models.length === 0
@@ -57,7 +62,7 @@ export function TopBar(props: Props) {
           const key = `${m.provider}/${m.id}`;
           return {
             value: key,
-            label: `${m.name} (${m.provider})`,
+            label: m.name?.trim() || m.id,
           };
         });
 
@@ -100,6 +105,7 @@ export function TopBar(props: Props) {
           <span className="field-label">模型</span>
           <SelectMenu
             variant="pill"
+            className="select-menu-centered"
             value={props.currentModelKey}
             options={modelOptions}
             onChange={props.onModelChange}
@@ -113,11 +119,11 @@ export function TopBar(props: Props) {
           <span className="field-label">Thinking</span>
           <SelectMenu
             variant="pill"
-            className="select-menu-compact"
+            className="select-menu-compact select-menu-centered"
             value={props.thinkingLevel}
             options={props.thinkingLevels.map((level) => ({
               value: level,
-              label: level,
+              label: capitalizeLabel(level),
             }))}
             onChange={(v) => props.onThinkingChange(v as ThinkingLevel)}
             disabled={!props.cwd || props.busy}

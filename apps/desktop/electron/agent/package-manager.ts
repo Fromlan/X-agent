@@ -107,6 +107,95 @@ export function readPiSettingsPackageSources(): string[] {
   }
 }
 
+/** Write `packages` into settings.json, preserving other keys. */
+export function writePiSettingsPackageSources(packages: string[]): void {
+  const path = settingsPath();
+  mkdirSync(getAgentDirPath(), { recursive: true });
+  let raw: Record<string, unknown> = {};
+  if (existsSync(path)) {
+    try {
+      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    } catch {
+      raw = {};
+    }
+  }
+  raw.packages = packages;
+  writeFileSync(path, JSON.stringify(raw, null, 2), "utf8");
+}
+
+/** True when `source` resolves to a directory with package.json. */
+export function isResolvablePackageSource(source: string): boolean {
+  try {
+    const abs = resolve(source);
+    return existsSync(join(abs, "package.json"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Drop settings + registry entries whose local path no longer exists.
+ * Non-path sources (e.g. npm:) are kept.
+ */
+export function pruneMissingPiPackageSources(): {
+  removed: string[];
+  kept: string[];
+} {
+  const before = readPiSettingsPackageSources();
+  const kept: string[] = [];
+  const removed: string[] = [];
+  for (const source of before) {
+    // npm:/git: style specs are not filesystem paths — keep them.
+    if (/^(npm:|git\+|https?:|ssh:)/i.test(source.trim())) {
+      kept.push(source);
+      continue;
+    }
+    if (isResolvablePackageSource(source)) {
+      kept.push(source);
+    } else {
+      removed.push(source);
+    }
+  }
+  if (removed.length > 0) {
+    writePiSettingsPackageSources(kept);
+    let reg = readRegistry();
+    for (const source of removed) {
+      reg = {
+        packages: dropRegistryPackagesBySource(reg.packages, source),
+      };
+    }
+    writeRegistry(reg);
+  }
+  return { removed, kept };
+}
+
+/** Resolve package.json `name` for a settings/source entry, or null. */
+export function packageNameForSource(source: string): string | null {
+  try {
+    const abs = resolve(source);
+    if (!existsSync(join(abs, "package.json"))) return null;
+    const name = packageNameFromSource(abs, abs);
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Settings sources that resolve on disk and whose package.json name matches.
+ */
+export function findLivePackageSourcesByName(packageName: string): string[] {
+  const target = packageName.trim().toLowerCase();
+  if (!target) return [];
+  return readPiSettingsPackageSources().filter((source) => {
+    if (!isResolvablePackageSource(source)) return false;
+    const name = packageNameForSource(source);
+    return Boolean(name && name.toLowerCase() === target);
+  });
+}
+
+export const GODOT_PI_PACKAGE_NAME = "@x-agent/godot-pi";
+
 function readPackageManifest(root: string): PiPackageManifest | null {
   const pkgJson = join(root, "package.json");
   if (!existsSync(pkgJson)) return null;
@@ -311,6 +400,33 @@ function packageNameFromSource(source: string, fallbackPath?: string): string {
   return base || source;
 }
 
+/**
+ * Uninstall other live local copies of the same package name (different path).
+ * Used before install so settings.json does not accumulate Electron temp paths.
+ */
+async function uninstallOtherSourcesForPackageName(
+  packageName: string,
+  keepSource: string,
+): Promise<{ ok: boolean; error?: string; output: string }> {
+  const keepKey = normalizeSourceKey(keepSource);
+  const others = findLivePackageSourcesByName(packageName).filter(
+    (s) => normalizeSourceKey(s) !== keepKey,
+  );
+  let output = "";
+  for (const other of others) {
+    const res = await uninstallPackage(other);
+    output += (res.output ?? "") + "\n";
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: res.error ?? `无法卸载旧路径：${other}`,
+        output,
+      };
+    }
+  }
+  return { ok: true, output };
+}
+
 export async function installPackage(source: string): Promise<PackageInstallResult> {
   const trimmed = source.trim();
   if (!trimmed) return { ok: false, error: "安装源不能为空" };
@@ -322,7 +438,40 @@ export async function installPackage(source: string): Promise<PackageInstallResu
         "需要全局 Pi CLI 才能安装 Packages。请先在设置中安装 Pi CLI，或手动执行 pi install。",
     };
   }
+  pruneMissingPiPackageSources();
   const absSource = existsSync(trimmed) ? resolve(trimmed) : trimmed;
+  const pkgName = packageNameForSource(absSource);
+  let preOutput = "";
+  if (pkgName) {
+    const cleaned = await uninstallOtherSourcesForPackageName(pkgName, absSource);
+    preOutput = cleaned.output;
+    if (!cleaned.ok) {
+      return {
+        ok: false,
+        error: cleaned.error,
+        output: preOutput.trim().slice(-800),
+      };
+    }
+  }
+  // Already installed at this exact path after prune/dedupe — just refresh registry.
+  if (
+    pkgName &&
+    readPiSettingsPackageSources().some(
+      (s) => normalizeSourceKey(s) === normalizeSourceKey(absSource),
+    )
+  ) {
+    const entry: InstalledPackageInfo = enrichPackageCounts({
+      name: pkgName,
+      source: absSource,
+      installedAt: new Date().toISOString(),
+      path: absSource,
+    });
+    const reg = readRegistry();
+    reg.packages = dropRegistryPackagesBySource(reg.packages, entry.source);
+    reg.packages.push(entry);
+    writeRegistry(reg);
+    return { ok: true, package: entry, output: preOutput.trim().slice(-400) };
+  }
   const { code, output } = await runPiPackageCommand(
     cli.piPath,
     ["install", absSource],
@@ -332,7 +481,7 @@ export async function installPackage(source: string): Promise<PackageInstallResu
     return {
       ok: false,
       error: `pi install 失败（code=${code ?? "null"}）`,
-      output: output.trim().slice(-800),
+      output: (preOutput + output).trim().slice(-800),
     };
   }
   const entry: InstalledPackageInfo = enrichPackageCounts({
@@ -348,7 +497,11 @@ export async function installPackage(source: string): Promise<PackageInstallResu
   reg.packages = dropRegistryPackagesBySource(reg.packages, entry.source);
   reg.packages.push(entry);
   writeRegistry(reg);
-  return { ok: true, package: entry, output: output.trim().slice(-400) };
+  return {
+    ok: true,
+    package: entry,
+    output: (preOutput + output).trim().slice(-400),
+  };
 }
 
 /**
@@ -455,36 +608,38 @@ export async function installGodotPiPackage(): Promise<PackageInstallResult> {
   return installPackage(path);
 }
 
-/** Whether the bundled native skills package path is already in Pi settings.json. */
+/**
+ * Whether a readable @x-agent/godot-pi is already listed in Pi settings
+ * (any live path — not necessarily the current bundle resolve).
+ */
 export function isGodotPiPackageInstalled(): boolean {
-  const path = resolveGodotPiPackagePath();
-  if (!path) return false;
-  const key = normalizeSourceKey(path);
-  return readPiSettingsPackageSources().some(
-    (source) => normalizeSourceKey(source) === key,
-  );
+  return findLivePackageSourcesByName(GODOT_PI_PACKAGE_NAME).length > 0;
 }
 
 /**
- * Install the native godot-pi package once if missing and Pi CLI is available.
- * Does not throw; callers may ignore failures (manual install remains in Settings).
+ * Install / refresh the native godot-pi package when missing or pointing at a
+ * stale path. Does not throw; callers may ignore failures.
  */
 export async function ensureGodotPiPackageInstalled(): Promise<{
   attempted: boolean;
   installed: boolean;
   result?: PackageInstallResult;
 }> {
+  pruneMissingPiPackageSources();
   const path = resolveGodotPiPackagePath();
   if (!path) {
     return { attempted: false, installed: false };
   }
-  if (isGodotPiPackageInstalled()) {
+  const live = findLivePackageSourcesByName(GODOT_PI_PACKAGE_NAME);
+  const targetKey = normalizeSourceKey(path);
+  if (live.some((s) => normalizeSourceKey(s) === targetKey)) {
     return { attempted: false, installed: true };
   }
   const cli = checkPiCli();
   if (!cli.ok) {
     return { attempted: false, installed: false };
   }
+  // installPackage uninstalls other same-name paths, then installs `path`.
   const result = await installGodotPiPackage();
   return {
     attempted: true,

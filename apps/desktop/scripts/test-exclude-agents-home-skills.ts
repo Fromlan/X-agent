@@ -7,9 +7,12 @@ import {
 } from "../electron/agent/exclude-agents-home-skills";
 import {
   applyXAgentSkillsFilter,
+  dedupeSkillsByName,
   filterGodotSkillsForCwd,
   isGodotProjectRoot,
   skillIdForFilter,
+  truncateSkillDescription,
+  SKILL_INDEX_DESCRIPTION_MAX,
 } from "../electron/agent/filter-session-skills";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -97,5 +100,47 @@ const homeOnly = [
 ];
 const afterHome = applyXAgentSkillsFilter(homeOnly, join(homedir(), "no-godot"));
 assert(afterHome.length === 1 && afterHome[0]!.name === "x-tdd", "home agents still excluded");
+
+assert(
+  truncateSkillDescription("short") === "short",
+  "short description unchanged",
+);
+const longDesc =
+  "A".repeat(SKILL_INDEX_DESCRIPTION_MAX + 40);
+const truncated = truncateSkillDescription(longDesc);
+assert(
+  truncated.length === SKILL_INDEX_DESCRIPTION_MAX,
+  "truncated to max length",
+);
+assert(truncated.endsWith("..."), "ellipsis suffix");
+
+const dupes = [
+  {
+    name: "x-grill",
+    filePath: join("a", "x-grill", "SKILL.md"),
+    description: "first",
+  },
+  {
+    name: "x-grill",
+    filePath: join("b", "x-grill", "SKILL.md"),
+    description: "second",
+  },
+  {
+    name: "x-tdd",
+    filePath: join("a", "x-tdd", "SKILL.md"),
+    description: "B".repeat(200),
+  },
+];
+const deduped = dedupeSkillsByName(dupes);
+assert(deduped.length === 2, "dedupe by name");
+assert(deduped[0]!.description === "first", "keeps first");
+
+const indexed = applyXAgentSkillsFilter(dupes, join(homedir(), "no-godot"));
+assert(indexed.length === 2, "pipeline dedupes");
+assert(
+  (indexed.find((s) => s.name === "x-tdd")?.description?.length ?? 0) ===
+    SKILL_INDEX_DESCRIPTION_MAX,
+  "pipeline truncates description",
+);
 
 console.log("test-exclude-agents-home-skills: ok");

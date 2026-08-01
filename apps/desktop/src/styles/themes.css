@@ -38,6 +38,16 @@ body[data-theme="default-dark"] {
   --accent-purple: var(--text-secondary);
   --accent-gray: #737373;
 
+  --ctx-system: #6b8fce;
+  --ctx-project: #5ba87a;
+  --ctx-skills: #9b7ebd;
+  --ctx-tools: #c49a4a;
+  --ctx-messages: #7a9eae;
+  --ctx-overhead: #737373;
+  --ctx-turn-input: #6b8fce;
+  --ctx-turn-output: #5ba87a;
+  --ctx-turn-cache: #7a9eae;
+
   --border-primary: #3c3c3a;
   --border-input: #3c3c3a;
   --border-focus: var(--focus-ring);
@@ -99,6 +109,16 @@ body[data-theme="default-light"] {
   --accent-yellow: #f3a115;
   --accent-purple: var(--text-secondary);
   --accent-gray: #737373;
+
+  --ctx-system: #4a6fa8;
+  --ctx-project: #3d7a55;
+  --ctx-skills: #7a5a9a;
+  --ctx-tools: #9a7020;
+  --ctx-messages: #4a7a8a;
+  --ctx-overhead: #737373;
+  --ctx-turn-input: #4a6fa8;
+  --ctx-turn-output: #3d7a55;
+  --ctx-turn-cache: #4a7a8a;
 
   --border-primary: #d7d7d4;
   --border-input: #d7d7d4;
@@ -164,6 +184,16 @@ body[data-theme="nord-dark"] {
   --accent-purple: #b48ead;
   --accent-gray: #9199a8;
 
+  --ctx-system: #81a1c1;
+  --ctx-project: #a3be8c;
+  --ctx-skills: #b48ead;
+  --ctx-tools: #ebcb8b;
+  --ctx-messages: #88c0d0;
+  --ctx-overhead: #9199a8;
+  --ctx-turn-input: #81a1c1;
+  --ctx-turn-output: #a3be8c;
+  --ctx-turn-cache: #88c0d0;
+
   --border-primary: #4c566a;
   --border-input: #4c566a;
   --border-focus: var(--focus-ring);
@@ -225,6 +255,16 @@ body[data-theme="nord-light"] {
   --accent-yellow: #c9a04a;
   --accent-purple: #9a6f94;
   --accent-gray: #6b7588;
+
+  --ctx-system: #5e81ac;
+  --ctx-project: #6f8f5a;
+  --ctx-skills: #9a6f94;
+  --ctx-tools: #c9a04a;
+  --ctx-messages: #4c7a8c;
+  --ctx-overhead: #6b7588;
+  --ctx-turn-input: #5e81ac;
+  --ctx-turn-output: #6f8f5a;
+  --ctx-turn-cache: #4c7a8c;
 
   --border-primary: #d8dee9;
   --border-input: #d8dee9;
@@ -290,6 +330,16 @@ body[data-theme="tokyo-dark"] {
   --accent-purple: #bb9af7;
   --accent-gray: #565f89;
 
+  --ctx-system: #7aa2f7;
+  --ctx-project: #9ece6a;
+  --ctx-skills: #bb9af7;
+  --ctx-tools: #e0af68;
+  --ctx-messages: #7dcfff;
+  --ctx-overhead: #565f89;
+  --ctx-turn-input: #7aa2f7;
+  --ctx-turn-output: #9ece6a;
+  --ctx-turn-cache: #7dcfff;
+
   --border-primary: #3b4261;
   --border-input: #3b4261;
   --border-focus: var(--focus-ring);
@@ -351,6 +401,16 @@ body[data-theme="tokyo-light"] {
   --accent-yellow: #8c6c3e;
   --accent-purple: #7847bd;
   --accent-gray: #6b7190;
+
+  --ctx-system: #2e7de9;
+  --ctx-project: #587539;
+  --ctx-skills: #7847bd;
+  --ctx-tools: #8c6c3e;
+  --ctx-messages: #0a8fa8;
+  --ctx-overhead: #6b7190;
+  --ctx-turn-input: #2e7de9;
+  --ctx-turn-output: #587539;
+  --ctx-turn-cache: #0a8fa8;
 
   --border-primary: #c5c8d6;
   --border-input: #c5c8d6;
@@ -416,6 +476,16 @@ body[data-theme="paper-dark"] {
   --accent-purple: #b090a4;
   --accent-gray: #8f8476;
 
+  --ctx-system: #8aa0b4;
+  --ctx-project: #8fad7a;
+  --ctx-skills: #b090a4;
+  --ctx-tools: #d4a574;
+  --ctx-messages: #a0b4a8;
+  --ctx-overhead: #8f8476;
+  --ctx-turn-input: #8aa0b4;
+  --ctx-turn-output: #8fad7a;
+  --ctx-turn-cache: #a0b4a8;
+
   --border-primary: #4a4238;
   --border-input: #4a4238;
   --border-focus: var(--focus-ring);
@@ -477,6 +547,16 @@ body[data-theme="paper-light"] {
   --accent-yellow: #9a7020;
   --accent-purple: #7a5a72;
   --accent-gray: #7a6e60;
+
+  --ctx-system: #4a6a8a;
+  --ctx-project: #4f7a42;
+  --ctx-skills: #7a5a72;
+  --ctx-tools: #9a7020;
+  --ctx-messages: #4a7060;
+  --ctx-overhead: #7a6e60;
+  --ctx-turn-input: #4a6a8a;
+  --ctx-turn-output: #4f7a42;
+  --ctx-turn-cache: #4a7060;
 
   --border-primary: #d4c8b4;
   --border-input: #d4c8b4;
@@ -542,6 +622,16 @@ body[data-theme="contrast-dark"] {
   --accent-purple: #c084fc;
   --accent-gray: #a0a0a0;
 
+  --ctx-system: #3d9eff;
+  --ctx-project: #22c55e;
+  --ctx-skills: #c084fc;
+  --ctx-tools: #ffcc00;
+  --ctx-messages: #00d4ff;
+  --ctx-overhead: #a0a0a0;
+  --ctx-turn-input: #3d9eff;
+  --ctx-turn-output: #22c55e;
+  --ctx-turn-cache: #00d4ff;
+
   --border-primary: #555555;
   --border-input: #555555;
   --border-focus: var(--focus-ring);
@@ -603,6 +693,16 @@ body[data-theme="contrast-light"] {
   --accent-yellow: #a07000;
   --accent-purple: #6b21a8;
   --accent-gray: #444444;
+
+  --ctx-system: #0055cc;
+  --ctx-project: #007a33;
+  --ctx-skills: #6b21a8;
+  --ctx-tools: #a07000;
+  --ctx-messages: #007a8c;
+  --ctx-overhead: #444444;
+  --ctx-turn-input: #0055cc;
+  --ctx-turn-output: #007a33;
+  --ctx-turn-cache: #007a8c;
 
   --border-primary: #000000;
   --border-input: #000000;

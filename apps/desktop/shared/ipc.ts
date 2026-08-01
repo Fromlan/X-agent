@@ -207,7 +207,7 @@ export const SESSION_TOOL_REGISTRY = [
 export type AgentSessionMode = "agent" | "ask" | "plan" | "goal";
 
 /** Shared read-only builtins for Ask / Plan modes. */
-export const READONLY_CORE_TOOLS = ["read", "grep", "find", "ls"] as const;
+export const READONLY_CORE_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
 
 /** Core tools active while in Plan mode (write_plan is a custom tool, not prefs-toggleable). */
 export const PLAN_MODE_CORE_TOOLS = [
@@ -222,12 +222,41 @@ export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_docs_status",
 ] as const;
 
-export type GoalStatus = "pursuing" | "achieved" | "cleared";
+export type GoalStatus =
+  | "pursuing"
+  | "paused"
+  | "budget_limited"
+  | "achieved"
+  | "cleared";
+
+/** Default auto-continue turn budget for Goal mode. */
+export const DEFAULT_GOAL_MAX_TURNS = 20;
+
+/** Default auto-continue token budget (input+output+cache) for Goal mode. */
+export const DEFAULT_GOAL_MAX_TOKENS = 500_000;
+
+/** Goal statuses that survive session restore / show the goal banner. */
+export function isRestorableGoalStatus(
+  status: GoalStatus | null | undefined,
+): boolean {
+  return (
+    status === "pursuing" ||
+    status === "paused" ||
+    status === "budget_limited"
+  );
+}
 
 export interface GoalInfo {
   condition: string;
   status: GoalStatus;
+  /** Completed agent turns while pursuing (increments after each eval). */
   turns: number;
+  /** Soft stop after this many turns (from prefs at setGoal time). */
+  maxTurns: number;
+  /** Tokens consumed while pursuing (sum of turn totals). */
+  tokensUsed: number;
+  /** Soft stop after this many tokens (from prefs at setGoal time). */
+  maxTokens: number;
   lastReason?: string;
   startedAt: number;
 }
@@ -378,6 +407,16 @@ export interface ClientPrefs {
    * `0` disables automatic compression.
    */
   autoCompactPercent: number;
+  /**
+   * Goal mode auto-continue turn budget (1–200). Soft-stops with
+   * `budget_limited` when reached; user can raise and resume.
+   */
+  goalMaxTurns: number;
+  /**
+   * Goal mode auto-continue token budget (10_000–10_000_000). Soft-stops with
+   * `budget_limited` when reached; user can raise and resume.
+   */
+  goalMaxTokens: number;
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -402,6 +441,8 @@ export const DEFAULT_PREFS: ClientPrefs = {
   dismissedReadyChecklistKeys: [],
   dismissedGodotToolsNudgeKeys: [],
   autoCompactPercent: 0,
+  goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
+  goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
 };
 
 export interface OpenProjectResult {
@@ -933,11 +974,13 @@ export type PlanApi = {
   saveToWorkspace: XAgentApiFlat["savePlanToWorkspace"];
   clear: XAgentApiFlat["clearPlan"];
   setGoal: XAgentApiFlat["setGoal"];
+  pauseGoal: XAgentApiFlat["pauseGoal"];
+  resumeGoal: XAgentApiFlat["resumeGoal"];
   clearGoal: XAgentApiFlat["clearGoal"];
   getGoal: XAgentApiFlat["getGoal"];
 };
 
-/** Flat IPC surface (used to define facet types without circular refs). */
+/** Flat IPC surface (legacy; prefer workspace / turn / plan facades). */
 export interface XAgentApiFlat {
   openProject: (path?: string) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
@@ -967,6 +1010,8 @@ export interface XAgentApiFlat {
   savePlanToWorkspace: () => Promise<PlanMutateResult>;
   clearPlan: () => Promise<PlanMutateResult>;
   setGoal: (condition: string) => Promise<GoalResult>;
+  pauseGoal: () => Promise<GoalResult>;
+  resumeGoal: () => Promise<GoalResult>;
   clearGoal: () => Promise<GoalResult>;
   getGoal: () => Promise<GoalInfo | null>;
   listModels: () => Promise<ModelInfo[]>;
@@ -1049,7 +1094,13 @@ export interface XAgentApiFlat {
   getProviderProfile: (id: string) => Promise<ProviderProfile | null>;
   upsertProviderProfile: (
     input: ProviderUpsertInput,
-  ) => Promise<{ ok: boolean; profile?: ProviderProfile; error?: string }>;
+  ) => Promise<{
+    ok: boolean;
+    profile?: ProviderProfile;
+    error?: string;
+    /** True when upsert already activated/synced the active profile. */
+    syncedActive?: boolean;
+  }>;
   deleteProviderProfile: (id: string) => Promise<{ ok: boolean; error?: string }>;
   activateProviderProfile: (id: string) => Promise<ProviderActivateResult>;
   listProviderPresets: () => Promise<ProviderPreset[]>;
