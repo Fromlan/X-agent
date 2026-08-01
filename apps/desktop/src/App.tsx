@@ -25,7 +25,6 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS } from "@shared/ipc";
-import { setRightPanelTab } from "./stores/right-panel-store";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
   NODE_JS_DOWNLOAD_URL,
@@ -52,7 +51,6 @@ import {
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
 import { startersForProject } from "./lib/chat-starters";
-import { normalizeProjectKey } from "./lib/group-sessions";
 import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
   RIGHT_PANEL_WIDTH_DEFAULT,
@@ -66,16 +64,16 @@ import {
 } from "./hooks/useColumnResize";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
 import { useAutoCompact } from "./hooks/useAutoCompact";
+import { usePlanSessionAutoOpen } from "./hooks/usePlanSession";
 import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
 import { useUpdateStatus } from "./hooks/useUpdateStatus";
+import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
 import { createEmptyState } from "./stores/chat-store";
 import {
-  clearSessionUsage,
   getCompacting,
   getSessionUsageState,
   getSessionUsageStoreVersion,
-  setSessionUsage,
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
 
@@ -164,31 +162,8 @@ export default function App() {
     modelCount: models.length,
   });
 
-  const fetchSessionUsage = useCallback(() => {
-    const gen = ++usageFetchGen.current;
-    void window.xAgent.getSessionUsage().then((u) => {
-      if (gen !== usageFetchGen.current) return;
-      if (u) setSessionUsage(u);
-      else setSessionUsage(null);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!editingEntryId) setEditDraft("");
-  }, [editingEntryId]);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
-  const currentModelKey = useMemo(() => {
-    const m =
-      prefs?.provider && prefs?.model ? `${prefs.provider}/${prefs.model}` : "";
-    return m;
-  }, [prefs]);
-
   const refreshSessions = useCallback(async () => {
-    const list = await window.xAgent.listSessions();
+    const list = await window.xAgent.workspace.listSessions();
     setSessions(list);
   }, []);
 
@@ -213,6 +188,45 @@ export default function App() {
     refreshSessions,
   });
 
+  const {
+    openProject,
+    newSession,
+    resumeSession,
+    deleteSession,
+    deleteProjectSessions,
+    hideProject,
+    renameSession,
+  } = useWorkspaceSession({
+    setItems,
+    setStatus,
+    setCwd,
+    setSessionId,
+    setError,
+    setBusy,
+    setSessionMode,
+    setPlanPath,
+    setGoal,
+    setQueuedSteering,
+    setEditingEntryId,
+    setEditDraft,
+    setInput,
+    setConfirmState,
+    setFollowNonce,
+    setPrefs,
+    setPrefsRecovery,
+    setBash,
+    setGit,
+    setAuth,
+    setPiCli,
+    refreshSessions,
+    refreshModels,
+    refreshProjectReadiness,
+    prefs,
+    cwd,
+    sessionIdRef,
+    usageFetchGen,
+  });
+
   useAutoCompact({
     thresholdPercent: prefs?.autoCompactPercent ?? 0,
     usage: sessionUsage,
@@ -224,40 +238,6 @@ export default function App() {
     compacting,
     sessionId,
   });
-
-  const syncFromHost = useCallback(async () => {
-    const s = await window.xAgent.getStatus();
-    setStatus(s.status);
-    setCwd(s.cwd);
-    setSessionId(s.sessionId);
-    if (!s.hasSession) {
-      setItems(createEmptyState());
-      setSessionId(null);
-      sessionIdRef.current = null;
-      setQueuedSteering([]);
-      setEditingEntryId(null);
-      setEditDraft("");
-      setConfirmState(null);
-      usageFetchGen.current += 1;
-      clearSessionUsage();
-    } else {
-      fetchSessionUsage();
-    }
-    if (s.error) setError(s.error);
-    else if (s.status === "idle") setError(null);
-    if (s.model) {
-      setPrefs((prev) =>
-        prev
-          ? {
-              ...prev,
-              provider: s.model?.provider ?? prev.provider,
-              model: s.model?.id ?? prev.model,
-              thinkingLevel: s.thinkingLevel,
-            }
-          : prev,
-      );
-    }
-  }, [fetchSessionUsage, setConfirmState]);
 
   useAgentEventRouter({
     setStatus,
@@ -286,62 +266,18 @@ export default function App() {
   );
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [p, recovery] = await Promise.all([
-          window.xAgent.getPrefs(),
-          window.xAgent.getPrefsRecoveryNotice(),
-        ]);
-        if (cancelled) return;
-        setPrefs(p);
-        if (recovery) setPrefsRecovery(recovery);
-        applyTheme(p.themeId, p.colorMode);
-        setBash(await window.xAgent.checkBash());
-        setGit(await window.xAgent.checkGit());
-        setAuth(await window.xAgent.checkAuth());
-        setPiCli(await window.xAgent.checkPiCli());
-        if (cancelled) return;
-        await refreshModels();
-        if (cancelled) return;
-        await refreshSessions();
-        if (cancelled) return;
+    if (!editingEntryId) setEditDraft("");
+  }, [editingEntryId]);
 
-        let restored = false;
-        if (p.lastSessionPath) {
-          const result = await window.xAgent.resumeSession(p.lastSessionPath);
-          if (cancelled) return;
-          if (result.ok) {
-            setCwd(result.cwd);
-            setSessionId(result.sessionId);
-            restored = true;
-            if (result.warning) setError(result.warning);
-          }
-        }
-        if (!restored && p.lastProjectPath) {
-          const result = await window.xAgent.openProject(p.lastProjectPath);
-          if (cancelled) return;
-          if (result.ok) {
-            setCwd(result.cwd);
-            setSessionId(result.sessionId);
-            if (result.warning) setError(result.warning);
-          } else if (result.error && result.error !== "已取消") {
-            setError(result.error);
-            await syncFromHost();
-          }
-        }
-        await refreshSessions();
-      } finally {
-        if (!cancelled) {
-          void window.xAgent.notifyAppReady();
-        }
-      }
-    })();
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshModels, refreshSessions, syncFromHost]);
+  const currentModelKey = useMemo(() => {
+    const m =
+      prefs?.provider && prefs?.model ? `${prefs.provider}/${prefs.model}` : "";
+    return m;
+  }, [prefs]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -356,153 +292,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const clearComposerEditState = useCallback(() => {
-    setEditingEntryId(null);
-    setEditDraft("");
-    setConfirmState(null);
-  }, []);
-
-  const openProject = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.openProject();
-      if (!result.ok) {
-        if (result.error !== "已取消") {
-          setError(result.error ?? "打开失败");
-          await syncFromHost();
-        }
-        return;
-      }
-      clearComposerEditState();
-      setInput("");
-      setCwd(result.cwd);
-      setSessionId(result.sessionId);
-      if (result.warning) setError(result.warning);
-      const p = await window.xAgent.getPrefs();
-      setPrefs(p);
-      await refreshSessions();
-      await refreshProjectReadiness(result.cwd);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const newSession = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.newSession();
-      if (!result.ok) {
-        setError(result.error ?? "新建会话失败");
-        await syncFromHost();
-        return;
-      }
-      clearComposerEditState();
-      setInput("");
-      setSessionId(result.sessionId);
-      setFollowNonce((n) => n + 1);
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resumeSession = async (path: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.resumeSession(path);
-      if (!result.ok) {
-        setError(result.error ?? "恢复会话失败");
-        await syncFromHost();
-        return;
-      }
-      clearComposerEditState();
-      setInput("");
-      setCwd(result.cwd);
-      setSessionId(result.sessionId);
-      setFollowNonce((n) => n + 1);
-      if (result.warning) setError(result.warning);
-      const p = await window.xAgent.getPrefs();
-      setPrefs(p);
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const deleteSession = async (path: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.deleteSession(path);
-      if (!result.ok) {
-        setError(result.error ?? "删除失败");
-        return;
-      }
-      await syncFromHost();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const deleteProjectSessions = async (projectCwd: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.deleteProjectSessions(projectCwd);
-      if (!result.ok) {
-        setError(result.error ?? "删除项目对话失败");
-        return;
-      }
-      await syncFromHost();
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const hideProject = async (projectCwd: string) => {
-    if (!prefs) return;
-    const key = normalizeProjectKey(projectCwd);
-    if (!key) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const hidden = new Set(
-        (prefs.hiddenProjectKeys ?? []).map((k) => normalizeProjectKey(k)),
-      );
-      hidden.add(key);
-      const next = await window.xAgent.setPrefs({
-        hiddenProjectKeys: [...hidden],
-      });
-      setPrefs(next);
-
-      if (cwd && normalizeProjectKey(cwd) === key) {
-        const closed = await window.xAgent.closeWorkspace();
-        if (!closed.ok) {
-          setError(closed.error ?? "关闭工作区失败");
-        }
-        await syncFromHost();
-      }
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const renameSession = async (path: string, name: string) => {
-    const result = await window.xAgent.renameSession(path, name);
-    if (!result.ok) setError(result.error ?? "重命名失败");
-    else await refreshSessions();
-  };
-
-  const addPathToChat = useCallback((relPath: string) => {
-    setInput((prev) => appendAtPath(prev, relPath));
-  }, []);
-
   const send = async () => {
     if (!input.trim() || !cwd) return;
     const text = input.trim();
@@ -513,14 +302,14 @@ export default function App() {
     // Slash: /goal — host IPC, not model prompt.
     if (/^\/goal\s+clear\b/i.test(text) || /^\/goal\s*$/i.test(text)) {
       if (/clear/i.test(text)) {
-        const result = await window.xAgent.clearGoal();
+        const result = await window.xAgent.plan.clearGoal();
         if (!result.ok) setError(result.error ?? "清除目标失败");
         else {
           setGoal(null);
           setSessionMode("agent");
         }
       } else {
-        const g = await window.xAgent.getGoal();
+        const g = await window.xAgent.plan.getGoal();
         setGoal(g);
         setError(
           g
@@ -532,7 +321,7 @@ export default function App() {
     }
     const goalSet = text.match(/^\/goal\s+(.+)$/is);
     if (goalSet?.[1] && !/^clear\b/i.test(goalSet[1].trim())) {
-      const result = await window.xAgent.setGoal(goalSet[1].trim());
+      const result = await window.xAgent.plan.setGoal(goalSet[1].trim());
       if (!result.ok) setError(result.error ?? "设置目标失败");
       else {
         if (result.goal) setGoal(result.goal);
@@ -543,7 +332,7 @@ export default function App() {
 
     // Goal 模式且尚未设置条件：整条消息即完成条件。
     if (sessionMode === "goal" && goal?.status !== "pursuing") {
-      const result = await window.xAgent.setGoal(text);
+      const result = await window.xAgent.plan.setGoal(text);
       if (!result.ok) setError(result.error ?? "设置目标失败");
       else {
         if (result.goal) setGoal(result.goal);
@@ -553,7 +342,7 @@ export default function App() {
     }
 
     const expanded = await expandAtPathsInPrompt(text);
-    const result = await window.xAgent.prompt(expanded);
+    const result = await window.xAgent.turn.prompt(expanded);
     if (!result.ok) {
       setError(result.error ?? "发送失败");
     }
@@ -561,7 +350,7 @@ export default function App() {
   };
 
   const onSessionModeChange = async (mode: AgentSessionMode) => {
-    const result = await window.xAgent.setSessionMode(mode);
+    const result = await window.xAgent.plan.setMode(mode);
     if (!result.ok) {
       setError(result.error ?? "切换模式失败");
       return;
@@ -570,7 +359,7 @@ export default function App() {
       setSessionMode(result.info.mode);
       setPlanPath(result.info.planPath);
     }
-    if (mode === "agent" || mode === "plan") {
+    if (mode === "agent" || mode === "ask" || mode === "plan") {
       setGoal(null);
       // 离开目标模式时清掉输入框里残留的 /goal 命令草稿
       setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
@@ -584,21 +373,18 @@ export default function App() {
 
   const onBuildPlan = async () => {
     setError(null);
-    const result = await window.xAgent.buildPlan();
+    const result = await window.xAgent.plan.build();
     if (!result.ok) setError(result.error ?? "执行计划失败");
     else {
-      const mode = await window.xAgent.getSessionMode();
+      const mode = await window.xAgent.plan.getMode();
       setSessionMode(mode.mode);
       setPlanPath(mode.planPath);
     }
     await refreshSessions();
   };
 
-  // write_plan / session_mode → open right-panel Plan tab for review.
-  const prevPlanPathRef = useRef<string | null>(null);
-
   const onClearGoal = async () => {
-    const result = await window.xAgent.clearGoal();
+    const result = await window.xAgent.plan.clearGoal();
     if (!result.ok) setError(result.error ?? "清除目标失败");
     else {
       setGoal(null);
@@ -607,8 +393,12 @@ export default function App() {
   };
 
   const abort = async () => {
-    await window.xAgent.abort();
+    await window.xAgent.turn.abort();
   };
+
+  const addPathToChat = useCallback((relPath: string) => {
+    setInput((prev) => appendAtPath(prev, relPath));
+  }, []);
 
   const onStartEdit = (entryId: string, text: string) => {
     setEditingEntryId(entryId);
@@ -747,22 +537,14 @@ export default function App() {
     setPrefs(next);
   };
 
-  const ensureRightPanelOpen = async () => {
+  const ensureRightPanelOpen = useCallback(async () => {
     if (!prefs || prefs.rightPanelOpen) return;
     setPrefs({ ...prefs, rightPanelOpen: true });
     const next = await window.xAgent.setPrefs({ rightPanelOpen: true });
     setPrefs(next);
-  };
+  }, [prefs]);
 
-  useEffect(() => {
-    const prev = prevPlanPathRef.current;
-    prevPlanPathRef.current = planPath;
-    if (!planPath || planPath === prev) return;
-    setRightPanelTab("plan");
-    void ensureRightPanelOpen();
-    // Only react to planPath identity; open helpers read latest prefs via closure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planPath]);
+  usePlanSessionAutoOpen(planPath, ensureRightPanelOpen);
 
   const toggleTool = async (tool: string) => {
     if (!prefs) return;

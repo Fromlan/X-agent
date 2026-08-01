@@ -208,7 +208,6 @@ export function ChatPanel(props: Props) {
         readinessHints={props.readinessHints}
         onPickStarter={props.onPickStarter}
         forceFollowKey={props.forceFollowKey}
-        degradeMarkdown={props.items.length > 40}
         onOpenToolInPanel={props.onOpenToolInPanel}
         editingEntryId={props.editingEntryId}
         editDraft={props.editDraft}
@@ -268,6 +267,19 @@ export function ChatPanel(props: Props) {
               onClick={() => props.onSessionModeChange?.("agent")}
             >
               Agent
+            </button>
+            <button
+              type="button"
+              className={
+                sessionMode === "ask"
+                  ? "composer-mode-pill is-active"
+                  : "composer-mode-pill"
+              }
+              disabled={modeSwitchDisabled || !props.onSessionModeChange}
+              onClick={() => props.onSessionModeChange?.("ask")}
+              title="只读研究与问答，不改文件"
+            >
+              调研
             </button>
             <button
               type="button"
@@ -337,15 +349,17 @@ export function ChatPanel(props: Props) {
                 ? "请先打开项目…"
                 : props.editingEntryId
                   ? "正在编辑历史消息 — 请先确认或取消编辑"
-                  : sessionMode === "plan"
-                    ? "Plan 模式：描述任务，Agent 只读研究并写计划…"
-                    : sessionMode === "goal"
-                      ? goalActive
-                        ? "目标进行中：可补充说明，或点清除退出"
-                        : "目标模式：输入可验证的完成条件后发送…"
-                      : streaming
-                        ? "运行中：Enter 发送 steer，Shift+Enter 换行，/ 选择技能"
-                        : "输入消息，Enter 发送，Shift+Enter 换行，/ 选择技能"
+                  : sessionMode === "ask"
+                    ? "调研模式：只读研究与问答，不改文件…"
+                    : sessionMode === "plan"
+                      ? "Plan 模式：描述任务，Agent 只读研究并写计划…"
+                      : sessionMode === "goal"
+                        ? goalActive
+                          ? "目标进行中：可补充说明，或点清除退出"
+                          : "目标模式：输入可验证的完成条件后发送…"
+                        : streaming
+                          ? "运行中：Enter 发送 steer，Shift+Enter 换行，/ 选择技能"
+                          : "输入消息，Enter 发送，Shift+Enter 换行，/ 选择技能"
             }
             disabled={composerLocked}
             rows={2}
@@ -355,19 +369,21 @@ export function ChatPanel(props: Props) {
           />
           <div className="composer-toolbar">
             <span className="composer-hint" aria-hidden="true">
-              {sessionMode === "plan"
-                ? props.planPath
-                  ? "Plan · 当前计划在右栏 · write_plan 可覆盖"
-                  : "Plan · 只读 · write_plan 后点「执行计划」"
-                : sessionMode === "goal"
-                  ? goalActive
-                    ? "目标 · 自动续轮直到条件满足"
-                    : "目标 · 发送完成条件开始"
-                  : props.planPath
-                    ? "Agent · 右栏仍可查看/执行计划"
-                    : streaming
-                      ? "Steer · / 技能 · Shift+Enter 换行"
-                      : "Enter 发送 · Agent/Plan/目标 互斥"}
+              {sessionMode === "ask"
+                ? "调研 · 只读问答 · 需改代码请切 Agent / Plan"
+                : sessionMode === "plan"
+                  ? props.planPath
+                    ? "Plan · 当前计划在右栏 · write_plan 可覆盖"
+                    : "Plan · 只读 · write_plan 后点「执行计划」"
+                  : sessionMode === "goal"
+                    ? goalActive
+                      ? "目标 · 自动续轮直到条件满足"
+                      : "目标 · 发送完成条件开始"
+                    : props.planPath
+                      ? "Agent · 右栏仍可查看/执行计划"
+                      : streaming
+                        ? "Steer · / 技能 · Shift+Enter 换行"
+                        : "Enter 发送 · Agent/调研/Plan/目标 互斥"}
             </span>
             <div className="composer-actions">
               {streaming && (

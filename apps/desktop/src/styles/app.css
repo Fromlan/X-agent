@@ -1170,10 +1170,14 @@ body.is-resizing-column * {
   box-shadow: 0 0 0 3px var(--focus-ring-soft);
 }
 
-.history-virtualize-bar {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 4px;
+.message-stream-virtual {
+  gap: 0;
+  min-height: unset;
+  flex-shrink: 0;
+}
+
+.virtual-row {
+  box-sizing: border-box;
 }
 
 .markdown-plain {

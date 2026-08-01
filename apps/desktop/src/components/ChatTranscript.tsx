@@ -15,16 +15,16 @@ import { MarkdownBody } from "./MarkdownBody";
 import { ToolCard } from "./ToolCard";
 import { UserMessageBody } from "./UserMessageBody";
 import { ArrowDown, Brain, Hammer, Pencil, RotateCcw, Undo2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-function planFileLabel(path: string): string {
-  const norm = path.replace(/\\/g, "/");
-  const i = norm.lastIndexOf("/");
-  return i >= 0 ? norm.slice(i + 1) : norm;
-}
+import { isWritePlanTool, planFileLabel } from "../hooks/usePlanSession";
+import { isDisplayableTranscriptItem } from "../lib/chat-transcript-items";
 
-const VIRTUALIZE_THRESHOLD = 60;
-const VIRTUALIZE_TAIL = 40;
+/** Estimated row height before measure (px); includes inter-row gap. */
+const ESTIMATE_ROW_PX = 72;
+const ROW_GAP_PX = 16;
+const OVERSCAN = 8;
 
 function prefersReducedMotion(): boolean {
   return (
@@ -41,7 +41,23 @@ function metricsOf(el: HTMLElement) {
   };
 }
 
-function ThinkingBlock({ thinking, done }: { thinking: string; done: boolean }) {
+function formatMaybeJson(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+const ThinkingBlock = memo(function ThinkingBlock({
+  thinking,
+  done,
+}: {
+  thinking: string;
+  done: boolean;
+}) {
   const [open, setOpen] = useState(!done);
 
   useEffect(() => {
@@ -61,17 +77,183 @@ function ThinkingBlock({ thinking, done }: { thinking: string; done: boolean }) 
       <pre>{thinking}</pre>
     </details>
   );
-}
+});
 
-function formatMaybeJson(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
+type UserBubbleProps = {
+  item: Extract<ChatItem, { kind: "user" }>;
+  canAct: boolean;
+  editing: boolean;
+  editDraft?: string;
+  onEditDraftChange?: (text: string) => void;
+  onStartEdit?: (entryId: string, text: string) => void;
+  onCancelEdit?: () => void;
+  onConfirmEdit?: () => void;
+  onRetract?: (entryId: string) => void;
+};
+
+const UserBubble = memo(function UserBubble(props: UserBubbleProps) {
+  const entryId = props.item.entryId ?? props.item.id;
+  return (
+    <div className="bubble bubble-user">
+      {props.canAct && entryId && (
+        <div className="bubble-head">
+          <div className="bubble-actions">
+            <button
+              type="button"
+              className="btn btn-ghost bubble-action"
+              title="编辑并重发"
+              onClick={() => props.onStartEdit?.(entryId, props.item.text)}
+            >
+              <Pencil size={12} strokeWidth={2} />
+              <span>编辑</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost bubble-action"
+              title="撤回对话并还原文件"
+              onClick={() => props.onRetract?.(entryId)}
+            >
+              <Undo2 size={12} strokeWidth={2} />
+              <span>撤回</span>
+            </button>
+          </div>
+        </div>
+      )}
+      {props.editing ? (
+        <div className="bubble-edit">
+          <textarea
+            value={props.editDraft ?? props.item.text}
+            onChange={(e) => props.onEditDraftChange?.(e.target.value)}
+            rows={4}
+          />
+          <div className="bubble-edit-actions">
+            <button type="button" className="btn" onClick={props.onCancelEdit}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn-cta"
+              onClick={props.onConfirmEdit}
+              disabled={!props.editDraft?.trim()}
+            >
+              重发
+            </button>
+          </div>
+        </div>
+      ) : (
+        <UserMessageBody text={props.item.text} />
+      )}
+    </div>
+  );
+});
+
+type AssistantBubbleProps = {
+  item: Extract<ChatItem, { kind: "assistant" }>;
+  showThinking: boolean;
+  canAct: boolean;
+  onRegenerate?: (userEntryId: string) => void;
+};
+
+const AssistantBubble = memo(function AssistantBubble(
+  props: AssistantBubbleProps,
+) {
+  const userEntryId = props.item.userEntryId;
+  const showThinkingBlock = Boolean(
+    props.showThinking && props.item.thinking,
+  );
+  return (
+    <div
+      className={`bubble bubble-text${props.item.isError ? " is-error" : ""}`}
+    >
+      {props.canAct && props.item.done && userEntryId && (
+        <div className="bubble-head">
+          <div className="bubble-actions">
+            <button
+              type="button"
+              className="btn btn-ghost bubble-action"
+              title="重新生成"
+              onClick={() => props.onRegenerate?.(userEntryId)}
+            >
+              <RotateCcw size={12} strokeWidth={2} />
+              <span>重新生成</span>
+            </button>
+          </div>
+        </div>
+      )}
+      {showThinkingBlock && props.item.thinking && (
+        <ThinkingBlock
+          thinking={props.item.thinking}
+          done={props.item.done}
+        />
+      )}
+      <MarkdownBody content={props.item.text} streaming={!props.item.done} />
+    </div>
+  );
+});
+
+const SystemBubble = memo(function SystemBubble({
+  item,
+}: {
+  item: Extract<ChatItem, { kind: "system" }>;
+}) {
+  return (
+    <div className={`bubble bubble-system level-${item.level ?? "info"}`}>
+      {item.text}
+    </div>
+  );
+});
+
+type ToolRowProps = {
+  item: Extract<ChatItem, { kind: "tool" }>;
+  sessionMode?: AgentSessionMode;
+  planPath?: string | null;
+  streaming: boolean;
+  onOpenToolInPanel?: (toolId: string, args: unknown) => void;
+  onBuildPlan?: () => void;
+};
+
+const ToolRow = memo(function ToolRow(props: ToolRowProps) {
+  const { item } = props;
+  return (
+    <div className="tool-with-actions">
+      <ToolCard
+        toolCallId={item.id}
+        toolName={item.toolName}
+        args={item.args}
+        result={formatMaybeJson(item.result)}
+        isError={item.isError}
+        done={item.done}
+        onOpenInPanel={
+          props.onOpenToolInPanel
+            ? () => props.onOpenToolInPanel?.(item.id, item.args)
+            : undefined
+        }
+      />
+      {isWritePlanTool(item.toolName) &&
+        item.done &&
+        !item.isError &&
+        props.sessionMode === "plan" &&
+        props.planPath &&
+        props.onBuildPlan && (
+          <div className="plan-execute-bar">
+            <button
+              type="button"
+              className="btn btn-cta btn-sm"
+              disabled={props.streaming}
+              title={props.planPath}
+              onClick={props.onBuildPlan}
+            >
+              <Hammer size={14} aria-hidden />
+              执行计划
+            </button>
+            <span className="plan-execute-path" title={props.planPath}>
+              {planFileLabel(props.planPath)}
+            </span>
+          </div>
+        )}
+    </div>
+  );
+});
 
 export type ChatStarterChip = {
   id: string;
@@ -99,8 +281,6 @@ export interface ChatTranscriptProps {
   onConfirmEdit?: () => void;
   onRetract?: (entryId: string) => void;
   onRegenerate?: (userEntryId: string) => void;
-  /** When true, skip heavy Markdown for non-tail bubbles. */
-  degradeMarkdown?: boolean;
   sessionMode?: AgentSessionMode;
   planPath?: string | null;
   onBuildPlan?: () => void;
@@ -118,25 +298,22 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   const followScheduledRef = useRef(false);
   const prevFollowKeyRef = useRef<string | undefined>(undefined);
   const [showJump, setShowJump] = useState(false);
-  const [showAllHistory, setShowAllHistory] = useState(false);
 
-  useEffect(() => {
-    setShowAllHistory(false);
-  }, [props.forceFollowKey]);
+  const displayItems = useMemo(
+    () =>
+      props.items.filter((item) =>
+        isDisplayableTranscriptItem(item, props.showThinking),
+      ),
+    [props.items, props.showThinking],
+  );
 
-  const visibleItems = useMemo(() => {
-    const items = props.items;
-    if (showAllHistory || items.length <= VIRTUALIZE_THRESHOLD) {
-      return { hidden: 0, items };
-    }
-    const start = Math.max(0, items.length - VIRTUALIZE_TAIL);
-    return { hidden: start, items: items.slice(start) };
-  }, [props.items, showAllHistory]);
-
-  const plainMarkdownCutoff = useMemo(() => {
-    if (!props.degradeMarkdown && !streaming) return -1;
-    return Math.max(0, props.items.length - 6);
-  }, [props.degradeMarkdown, streaming, props.items.length]);
+  const virtualizer = useVirtualizer({
+    count: displayItems.length,
+    getScrollElement: () => streamRef.current,
+    estimateSize: () => ESTIMATE_ROW_PX,
+    overscan: OVERSCAN,
+    getItemKey: (index) => displayItems[index]?.id ?? index,
+  });
 
   const syncJumpVisibility = () => {
     const el = streamRef.current;
@@ -157,7 +334,13 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     applyPin(reduceChatScrollPin(pinStateRef.current, { type: "force_pin" }));
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
-    if (resolved === "smooth") {
+    const last = displayItems.length - 1;
+    if (last >= 0) {
+      virtualizer.scrollToIndex(last, {
+        align: "end",
+        behavior: resolved === "smooth" ? "smooth" : "auto",
+      });
+    } else if (resolved === "smooth") {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     } else {
       el.scrollTop = el.scrollHeight;
@@ -349,7 +532,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
   useLayoutEffect(() => {
     scheduleFollow();
-  }, [props.items, props.status]);
+  }, [props.items, props.status, displayItems.length]);
 
   useLayoutEffect(() => {
     if (props.forceFollowKey == null) return;
@@ -362,227 +545,120 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     scrollToBottom("smooth");
   };
 
+  const virtualItems = virtualizer.getVirtualItems();
+  const totalSize = virtualizer.getTotalSize();
+
   return (
     <div className="chat-transcript">
       <div className="message-stream" ref={streamRef} tabIndex={-1}>
-        <div className="message-stream-inner" ref={contentRef}>
-          {props.items.length === 0 && props.disabledEmpty && (
-            <div className="empty-state">请先打开一个项目文件夹，然后开始对话。</div>
-          )}
-
-          {props.items.length === 0 &&
-            !props.disabledEmpty &&
-            ((props.starters && props.starters.length > 0) ||
-              (props.readinessHints && props.readinessHints.length > 0)) && (
-              <div className="empty-state empty-state-starters">
-                <p className="empty-state-title">开始对话</p>
-                <p className="empty-state-hint">
-                  选择下方提示，或直接在输入框提问。
-                </p>
-                {props.readinessHints && props.readinessHints.length > 0 && (
-                  <div className="empty-ready-hints">
-                    {props.readinessHints.map((hint) => (
-                      <button
-                        key={hint.label}
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={hint.onClick}
-                      >
-                        {hint.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {props.starters && props.starters.length > 0 && (
-                  <div className="starter-chips">
-                    {props.starters.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        className="starter-chip"
-                        onClick={() => props.onPickStarter?.(s.prompt)}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+        {props.items.length === 0 ? (
+          <div className="message-stream-inner message-stream-empty" ref={contentRef}>
+            {props.disabledEmpty && (
+              <div className="empty-state">
+                请先打开一个项目文件夹，然后开始对话。
               </div>
             )}
 
-          {visibleItems.hidden > 0 && (
-            <div className="history-virtualize-bar">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowAllHistory(true)}
-              >
-                显示更早的 {visibleItems.hidden} 条消息
-              </button>
-            </div>
-          )}
-
-          {visibleItems.items.map((item, i) => {
-            const absoluteIndex = visibleItems.hidden + i;
-            if (item.kind === "user") {
-              const entryId = item.entryId ?? item.id;
-              const editing = props.editingEntryId === entryId;
-              return (
-                <div key={item.id} className="bubble bubble-user">
-                  {canAct && entryId && (
-                    <div className="bubble-head">
-                      <div className="bubble-actions">
+            {!props.disabledEmpty &&
+              ((props.starters && props.starters.length > 0) ||
+                (props.readinessHints && props.readinessHints.length > 0)) && (
+                <div className="empty-state empty-state-starters">
+                  <p className="empty-state-title">开始对话</p>
+                  <p className="empty-state-hint">
+                    选择下方提示，或直接在输入框提问。
+                  </p>
+                  {props.readinessHints && props.readinessHints.length > 0 && (
+                    <div className="empty-ready-hints">
+                      {props.readinessHints.map((hint) => (
                         <button
+                          key={hint.label}
                           type="button"
-                          className="btn btn-ghost bubble-action"
-                          title="编辑并重发"
-                          onClick={() => props.onStartEdit?.(entryId, item.text)}
+                          className="btn btn-secondary btn-sm"
+                          onClick={hint.onClick}
                         >
-                          <Pencil size={12} strokeWidth={2} />
-                          <span>编辑</span>
+                          {hint.label}
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost bubble-action"
-                          title="撤回对话并还原文件"
-                          onClick={() => props.onRetract?.(entryId)}
-                        >
-                          <Undo2 size={12} strokeWidth={2} />
-                          <span>撤回</span>
-                        </button>
-                      </div>
+                      ))}
                     </div>
                   )}
-                  {editing ? (
-                    <div className="bubble-edit">
-                      <textarea
-                        value={props.editDraft ?? item.text}
-                        onChange={(e) => props.onEditDraftChange?.(e.target.value)}
-                        rows={4}
-                      />
-                      <div className="bubble-edit-actions">
+                  {props.starters && props.starters.length > 0 && (
+                    <div className="starter-chips">
+                      {props.starters.map((s) => (
                         <button
+                          key={s.id}
                           type="button"
-                          className="btn"
-                          onClick={props.onCancelEdit}
+                          className="starter-chip"
+                          onClick={() => props.onPickStarter?.(s.prompt)}
                         >
-                          取消
+                          {s.label}
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-cta"
-                          onClick={props.onConfirmEdit}
-                          disabled={!props.editDraft?.trim()}
-                        >
-                          重发
-                        </button>
-                      </div>
+                      ))}
                     </div>
+                  )}
+                </div>
+              )}
+          </div>
+        ) : (
+          <div
+            className="message-stream-inner message-stream-virtual"
+            ref={contentRef}
+            style={{ height: totalSize, position: "relative" }}
+          >
+            {virtualItems.map((virtualRow) => {
+              const item = displayItems[virtualRow.index];
+              if (!item) return null;
+              const isLast = virtualRow.index === displayItems.length - 1;
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  className="virtual-row"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                    paddingBottom: isLast ? 0 : ROW_GAP_PX,
+                  }}
+                >
+                  {item.kind === "user" ? (
+                    <UserBubble
+                      item={item}
+                      canAct={canAct}
+                      editing={props.editingEntryId === (item.entryId ?? item.id)}
+                      editDraft={props.editDraft}
+                      onEditDraftChange={props.onEditDraftChange}
+                      onStartEdit={props.onStartEdit}
+                      onCancelEdit={props.onCancelEdit}
+                      onConfirmEdit={props.onConfirmEdit}
+                      onRetract={props.onRetract}
+                    />
+                  ) : item.kind === "system" ? (
+                    <SystemBubble item={item} />
+                  ) : item.kind === "assistant" ? (
+                    <AssistantBubble
+                      item={item}
+                      showThinking={props.showThinking}
+                      canAct={canAct}
+                      onRegenerate={props.onRegenerate}
+                    />
                   ) : (
-                    <UserMessageBody text={item.text} />
+                    <ToolRow
+                      item={item}
+                      sessionMode={props.sessionMode}
+                      planPath={props.planPath}
+                      streaming={streaming}
+                      onOpenToolInPanel={props.onOpenToolInPanel}
+                      onBuildPlan={props.onBuildPlan}
+                    />
                   )}
                 </div>
               );
-            }
-
-            if (item.kind === "system") {
-              return (
-                <div
-                  key={item.id}
-                  className={`bubble bubble-system level-${item.level ?? "info"}`}
-                >
-                  {item.text}
-                </div>
-              );
-            }
-
-            if (item.kind === "assistant") {
-              const userEntryId = item.userEntryId;
-              const showThinkingBlock =
-                Boolean(props.showThinking && item.thinking);
-              const hasText = Boolean(item.text.trim());
-              // Thinking-only turns leave an empty shell when thinking is hidden.
-              if (!showThinkingBlock && !hasText) {
-                return null;
-              }
-              const usePlain =
-                plainMarkdownCutoff >= 0 && absoluteIndex < plainMarkdownCutoff;
-              return (
-                <div
-                  key={item.id}
-                  className={`bubble bubble-text${item.isError ? " is-error" : ""}`}
-                >
-                  {canAct && item.done && userEntryId && (
-                    <div className="bubble-head">
-                      <div className="bubble-actions">
-                        <button
-                          type="button"
-                          className="btn btn-ghost bubble-action"
-                          title="重新生成"
-                          onClick={() => props.onRegenerate?.(userEntryId)}
-                        >
-                          <RotateCcw size={12} strokeWidth={2} />
-                          <span>重新生成</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {showThinkingBlock && item.thinking && (
-                    <ThinkingBlock thinking={item.thinking} done={item.done} />
-                  )}
-                  <MarkdownBody
-                    content={item.text}
-                    streaming={!item.done}
-                    plain={usePlain}
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <div key={item.id} className="tool-with-actions">
-                <ToolCard
-                  toolCallId={item.id}
-                  toolName={item.toolName}
-                  args={item.args}
-                  result={formatMaybeJson(item.result)}
-                  isError={item.isError}
-                  done={item.done}
-                  onOpenInPanel={
-                    props.onOpenToolInPanel
-                      ? () => props.onOpenToolInPanel?.(item.id, item.args)
-                      : undefined
-                  }
-                />
-                {item.toolName === "write_plan" &&
-                  item.done &&
-                  !item.isError &&
-                  props.sessionMode === "plan" &&
-                  props.planPath &&
-                  props.onBuildPlan && (
-                    <div className="plan-execute-bar">
-                      <button
-                        type="button"
-                        className="btn btn-cta btn-sm"
-                        disabled={streaming}
-                        title={props.planPath}
-                        onClick={props.onBuildPlan}
-                      >
-                        <Hammer size={14} aria-hidden />
-                        执行计划
-                      </button>
-                      <span
-                        className="plan-execute-path"
-                        title={props.planPath}
-                      >
-                        {planFileLabel(props.planPath)}
-                      </span>
-                    </div>
-                  )}
-              </div>
-            );
-          })}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
       {showJump && (

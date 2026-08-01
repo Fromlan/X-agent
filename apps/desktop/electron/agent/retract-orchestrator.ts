@@ -1,0 +1,276 @@
+/**
+ * 撤回撤销 pipeline: abort → scan → navigate → restore → prune.
+ * Trackers stay deep leaves; this module owns ordering + warning merge.
+ */
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentStatus,
+  RetractOptions,
+  RetractPreview,
+  RetractResult,
+} from "../../shared/ipc";
+import { extractMessageText } from "./transcript-mapper";
+import type { TurnFileTracker } from "./turn-file-tracker";
+import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
+
+export type RetractSessionBundle = {
+  session: AgentSession;
+};
+
+export type RetractOrchestratorHost = {
+  getBundle(): RetractSessionBundle | null;
+  fileTracker: TurnFileTracker;
+  shadowCheckpoints: ShadowCheckpointTracker;
+  setStatus(status: AgentStatus, error?: string): void;
+  pruneToolDetailsToBranch(): void;
+  emitHistoryReplace(): void;
+  emitUsageUpdate(): void;
+  prompt(text: string): Promise<{ ok: boolean; error?: string }>;
+};
+
+export type ResolvedUserEntry =
+  | { ok: true; entryId: string; editorText: string }
+  | { ok: false; error: string };
+
+export function resolveUserEntryId(
+  bundle: RetractSessionBundle | null,
+  entryId: string,
+): ResolvedUserEntry {
+  if (!bundle) return { ok: false, error: "尚未打开项目" };
+  const sm = bundle.session.sessionManager;
+  const entry = sm.getEntry(entryId);
+  if (!entry) return { ok: false, error: "找不到该消息" };
+  if (entry.type !== "message") {
+    return { ok: false, error: "只能从用户消息撤回" };
+  }
+  const msg = (entry as { message?: { role?: string; content?: unknown } })
+    .message;
+  if (!msg || msg.role !== "user") {
+    return { ok: false, error: "只能从用户消息撤回" };
+  }
+  const editorText = extractMessageText(msg);
+  if (!editorText) return { ok: false, error: "用户消息为空" };
+  return { ok: true, entryId, editorText };
+}
+
+export class RetractOrchestrator {
+  constructor(private readonly getHost: () => RetractOrchestratorHost) {}
+
+  private host(): RetractOrchestratorHost {
+    return this.getHost();
+  }
+
+  resolveUserEntryId(entryId: string): ResolvedUserEntry {
+    return resolveUserEntryId(this.host().getBundle(), entryId);
+  }
+
+  async preview(entryId: string): Promise<RetractPreview> {
+    const h = this.host();
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        error: resolved.error,
+        restorablePaths: [],
+        unrestorablePaths: [],
+        hasBash: false,
+        hasGodot: false,
+        warnings: [],
+        restoreMode: "none",
+        shadowAvailable: h.shadowCheckpoints.enabledShadow,
+      };
+    }
+    const sm = h.getBundle()!.session.sessionManager;
+    const scan = h.fileTracker.scanSegmentSince(sm, resolved.entryId);
+    const shadowPreview = await h.shadowCheckpoints.previewRestore(
+      sm,
+      resolved.entryId,
+      scan,
+    );
+
+    if (shadowPreview.mode === "shadow") {
+      return {
+        ok: true,
+        editorText: resolved.editorText,
+        restorablePaths: shadowPreview.restorablePaths,
+        unrestorablePaths: [],
+        hasBash: shadowPreview.hasBash,
+        hasGodot: shadowPreview.hasGodot,
+        warnings: shadowPreview.warnings,
+        restoreMode: "shadow",
+        shadowAvailable: true,
+      };
+    }
+
+    const baseline = h.fileTracker.previewRestore(sm, resolved.entryId);
+    const warnings = [
+      ...shadowPreview.warnings,
+      ...baseline.warnings.filter((w) => !shadowPreview.warnings.includes(w)),
+    ];
+    return {
+      ok: true,
+      editorText: resolved.editorText,
+      restorablePaths: baseline.restorablePaths,
+      unrestorablePaths: baseline.unrestorablePaths,
+      hasBash: baseline.hasBash,
+      hasGodot: baseline.hasGodot,
+      warnings,
+      restoreMode: "baseline",
+      shadowAvailable: h.shadowCheckpoints.enabledShadow,
+    };
+  }
+
+  /**
+   * 关键时序：
+   *   1. abort 当前流（若有）。
+   *   2. 只读 scan 即将废弃的 segment（不写盘）；navigate 取消时无需回滚。
+   *   3. navigateTree；若 cancelled 则直接返回。
+   *   4. navigate 成功后优先 Shadow checkout；否则按预扫路径 restorePaths。
+   *   5. dropBaselines · persistDirty · 清空 activeUserEntryId · history replace。
+   */
+  async retract(
+    entryId: string,
+    options?: RetractOptions,
+  ): Promise<RetractResult> {
+    const h = this.host();
+    if (!h.getBundle()) return { ok: false, error: "尚未打开项目" };
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+
+    const undoFiles = options?.undoFiles !== false;
+    const { session } = h.getBundle()!;
+    const sm = session.sessionManager;
+
+    try {
+      if (session.isStreaming) {
+        await session.abort();
+        h.setStatus("idle");
+      }
+
+      // 预扫必须在 navigate 之前：nav 后 abandoned write/edit 不在 active branch。
+      const pendingScan = undoFiles
+        ? h.fileTracker.scanSegmentSince(sm, resolved.entryId)
+        : null;
+
+      const nav = await session.navigateTree(resolved.entryId, {
+        summarize: false,
+      });
+      if (nav.cancelled) {
+        return { ok: false, error: "撤回已取消" };
+      }
+
+      let restoreReport: RetractResult["restoreReport"];
+      if (undoFiles && pendingScan) {
+        const shadow = await h.shadowCheckpoints.restoreToUserTurn(
+          sm,
+          resolved.entryId,
+          pendingScan.userEntryIds,
+        );
+        if (shadow.used === "shadow" && shadow.report) {
+          restoreReport = shadow.report;
+          if (pendingScan.hasGodot) {
+            restoreReport.skipped.push({ reason: "godot" });
+            restoreReport.warnings.push(
+              "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
+            );
+          }
+          if (pendingScan.hasBash) {
+            restoreReport.warnings.push(
+              "该段包含 bash：cwd 内文件已尽量由 Shadow 还原；cwd 外副作用无法还原。",
+            );
+          }
+        } else {
+          restoreReport = h.fileTracker.restorePaths(
+            pendingScan.mutationPaths,
+            pendingScan.userEntryIds,
+          );
+          if (shadow.report?.warnings.length) {
+            restoreReport.warnings.push(
+              "Shadow 检查点还原失败，已降级为 write/edit 基线。",
+              ...shadow.report.warnings,
+            );
+          }
+          if (pendingScan.hasBash) {
+            restoreReport.skipped.push({ reason: "bash_unknown" });
+            restoreReport.warnings.push(
+              "该段包含 bash，命令副作用无法保证还原。",
+            );
+          }
+          if (pendingScan.hasGodot) {
+            restoreReport.skipped.push({ reason: "godot" });
+            restoreReport.warnings.push(
+              "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
+            );
+          }
+        }
+        h.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);
+        h.fileTracker.persistDirty(sm);
+      }
+
+      // 撤回后旧 leaf 不再属于 active branch；下一次 user_message 事件再赋新 id。
+      h.fileTracker.setActiveUserEntryId(null);
+      h.pruneToolDetailsToBranch();
+      h.emitHistoryReplace();
+      h.emitUsageUpdate();
+      h.setStatus("idle");
+
+      return {
+        ok: true,
+        editorText: nav.editorText ?? resolved.editorText,
+        restoreReport,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      h.setStatus("error", message);
+      return { ok: false, error: message };
+    }
+  }
+
+  async editAndResend(
+    entryId: string,
+    text: string,
+    options?: RetractOptions,
+  ): Promise<RetractResult> {
+    const trimmed = text.trim();
+    if (!trimmed) return { ok: false, error: "消息不能为空" };
+
+    const retract = await this.retract(entryId, options);
+    if (!retract.ok) return retract;
+
+    const prompted = await this.host().prompt(trimmed);
+    if (!prompted.ok) {
+      return {
+        ok: false,
+        error: prompted.error,
+        editorText: retract.editorText,
+        restoreReport: retract.restoreReport,
+      };
+    }
+    return retract;
+  }
+
+  async regenerate(
+    entryId: string,
+    options?: RetractOptions,
+  ): Promise<RetractResult> {
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+
+    const retract = await this.retract(entryId, options);
+    if (!retract.ok) return retract;
+
+    const text = (retract.editorText ?? resolved.editorText).trim();
+    if (!text) return { ok: false, error: "用户消息为空" };
+
+    const prompted = await this.host().prompt(text);
+    if (!prompted.ok) {
+      return {
+        ok: false,
+        error: prompted.error,
+        editorText: text,
+        restoreReport: retract.restoreReport,
+      };
+    }
+    return { ...retract, editorText: text };
+  }
+}

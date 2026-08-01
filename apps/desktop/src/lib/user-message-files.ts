@@ -10,7 +10,7 @@ export type UserMessageSegment =
   | { kind: "file"; name: string; content: string }
   | { kind: "mode"; name: string; content: string };
 
-const FILE_BLOCK_RE =
+export const FILE_BLOCK_RE =
   /<file\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/file>/g;
 
 const COMBINED_BLOCK_RE =

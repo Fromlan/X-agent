@@ -1,12 +1,12 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import type { MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 
 interface Props {
   content: string;
   streaming?: boolean;
-  /** Skip react-markdown (streaming / long-history perf). */
+  /** Skip react-markdown (legacy / special-case perf). */
   plain?: boolean;
 }
 
@@ -39,7 +39,7 @@ const components: Components = {
   ),
 };
 
-export function MarkdownBody({
+export const MarkdownBody = memo(function MarkdownBody({
   content,
   streaming = false,
   plain = false,
@@ -67,4 +67,4 @@ export function MarkdownBody({
       </ReactMarkdown>
     </div>
   );
-}
+});

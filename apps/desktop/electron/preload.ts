@@ -3,6 +3,7 @@ import type {
   AgentSessionMode,
   AppUpdateStatus,
   XAgentApi,
+  XAgentApiFlat,
   ClientPrefs,
   PluginCreateInput,
   ProviderUpsertInput,
@@ -11,7 +12,7 @@ import type {
 } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 
-const api: XAgentApi = {
+const flatApi: XAgentApiFlat = {
   // session / workspace
   openProject: (path?: string) => ipcRenderer.invoke(IPC_CHANNELS.openProject, path),
   prompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.prompt, text),
@@ -163,6 +164,41 @@ const api: XAgentApi = {
     return () => {
       ipcRenderer.removeListener(IPC_EVENTS.updateStatus, listener);
     };
+  },
+};
+
+const api: XAgentApi = {
+  ...flatApi,
+  workspace: {
+    open: flatApi.openProject,
+    close: flatApi.closeWorkspace,
+    newSession: flatApi.newSession,
+    resume: flatApi.resumeSession,
+    listSessions: flatApi.listSessions,
+    deleteSession: flatApi.deleteSession,
+    deleteProjectSessions: flatApi.deleteProjectSessions,
+    renameSession: flatApi.renameSession,
+    getStatus: flatApi.getStatus,
+  },
+  turn: {
+    prompt: flatApi.prompt,
+    abort: flatApi.abort,
+    previewRetract: flatApi.previewRetract,
+    retract: flatApi.retractToUserMessage,
+    editAndResend: flatApi.editAndResend,
+    regenerate: flatApi.regenerateFromUser,
+  },
+  plan: {
+    setMode: flatApi.setSessionMode,
+    getMode: flatApi.getSessionMode,
+    build: flatApi.buildPlan,
+    getContent: flatApi.getPlanContent,
+    saveContent: flatApi.savePlanContent,
+    saveToWorkspace: flatApi.savePlanToWorkspace,
+    clear: flatApi.clearPlan,
+    setGoal: flatApi.setGoal,
+    clearGoal: flatApi.clearGoal,
+    getGoal: flatApi.getGoal,
   },
 };
 

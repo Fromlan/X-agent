@@ -6,7 +6,7 @@
 
 X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.3.1`）。
 
-**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器 + Godot 文档）、Godot RPC、官方文档离线检索、应用内 Pi 登录引导与打包版自动更新。
+**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器 + Godot 文档）、Godot RPC、官方文档离线检索、应用内 Pi 登录引导与打包版自动更新。
 
 运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
@@ -48,7 +48,7 @@ npm run release:dist           # 发版前本地 typecheck + test + 打 Windows 
 
 `npm test`（在 `apps/desktop`）串联：
 
-`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-goal-evaluator`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-goal-evaluator`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
 冒烟（需本机认证）：
 
@@ -128,7 +128,7 @@ Electron 三进程边界：
 - `auth-check.ts` / `pi-cli.ts`（含 `openPiLogin`）
 - `auto-updater.ts` / `update-feed.ts`：仅打包版启用 `electron-updater`，`provider: "github"` → `Fromlan/X-agent` Releases；启动后静默检查，设置可「打开 Releases」回退
 - UI：设置 → 通用 → 检查 / 下载 / 安装更新；顶栏角标；`loadPrefsWithRecovery` 损坏偏好备份提示
-- 安全说明见 README「安全与隐私」；工具页「只读安全档」关闭 bash/write/edit
+- 安全说明见 README「安全与隐私」；临时只读用会话「调研」/ Plan（硬闸关闭 bash/write/edit）
 
 ### 持久化与隔离
 
@@ -164,3 +164,17 @@ Electron 三进程边界：
 - 图标用 `lucide-react`，不用 emoji 充当 UI 图标
 - focus 用 `--focus-ring-soft`；尊重 `prefers-reduced-motion`
 - 设置：左侧分页 + 可滚动内容区（`min-height: 0` + `overflow-y: auto`）
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `Fromlan/X-agent` (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
