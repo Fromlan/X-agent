@@ -61,7 +61,7 @@
 ## 使用
 
 1. 打开应用，**打开项目**选择 Godot 工程目录（默认续该项目最近会话）
-2. 顶栏选择模型与 Thinking，按需切换 **Agent / Plan / 目标**，发送指令
+2. 顶栏选择模型与 Thinking，按需切换 **Agent / 调研 / Plan / 目标**（也可 Shift+Tab 循环），发送指令
 3. 使用 Godot 控制面时：
    - **设置 → 工具** 勾选 Godot 编辑器 / 文档工具
    - **设置 → Godot → 编辑器连接**：安装/启用 **X-agent RPC** 插件，保持桥接已连接
@@ -89,7 +89,8 @@
 | `x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离） |
 | `x-agent/plans/` | Plan Mode 默认计划文件（可保存到 `<cwd>/.pi/plans/`） |
 | `x-agent-providers.json` | 供应商档案 |
-| `x-agent-godot-rpc.json` | Godot RPC endpoint |
+| `x-agent-godot-rpc.json` | Godot RPC endpoint（含握手 token） |
+| `x-agent/goals/` | Goal 模式日记（删除会话时清理） |
 | `x-agent-packages.json` | Packages 安装记录 |
 | `x-agent-usage.json` | 用量统计 |
 | `x-agent/godot-docs/` | Godot 文档缓存 |
@@ -113,12 +114,12 @@
 
 | 面 | 说明 |
 |---|---|
-| API Key | 供应商密钥明文保存在 `~/.pi/agent/x-agent-providers.json`，启用时写入 Pi `auth.json`；勿把该目录同步到不可信位置 |
-| 工具 | 默认开启 `bash` / `write` / `edit`；会话「调研」/ Plan 使用只读工具集 + 硬闸（不写回设置）；设置 → 工具控制 Agent/目标默认白名单 |
-| 项目沙箱 | 右栏文件树受 cwd 沙箱约束；Pi `bash` 仍可在 shell 中访问更广路径 |
-| Godot RPC | 仅监听 `127.0.0.1`，当前无共享密钥握手；仅信任本机编辑器连入 |
+| API Key | 供应商密钥在 `x-agent-providers.json` 中尽量用 Electron `safeStorage` 加密；激活时仍写入 Pi `auth.json`；勿把该目录同步到不可信位置 |
+| 工具 | 默认开启 `bash` / `write` / `edit`；会话「调研」/ Plan 硬闸关闭 write/edit，bash 仅放行只读命令且路径须在项目 cwd 内（不写回设置）；设置 → 工具控制 Agent/目标默认白名单 |
+| 项目沙箱 | 右栏文件树与调研/Plan 的 bash 受 cwd 约束；Agent 模式下 Pi `bash` 仍可能访问更广路径 |
+| Godot RPC | 仅监听 `127.0.0.1`；endpoint 含共享 token，插件 `editor_ready` 握手校验后才接受调用。握手失败时请更新并重启编辑器内 `x_agent_rpc` 插件 |
 | Packages | `pi install` 可安装任意来源包，注意供应链风险 |
-| 会话 | 仅存储在 `~/.pi/agent/x-agent/sessions/`，与 Pi CLI 会话隔离 |
+| 会话 | 仅存储在 `~/.pi/agent/x-agent/sessions/`，与 Pi CLI 会话隔离；Goal journal 在 `~/.pi/agent/x-agent/goals/` |
 
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。Plan / Goal 设计调研见 [`docs/research-plan-goal-modes.md`](docs/research-plan-goal-modes.md)。
 

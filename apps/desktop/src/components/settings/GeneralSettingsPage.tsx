@@ -120,7 +120,6 @@ export function GeneralSettingsPage({
               <section className="settings-page">
                 <div className="settings-page-head">
                   <h3>通用</h3>
-                  <p className="modal-hint">外观、对话、Shell、Git、认证与更新</p>
                 </div>
 
                 <div className="settings-block">
@@ -189,7 +188,7 @@ export function GeneralSettingsPage({
                       value={prefs.thinkingLevel}
                       options={THINKING_LEVELS.map((level) => ({
                         value: level,
-                        label: level,
+                        label: level.charAt(0).toUpperCase() + level.slice(1),
                       }))}
                       onChange={(v) => {
                         void (async () => {
@@ -217,13 +216,57 @@ export function GeneralSettingsPage({
                       aria-label="默认 Thinking 级别"
                     />
                   </div>
+                  <div className="settings-row">
+                    <span className="settings-row-label">目标最大轮次</span>
+                    <input
+                      type="number"
+                      className="settings-input settings-input-narrow"
+                      min={1}
+                      max={200}
+                      value={prefs.goalMaxTurns}
+                      title="Goal 模式自动续轮上限；用尽后可提高再继续"
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        void (async () => {
+                          const next = await window.xAgent.setPrefs({
+                            goalMaxTurns: n,
+                          });
+                          onPrefsChanged?.(next);
+                        })();
+                      }}
+                      aria-label="目标模式最大自动续轮次数"
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <span className="settings-row-label">目标最大 token</span>
+                    <input
+                      type="number"
+                      className="settings-input settings-input-narrow"
+                      min={10000}
+                      max={10000000}
+                      step={10000}
+                      value={prefs.goalMaxTokens}
+                      title="Goal 模式累计 token 上限（含缓存）；用尽后可提高再继续"
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        void (async () => {
+                          const next = await window.xAgent.setPrefs({
+                            goalMaxTokens: n,
+                          });
+                          onPrefsChanged?.(next);
+                        })();
+                      }}
+                      aria-label="目标模式最大累计 token"
+                    />
+                  </div>
                 </div>
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">Shell</h4>
                   <p className="modal-hint">
-                    Pi 的 bash 工具需要可用的 bash（Windows 上多为 Git
-                    Bash）。路径写入 ~/.pi/agent/settings.json。
+                    bash 路径写入 ~/.pi/agent/settings.json（Windows 常用 Git Bash）。
+                    文件工具受项目 cwd 沙箱约束；调研/Plan 的 bash 也会拦截目录外路径。
+                    Agent 模式下 bash 仍可能访问 cwd 外，请谨慎授权。
                   </p>
                   <div className="settings-inline-row">
                     <input
@@ -299,10 +342,7 @@ export function GeneralSettingsPage({
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">Git</h4>
-                  <p className="modal-hint">
-                    Shadow Git 工作区检查点需要 git。通常随 Git for Windows
-                    一并安装。
-                  </p>
+                  <p className="modal-hint">工作区检查点需要 git。</p>
                   <div className="settings-inline-row">
                     <input
                       type="text"
@@ -341,11 +381,11 @@ export function GeneralSettingsPage({
                 <div className="settings-block">
                   <h4 className="settings-block-title">认证</h4>
                   <p className="modal-hint">
-                    可用 Pi CLI 的 /login，或在「供应商」页配置 API Key。
+                    Pi CLI /login，或在「供应商」配置 API Key。
                     {piCli && !piCli.ok
                       ? piCli.canInstall
                         ? " 未检测到 Pi CLI，可一键安装。"
-                        : " 安装 Pi CLI 前需先安装 Node.js 22+（含 npm）。"
+                        : " 需先安装 Node.js 22+（含 npm）。"
                       : null}
                   </p>
                   <div className="settings-inline-row">
@@ -425,7 +465,7 @@ export function GeneralSettingsPage({
                   <h4 className="settings-block-title">更新</h4>
                   <p className="modal-hint">
                     {updateStatus?.message ??
-                      "安装版启动后会从 GitHub Releases 静默检查更新；也可手动检查。失败时请打开 Releases 或加群下载。"}
+                      "安装版会静默检查更新；失败可打开 Releases。"}
                     {updateStatus?.version
                       ? `（当前目标：${updateStatus.version}）`
                       : ""}

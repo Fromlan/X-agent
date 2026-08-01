@@ -411,11 +411,8 @@ export function PluginsPage({ cwd }: Props) {
             <section className="plugins-editor-pane">
               <h3>安装 Package</h3>
               <p className="modal-hint">
-                通过全局 Pi CLI 执行 <code>pi install &lt;source&gt;</code>
-                ，写入 <code>~/.pi/agent/settings.json</code>。包内技能 /
-                提示词 / 扩展会出现在对应页签（只读），Agent 会话也会自动加载。
-                原生技能包含通用 Core；<code>godot-*</code> 技能仅在打开
-                Godot 项目（存在 <code>project.godot</code>）时进入索引。应用启动时也会尝试自动安装。
+                执行 <code>pi install</code>，包内技能 / 提示词会出现在对应页签。
+                <code>godot-*</code> 技能仅在打开 Godot 项目时索引。
               </p>
               <div className="settings-toolbar">
                 <button

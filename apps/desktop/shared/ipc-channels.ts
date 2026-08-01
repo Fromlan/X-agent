@@ -23,6 +23,8 @@ export const IPC_CHANNELS = {
   savePlanToWorkspace: "savePlanToWorkspace",
   clearPlan: "clearPlan",
   setGoal: "setGoal",
+  pauseGoal: "pauseGoal",
+  resumeGoal: "resumeGoal",
   clearGoal: "clearGoal",
   getGoal: "getGoal",
   listModels: "listModels",

@@ -113,12 +113,12 @@ This is a coding agent with substantial local power—tighten as needed:
 
 | Area | Notes |
 |---|---|
-| API keys | Stored in plaintext under `~/.pi/agent/x-agent-providers.json` (and Pi `auth.json` when activated) |
-| Tools | Default allowlist includes `bash` / `write` / `edit`; Settings → Tools has a **read-only safe profile**; Plan mode adds a hard read-only gate |
-| Sandbox | Files tab is cwd-sandboxed; Pi `bash` can still reach broader paths via the shell |
-| Godot RPC | Listens on `127.0.0.1` only; no shared-secret handshake yet |
+| API keys | Encrypted at rest with Electron `safeStorage` when available (`x-agent-providers.json`); still written to Pi `auth.json` on activate |
+| Tools | Default allowlist includes `bash` / `write` / `edit`; Ask/Plan hard-gate closes write/edit; bash is read-only and cwd-bound (classifier + path check) without writing prefs |
+| Sandbox | Files tab and Ask/Plan bash are cwd-sandboxed; Agent-mode Pi `bash` can still reach broader paths |
+| Godot RPC | Listens on `127.0.0.1` only; endpoint includes a shared token validated on `editor_ready`. Update/restart the editor addon if handshake fails |
 | Packages | `pi install` accepts arbitrary sources—treat as supply-chain sensitive |
-| Sessions | Isolated under `~/.pi/agent/x-agent/sessions/` |
+| Sessions | Isolated under `~/.pi/agent/x-agent/sessions/`; Goal journals under `~/.pi/agent/x-agent/goals/` |
 
 ## UI language
 

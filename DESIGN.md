@@ -91,6 +91,24 @@
 
 兼容别名：`--accent-purple` 映射到 `--text-secondary`（Cindy；实验主题可给独立色相）。
 
+### 2.3a 上下文组成色（右栏拆解 / 本轮用量条）
+
+低饱和 chart token；默认近单色可区分色相，实验主题可提高饱和度。组件只引用变量，禁止硬编码。
+
+
+| Token | 用途 |
+| --- | --- |
+| `--ctx-system` | 系统提示 |
+| `--ctx-project` | 项目上下文 |
+| `--ctx-skills` | 技能索引 |
+| `--ctx-tools` | 工具说明 |
+| `--ctx-messages` | 对话消息 |
+| `--ctx-overhead` | 协议开销 |
+| `--ctx-turn-input` | 本轮 Input |
+| `--ctx-turn-output` | 本轮 Output |
+| `--ctx-turn-cache` | 本轮 Cache |
+
+
 ### 2.4 按钮与叠层
 
 
@@ -190,17 +208,19 @@ Focus 光晕用 `--focus-ring-soft`，不算装饰阴影。实验主题可调整
 ```
 TopBar → [banners] → main-row
   ├── Sidebar（会话列表，~260px）
-  ├── Chat
-  └── RightPanel（可选，~360px；默认折叠；上下文 / 工具 / 文件 / Godot 四页签）
+  ├── Chat（模式 pill：Agent | 调研 | Plan | 目标；Shift+Tab 循环）
+  └── RightPanel（可选，~360px；默认折叠；上下文 / 计划 / 工具 / 文件 / Godot 五页签）
 ```
 
 - 区域分割：`1px solid var(--border-primary)`。
 - Settings：仍为居中模态（非全屏路由）；左侧 nav 用 pill 选中态（通用 / 供应商 / 用量 / 工具 / 插件 / Godot）。
 - 右栏：`ClientPrefs.rightPanelOpen`；窄窗（≤960px）隐藏右栏。
   - **上下文**：占用进度、组成拆解、本轮 / 会话用量；手动压缩
+  - **计划**：Markdown 编辑、todos 勾选、保存到项目、执行计划
   - **工具**：已启用工具分组与调用详情
   - **文件**：项目文件树、预览、右键（加入对话 / 资源管理器 / 复制路径）
   - **Godot**：RPC 桥接状态、Ping（完整控制面在设置 → Godot → 编辑器连接）
+- Goal 条：轮次预算 / 暂停·继续 / 清除（见会话模式）。
 
 ---
 

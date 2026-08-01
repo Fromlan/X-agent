@@ -147,9 +147,7 @@ export function ContextTab({
         </div>
 
         {percent == null && (
-          <p className="rp-context-hint">
-            占用暂未知 — 压缩后需下一轮回复才会更新
-          </p>
+          <p className="rp-context-hint">压缩后下一轮更新</p>
         )}
       </section>
 
@@ -178,8 +176,12 @@ export function ContextTab({
             <ul className="rp-context-legend">
               {segments.map((seg) => {
                 const pct = (seg.tokens / segmentTotal) * 100;
+                const empty = seg.tokens === 0;
                 return (
-                  <li key={seg.id} className="rp-context-legend-row">
+                  <li
+                    key={seg.id}
+                    className={`rp-context-legend-row${empty ? " is-empty" : ""}`}
+                  >
                     <span className={`rp-context-dot is-${seg.id}`} aria-hidden />
                     <span className="rp-context-legend-name">{seg.label}</span>
                     <span className="rp-context-legend-pct">

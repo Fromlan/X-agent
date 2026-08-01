@@ -155,7 +155,7 @@ export function GodotTab({ active, items }: Props) {
         <div className="rp-section-label">已连接编辑器</div>
         {(status?.clientInfos?.length ?? 0) === 0 ? (
           <div className="rp-empty">
-            尚无客户端。请在 Godot 中启用 RPC addon 并打开项目。
+            尚无客户端。请启用 RPC 并打开项目。
           </div>
         ) : (
           <ul className="rp-client-list">

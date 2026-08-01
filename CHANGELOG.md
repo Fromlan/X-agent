@@ -16,6 +16,27 @@
 
 ### 修复
 
+## 0.3.8
+
+### 功能
+
+- **Goal 护栏**：轮次 + token 双预算（`goalMaxTurns` / `goalMaxTokens`）、暂停 / 继续、评估失败自动暂停；日记落盘 `~/.pi/agent/x-agent/goals/`（删会话时清理）
+- **Plan / 调研**：bash 只读分类器 + 项目 cwd 路径硬约束；`<clarify>` 多题点选后「发送所选」；计划 todos 勾选；Shift+Tab 循环模式
+- **供应商密钥**：`x-agent-providers.json` 尽量用 Electron `safeStorage` 加密（启用时仍写入 Pi `auth.json`）
+- **Godot RPC 握手**：endpoint 共享 token，插件 `editor_ready` 校验通过后才接受调用
+
+### 改进
+
+- **顶栏模型**：编辑启用订阅后同步 Pi models；去重 case 变体；下拉仅显示模型名；Thinking / 模型选择居中与首字母大写
+- **设置**：目标最大轮次 / token；Shell 说明区分调研·Plan cwd 闸与 Agent 模式
+- **文档 / ADR**：Ask·Plan bash 闸门、goals 路径、密钥与 RPC 握手说明；`docs/adr/` 补齐
+
+### 修复
+
+- **Ask/Plan bash**：禁止 python/node 任意执行与 `find -delete` 等突变；拦截目录外路径
+- **供应商**：保存已启用档案时避免重复 activate
+- **澄清 UI**：由单点即发改为逐题选择后统一发送
+
 ## 0.3.7
 
 ### 功能

@@ -8,6 +8,20 @@ function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
+async function waitFor(
+  pred: () => boolean,
+  msg: string,
+  timeoutMs = 2000,
+): Promise<void> {
+  const start = Date.now();
+  while (!pred()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`timeout waiting: ${msg}`);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 async function withBridge(
   port: number,
   fn: (bridge: GodotRpcBridge) => Promise<void>,
@@ -52,9 +66,33 @@ function connectMockClient(
   });
 }
 
+async function authenticate(
+  bridge: GodotRpcBridge,
+  socket: import("node:net").Socket,
+): Promise<void> {
+  const authedBefore = bridge
+    .listClients()
+    .filter((c) => Boolean(c.projectPath)).length;
+  socket.write(
+    `${JSON.stringify({
+      type: "editor_ready",
+      godotVersion: "4.3",
+      projectPath: "D:/proj",
+      token: bridge.getAuthToken(),
+    })}\n`,
+  );
+  await waitFor(
+    () =>
+      bridge.listClients().filter((c) => Boolean(c.projectPath)).length >
+      authedBefore,
+    "editor_ready authenticated",
+  );
+}
+
 await withBridge(18765, async (bridge) => {
   assert(bridge.getStatus().running, "bridge running");
   assert(bridge.getStatus().clients === 0, "no clients yet");
+  assert(bridge.getAuthToken().length > 0, "auth token issued");
 
   const noClient = await bridge.request({ id: "n1", method: "ping" }, 500);
   assert(!noClient.ok && noClient.error === "no Godot editor connected", "no client error");
@@ -72,18 +110,33 @@ await withBridge(18765, async (bridge) => {
     }
   });
 
-  // allow server to register client
-  await new Promise((r) => setTimeout(r, 50));
-  assert(bridge.getStatus().clients === 1, "one client connected");
+  await waitFor(() => bridge.getStatus().clients === 1, "one client connected");
 
+  // Reject bad token
   mock.socket.write(
     `${JSON.stringify({
       type: "editor_ready",
       godotVersion: "4.3",
       projectPath: "D:/proj",
+      token: "wrong",
     })}\n`,
   );
-  await new Promise((r) => setTimeout(r, 50));
+  await waitFor(() => bridge.getStatus().clients === 0, "bad token disconnects");
+
+  const mock2 = await connectMockClient(18765, (line, write) => {
+    const msg = JSON.parse(line) as { id: string; method: string };
+    if (msg.method === "ping") {
+      write({ id: msg.id, ok: true, result: { pong: true } });
+    } else if (msg.method === "get_editor_info") {
+      write({
+        id: msg.id,
+        ok: true,
+        result: { godotVersion: { string: "4.x" }, projectPath: "D:/proj" },
+      });
+    }
+  });
+  await waitFor(() => bridge.getStatus().clients === 1, "mock2 connected");
+  await authenticate(bridge, mock2.socket);
   assert(bridge.getStatus().lastEvent?.type === "editor_ready", "editor_ready event");
 
   const ping = await bridge.request({ id: "p1", method: "ping" }, 2000);
@@ -100,35 +153,40 @@ await withBridge(18765, async (bridge) => {
   const timed = await bridge.request({ id: "t1", method: "stop_scene" }, 200);
   assert(!timed.ok && timed.error === "timeout", "timeout when no response");
 
-  mock.close();
-  await new Promise((r) => setTimeout(r, 50));
-  assert(bridge.getStatus().clients === 0, "client cleared");
+  mock2.close();
+  await waitFor(() => bridge.getStatus().clients === 0, "client cleared");
   assert(bridge.getStatus().lastEvent?.type === "disconnected", "disconnected event");
 });
 
 // Multi-client routing: request goes to the selected active client only
 await withBridge(18767, async (bridge) => {
-  const seen: string[] = [];
   const mockA = await connectMockClient(18767, (line, write) => {
-    const msg = JSON.parse(line) as { id: string; method: string };
-    seen.push(`A:${msg.method}`);
+    const msg = JSON.parse(line) as { id?: string; method?: string };
+    if (typeof msg.id !== "string" || typeof msg.method !== "string") return;
     write({ id: msg.id, ok: true, result: { from: "A" } });
   });
-  await new Promise((r) => setTimeout(r, 40));
-  const idA = bridge.listClients()[0]?.id;
-  assert(Boolean(idA), "client A id");
+  await waitFor(() => bridge.getStatus().clients === 1, "client A tcp");
+  await authenticate(bridge, mockA.socket);
 
   const mockB = await connectMockClient(18767, (line, write) => {
-    const msg = JSON.parse(line) as { id: string; method: string };
-    seen.push(`B:${msg.method}`);
+    const msg = JSON.parse(line) as { id?: string; method?: string };
+    if (typeof msg.id !== "string" || typeof msg.method !== "string") return;
     write({ id: msg.id, ok: true, result: { from: "B" } });
   });
-  await new Promise((r) => setTimeout(r, 40));
-  assert(bridge.getStatus().clients === 2, "two clients");
-  const idB = bridge.listClients().find((c) => c.id !== idA)?.id;
-  assert(Boolean(idB), "client B id");
+  await waitFor(() => bridge.getStatus().clients === 2, "client B tcp");
+  await authenticate(bridge, mockB.socket);
+  await waitFor(() => bridge.getStatus().clients === 2, "two clients");
 
-  assert(bridge.setActiveClient(idB!), "set active B");
+  const infos = bridge.listClients();
+  assert(infos.length === 2, "two client infos");
+  // connectedAt ascending → A then B
+  const idA = infos[0]!.id;
+  const idB = infos[1]!.id;
+  assert(idA !== idB, "distinct client ids");
+
+  assert(bridge.setActiveClient(idB), "set active B");
+  assert(bridge.getStatus().activeClientId === idB, "active is B");
+
   const pingB = await bridge.request({ id: "pb", method: "ping" }, 2000);
   assert(pingB.ok === true, "ping B ok");
   assert((pingB as { result: { from: string } }).result.from === "B", "routed to B");
@@ -143,7 +201,7 @@ await withBridge(18767, async (bridge) => {
 
   mockA.close();
   mockB.close();
-  await new Promise((r) => setTimeout(r, 40));
+  await waitFor(() => bridge.getStatus().clients === 0, "both cleared");
 });
 
 // EADDRINUSE with fallbackPorts:0 → soft error; with default fallback → next port

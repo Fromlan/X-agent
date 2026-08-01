@@ -48,7 +48,7 @@ npm run release:dist           # 发版前本地 typecheck + test + 打 Windows 
 
 `npm test`（在 `apps/desktop`）串联：
 
-`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-goal-evaluator`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-docs`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
 冒烟（需本机认证）：
 
@@ -128,22 +128,23 @@ Electron 三进程边界：
 - `auth-check.ts` / `pi-cli.ts`（含 `openPiLogin`）
 - `auto-updater.ts` / `update-feed.ts`：仅打包版启用 `electron-updater`，`provider: "github"` → `Fromlan/X-agent` Releases；启动后静默检查，设置可「打开 Releases」回退
 - UI：设置 → 通用 → 检查 / 下载 / 安装更新；顶栏角标；`loadPrefsWithRecovery` 损坏偏好备份提示
-- 安全说明见 README「安全与隐私」；临时只读用会话「调研」/ Plan（硬闸关闭 bash/write/edit）
+- 安全说明见 README「安全与隐私」；临时只读用会话「调研」/ Plan（硬闸关闭 write/edit，bash 仅放行只读命令且路径须落在项目 cwd 内）
 
 ### 持久化与隔离
 
 | 路径 | 用途 |
 |---|---|
 | `~/.pi/agent/x-agent.json` | 客户端偏好 |
-| `~/.pi/agent/x-agent-providers.json` | 供应商档案 |
-| `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint |
+| `~/.pi/agent/x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时仍明文写入 Pi `auth.json`） |
+| `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint（含握手 token；须同步更新编辑器插件） |
 | `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent-usage.json` | 用量汇总 |
 | `~/.pi/agent/x-agent/sessions/` | 本应用会话 |
 | `~/.pi/agent/x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离） |
 | `~/.pi/agent/x-agent/plans/` | Plan Mode 默认写出的 Markdown 计划（可「保存到项目」迁至 `<cwd>/.pi/plans/`） |
+| `~/.pi/agent/x-agent/goals/` | Goal Mode 跨恢复日记（按 session 路径哈希） |
 | `~/.pi/agent/x-agent/godot-docs/` | Godot 文档缓存 |
-| `auth.json` / `models.json` | Pi 认证与模型 |
+| `auth.json` / `models.json` | Pi 认证与模型（密钥明文，与 Pi CLI 共用） |
 
 会话列表只读 X-agent 会话目录；恢复须拒绝目录外路径。
 
