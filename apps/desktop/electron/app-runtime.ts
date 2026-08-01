@@ -83,7 +83,9 @@ function registerIpc(
 ): void {
   const cwdOf = () => host.getStatus().cwd;
 
-  ipcMain.handle(IPC_CHANNELS.openProject, async (_e, path?: string) => {
+  ipcMain.handle(
+    IPC_CHANNELS.openProject,
+    async (_e, path?: string, mode?: "continue" | "new") => {
     let projectPath =
       typeof path === "string" && path.trim() ? path.trim() : undefined;
     if (!projectPath) {
@@ -103,8 +105,9 @@ function registerIpc(
       }
       projectPath = result.filePaths[0];
     }
-    return host.openProject(projectPath, "continue");
-  });
+    return host.openProject(projectPath, mode === "new" ? "new" : "continue");
+  },
+  );
 
   registerSessionIpc(ipcMain, host);
 
@@ -114,9 +117,18 @@ function registerIpc(
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
       await host.applyTools(patch.tools.filter((t) => allowed.has(t)));
       const { tools: _drop, ...rest } = patch;
-      return Object.keys(rest).length === 0 ? loadPrefs() : patchPrefs(rest);
+      if (Object.keys(rest).length === 0) return loadPrefs();
+      const next = patchPrefs(rest);
+      if (rest.disabledSkills !== undefined) {
+        await host.reloadResources();
+      }
+      return next;
     }
-    return patchPrefs(patch);
+    const next = patchPrefs(patch);
+    if (patch.disabledSkills !== undefined) {
+      await host.reloadResources();
+    }
+    return next;
   });
   ipcMain.handle(IPC_CHANNELS.checkBash, async () => checkBash());
   ipcMain.handle(IPC_CHANNELS.applyBashShellPath, async (_e, shellPath?: string) =>

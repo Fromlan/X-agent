@@ -44,7 +44,7 @@ function assert(cond: boolean, msg: string): void {
 {
   const skills = [
     { name: "x-grill", description: "Interview the user" },
-    { name: "godot-scene-edit", description: "Edit scenes" },
+    { name: "godot-docs-4-7", description: "Godot docs distilled reference" },
   ];
   assert(filterSkillsByQuery(skills, "").length === 2, "empty query");
   assert(
@@ -52,7 +52,7 @@ function assert(cond: boolean, msg: string): void {
     "filter name",
   );
   assert(
-    filterSkillsByQuery(skills, "scenes")[0]?.name === "godot-scene-edit",
+    filterSkillsByQuery(skills, "docs")[0]?.name === "godot-docs-4-7",
     "filter description",
   );
   assert(filterSkillsByQuery(skills, "zzz").length === 0, "no match");
@@ -78,9 +78,9 @@ function assert(cond: boolean, msg: string): void {
 // skill read detection (chat special display)
 {
   const hit = parseSkillReadFromTool("read", {
-    path: "D:/UGit/X-agent/packages/godot-pi/skills/godot-scene-edit/SKILL.md",
+    path: "D:/UGit/X-agent/packages/godot-pi/skills/godot-docs-4-7/SKILL.md",
   });
-  assert(hit?.skillName === "godot-scene-edit", "object args skill name");
+  assert(hit?.skillName === "godot-docs-4-7", "object args skill name");
 }
 
 {

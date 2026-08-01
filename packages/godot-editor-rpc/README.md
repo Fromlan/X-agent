@@ -10,7 +10,7 @@ Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌�
 | Agent 工具 | [`apps/desktop/electron/agent/godot-tools.ts`](../../apps/desktop/electron/agent/godot-tools.ts) |
 | 安装助手 | [`apps/desktop/electron/agent/godot-addon-install.ts`](../../apps/desktop/electron/agent/godot-addon-install.ts) |
 
-> 官方文档离线检索（`godot_docs_*`）是桌面侧能力，不经过本 addon；见主仓库 README「Godot 文档」。
+> 引擎惯例参考见 godot-pi 包内技能 `godot-docs-4-7`（不经过本 addon）。
 
 ## 安装
 

@@ -56,18 +56,14 @@ assert(
 assert(skillIdForFilter({ name: "x-grill" }) === "x-grill", "name preferred");
 assert(
   skillIdForFilter({
-    filePath: join("pkg", "skills", "godot-scene-edit", "SKILL.md"),
-  }) === "godot-scene-edit",
+    filePath: join("pkg", "skills", "godot-docs-4-7", "SKILL.md"),
+  }) === "godot-docs-4-7",
   "id from parent dir",
 );
 
 const sample = [
   { name: "x-grill", filePath: join("p", "x-grill", "SKILL.md") },
-  { name: "godot-rpc-playtest", filePath: join("p", "godot-rpc-playtest", "SKILL.md") },
-  {
-    name: "godot-project-audit",
-    filePath: join(root, "godot-project-audit", "SKILL.md"),
-  },
+  { name: "godot-docs-4-7", filePath: join("p", "godot-docs-4-7", "SKILL.md") },
 ];
 
 assert(!isGodotProjectRoot(""), "empty cwd not godot");
@@ -85,7 +81,7 @@ try {
   writeFileSync(join(godotTmp, "project.godot"), "config_version=5\n", "utf8");
   assert(isGodotProjectRoot(godotTmp), "tmp godot root");
   const withGodot = filterGodotSkillsForCwd(sample, godotTmp);
-  assert(withGodot.length === 3, "all skills when godot project");
+  assert(withGodot.length === 2, "all skills when godot project");
 } finally {
   rmSync(godotTmp, { recursive: true, force: true });
 }
@@ -128,7 +124,7 @@ const dupes = [
   {
     name: "x-tdd",
     filePath: join("a", "x-tdd", "SKILL.md"),
-    description: "B".repeat(200),
+    description: "B".repeat(SKILL_INDEX_DESCRIPTION_MAX + 40),
   },
 ];
 const deduped = dedupeSkillsByName(dupes);
@@ -141,6 +137,35 @@ assert(
   (indexed.find((s) => s.name === "x-tdd")?.description?.length ?? 0) ===
     SKILL_INDEX_DESCRIPTION_MAX,
   "pipeline truncates description",
+);
+
+const withDisabled = applyXAgentSkillsFilter(
+  [
+    {
+      name: "x-grill",
+      filePath: join("p", "x-grill", "SKILL.md"),
+      description: "a",
+    },
+    {
+      name: "x-tdd",
+      filePath: join("p", "x-tdd", "SKILL.md"),
+      description: "b",
+    },
+  ],
+  join(homedir(), "no-godot"),
+  ["X-Grill", " missing "],
+);
+assert(withDisabled.length === 1, "disabledSkills drops matching id");
+assert(withDisabled[0]!.name === "x-tdd", "unlisted skill kept");
+
+const disabledEmpty = applyXAgentSkillsFilter(
+  sample,
+  join(homedir(), "no-godot-here"),
+  [],
+);
+assert(
+  disabledEmpty.length === mixed.length,
+  "empty disabledSkills matches default pipeline",
 );
 
 console.log("test-exclude-agents-home-skills: ok");

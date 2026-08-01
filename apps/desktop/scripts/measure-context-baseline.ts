@@ -15,7 +15,6 @@ import {
   ALL_TOGGLEABLE_TOOLS,
   GODOT_TOOLS,
 } from "../shared/ipc";
-import { createGodotDocsTools } from "../electron/agent/godot-docs-tools";
 import { createGodotTools } from "../electron/agent/godot-tools";
 import type { GodotRpcBridge } from "../electron/agent/godot-rpc-bridge";
 
@@ -114,8 +113,7 @@ async function main(): Promise<void> {
     },
   } as unknown as GodotRpcBridge;
   const godotEditorDefs = createGodotTools(dummyBridge) as unknown as ToolDefLike[];
-  const godotDocsDefs = createGodotDocsTools() as unknown as ToolDefLike[];
-  const godotByName = toolDefsByName([...godotEditorDefs, ...godotDocsDefs]);
+  const godotByName = toolDefsByName(godotEditorDefs);
 
   const defsByName: Record<string, ToolDefLike> = {
     ...builtinByName,
@@ -123,32 +121,32 @@ async function main(): Promise<void> {
   };
 
   const tools7 = [...AVAILABLE_TOOLS];
-  const tools19 = [...ALL_TOGGLEABLE_TOOLS];
+  const toolsAll = [...ALL_TOGGLEABLE_TOOLS];
 
   assert(
     tools7.length === 7,
     `sanity: AVAILABLE_TOOLS length should be 7, got ${tools7.length}`,
   );
   assert(
-    tools19.length === 19,
-    `sanity: ALL_TOGGLEABLE_TOOLS length should be 19, got ${tools19.length}`,
+    toolsAll.length === 7 + GODOT_TOOLS.length,
+    `sanity: ALL_TOGGLEABLE_TOOLS length should be ${7 + GODOT_TOOLS.length}, got ${toolsAll.length}`,
   );
 
   const system7 = estimateSystemTokens({ cwd, toolNames: tools7, defsByName });
-  const system19 = estimateSystemTokens({ cwd, toolNames: tools19, defsByName });
+  const systemAll = estimateSystemTokens({ cwd, toolNames: toolsAll, defsByName });
   // Schema estimation doesn't need the system prompt; keep it separate so deltas
   // explain whether the payload bloat comes from "tool schemas" vs "system".
   const schemaTokens7 = estimateSchemaTokens(tools7, defsByName);
-  const schemaTokens19 = estimateSchemaTokens(tools19, defsByName);
+  const schemaTokensAll = estimateSchemaTokens(toolsAll, defsByName);
 
   const total7 = system7 + schemaTokens7;
-  const total19 = system19 + schemaTokens19;
-  const delta = total19 - total7;
+  const totalAll = systemAll + schemaTokensAll;
+  const delta = totalAll - total7;
 
   // "Expected" here is intentionally loose: we only want a regression guard.
   assert(
     delta >= 400,
-    `baseline delta too small (expected >=400): delta=${delta}, total7=${total7}, total19=${total19}`,
+    `baseline delta too small (expected >=400): delta=${delta}, total7=${total7}, totalAll=${totalAll}`,
   );
 
   console.log("measure-context-baseline: ok");
@@ -157,14 +155,14 @@ async function main(): Promise<void> {
       {
         cwd,
         tools7,
-        tools19,
+        toolsAll,
         godotEditorToolCount: GODOT_TOOLS.length,
         systemTokens7: system7,
-        systemTokens19: system19,
+        systemTokensAll: systemAll,
         schemaTokens7,
-        schemaTokens19,
+        schemaTokensAll,
         totalTokensEst7: total7,
-        totalTokensEst19: total19,
+        totalTokensEstAll: totalAll,
         delta,
       },
       null,

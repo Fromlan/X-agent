@@ -12,7 +12,6 @@ import {
   DEFAULT_PREFS,
   normalizeThemePrefs,
 } from "../../shared/ipc";
-import { normalizeGodotDocsBranch } from "./godot-docs-cache";
 
 type RawPrefs = Partial<ClientPrefs> & {
   language?: unknown;
@@ -56,6 +55,12 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
         (k): k is string => typeof k === "string" && k.trim().length > 0,
       )
     : [];
+  const disabledSkills = Array.isArray(rest.disabledSkills)
+    ? rest.disabledSkills
+        .filter((k): k is string => typeof k === "string")
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0)
+    : [];
   const rawAutoCompact = rest.autoCompactPercent;
   const autoCompactPercent =
     typeof rawAutoCompact === "number" &&
@@ -86,14 +91,10 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     hiddenProjectKeys,
     dismissedReadyChecklistKeys,
     dismissedGodotToolsNudgeKeys,
+    disabledSkills,
     autoCompactPercent,
     goalMaxTurns,
     goalMaxTokens,
-    godotDocsBranch: normalizeGodotDocsBranch(
-      typeof rest.godotDocsBranch === "string"
-        ? rest.godotDocsBranch
-        : DEFAULT_PREFS.godotDocsBranch,
-    ),
   };
 }
 
@@ -207,9 +208,6 @@ export function savePrefs(prefs: ClientPrefs): ClientPrefs {
 
 export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
   const next = { ...loadPrefs(), ...patch };
-  if (typeof patch.godotDocsBranch === "string") {
-    next.godotDocsBranch = normalizeGodotDocsBranch(patch.godotDocsBranch);
-  }
   if (typeof patch.autoCompactPercent === "number") {
     next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
       ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))
@@ -224,6 +222,14 @@ export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
     next.goalMaxTokens = Number.isFinite(patch.goalMaxTokens)
       ? Math.min(10_000_000, Math.max(10_000, Math.floor(patch.goalMaxTokens)))
       : DEFAULT_PREFS.goalMaxTokens;
+  }
+  if (patch.disabledSkills !== undefined) {
+    next.disabledSkills = Array.isArray(patch.disabledSkills)
+      ? patch.disabledSkills
+          .filter((k): k is string => typeof k === "string")
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0)
+      : [];
   }
   return savePrefs(next);
 }

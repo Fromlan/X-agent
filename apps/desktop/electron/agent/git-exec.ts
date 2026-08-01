@@ -1,6 +1,6 @@
 /**
  * Thin git CLI helpers shared by shadow checkpoints and other main-process tools.
- * Reuses the same Windows git.exe discovery pattern as godot-docs-cache.
+ * Reuses the same Windows git.exe discovery pattern used elsewhere in the agent.
  */
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";

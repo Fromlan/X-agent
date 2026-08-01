@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  CheckSquare,
   FilePlus2,
   FolderOpen,
   Puzzle,
   RefreshCw,
   Save,
+  Square,
   Trash2,
 } from "lucide-react";
 import type {
+  ClientPrefs,
   InstalledPackageInfo,
   PluginItem,
   PluginKind,
@@ -19,6 +22,9 @@ import { useConfirm } from "@/lib/app-confirm";
 
 interface Props {
   cwd: string | null;
+  prefs: ClientPrefs;
+  hasActiveSession?: boolean;
+  onPrefsChanged?: (prefs: ClientPrefs) => void;
 }
 
 type ScopeFilter = "all" | PluginScope;
@@ -39,7 +45,19 @@ function kindLabel(kind: PluginKind): string {
   return "主题";
 }
 
-export function PluginsPage({ cwd }: Props) {
+function isSkillEnabled(prefs: ClientPrefs, skillId: string): boolean {
+  const id = skillId.trim().toLowerCase();
+  if (!id) return true;
+  const disabled = prefs.disabledSkills ?? [];
+  return !disabled.some((d) => d.trim().toLowerCase() === id);
+}
+
+export function PluginsPage({
+  cwd,
+  prefs,
+  hasActiveSession = false,
+  onPrefsChanged,
+}: Props) {
   const confirm = useConfirm();
   const [kind, setKind] = useState<PageKind>("prompt");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
@@ -101,6 +119,68 @@ export function PluginsPage({ cwd }: Props) {
     setBaseline(result.content ?? "");
     setWarnings(result.warnings ?? []);
   }, []);
+
+  const isSkillTab = kind === "skill";
+
+  const allVisibleSkillsEnabled = useMemo(() => {
+    if (!isSkillTab || filtered.length === 0) return true;
+    return filtered.every((item) => isSkillEnabled(prefs, item.name));
+  }, [filtered, isSkillTab, prefs]);
+
+  const confirmSkillIndexChange = useCallback(async (): Promise<boolean> => {
+    if (!hasActiveSession) return true;
+    return confirm({
+      title: "更改技能开关",
+      message: "会重建本会话的技能索引。确定继续？",
+      confirmLabel: "继续",
+      tone: "warn",
+    });
+  }, [confirm, hasActiveSession]);
+
+  const setSkillsEnabled = useCallback(
+    async (skillIds: string[], enabled: boolean) => {
+      const ids = skillIds
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0);
+      if (ids.length === 0) return;
+      if (!(await confirmSkillIndexChange())) return;
+      const idSet = new Set(ids.map((id) => id.toLowerCase()));
+      const currentDisabled = prefs.disabledSkills ?? [];
+      const without = currentDisabled.filter(
+        (d) => !idSet.has(d.trim().toLowerCase()),
+      );
+      const nextDisabled = enabled
+        ? without
+        : [
+            ...without,
+            ...ids.filter(
+              (id) =>
+                !without.some((d) => d.trim().toLowerCase() === id.toLowerCase()),
+            ),
+          ];
+      setBusy(true);
+      setError(null);
+      try {
+        const next = await window.xAgent.setPrefs({
+          disabledSkills: nextDisabled,
+        });
+        onPrefsChanged?.(next);
+        setMessage(enabled ? "已启用技能" : "已关闭技能");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [confirmSkillIndexChange, onPrefsChanged, prefs.disabledSkills],
+  );
+
+  const toggleSkill = useCallback(
+    async (skillId: string, enabled: boolean) => {
+      await setSkillsEnabled([skillId], enabled);
+    },
+    [setSkillsEnabled],
+  );
 
   useEffect(() => {
     void refresh();
@@ -266,6 +346,28 @@ export function PluginsPage({ cwd }: Props) {
           <span>Pi 插件</span>
         </div>
         <div className="plugins-toolbar-right">
+          {isSkillTab && filtered.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              title={allVisibleSkillsEnabled ? "全部关闭" : "全部开启"}
+              aria-label={allVisibleSkillsEnabled ? "全部关闭" : "全部开启"}
+              onClick={() => {
+                void setSkillsEnabled(
+                  filtered.map((item) => item.name),
+                  !allVisibleSkillsEnabled,
+                );
+              }}
+            >
+              {allVisibleSkillsEnabled ? (
+                <CheckSquare size={14} />
+              ) : (
+                <Square size={14} />
+              )}
+              {allVisibleSkillsEnabled ? "全部关闭" : "全部开启"}
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -456,28 +558,66 @@ export function PluginsPage({ cwd }: Props) {
                 </p>
               ) : (
                 <div className="plugins-list">
-                {filtered.map((item) => (
-                  <button
+                {filtered.map((item) => {
+                  const skillOn = isSkillTab
+                    ? isSkillEnabled(prefs, item.name)
+                    : true;
+                  return (
+                  <div
                     key={`${item.id}:${item.path}`}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     className={`plugin-item${
                       selectedPath === item.path ? " active" : ""
-                    }`}
+                    }${isSkillTab && !skillOn ? " plugin-item--disabled" : ""}`}
                     onClick={() => void openItem(item)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        void openItem(item);
+                      }
+                    }}
                   >
-                    <div className="plugin-item-title">{item.name}</div>
-                    <div className="plugin-item-meta">
-                      {item.packageName
-                        ? `Package · ${item.packageName}`
-                        : item.scope === "global"
-                          ? "全局"
-                          : "项目"}
-                      {item.description && !item.packageName
-                        ? ` · ${item.description}`
-                        : ""}
+                    {isSkillTab && (
+                      <span
+                        className="plugin-item-toggle"
+                        title={skillOn ? "关闭技能" : "启用技能"}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={skillOn}
+                          disabled={busy}
+                          aria-label={
+                            skillOn
+                              ? `关闭技能 ${item.name}`
+                              : `启用技能 ${item.name}`
+                          }
+                          onChange={() => {
+                            void toggleSkill(item.name, !skillOn);
+                          }}
+                        />
+                      </span>
+                    )}
+                    <div className="plugin-item-body">
+                      <div className="plugin-item-title">{item.name}</div>
+                      <div className="plugin-item-meta">
+                        {item.packageName
+                          ? `Package · ${item.packageName}`
+                          : item.scope === "global"
+                            ? "全局"
+                            : "项目"}
+                        {isSkillTab && !skillOn
+                          ? " · 已关闭"
+                          : item.description && !item.packageName
+                            ? ` · ${item.description}`
+                            : ""}
+                      </div>
                     </div>
-                  </button>
-                ))}
+                  </div>
+                  );
+                })}
                 </div>
               )}
             </aside>
@@ -495,6 +635,20 @@ export function PluginsPage({ cwd }: Props) {
                       </p>
                     </div>
                     <div className="plugins-editor-actions">
+                      {isSkillTab && (
+                        <label className="plugin-skill-enable">
+                          <input
+                            type="checkbox"
+                            checked={isSkillEnabled(prefs, selected.name)}
+                            disabled={busy}
+                            onChange={() => {
+                              const on = isSkillEnabled(prefs, selected.name);
+                              void toggleSkill(selected.name, !on);
+                            }}
+                          />
+                          <span>启用</span>
+                        </label>
+                      )}
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -533,11 +687,19 @@ export function PluginsPage({ cwd }: Props) {
                       </button>
                     </div>
                   </div>
+                  {isSkillTab && !isSkillEnabled(prefs, selected.name) && (
+                    <div className="banner warn">
+                      已关闭：此技能不会出现在会话技能索引与 /skill 菜单中。
+                    </div>
+                  )}
                   {!selected.editable && (
                     <div className="banner warn">
                       只读：来自已安装 Package
                       {selected.packageName ? `（${selected.packageName}）` : ""}
-                      。Agent 会加载这些资源；卸载请到本页 Packages 进行。
+                      。
+                      {isSkillTab && !isSkillEnabled(prefs, selected.name)
+                        ? "已关闭时不会进入会话索引；卸载请到本页 Packages。"
+                        : "Agent 会加载这些资源；卸载请到本页 Packages 进行。"}
                     </div>
                   )}
                   {warnings.length > 0 && (

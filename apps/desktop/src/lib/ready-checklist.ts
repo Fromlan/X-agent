@@ -4,7 +4,6 @@ import {
   type BashCheckResult,
   type ClientPrefs,
   type GitCheckResult,
-  type GodotDocsStatusDto,
   type GodotRpcStatusDto,
   type PiCliStatus,
 } from "@shared/ipc";
@@ -18,8 +17,7 @@ export type ReadyItemId =
   | "git"
   | "rpcAddon"
   | "rpcBridge"
-  | "godotTools"
-  | "docs";
+  | "godotTools";
 
 export type ReadyItem = {
   id: ReadyItemId;
@@ -29,7 +27,6 @@ export type ReadyItem = {
   optional?: boolean;
   /** Settings tab to open for this item. */
   settingsTab?: "general" | "providers" | "tools" | "godot" | "plugins";
-  godotSection?: "editor" | "docs";
   /**
    * Preferred primary action for the checklist CTA.
    * Defaults are derived from `id` when omitted.
@@ -57,7 +54,6 @@ export type ReadyChecklistInput = {
   prefs: ClientPrefs | null;
   rpc: GodotRpcStatusDto | null;
   addonInstalled: boolean | null;
-  docs: GodotDocsStatusDto | null;
 };
 
 export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
@@ -152,7 +148,6 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
     detail: "复制插件到项目并启用 editor_plugins。",
     done: input.addonInstalled === true,
     settingsTab: "godot",
-    godotSection: "editor",
   });
 
   const bridgeRunning = Boolean(input.rpc?.running);
@@ -175,7 +170,6 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
           : "点击启动桥接；再在 Godot 中启用插件并保持编辑器打开。",
     done: bridgeOk,
     settingsTab: "godot",
-    godotSection: "editor",
     actionKind: bridgeOk
       ? undefined
       : bridgeRunning
@@ -189,16 +183,6 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
     detail: "默认关闭；启用后 Agent 才能控制场景与运行。",
     done: toolsEnabled,
     settingsTab: "tools",
-  });
-
-  items.push({
-    id: "docs",
-    label: "导入官方文档（可选）",
-    detail: "导入后可离线检索 godot-docs。",
-    done: input.docs?.status === "ready",
-    optional: true,
-    settingsTab: "godot",
-    godotSection: "docs",
   });
 
   return items;

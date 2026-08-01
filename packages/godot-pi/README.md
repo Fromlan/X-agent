@@ -44,16 +44,7 @@ pi install /绝对路径/X-agent/packages/godot-pi
 
 | Skill | 用途 |
 |---|---|
-| `godot-project-audit` | 审计项目结构 / autoload |
-| `godot-scene-edit` | 安全改场景与脚本，配合 RPC 重载 |
-| `godot-rpc-playtest` | 运行场景、收集报错、导入资源 |
-| `godot-gdscript-patterns` | GDScript 信号 / 场景 / 性能 |
-| `godot-autoload-patterns` | Autoload / EventBus |
-| `godot-state-machine` | 有限状态机 |
-| `godot-ecs-component` | Entity + Component + Resource |
-| `godot-shader-patterns` | 常用着色器菜谱 |
-
-大型玩法库（背包、种田等）不在默认索引内。
+| `godot-docs-4-7` | Godot 4.7 官方文档蒸馏知识库（节点选型 / 场景结构 / GDScript / 渲染与物理 / 多人 / 导出） |
 
 ## 搭配使用
 

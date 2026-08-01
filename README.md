@@ -4,7 +4,7 @@
 
 面向 **Godot 4** 的桌面编码 Agent，基于 [Pi](https://pi.dev)。
 
-在项目里改场景与脚本、通过编辑器 RPC 重载 / 运行 / 导入，并离线检索官方文档——同一套会话里完成。当前版本见 [`apps/desktop/package.json`](apps/desktop/package.json)。
+在项目里改场景与脚本、通过编辑器 RPC 重载 / 运行 / 导入，并用 godot-docs-4-7 技能查阅引擎惯例——同一套会话里完成。当前版本见 [`apps/desktop/package.json`](apps/desktop/package.json)。
 
 ## 定位
 
@@ -12,7 +12,7 @@
 |---|---|
 | 是什么 | Godot 专用的编码 Agent（Electron 桌面客户端） |
 | 不是什么 | 通用多语言 IDE 替代品；Godot 只是其中一个插件 |
-| 工作面 | 项目文件 + Godot 编辑器控制面 + 官方文档检索 |
+| 工作面 | 项目文件 + Godot 编辑器控制面 + Godot 惯例技能 |
 | 运行时 | 复用 Pi 认证与模型；会话与 Pi CLI 隔离 |
 
 ## 功能
@@ -20,7 +20,7 @@
 ### Godot
 
 - **编辑器 RPC** — 开/重载场景、运行当前或主场景、资源导入、多编辑器选路、运行报错回传；默认端口 `8765`（回退 `8765–8774`）
-- **官方文档** — 导入文档源码或 zip 后离线检索（需在工具中启用）
+- **Godot 惯例技能** — godot-pi 包内 `godot-docs-4-7`（Godot 项目自动索引）
 - **Godot Pi 包** — 领域 skills / prompts（设置 → 插件可一键安装）
 - **右栏 Godot** — 桥接连接状态与快捷操作
 - **项目就绪清单** — 认证 / bash·Git / RPC 插件 / Godot 工具 / 文档等一步引导；可「不再提醒」
@@ -65,7 +65,7 @@
 3. 使用 Godot 控制面时：
    - **设置 → 工具** 勾选 Godot 编辑器 / 文档工具
    - **设置 → Godot → 编辑器连接**：安装/启用 **X-agent RPC** 插件，保持桥接已连接
-   - （可选）**设置 → 插件** 一键安装 Godot Pi 包；**设置 → Godot → 官方文档** 导入文档源码
+   - （可选）**设置 → 插件** 一键安装 Godot Pi 包（含 `godot-docs-4-7`）
 4. 左侧管理历史；右栏查看上下文、计划、工具、文件与 Godot 状态
 5. Plan 流程：切到 Plan → 描述任务 → Agent 研究后写出计划 → 右栏审阅/编辑 →「执行计划」
 
@@ -76,7 +76,7 @@
 | 用量 | 本地用量汇总 |
 | 工具 | 工具白名单、分组开关（Agent/目标默认能力；临时只读用会话模式） |
 | 插件 | 提示词 / 技能 / 扩展 / 主题 / Packages |
-| Godot | **编辑器连接** · **官方文档** |
+| Godot | **编辑器连接** |
 
 ## 数据位置
 
@@ -93,7 +93,6 @@
 | `x-agent/goals/` | Goal 模式日记（删除会话时清理） |
 | `x-agent-packages.json` | Packages 安装记录 |
 | `x-agent-usage.json` | 用量统计 |
-| `x-agent/godot-docs/` | Godot 文档缓存 |
 | `auth.json` / `models.json` | 与 Pi 共用的认证与模型 |
 
 ## 相关包

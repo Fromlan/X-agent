@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Loader2, XCircle } from "lucide-react";
 import {
   AVAILABLE_TOOLS,
-  GODOT_DOCS_TOOLS,
   GODOT_TOOLS,
 } from "@shared/ipc";
 import type { ChatItem } from "../../stores/chat-store";
@@ -23,9 +22,8 @@ function formatMaybeJson(value: unknown): string {
 
 const BUILTIN_SET = new Set<string>(AVAILABLE_TOOLS);
 const GODOT_EDITOR_SET = new Set<string>(GODOT_TOOLS);
-const GODOT_DOCS_SET = new Set<string>(GODOT_DOCS_TOOLS);
 
-type ToolGroupId = "builtin" | "godot-editor" | "godot-docs" | "other";
+type ToolGroupId = "builtin" | "godot-editor" | "other";
 
 const TOOL_GROUPS: {
   id: ToolGroupId;
@@ -34,14 +32,12 @@ const TOOL_GROUPS: {
 }[] = [
   { id: "builtin", label: "内置", chipClass: "is-builtin" },
   { id: "godot-editor", label: "Godot 编辑器", chipClass: "is-godot" },
-  { id: "godot-docs", label: "Godot 文档", chipClass: "is-docs" },
   { id: "other", label: "其他", chipClass: "is-other" },
 ];
 
 function groupIdForTool(name: string): ToolGroupId {
   if (BUILTIN_SET.has(name)) return "builtin";
   if (GODOT_EDITOR_SET.has(name)) return "godot-editor";
-  if (GODOT_DOCS_SET.has(name)) return "godot-docs";
   return "other";
 }
 
@@ -77,7 +73,6 @@ export function ToolsTab({
     const buckets: Record<ToolGroupId, string[]> = {
       builtin: [],
       "godot-editor": [],
-      "godot-docs": [],
       other: [],
     };
     for (const name of enabledTools) {
