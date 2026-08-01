@@ -411,25 +411,31 @@ type PlanModeState = {
 
 实现路径为宿主直出（非独立 Extension 包）；§6 的 Extension `/plan`+`/build` 规格已被本节替代。
 
+### Ask / 调研 Mode
+
+- UI：聊天输入区 **Agent | 调研 | Plan | 目标**；调研 = 只读问答，**无** `write_plan` 义务
+- 临时工具集 `computeAskModeTools`（`READONLY_CORE_TOOLS` + 已开的只读 Godot）；不写 `prefs.tools`
+- 与 Plan 共用 `plan-mode-guard` 硬闸；设置页已移除「快捷档 / 只读安全档」
+
 ### Plan Mode（对标 Cursor 核心）
 
-- UI：聊天输入区 **Agent | Plan | 目标** 三模式互斥 pill；composer 在 Plan 且有计划时显示 **执行计划**；右栏 **计划** tab 可编辑 Markdown、保存、**保存到项目**（始终可执行计划）
+- UI：composer 在 Plan 且有计划时显示 **执行计划**；右栏 **计划** tab 可编辑 Markdown、保存、**保存到项目**（始终可执行计划）
 - `write_plan` 成功后自动打开右栏计划 tab
 - 主进程：`setSessionMode` / `buildPlan` / `getPlanContent` / `savePlanContent` / `savePlanToWorkspace`；临时工具集 `computePlanModeTools`（不写 `prefs.tools`）
 - 自定义工具：`write_plan` 必须列入 `createAgentSession({ tools: SESSION_TOOL_REGISTRY })` 白名单（含 `ALL_TOGGLEABLE_TOOLS` + `write_plan`），否则 Pi 会从 registry 静默丢弃，导致无法写计划文件
 - 计划路径：默认 `~/.pi/agent/x-agent/plans/<timestamp>-<slug>.md`；保存到项目 → `<cwd>/.pi/plans/`
 - 指令注入：**system append**（非每条用户消息前缀）；退出 Plan 后 append 移除
 - 双层只读：`setActiveToolsByName` 软白名单 + InlineExtension `tool_call` **硬闸**（`plan-mode-guard.ts`）
-- `applyTools` 在 Plan 中只更新 prefs/savedTools，不污染当前只读集
+- `applyTools` 在 Ask/Plan 中只更新 prefs/savedTools，不污染当前只读集
 
 ### Goal Mode（与 Agent / Plan 并列）
 
 - UI：模式 pill「目标」；进行中显示条件条（轮次 / reason / **清除 · Agent**）
 - 进入目标模式后若无条件：输入框**不**预填 `/goal`，用户直接写完成条件后发送（亦可 `/goal …` / `/goal clear`）
 - 主进程：`setGoal` / `clearGoal` / `getGoal`；`agent_end` 后 `completeSimple` 评估；未满足则自动续轮
-- 互斥：进 Plan / Agent 会清除目标；进目标会退出 Plan（恢复工具）；达成后回到 Agent
+- 互斥：进 调研 / Plan / Agent 会清除目标；进目标会退出 Ask/Plan（恢复工具）；达成后回到 Agent
 - 指令注入：system append（含 GOAL CONDITION）；续轮为普通用户消息
-- 未做：pause/budget/跨会话 journal、Ask 模式、bash 只读分类器、澄清多选 UI / todos 勾选 / Shift+Tab
+- 未做：pause/budget/跨会话 journal、bash 只读分类器、澄清多选 UI / todos 勾选 / Shift+Tab
 
 ### IPC
 

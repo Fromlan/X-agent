@@ -5,11 +5,13 @@
 | 概念 | 含义 | 主要落点 |
 |------|------|----------|
 | **对话实录保真** | Pi 分支 / 流式 → 同一套 `HistoryItem` 规则（文本、工具配对、`userEntryId`、截断） | `electron/agent/transcript-mapper.ts`、`history.ts`、`chat-store.ts` |
-| **撤回撤销** | 撤回到用户消息：abort → navigate → 文件还原 → 剪枝 → history replace | `turn-file-tracker.ts`、`SessionHost.retractToUserMessage` |
+| **撤回撤销** | 撤回到用户消息：abort → scan → navigate → 文件还原 → 剪枝 → history replace | `retract-orchestrator.ts`（编排）、`turn-file-tracker.ts` / `shadow-checkpoints.ts`（还原适配器） |
+| **会话模式** | Agent / 调研(Ask) / Plan / Goal 互斥生命周期：只读工具快照、system append、`write_plan`、目标评估续轮 | `session-mode.ts`（`SessionModeController`）、`plan-tools.ts`、`plan-mode-guard.ts`、`goal-evaluator.ts` |
 | **供应商激活** | 写 Pi auth/models + prefs + 运行时 reload + 失败回滚，一次事务 | `provider-activate.ts`、`provider-store.ts` |
 | **会话自动标题** | 首轮结束后确保会话有标题（模型摘要或本地截断） | `session-title.ts`（`ensureSessionTitle`） |
-| **项目侧栏身份** | 按项目 key 分组 / 隐藏 / 显示名 / 删除后回退会话 | `shared/project-path.ts`、`group-sessions.ts` |
+| **项目侧栏身份** | 按项目 key 分组 / 隐藏 / 显示名 / 删除后回退会话 | `shared/project-path.ts`、`group-sessions.ts`、`useWorkspaceSession.ts` |
 | **Cwd 路径沙箱** | 解析项目内相对路径，拒绝逃出 cwd | `electron/agent/cwd-sandbox.ts` |
-| **工作区 / 回合门面** | 跨进程粗操作面（打开工作区、回合、撤回）；Godot / 插件 / 供应商分接缝 | `shared/ipc.ts`、`preload.ts`、`main` handlers、`App` 壳 |
+| **工作区 / 回合门面** | 跨进程粗操作面：`workspace` / `turn` / `plan` 分面（扁平方法仍保留兼容） | `shared/ipc.ts`（`WorkspaceApi`/`TurnApi`/`PlanApi`）、`preload.ts`、`useWorkspaceSession.ts`、`usePlanSession.ts` |
+| **计划会话** | 右栏计划 CRUD、脏保存、执行计划、自动打开 Plan 页 | `usePlanSession.ts`、`PlanTab.tsx` |
 
 相关：[`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)（模型上下文如何组装）、[`CLAUDE.md`](CLAUDE.md)（仓库指引）。

@@ -8,6 +8,7 @@ import {
   buildImplementPrompt,
   buildPlanFilePath,
   classifyPlanLocation,
+  computeAskModeTools,
   computePlanModeTools,
   formatPlanTimestamp,
   getPlansDir,
@@ -20,10 +21,12 @@ import {
 } from "../electron/agent/plan-tools.ts";
 import {
   PLAN_MODE_CORE_TOOLS,
+  READONLY_CORE_TOOLS,
   SESSION_TOOL_REGISTRY,
   WRITE_PLAN_TOOL,
 } from "../shared/ipc.ts";
 import {
+  buildAskModeSystemAppend,
   buildPlanModeSystemAppend,
   stripModeBlocks,
 } from "../shared/mode-prompt.ts";
@@ -46,6 +49,25 @@ assert.ok(slugifyPlanTitle("添加用户认证").length > 0);
 
 const ts = formatPlanTimestamp(new Date("2026-07-31T14:05:06"));
 assert.match(ts, /^20260731-140506$/);
+
+assert.deepEqual([...READONLY_CORE_TOOLS], ["read", "grep", "find", "ls"]);
+
+assert.deepEqual(computeAskModeTools(["read", "bash", "write", "edit"]), [
+  "read",
+  "grep",
+  "find",
+  "ls",
+]);
+assert.ok(!computeAskModeTools(["read", "bash"]).includes("write_plan"));
+assert.deepEqual(
+  computeAskModeTools([
+    "read",
+    "godot_docs_search",
+    "godot_run_scene",
+    "godot_editor_info",
+  ]),
+  ["read", "grep", "find", "ls", "godot_editor_info", "godot_docs_search"],
+);
 
 assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
   "read",
@@ -77,6 +99,11 @@ assert.ok(prompt.includes('<mode name="build">'));
 assert.ok(prompt.includes("C:\\plans\\demo.md"));
 assert.ok(prompt.includes("Implement"));
 assert.equal(stripModeBlocks(prompt).trim(), "");
+
+const askAppend = buildAskModeSystemAppend();
+assert.ok(askAppend.includes("# X-agent Ask mode"));
+assert.ok(askAppend.includes("Do not use bash"));
+assert.ok(!askAppend.includes("call write_plan once"));
 
 const append = buildPlanModeSystemAppend();
 assert.ok(append.includes("# X-agent Plan mode"));

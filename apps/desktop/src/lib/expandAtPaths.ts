@@ -5,11 +5,9 @@
  */
 
 import { stripModeBlocks } from "@shared/mode-prompt";
+import { FILE_BLOCK_RE } from "./user-message-files";
 
 const AT_PATH_RE = /(?<![\w.])@([A-Za-z0-9_./\\-]+)/g;
-
-const FILE_BLOCK_RE =
-  /<file\s+name="([^"]*)"\s*>\r?\n?[\s\S]*?\r?\n?<\/file>/g;
 
 export function appendAtPath(input: string, relPath: string): string {
   const token = `@${relPath.replace(/\\/g, "/")}`;

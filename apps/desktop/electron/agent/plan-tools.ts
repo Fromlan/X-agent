@@ -16,6 +16,8 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   PLAN_MODE_CORE_TOOLS,
   PLAN_MODE_OPTIONAL_READONLY_TOOLS,
+  READONLY_CORE_TOOLS,
+  WRITE_PLAN_TOOL,
 } from "../../shared/ipc";
 import {
   PLAN_MODE_INSTRUCTIONS,
@@ -140,17 +142,55 @@ export function buildPlanFilePath(title: string, d = new Date()): string {
   return join(getPlansDir(), name);
 }
 
+/** Optional read-only Godot tools already enabled in user prefs. */
+function appendOptionalReadonlyGodotTools(
+  tools: string[],
+  prefsTools: readonly string[],
+): void {
+  const prefs = new Set(prefsTools);
+  for (const name of PLAN_MODE_OPTIONAL_READONLY_TOOLS) {
+    if (prefs.has(name)) tools.push(name);
+  }
+}
+
+/**
+ * Tools active in Ask (调研) mode: core read-only + optional Godot read-only
+ * from prefs. No write_plan.
+ */
+export function computeAskModeTools(prefsTools: readonly string[]): string[] {
+  const tools: string[] = [...READONLY_CORE_TOOLS];
+  appendOptionalReadonlyGodotTools(tools, prefsTools);
+  return tools;
+}
+
 /**
  * Tools active in Plan mode: core read-only + write_plan, plus optional
  * Godot read-only tools that are already enabled in user prefs.
  */
 export function computePlanModeTools(prefsTools: readonly string[]): string[] {
-  const prefs = new Set(prefsTools);
   const tools: string[] = [...PLAN_MODE_CORE_TOOLS];
-  for (const name of PLAN_MODE_OPTIONAL_READONLY_TOOLS) {
-    if (prefs.has(name)) tools.push(name);
-  }
+  appendOptionalReadonlyGodotTools(tools, prefsTools);
   return tools;
+}
+
+/** True when mode uses a temporary read-only tool set (not prefs.tools). */
+export function isReadonlySessionMode(mode: string): boolean {
+  return mode === "ask" || mode === "plan";
+}
+
+/** Active tools for ask/plan from prefs; agent/goal use prefs as-is. */
+export function computeModeTools(
+  mode: "ask" | "plan",
+  prefsTools: readonly string[],
+): string[] {
+  return mode === "ask"
+    ? computeAskModeTools(prefsTools)
+    : computePlanModeTools(prefsTools);
+}
+
+/** Filter write_plan out of a tool list (e.g. when capturing savedTools). */
+export function withoutWritePlan(tools: readonly string[]): string[] {
+  return tools.filter((n) => n !== WRITE_PLAN_TOOL);
 }
 
 const STUB_PLAN_TITLES = new Set([

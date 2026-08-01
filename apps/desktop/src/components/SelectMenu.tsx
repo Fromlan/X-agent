@@ -9,6 +9,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+import {
+  isScrollInsidePanel,
+  resolveMenuScrollTarget,
+  shouldScrollOptionIntoView,
+  type MenuHighlightReason,
+} from "@/lib/select-menu-scroll";
 
 export type SelectOption = {
   value: string;
@@ -58,9 +64,18 @@ export function SelectMenu(props: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const highlightReasonRef = useRef<MenuHighlightReason>("open");
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<MenuPos | null>(null);
   const [highlight, setHighlight] = useState(-1);
+
+  const setHighlightFrom = useCallback(
+    (index: number, reason: MenuHighlightReason) => {
+      highlightReasonRef.current = reason;
+      setHighlight(index);
+    },
+    [],
+  );
 
   const selected = useMemo(
     () => options.find((o) => o.value === value) ?? null,
@@ -87,9 +102,9 @@ export function SelectMenu(props: Props) {
       selectedIdx >= 0 && !options[selectedIdx]?.disabled
         ? selectedIdx
         : (enabledIndexes[0] ?? 0);
-    setHighlight(start);
+    setHighlightFrom(start, "open");
     setOpen(true);
-  }, [disabled, enabledIndexes, options, value]);
+  }, [disabled, enabledIndexes, options, setHighlightFrom, value]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -136,9 +151,8 @@ export function SelectMenu(props: Props) {
 
   useLayoutEffect(() => {
     if (!open || !panelRef.current) return;
-    const el = panelRef.current.querySelector<HTMLElement>(
-      '[data-highlighted="true"], [aria-selected="true"]',
-    );
+    if (!shouldScrollOptionIntoView(highlightReasonRef.current)) return;
+    const el = resolveMenuScrollTarget(panelRef.current);
     el?.scrollIntoView({ block: "nearest" });
   }, [open, highlight]);
 
@@ -161,26 +175,27 @@ export function SelectMenu(props: Props) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const dir = e.key === "ArrowDown" ? 1 : -1;
-        setHighlight((prev) => {
-          const curPos = enabledIndexes.indexOf(prev);
-          const base = curPos >= 0 ? curPos : dir > 0 ? -1 : 0;
-          const next =
-            enabledIndexes[
-              (base + dir + enabledIndexes.length) % enabledIndexes.length
-            ]!;
-          return next;
-        });
+        const curPos = enabledIndexes.indexOf(highlight);
+        const base = curPos >= 0 ? curPos : dir > 0 ? -1 : 0;
+        const next =
+          enabledIndexes[
+            (base + dir + enabledIndexes.length) % enabledIndexes.length
+          ]!;
+        setHighlightFrom(next, "keyboard");
         return;
       }
 
       if (e.key === "Home") {
         e.preventDefault();
-        setHighlight(enabledIndexes[0]!);
+        setHighlightFrom(enabledIndexes[0]!, "keyboard");
         return;
       }
       if (e.key === "End") {
         e.preventDefault();
-        setHighlight(enabledIndexes[enabledIndexes.length - 1]!);
+        setHighlightFrom(
+          enabledIndexes[enabledIndexes.length - 1]!,
+          "keyboard",
+        );
         return;
       }
       if (e.key === "Enter" || e.key === " ") {
@@ -194,15 +209,22 @@ export function SelectMenu(props: Props) {
       }
     };
     const onResize = () => updatePosition();
+    const onScroll = (e: Event) => {
+      // Panel overflow scroll must not reposition (or re-render) the menu.
+      if (isScrollInsidePanel(panelRef.current, e.target as Node | null)) {
+        return;
+      }
+      updatePosition();
+    };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onResize, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onResize, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [
     close,
@@ -211,6 +233,7 @@ export function SelectMenu(props: Props) {
     onChange,
     open,
     options,
+    setHighlightFrom,
     updatePosition,
   ]);
 
@@ -281,7 +304,7 @@ export function SelectMenu(props: Props) {
                   disabled={opt.disabled}
                   title={opt.title ?? opt.label}
                   onMouseEnter={() => {
-                    if (!opt.disabled) setHighlight(index);
+                    if (!opt.disabled) setHighlightFrom(index, "pointer");
                   }}
                   onClick={() => {
                     if (opt.disabled) return;

@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { FolderInput, Hammer, Loader2, Save, X } from "lucide-react";
-import type { PlanFileLocation } from "@shared/ipc";
+import { usePlanSession, planFileLabel } from "../../hooks/usePlanSession";
 
 interface Props {
   planPath: string | null;
@@ -9,140 +8,36 @@ interface Props {
   onPlanPathChange?: (path: string | null) => void;
 }
 
-function planFileLabel(path: string): string {
-  const norm = path.replace(/\\/g, "/");
-  const i = norm.lastIndexOf("/");
-  return i >= 0 ? norm.slice(i + 1) : norm;
-}
-
 export function PlanTab({
   planPath,
   busy,
   onBuildPlan,
   onPlanPathChange,
 }: Props) {
-  const [markdown, setMarkdown] = useState("");
-  const [loadedPath, setLoadedPath] = useState<string | null>(null);
-  const [location, setLocation] = useState<PlanFileLocation | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!planPath) {
-      setMarkdown("");
-      setLoadedPath(null);
-      setLocation(null);
-      setDirty(false);
-      setError(null);
-      setHint(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      const res = await window.xAgent.getPlanContent();
-      if (cancelled) return;
-      setLoading(false);
-      if (!res.ok || res.markdown == null || !res.path) {
-        setError(res.error ?? "无法读取计划");
-        return;
-      }
-      setMarkdown(res.markdown);
-      setLoadedPath(res.path);
-      setLocation(res.location ?? null);
-      setDirty(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [planPath]);
-
-  const save = async (): Promise<boolean> => {
-    if (!planPath) return false;
-    setSaving(true);
-    setError(null);
-    setHint(null);
-    try {
-      const res = await window.xAgent.savePlanContent(markdown);
-      if (!res.ok) {
-        setError(res.error ?? "保存失败");
-        return false;
-      }
-      setDirty(false);
-      setHint("已保存");
-      if (res.path) setLoadedPath(res.path);
-      if (res.location) setLocation(res.location);
-      return true;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveToWorkspace = async () => {
-    if (!planPath) return;
-    setSaving(true);
-    setError(null);
-    setHint(null);
-    try {
-      if (dirty) {
-        const ok = await save();
-        if (!ok) return;
-      }
-      const res = await window.xAgent.savePlanToWorkspace();
-      if (!res.ok) {
-        setError(res.error ?? "保存到项目失败");
-        return;
-      }
-      setLocation("workspace");
-      if (res.path) {
-        setLoadedPath(res.path);
-        onPlanPathChange?.(res.path);
-      }
-      setHint("已保存到项目 .pi/plans/");
-      setDirty(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const clearPlan = async () => {
-    if (!planPath) return;
-    setSaving(true);
-    setError(null);
-    setHint(null);
-    try {
-      const res = await window.xAgent.clearPlan();
-      if (!res.ok) {
-        setError(res.error ?? "清除失败");
-        return;
-      }
-      onPlanPathChange?.(null);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const execute = async () => {
-    if (!planPath) return;
-    setError(null);
-    if (dirty) {
-      const ok = await save();
-      if (!ok) return;
-    }
-    onBuildPlan();
-  };
+  const {
+    markdown,
+    loadedPath,
+    location,
+    dirty,
+    loading,
+    saving,
+    error,
+    hint,
+    save,
+    saveToWorkspace,
+    clear,
+    execute,
+    onMarkdownChange,
+    disabled,
+  } = usePlanSession({ planPath, busy, onBuildPlan, onPlanPathChange });
 
   if (!planPath) {
     return (
       <div className="rp-plan-empty">
         <p>尚无计划文件。</p>
         <p className="rp-muted">
-          切换到 Plan 模式，让 Agent 研究后调用 write_plan。生成后可在此编辑；切换
-          Agent / 目标模式不会丢失当前计划。
+          只需问答请用「调研」；要可执行方案请切 Plan，让 Agent 研究后调用
+          write_plan。生成后可在此编辑；切换 Agent / 调研 / 目标不会丢失当前计划。
         </p>
       </div>
     );
@@ -169,12 +64,10 @@ export function PlanTab({
           className="rp-plan-editor"
           value={markdown}
           onChange={(e) => {
-            setMarkdown(e.target.value);
-            setDirty(true);
-            setHint(null);
+            onMarkdownChange(e.target.value);
           }}
           spellCheck={false}
-          disabled={busy || saving}
+          disabled={disabled || loading}
           aria-label="计划 Markdown"
         />
       )}
@@ -184,7 +77,7 @@ export function PlanTab({
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={busy || saving || loading || !dirty}
+          disabled={disabled || loading || !dirty}
           onClick={() => {
             void save();
           }}
@@ -195,7 +88,7 @@ export function PlanTab({
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={busy || saving || loading || location === "workspace"}
+          disabled={disabled || loading || location === "workspace"}
           title="复制到项目 .pi/plans/"
           onClick={() => {
             void saveToWorkspace();
@@ -207,7 +100,7 @@ export function PlanTab({
         <button
           type="button"
           className="btn btn-cta btn-sm"
-          disabled={busy || saving || loading}
+          disabled={disabled || loading}
           onClick={() => {
             void execute();
           }}
@@ -218,10 +111,10 @@ export function PlanTab({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          disabled={busy || saving || loading}
+          disabled={disabled || loading}
           title="清除会话中的计划引用（不删除磁盘文件）"
           onClick={() => {
-            void clearPlan();
+            void clear();
           }}
         >
           <X size={14} aria-hidden />
