@@ -204,18 +204,18 @@ export const SESSION_TOOL_REGISTRY = [
 ] as const;
 
 /** Session interaction mode — mutually exclusive. */
-export type AgentSessionMode = "agent" | "plan" | "goal";
+export type AgentSessionMode = "agent" | "ask" | "plan" | "goal";
+
+/** Shared read-only builtins for Ask / Plan modes. */
+export const READONLY_CORE_TOOLS = ["read", "grep", "find", "ls"] as const;
 
 /** Core tools active while in Plan mode (write_plan is a custom tool, not prefs-toggleable). */
 export const PLAN_MODE_CORE_TOOLS = [
-  "read",
-  "grep",
-  "find",
-  "ls",
+  ...READONLY_CORE_TOOLS,
   WRITE_PLAN_TOOL,
 ] as const;
 
-/** Read-only Godot tools allowed in Plan mode when already enabled in prefs. */
+/** Read-only Godot tools allowed in Ask/Plan when already enabled in prefs. */
 export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_editor_info",
   "godot_docs_search",
@@ -900,7 +900,45 @@ export interface PrefsRecoveryNotice {
   error: string;
 }
 
-export interface XAgentApi {
+/** Coarse workspace / session lifecycle facade (flat methods remain on XAgentApi). */
+export type WorkspaceApi = {
+  open: XAgentApiFlat["openProject"];
+  close: XAgentApiFlat["closeWorkspace"];
+  newSession: XAgentApiFlat["newSession"];
+  resume: XAgentApiFlat["resumeSession"];
+  listSessions: XAgentApiFlat["listSessions"];
+  deleteSession: XAgentApiFlat["deleteSession"];
+  deleteProjectSessions: XAgentApiFlat["deleteProjectSessions"];
+  renameSession: XAgentApiFlat["renameSession"];
+  getStatus: XAgentApiFlat["getStatus"];
+};
+
+/** Coarse turn / composer facade (flat methods remain on XAgentApi). */
+export type TurnApi = {
+  prompt: XAgentApiFlat["prompt"];
+  abort: XAgentApiFlat["abort"];
+  previewRetract: XAgentApiFlat["previewRetract"];
+  retract: XAgentApiFlat["retractToUserMessage"];
+  editAndResend: XAgentApiFlat["editAndResend"];
+  regenerate: XAgentApiFlat["regenerateFromUser"];
+};
+
+/** Coarse plan / goal mode facade (flat methods remain on XAgentApi). */
+export type PlanApi = {
+  setMode: XAgentApiFlat["setSessionMode"];
+  getMode: XAgentApiFlat["getSessionMode"];
+  build: XAgentApiFlat["buildPlan"];
+  getContent: XAgentApiFlat["getPlanContent"];
+  saveContent: XAgentApiFlat["savePlanContent"];
+  saveToWorkspace: XAgentApiFlat["savePlanToWorkspace"];
+  clear: XAgentApiFlat["clearPlan"];
+  setGoal: XAgentApiFlat["setGoal"];
+  clearGoal: XAgentApiFlat["clearGoal"];
+  getGoal: XAgentApiFlat["getGoal"];
+};
+
+/** Flat IPC surface (used to define facet types without circular refs). */
+export interface XAgentApiFlat {
   openProject: (path?: string) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
@@ -1043,4 +1081,10 @@ export interface XAgentApi {
   notifyAppReady: () => Promise<{ ok: boolean }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
+}
+
+export interface XAgentApi extends XAgentApiFlat {
+  workspace: WorkspaceApi;
+  turn: TurnApi;
+  plan: PlanApi;
 }

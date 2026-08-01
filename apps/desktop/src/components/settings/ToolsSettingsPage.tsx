@@ -60,60 +60,12 @@ export function ToolsSettingsPage({
       <div className="settings-page-head">
         <h3>启用工具</h3>
         <p className="modal-hint">
-          更改会立即应用到当前会话（若已打开项目），并重建系统提示与工具定义 —
-          这会清空本会话的 API
+          此处控制 Agent（与目标）模式的默认工具白名单。临时只读请用会话「调研」或
+          Plan，不会改写本页勾选。更改会立即应用到当前会话（若已打开项目），并重建系统提示与工具定义
+          — 这会清空本会话的 API
           前缀缓存命中。长会话请尽量在新会话前调好白名单。右侧「工具」面板显示已启用列表；实际调用记录在
           Agent 运行后出现。
         </p>
-      </div>
-
-      <div className="settings-block">
-        <h4 className="settings-block-title">快捷档</h4>
-        <p className="modal-hint">
-          「只读安全档」关闭 bash / write / edit，降低 Agent 对文件系统与终端的影响；Godot
-          工具不受影响。
-        </p>
-        <div className="settings-inline-row">
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              void (async () => {
-                const safe = AVAILABLE_TOOLS.filter(
-                  (t) => t !== "bash" && t !== "write" && t !== "edit",
-                );
-                const keepExtra = prefs.tools.filter(
-                  (t) => !(AVAILABLE_TOOLS as readonly string[]).includes(t),
-                );
-                if (hasActiveSession) {
-                  const ok = await confirm({
-                    title: "应用只读安全档",
-                    message:
-                      "将关闭 bash / write / edit。更改工具白名单会重建系统提示并清空本会话前缀缓存。\n\n确定继续？",
-                    confirmLabel: "继续",
-                    tone: "warn",
-                  });
-                  if (!ok) return;
-                }
-                const next = await window.xAgent.setPrefs({
-                  tools: [...safe, ...keepExtra],
-                });
-                onPrefsChanged?.(next);
-              })();
-            }}
-          >
-            只读安全档
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              void setToolGroupEnabled(AVAILABLE_TOOLS, true);
-            }}
-          >
-            恢复内置全开
-          </button>
-        </div>
       </div>
 
       <div className="settings-block">

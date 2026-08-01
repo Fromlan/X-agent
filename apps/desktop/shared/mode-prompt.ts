@@ -1,16 +1,23 @@
 /**
- * Session-mode instructions for Plan / Goal / Build.
+ * Session-mode instructions for Ask / Plan / Goal / Build.
  *
- * Plan & Goal: injected into the system prompt append while the mode is active
- * (see SessionHost.appendSystemPromptOverride) — user bubbles stay clean.
+ * Ask, Plan & Goal: injected into the system prompt append while the mode is
+ * active (see SessionHost.appendSystemPromptOverride) — user bubbles stay clean.
  * Build: one-shot user message still uses `<mode>` so the transcript can show
  * a compact @Build chip.
  */
 
-export type SessionModePromptName = "plan" | "goal" | "build";
+export type SessionModePromptName = "ask" | "plan" | "goal" | "build";
 
 export const MODE_BLOCK_RE =
   /<mode\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/mode>/g;
+
+export const ASK_MODE_INSTRUCTIONS = [
+  "You are in Ask (调研) mode: answer questions and research the codebase. Do NOT modify project source files.",
+  "Allowed: read / grep / find / ls (and any read-only Godot tools already enabled). Do not use bash, edit, write, or write_plan.",
+  "If the user needs an implementable plan or code changes, tell them to switch to Plan mode (for a written plan) or Agent mode (to execute).",
+  "Do not pretend you already changed code.",
+].join("\n");
 
 export const PLAN_MODE_INSTRUCTIONS = [
   "You are planning only. Do NOT modify project source files.",
@@ -28,6 +35,10 @@ export const GOAL_MODE_INSTRUCTIONS = [
   "Produce verifiable evidence in the transcript (tests, commands, file checks).",
   "Do not stop after a partial step if the condition is still unmet.",
 ].join("\n");
+
+export function buildAskModeSystemAppend(): string {
+  return ["# X-agent Ask mode", ASK_MODE_INSTRUCTIONS].join("\n");
+}
 
 export function buildPlanModeSystemAppend(): string {
   return ["# X-agent Plan mode", PLAN_MODE_INSTRUCTIONS].join("\n");
@@ -64,6 +75,7 @@ export function stripModeBlocks(text: string): string {
 }
 
 export function modeBlockLabel(name: string): string {
+  if (name === "ask") return "调研";
   if (name === "plan") return "Plan";
   if (name === "goal") return "目标";
   if (name === "build") return "执行计划";

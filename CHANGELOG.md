@@ -16,6 +16,18 @@
 
 ### 修复
 
+## 0.3.7
+
+### 功能
+
+- **调研模式 (Ask)**：与 Agent / Plan / 目标并列；只读研究与问答（无 `write_plan`）；临时工具集 + 硬闸，不写回设置白名单
+
+### 改进
+
+- **工具设置**：移除「快捷档 / 只读安全档」；临时只读引导至会话「调研」或 Plan；设置页仅控制 Agent/目标默认白名单
+- **会话架构**：`SessionModeController` / `RetractOrchestrator` 从 `SessionHost` 拆出；IPC `workspace` / `turn` / `plan` 分面
+- **长对话**：聊天转录虚拟列表（`@tanstack/react-virtual`）；SelectMenu 滚动定位更稳
+
 ## 0.3.6
 
 ### 功能

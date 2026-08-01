@@ -2,6 +2,9 @@
  * Wires Pi's AgentSession event stream to X-agent's UiAgentEvent stream.
  * Extracted from SessionHost.bridgeEvents so the (large) switch statement
  * can be read/tested independently of the rest of the host's state machine.
+ *
+ * Deps are grouped into turn / usage facets so the seam stays small while
+ * SessionHost still provides the adapters.
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentStatus, TurnUsage, UiAgentEvent } from "../../shared/ipc";
@@ -19,32 +22,41 @@ import {
   type ToolDetailRecord,
 } from "./session-host-helpers";
 
-/**
- * Everything the event bridge needs from SessionHost. Kept as an explicit
- * interface (rather than passing `this`) so the switch statement's
- * dependencies are visible at a glance.
- */
-export interface SessionEventBridgeDeps {
-  emit(event: UiAgentEvent): void;
-  setStatus(status: AgentStatus, error?: string): void;
-  /** Sets the last-error field without emitting a status event (matches original bridgeEvents behavior). */
-  setLastErrorSilently(error: string): void;
-  emitUsageUpdate(): void;
-  emitHistoryReplace(): void;
-  messageIdFrom(message: unknown): string;
+/** Turn binding + checkpoint trackers (撤回撤销 capture path). */
+export interface SessionEventTurnFacet {
   fileTracker: TurnFileTracker;
   shadowCheckpoints: ShadowCheckpointTracker;
-  toolDetails: Map<string, ToolDetailRecord>;
-  /** Current bundle's session, or null if no project is open. */
-  getSession(): AgentSession | null;
+  currentUserEntryId(): string | undefined;
+}
+
+/** Usage / compaction recording for the live session. */
+export interface SessionEventUsageFacet {
   setLastTurnUsage(usage: TurnUsage | undefined): void;
   isCompactionRecording(): boolean;
   setCompactionRecording(value: boolean): void;
   captureCompactionBaseline(): void;
   recordCompactionDelta(): void;
   clearCompactionBaseline(): void;
+}
+
+/**
+ * Narrow seam for the event bridge. Callers learn emit + turn + usage + hooks,
+ * not a flat bag of ~20 peer callbacks.
+ */
+export interface SessionEventBridgeDeps {
+  emit(event: UiAgentEvent): void;
+  setStatus(status: AgentStatus, error?: string): void;
+  /** Sets the last-error field without emitting a status event. */
+  setLastErrorSilently(error: string): void;
+  emitUsageUpdate(): void;
+  emitHistoryReplace(): void;
+  messageIdFrom(message: unknown): string;
+  toolDetails: Map<string, ToolDetailRecord>;
+  /** Current bundle's session, or null if no project is open. */
+  getSession(): AgentSession | null;
+  turn: SessionEventTurnFacet;
+  usage: SessionEventUsageFacet;
   maybeAutoTitleSession(): Promise<void>;
-  currentUserEntryId(): string | undefined;
   /** Called after agent_end when not retrying — Goal Mode continuation hook. */
   onAgentSettled?: () => void;
 }
@@ -55,21 +67,22 @@ export interface SessionEventBridgeDeps {
  * Bind active turn only after append (microtask) or at tool_execution_start.
  */
 function bindActiveUserTurn(deps: SessionEventBridgeDeps): string | undefined {
-  const entryId = deps.currentUserEntryId();
+  const entryId = deps.turn.currentUserEntryId();
   if (!entryId) return undefined;
-  if (deps.fileTracker.getActiveUserEntryId() !== entryId) {
-    deps.fileTracker.setActiveUserEntryId(entryId);
-    deps.shadowCheckpoints.bindPendingPre(entryId);
+  const { fileTracker, shadowCheckpoints } = deps.turn;
+  if (fileTracker.getActiveUserEntryId() !== entryId) {
+    fileTracker.setActiveUserEntryId(entryId);
+    shadowCheckpoints.bindPendingPre(entryId);
     const sess = deps.getSession();
     if (sess) {
-      deps.shadowCheckpoints.persistDirty(sess.sessionManager);
+      shadowCheckpoints.persistDirty(sess.sessionManager);
     }
-  } else if (!deps.shadowCheckpoints.getCheckpoint(entryId)?.pre) {
+  } else if (!shadowCheckpoints.getCheckpoint(entryId)?.pre) {
     // Same turn already active but pre not bound yet (pending SHA arrived late).
-    deps.shadowCheckpoints.bindPendingPre(entryId);
+    shadowCheckpoints.bindPendingPre(entryId);
     const sess = deps.getSession();
     if (sess) {
-      deps.shadowCheckpoints.persistDirty(sess.sessionManager);
+      shadowCheckpoints.persistDirty(sess.sessionManager);
     }
   }
   return entryId;
@@ -109,14 +122,16 @@ export function bridgeSessionEvents(
         // Persist may have landed after message_end; bind before post snapshot.
         const activeUid =
           bindActiveUserTurn(deps) ??
-          deps.fileTracker.getActiveUserEntryId();
+          deps.turn.fileTracker.getActiveUserEntryId();
         if (currentSession && activeUid) {
-          void deps.shadowCheckpoints.capturePost(activeUid).then(() => {
-            deps.shadowCheckpoints.persistDirty(currentSession.sessionManager);
+          void deps.turn.shadowCheckpoints.capturePost(activeUid).then(() => {
+            deps.turn.shadowCheckpoints.persistDirty(
+              currentSession.sessionManager,
+            );
           });
         }
         if (currentSession) {
-          deps.fileTracker.persistDirty(currentSession.sessionManager);
+          deps.turn.fileTracker.persistDirty(currentSession.sessionManager);
         }
         deps.emit({ type: "turn_end" });
         deps.emitHistoryReplace();
@@ -132,7 +147,7 @@ export function bridgeSessionEvents(
         if (msg.role === "assistant") {
           // Prefer already-bound id; fall back to leaf (user should be persisted by now).
           const userEntryId =
-            deps.fileTracker.getActiveUserEntryId() ??
+            deps.turn.fileTracker.getActiveUserEntryId() ??
             bindActiveUserTurn(deps) ??
             undefined;
           deps.emit({
@@ -192,9 +207,9 @@ export function bridgeSessionEvents(
               ? turnUsageFromMessage(event.message)
               : null;
           if (turnUsage) {
-            deps.setLastTurnUsage(turnUsage);
+            deps.usage.setLastTurnUsage(turnUsage);
             const model = deps.getSession()?.model;
-            if (model && !deps.isCompactionRecording()) {
+            if (model && !deps.usage.isCompactionRecording()) {
               try {
                 recordTurnUsage(
                   modelUsageKey(model.provider, model.id),
@@ -221,7 +236,7 @@ export function bridgeSessionEvents(
       case "tool_execution_start": {
         // User message is persisted by now; bind before capturing baselines.
         bindActiveUserTurn(deps);
-        deps.fileTracker.captureBeforeTool(event.toolName, event.args);
+        deps.turn.fileTracker.captureBeforeTool(event.toolName, event.args);
         const argsPack = serializeForDetail(event.args);
         deps.toolDetails.set(event.toolCallId, {
           toolCallId: event.toolCallId,
@@ -315,8 +330,8 @@ export function bridgeSessionEvents(
         });
         break;
       case "compaction_start":
-        deps.setCompactionRecording(true);
-        deps.captureCompactionBaseline();
+        deps.usage.setCompactionRecording(true);
+        deps.usage.captureCompactionBaseline();
         deps.emit({
           type: "compaction_start",
           reason: event.reason,
@@ -327,11 +342,11 @@ export function bridgeSessionEvents(
           | { tokensBefore?: number; estimatedTokensAfter?: number }
           | undefined;
         if (!event.aborted) {
-          deps.recordCompactionDelta();
+          deps.usage.recordCompactionDelta();
         } else {
-          deps.clearCompactionBaseline();
+          deps.usage.clearCompactionBaseline();
         }
-        deps.setCompactionRecording(false);
+        deps.usage.setCompactionRecording(false);
         deps.emit({
           type: "compaction_end",
           reason: event.reason,
