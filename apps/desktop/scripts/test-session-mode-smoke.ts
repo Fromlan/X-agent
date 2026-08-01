@@ -68,6 +68,7 @@ const host: SessionModeHost = {
       completeSimple: async () => evalResult,
     }) as never,
   getLastTurnTokenTotal: () => 0,
+  getActiveUserEntryId: () => "smoke-user",
 };
 
 const controller = new SessionModeController(() => host);

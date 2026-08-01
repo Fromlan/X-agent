@@ -84,7 +84,8 @@ function registerIpc(
   const cwdOf = () => host.getStatus().cwd;
 
   ipcMain.handle(IPC_CHANNELS.openProject, async (_e, path?: string) => {
-    let projectPath = path;
+    let projectPath =
+      typeof path === "string" && path.trim() ? path.trim() : undefined;
     if (!projectPath) {
       const result = await dialog.showOpenDialog({
         title: "打开项目文件夹",

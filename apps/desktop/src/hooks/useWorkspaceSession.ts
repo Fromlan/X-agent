@@ -162,10 +162,13 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const openProject = useCallback(
     async (path?: string) => {
+      // TopBar may pass this as onClick; ignore non-string (e.g. MouseEvent).
+      const projectPath =
+        typeof path === "string" && path.trim() ? path.trim() : undefined;
       setBusy(true);
       setError(null);
       try {
-        const result = await window.xAgent.workspace.open(path);
+        const result = await window.xAgent.workspace.open(projectPath);
         if (!result.ok) {
           if (result.error !== "已取消") {
             setError(result.error ?? "打开失败");

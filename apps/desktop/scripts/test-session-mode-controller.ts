@@ -54,6 +54,7 @@ function createHarness(opts?: {
     sessionPath: opts?.sessionPath ?? join(dir, "session.jsonl"),
   };
   let lastTurnTokens = 0;
+  let activeUserEntryId: string | null = "user-1";
   const host: SessionModeHost = {
     getBundle: () => bundle,
     getResourceLoader: () => null,
@@ -74,6 +75,7 @@ function createHarness(opts?: {
         completeSimple: async () => evalResult,
       }) as never,
     getLastTurnTokenTotal: () => lastTurnTokens,
+    getActiveUserEntryId: () => activeUserEntryId,
   };
   const controller = new SessionModeController(() => host);
   return {
@@ -87,6 +89,9 @@ function createHarness(opts?: {
     },
     setLastTurnTokens(n: number) {
       lastTurnTokens = n;
+    },
+    setActiveUserEntryId(id: string | null) {
+      activeUserEntryId = id;
     },
   };
 }
@@ -111,14 +116,46 @@ function createHarness(opts?: {
   await h.controller.onAgentSettled();
   assert.equal(h.controller.getGoal()?.turns, 1);
   assert.equal(h.controller.getGoal()?.status, "pursuing");
+  // Continue is deferred (void prompt after finally) — flush microtasks.
+  await Promise.resolve();
   assert.ok(h.prompts.some((p) => p.includes("Goal still unmet")));
 
+  h.setActiveUserEntryId("user-2");
   await h.controller.onAgentSettled();
   assert.equal(h.controller.getGoal()?.status, "budget_limited");
   assert.equal(h.controller.getGoal()?.turns, 2);
   // Journal persisted
   const stored = loadGoalJournal(sessionPath);
   assert.equal(stored?.status, "budget_limited");
+}
+
+{
+  // Retract rolls back goal turns/tokens for abandoned user entries
+  const h = createHarness({ sessionPath: join(dir, "s-retract.jsonl") });
+  await h.controller.setGoal("rollback");
+  const g = h.controller.getGoal()!;
+  g.maxTurns = 10;
+  h.setLastTurnTokens(50);
+  h.setActiveUserEntryId("u1");
+  h.setEval({
+    stopReason: "stop",
+    content: [{ type: "text", text: "NO\nnot yet" }],
+  });
+  await h.controller.onAgentSettled();
+  await Promise.resolve();
+  assert.equal(h.controller.getGoal()?.turns, 1);
+  assert.equal(h.controller.getGoal()?.tokensUsed, 50);
+
+  h.setActiveUserEntryId("u2");
+  h.setLastTurnTokens(30);
+  await h.controller.onAgentSettled();
+  await Promise.resolve();
+  assert.equal(h.controller.getGoal()?.turns, 2);
+  assert.equal(h.controller.getGoal()?.tokensUsed, 80);
+
+  h.controller.rollbackGoalAfterRetract(["u2"]);
+  assert.equal(h.controller.getGoal()?.turns, 1);
+  assert.equal(h.controller.getGoal()?.tokensUsed, 50);
 }
 
 {

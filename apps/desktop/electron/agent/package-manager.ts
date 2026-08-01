@@ -325,7 +325,14 @@ function runPiPackageCommand(
   return new Promise((resolvePromise) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawnCli(piPath, args);
+      // pi install has no --ignore-scripts; force npm to skip lifecycle scripts
+      // for npm:/git sources that resolve via the package manager.
+      child = spawnCli(piPath, args, {
+        env: {
+          ...process.env,
+          npm_config_ignore_scripts: "true",
+        },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       resolvePromise({ code: 1, output: message });

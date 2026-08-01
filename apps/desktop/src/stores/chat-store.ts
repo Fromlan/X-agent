@@ -2,8 +2,38 @@ import type { HistoryItem, UiAgentEvent } from "@shared/ipc";
 
 export type ChatItem = HistoryItem;
 
+/** Optimistic user bubbles shown before Pi's user_message / history_replace. */
+export const PENDING_USER_ID_PREFIX = "pending-user-";
+
 export function createEmptyState(): ChatItem[] {
   return [];
+}
+
+export function makePendingUserId(): string {
+  return `${PENDING_USER_ID_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function isPendingUserId(id: string): boolean {
+  return id.startsWith(PENDING_USER_ID_PREFIX);
+}
+
+/** Append a local-only user bubble so the transcript updates on send. */
+export function appendPendingUser(items: ChatItem[], text: string, id?: string): ChatItem[] {
+  const pendingId = id ?? makePendingUserId();
+  return [
+    ...items,
+    {
+      kind: "user",
+      id: pendingId,
+      text,
+    },
+  ];
+}
+
+/** Drop a pending bubble (e.g. prompt IPC failed before the real event). */
+export function removePendingUser(items: ChatItem[], id: string): ChatItem[] {
+  if (!isPendingUserId(id)) return items;
+  return items.filter((i) => !(i.kind === "user" && i.id === id));
 }
 
 /**
@@ -28,7 +58,12 @@ function upsertAssistant(
   messageId: string,
   patch: Partial<Extract<ChatItem, { kind: "assistant" }>>,
 ): ChatItem[] {
-  const idx = items.findIndex((i) => i.kind === "assistant" && i.id === messageId);
+  // Hot path: streaming deltas almost always target the trailing assistant.
+  const last = items[items.length - 1];
+  const idx =
+    last?.kind === "assistant" && last.id === messageId
+      ? items.length - 1
+      : items.findIndex((i) => i.kind === "assistant" && i.id === messageId);
   if (idx === -1) {
     const userEntryId =
       patch.userEntryId ?? findPrecedingUserEntryId(items, items.length);
@@ -62,6 +97,30 @@ function upsertAssistant(
   return next;
 }
 
+/** Append a streaming text/thinking delta with O(1) tail lookup when possible. */
+function appendAssistantDelta(
+  items: ChatItem[],
+  messageId: string,
+  field: "text" | "thinking",
+  delta: string,
+): ChatItem[] {
+  const last = items[items.length - 1];
+  if (last?.kind === "assistant" && last.id === messageId) {
+    const next = items.slice();
+    next[items.length - 1] = {
+      ...last,
+      [field]: (last[field] ?? "") + delta,
+    };
+    return next;
+  }
+  const prev = items.find(
+    (i) => i.kind === "assistant" && i.id === messageId,
+  ) as Extract<ChatItem, { kind: "assistant" }> | undefined;
+  return upsertAssistant(items, messageId, {
+    [field]: (prev?.[field] ?? "") + delta,
+  });
+}
+
 export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatItem[] {
   switch (event.type) {
     case "history_replace":
@@ -72,15 +131,18 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
       if (items.some((i) => i.kind === "user" && i.id === id)) {
         return items;
       }
-      return [
-        ...items,
-        {
-          kind: "user",
-          id,
-          text: event.text,
-          ...(event.entryId ? { entryId: event.entryId } : {}),
-        },
-      ];
+      const nextItem: ChatItem = {
+        kind: "user",
+        id,
+        text: event.text,
+        ...(event.entryId ? { entryId: event.entryId } : {}),
+      };
+      // Replace the trailing optimistic bubble so we do not flash a duplicate.
+      const last = items[items.length - 1];
+      if (last?.kind === "user" && isPendingUserId(last.id)) {
+        return [...items.slice(0, -1), nextItem];
+      }
+      return [...items, nextItem];
     }
     case "assistant_start":
       return upsertAssistant(items, event.messageId, {
@@ -89,22 +151,15 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
         done: false,
         ...(event.userEntryId ? { userEntryId: event.userEntryId } : {}),
       });
-    case "text_delta": {
-      const prev = items.find(
-        (i) => i.kind === "assistant" && i.id === event.messageId,
-      ) as Extract<ChatItem, { kind: "assistant" }> | undefined;
-      return upsertAssistant(items, event.messageId, {
-        text: (prev?.text ?? "") + event.delta,
-      });
-    }
-    case "thinking_delta": {
-      const prev = items.find(
-        (i) => i.kind === "assistant" && i.id === event.messageId,
-      ) as Extract<ChatItem, { kind: "assistant" }> | undefined;
-      return upsertAssistant(items, event.messageId, {
-        thinking: (prev?.thinking ?? "") + event.delta,
-      });
-    }
+    case "text_delta":
+      return appendAssistantDelta(items, event.messageId, "text", event.delta);
+    case "thinking_delta":
+      return appendAssistantDelta(
+        items,
+        event.messageId,
+        "thinking",
+        event.delta,
+      );
     case "assistant_end":
       return upsertAssistant(items, event.messageId, {
         done: true,
@@ -135,8 +190,9 @@ export function applyAgentEvent(items: ChatItem[], event: UiAgentEvent): ChatIte
     case "tool_update": {
       const idx = items.findIndex((i) => i.kind === "tool" && i.id === event.toolCallId);
       if (idx === -1) return items;
+      const cur = items[idx] as Extract<ChatItem, { kind: "tool" }>;
+      if (cur.done) return items;
       const next = [...items];
-      const cur = next[idx] as Extract<ChatItem, { kind: "tool" }>;
       next[idx] = { ...cur, result: event.partialResult };
       return next;
     }

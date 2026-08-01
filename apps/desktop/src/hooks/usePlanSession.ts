@@ -64,6 +64,8 @@ export function usePlanSession({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setMarkdown("");
+    setDirty(false);
     void (async () => {
       const res = await window.xAgent.plan.getContent();
       if (cancelled) return;

@@ -104,7 +104,6 @@ function TreeNode({
             onClick={() => {
               setEntries(null);
               setOpen(true);
-              void load();
             }}
             title="刷新"
           >

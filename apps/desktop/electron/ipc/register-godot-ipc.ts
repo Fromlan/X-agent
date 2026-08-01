@@ -17,7 +17,11 @@ import {
 } from "../agent/godot-docs-cache";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
-import { GODOT_RPC_DEFAULT_PORT, godotRpcTimeoutMs } from "../../shared/godot-rpc";
+import {
+  GODOT_RPC_DEFAULT_PORT,
+  godotRpcTimeoutMs,
+  isAllowedGodotRpcMethod,
+} from "../../shared/godot-rpc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
 
 /** Godot RPC bridge + docs + editor launch IPC. */
@@ -57,6 +61,12 @@ export function registerGodotIpc(
       call: GodotRpcCallDto,
       options?: { clientId?: string | null },
     ) => {
+      if (!call || !isAllowedGodotRpcMethod(call.method)) {
+        return {
+          ok: false,
+          error: `不允许的 Godot RPC 方法：${String((call as { method?: unknown })?.method ?? "")}`,
+        };
+      }
       const req = { ...call, id: randomUUID() } as GodotRpcCall & { id: string };
       const res = await godotRpc.request(req, godotRpcTimeoutMs(call), options);
       if (!res.ok) return { ok: false, error: res.error };

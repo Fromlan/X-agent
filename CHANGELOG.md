@@ -16,6 +16,26 @@
 
 ### 修复
 
+## 0.3.9
+
+### 修复
+
+- **Ask/Plan bash 硬闸**：按换行切段；拒绝 `$()` / 反引号 / `${}` 命令替换；`godot` / `dotnet` 不再视为只读
+- **Goal 预算**：撤回后回滚 `turns` / `tokensUsed`，避免双计；续轮改为 settled 外异步 prompt，避免嵌套竞态
+- **会话边界**：`prompt` / `abort` 校验 session bundle epoch，切换/释放会话后不再写错检查点
+- **打开项目**：忽略按钮把 `MouseEvent` 当成路径传入导致打开失败
+- **Plan 右栏**：切换计划时立即清空旧 markdown，避免短暂串显
+- **文件树**：刷新不再并发双 IPC
+- **工具卡片**：`tool_update` 在完成后忽略迟到的 partial，避免覆盖最终结果
+- **Godot 文档**：选「自定义…」只展开输入，不再立刻用当前分支空调一次
+
+### 改进
+
+- **发送体验**：用户消息乐观气泡（Shadow 检查点完成前即可看见）
+- **安全收紧**：Godot RPC method allowlist；外链拒绝本地/私网地址；`will-navigate` 拒绝非本应用 `file:`；`pi install` 跳过 npm lifecycle scripts；单实例锁
+- **性能**：流式 `text_delta` / `thinking_delta` 尾部 O(1) 更新；无变化时跳过全量 `history_replace`
+- **代码审查**：补充 `docs/code-review-2026-08-01.md` 分诊结论与已落地项
+
 ## 0.3.8
 
 ### 功能

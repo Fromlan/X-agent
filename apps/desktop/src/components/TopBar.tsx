@@ -72,7 +72,7 @@ export function TopBar(props: Props) {
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          onClick={props.onOpenProject}
+          onClick={() => props.onOpenProject()}
           disabled={props.busy}
           title="打开项目"
         >

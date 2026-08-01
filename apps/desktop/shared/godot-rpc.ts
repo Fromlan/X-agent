@@ -43,6 +43,32 @@ export type GodotRpcCall =
   | { method: "get_play_errors"; clear?: boolean }
   | { method: "stop_scene" };
 
+/** Methods the renderer / tools may invoke over Godot RPC. */
+export const GODOT_RPC_ALLOWED_METHODS = [
+  "ping",
+  "get_editor_info",
+  "get_open_scenes",
+  "get_edited_scene",
+  "open_scene",
+  "reload_scene",
+  "run_current_scene",
+  "play_main_scene",
+  "import_resources",
+  "get_play_errors",
+  "stop_scene",
+] as const;
+
+export type GodotRpcMethodName = (typeof GODOT_RPC_ALLOWED_METHODS)[number];
+
+export function isAllowedGodotRpcMethod(
+  method: unknown,
+): method is GodotRpcMethodName {
+  return (
+    typeof method === "string" &&
+    (GODOT_RPC_ALLOWED_METHODS as readonly string[]).includes(method)
+  );
+}
+
 export type GodotRpcRequest = GodotRpcCall & { id: string };
 
 export type GodotRpcResponse =
