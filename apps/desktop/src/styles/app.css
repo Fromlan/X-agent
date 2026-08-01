@@ -1114,8 +1114,8 @@ body.is-resizing-column * {
   flex: 1;
   overflow: auto;
   padding: 20px 20px 36px;
-  display: flex;
-  flex-direction: column;
+  /* Block, not flex: tanstack virtual measures the scrollport; flex on the
+     scroller can yield a 0-range (no rows) until a later remount/remeasure. */
   overscroll-behavior: contain;
 }
 
@@ -1124,6 +1124,11 @@ body.is-resizing-column * {
   flex-direction: column;
   gap: 16px;
   min-height: 100%;
+}
+
+.message-stream-empty {
+  justify-content: center;
+  align-items: center;
 }
 
 .scroll-to-bottom {
@@ -1155,7 +1160,6 @@ body.is-resizing-column * {
 }
 
 .empty-state {
-  margin: auto;
   color: var(--text-muted);
   text-align: center;
   max-width: 28rem;
@@ -1228,8 +1232,24 @@ body.is-resizing-column * {
   flex-shrink: 0;
 }
 
+.message-stream-flow {
+  /* Document flow while streaming / short lists — no absolute rows. */
+  min-height: unset;
+}
+
+.transcript-flow-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
 .virtual-row {
   box-sizing: border-box;
+  /* Flex so bubble align-self (user right / assistant left) works again. */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .markdown-plain {
@@ -1785,6 +1805,7 @@ body.is-resizing-column * {
 
 .bubble-user {
   align-self: flex-end;
+  margin-inline-start: auto;
   background: var(--bubble-user);
   color: var(--text-primary);
   width: max-content;
@@ -1953,10 +1974,26 @@ body.is-resizing-column * {
   border-radius: var(--radius-pill);
 }
 
-.message-stream-inner > .bubble-tool:not([open]) + .bubble-tool:not([open]),
-.message-stream-inner
-  > .tool-with-actions:has(> .bubble-tool:not([open]))
-  + .tool-with-actions:has(> .bubble-tool:not([open])) {
+/* Collapsed tool chips: tighten consecutive rows (flow + virtual). */
+.message-stream-flow
+  > .transcript-flow-row:has(> .bubble-tool:not([open]))
+  + .transcript-flow-row:has(> .bubble-tool:not([open])),
+.message-stream-flow
+  > .transcript-flow-row:has(> .tool-with-actions > .bubble-tool:not([open]))
+  + .transcript-flow-row:has(
+    > .tool-with-actions > .bubble-tool:not([open])
+  ) {
+  margin-top: -10px;
+}
+
+/* Pull content inside the next absolute row — not the row itself — so
+   measureElement still tracks height. */
+.virtual-row:has(> .bubble-tool:not([open]))
+  + .virtual-row:has(> .bubble-tool:not([open]))
+  > .bubble-tool:not([open]),
+.virtual-row:has(> .tool-with-actions > .bubble-tool:not([open]))
+  + .virtual-row:has(> .tool-with-actions > .bubble-tool:not([open]))
+  > .tool-with-actions {
   margin-top: -10px;
 }
 

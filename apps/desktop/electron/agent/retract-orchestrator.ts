@@ -26,6 +26,8 @@ export type RetractOrchestratorHost = {
   emitHistoryReplace(): void;
   emitUsageUpdate(): void;
   prompt(text: string): Promise<{ ok: boolean; error?: string }>;
+  /** Called after successful navigate + restore so Goal budget can roll back. */
+  onRetractSuccess?(abandonedUserEntryIds: readonly string[]): void;
 };
 
 export type ResolvedUserEntry =
@@ -148,9 +150,8 @@ export class RetractOrchestrator {
       }
 
       // 预扫必须在 navigate 之前：nav 后 abandoned write/edit 不在 active branch。
-      const pendingScan = undoFiles
-        ? h.fileTracker.scanSegmentSince(sm, resolved.entryId)
-        : null;
+      // Goal budget rollback also needs abandoned user entry ids from this scan.
+      const pendingScan = h.fileTracker.scanSegmentSince(sm, resolved.entryId);
 
       const nav = await session.navigateTree(resolved.entryId, {
         summarize: false,
@@ -160,7 +161,7 @@ export class RetractOrchestrator {
       }
 
       let restoreReport: RetractResult["restoreReport"];
-      if (undoFiles && pendingScan) {
+      if (undoFiles) {
         const shadow = await h.shadowCheckpoints.restoreToUserTurn(
           sm,
           resolved.entryId,
@@ -213,6 +214,7 @@ export class RetractOrchestrator {
       h.emitHistoryReplace();
       h.emitUsageUpdate();
       h.setStatus("idle");
+      h.onRetractSuccess?.(pendingScan.userEntryIds);
 
       return {
         ok: true,

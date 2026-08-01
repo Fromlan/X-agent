@@ -510,14 +510,9 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
-                  setShowPresetPicker((v) => {
-                    const next = !v;
-                    if (next) {
-                      setPresetQuery("");
-                      setPresetCategory("all");
-                    }
-                    return next;
-                  });
+                  setShowPresetPicker((v) => !v);
+                  setPresetQuery("");
+                  setPresetCategory("all");
                 }}
               >
                 从预设添加

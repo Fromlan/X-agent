@@ -47,8 +47,6 @@ const READONLY_COMMAND_HEADS = new Set([
   "jq",
   "yq",
   "git",
-  "godot",
-  "dotnet",
 ]);
 
 /** git subcommands allowed in Ask/Plan (status/diff/log/show…). */
@@ -99,10 +97,16 @@ function firstToken(segment: string): string {
   return (m?.[1] ?? "").replace(/^["']|["']$/g, "");
 }
 
+/** Reject command substitution / expansion that can hide mutating payloads. */
+function hasShellSubstitution(command: string): boolean {
+  return /\$\(|\$\{|`/.test(command);
+}
+
 function splitShellSegments(command: string): string[] {
-  // Split on ; | && || while keeping it simple (no full shell parser).
+  // Split on newlines, ; | && || while keeping it simple (no full shell parser).
+  // Newlines must be segments: otherwise `ls\nrm -rf x` looks like a single `ls` head.
   return command
-    .split(/(?:&&|\|\||[;|])/)
+    .split(/\r\n|\r|\n|(?:&&|\|\||[;|])/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -216,10 +220,12 @@ export function bashCommandEscapesCwd(command: string, cwd: string): boolean {
 export function isReadonlyBashCommand(command: string): boolean {
   const raw = (command ?? "").trim();
   if (!raw) return false;
+  if (hasShellSubstitution(raw)) return false;
   if (MUTATION_PATTERNS.some((re) => re.test(raw))) return false;
 
   const cleaned = stripShellNoise(raw);
   if (!cleaned) return false;
+  if (hasShellSubstitution(cleaned)) return false;
 
   for (const segment of splitShellSegments(cleaned)) {
     if (MUTATION_PATTERNS.some((re) => re.test(segment))) return false;

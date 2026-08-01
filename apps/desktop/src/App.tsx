@@ -69,7 +69,12 @@ import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
 import { useUpdateStatus } from "./hooks/useUpdateStatus";
 import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
-import { createEmptyState } from "./stores/chat-store";
+import {
+  appendPendingUser,
+  createEmptyState,
+  makePendingUserId,
+  removePendingUser,
+} from "./stores/chat-store";
 import {
   getCompacting,
   getSessionUsageState,
@@ -356,9 +361,15 @@ export default function App() {
       return;
     }
 
+    // Show the bubble immediately — host events only arrive after shadow-git
+    // checkpoint + Pi message_start (or history_replace at turn end).
+    const pendingId = makePendingUserId();
+    setItems((prev) => appendPendingUser(prev, text, pendingId));
+
     const expanded = await expandAtPathsInPrompt(text);
     const result = await window.xAgent.turn.prompt(expanded);
     if (!result.ok) {
+      setItems((prev) => removePendingUser(prev, pendingId));
       setError(result.error ?? "发送失败");
     }
     await refreshSessions();
@@ -1016,11 +1027,15 @@ export default function App() {
           onClarifySelect={(reply) => {
             void (async () => {
               if (!cwd || !reply.trim()) return;
+              const text = reply.trim();
               setError(null);
               setFollowNonce((n) => n + 1);
-              const expanded = await expandAtPathsInPrompt(reply.trim());
+              const pendingId = makePendingUserId();
+              setItems((prev) => appendPendingUser(prev, text, pendingId));
+              const expanded = await expandAtPathsInPrompt(text);
               const result = await window.xAgent.turn.prompt(expanded);
               if (!result.ok) {
+                setItems((prev) => removePendingUser(prev, pendingId));
                 setError(result.error ?? "发送失败");
                 setInput(reply);
               }

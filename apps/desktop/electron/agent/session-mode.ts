@@ -73,6 +73,15 @@ export type SessionModeHost = {
   ensureRuntime(): Promise<ModelRuntime>;
   /** Last assistant turn token total (0 if unknown). */
   getLastTurnTokenTotal(): number;
+  /** Active user turn entry id (for goal budget ledger), if any. */
+  getActiveUserEntryId(): string | null;
+};
+
+type GoalTurnLedgerEntry = {
+  /** User entry that started the agent turn being evaluated. */
+  userEntryId: string | null;
+  tokens: number;
+  turnIncremented: boolean;
 };
 
 function clampMaxTurns(n: number | undefined): number {
@@ -93,6 +102,9 @@ export class SessionModeController {
   private planPath: string | null = null;
   private goal: GoalInfo | null = null;
   private goalContinueInFlight = false;
+  /** Bumped on retract/pause/clear to invalidate in-flight eval + deferred continue. */
+  private goalEvalGeneration = 0;
+  private goalTurnLedger: GoalTurnLedgerEntry[] = [];
 
   constructor(private readonly host: () => SessionModeHost) {}
 
@@ -180,6 +192,9 @@ export class SessionModeController {
     const stored = loadGoalJournal(path);
     if (!stored) return;
     this.goal = stored;
+    this.goalTurnLedger = reconstructLedgerFromGoal(stored);
+    this.goalEvalGeneration += 1;
+    this.goalContinueInFlight = false;
     if (isRestorableGoalStatus(stored.status)) {
       this.agentMode = "goal";
       this.refreshSystemPrompt();
@@ -213,6 +228,8 @@ export class SessionModeController {
     this.planPath = null;
     this.goal = null;
     this.goalContinueInFlight = false;
+    this.goalEvalGeneration += 1;
+    this.goalTurnLedger = [];
     // Do not clear on-disk journal here — resumeSession restores it after bind.
     if (opts?.emit !== false && this.host().getBundle()) {
       this.emitSessionMode();
@@ -352,6 +369,8 @@ export class SessionModeController {
   ): void {
     if (!this.goal) {
       this.goalContinueInFlight = false;
+      this.goalEvalGeneration += 1;
+      this.goalTurnLedger = [];
       this.persistGoalJournal();
       return;
     }
@@ -359,6 +378,8 @@ export class SessionModeController {
     snapshot.status = status;
     this.goal = null;
     this.goalContinueInFlight = false;
+    this.goalEvalGeneration += 1;
+    this.goalTurnLedger = [];
     this.persistGoalJournal();
     if (!opts?.silent) {
       this.emitModeNotice(
@@ -367,6 +388,59 @@ export class SessionModeController {
           : `目标已清除：${snapshot.condition}`,
       );
     }
+  }
+
+  /**
+   * After a successful retract, drop budget for abandoned user turns so
+   * continue/regenerate does not double-count turns or tokens.
+   */
+  rollbackGoalAfterRetract(abandonedUserEntryIds: readonly string[]): void {
+    if (!this.goal) {
+      this.goalContinueInFlight = false;
+      this.goalEvalGeneration += 1;
+      return;
+    }
+    this.goalContinueInFlight = false;
+    this.goalEvalGeneration += 1;
+
+    const abandoned = new Set(
+      abandonedUserEntryIds.filter((id) => typeof id === "string" && id),
+    );
+    if (abandoned.size === 0) {
+      this.emitGoal();
+      return;
+    }
+
+    const matched = this.goalTurnLedger.some(
+      (e) => e.userEntryId && abandoned.has(e.userEntryId),
+    );
+    if (matched) {
+      this.goalTurnLedger = this.goalTurnLedger.filter(
+        (e) => !e.userEntryId || !abandoned.has(e.userEntryId),
+      );
+    } else {
+      // Journal-restored synthetic ledger has no entry ids — pop N from end.
+      const drop = Math.min(abandoned.size, this.goalTurnLedger.length);
+      if (drop > 0) this.goalTurnLedger.splice(-drop, drop);
+    }
+
+    this.resyncGoalBudgetFromLedger();
+    if (this.goal.status === "budget_limited") {
+      this.goal.status = "paused";
+      this.goal.lastReason = "撤回后预算已回滚，可点「继续」";
+    }
+    this.persistGoalJournal();
+    this.emitGoal();
+  }
+
+  private resyncGoalBudgetFromLedger(): void {
+    if (!this.goal) return;
+    this.goal.turns = this.goalTurnLedger.filter((e) => e.turnIncremented)
+      .length;
+    this.goal.tokensUsed = this.goalTurnLedger.reduce(
+      (sum, e) => sum + e.tokens,
+      0,
+    );
   }
 
   async buildPlan(): Promise<PromptResult> {
@@ -526,6 +600,9 @@ export class SessionModeController {
       maxTokens,
       startedAt: Date.now(),
     };
+    this.goalTurnLedger = [];
+    this.goalEvalGeneration += 1;
+    this.goalContinueInFlight = false;
     this.agentMode = "goal";
     this.refreshSystemPrompt(toolsAfterReadonly);
     this.persistGoalJournal();
@@ -553,6 +630,7 @@ export class SessionModeController {
     }
     this.goal.status = "paused";
     this.goalContinueInFlight = false;
+    this.goalEvalGeneration += 1;
     this.persistGoalJournal();
     this.emitGoal();
     this.emitModeNotice(`目标已暂停：${this.goal.condition}`);
@@ -674,8 +752,16 @@ export class SessionModeController {
 
     this.goalContinueInFlight = true;
     const goal = this.goal;
+    const generation = this.goalEvalGeneration;
+    let continuePrompt: string | null = null;
     try {
       const turnTokens = Math.max(0, this.host().getLastTurnTokenTotal());
+      const ledgerEntry: GoalTurnLedgerEntry = {
+        userEntryId: this.host().getActiveUserEntryId(),
+        tokens: turnTokens,
+        turnIncremented: false,
+      };
+      this.goalTurnLedger.push(ledgerEntry);
       goal.tokensUsed += turnTokens;
       this.persistGoalJournal();
       this.emitGoal();
@@ -697,7 +783,14 @@ export class SessionModeController {
         return;
       }
       const runtime = await this.host().ensureRuntime();
-      if (this.host().getBundle() !== bundle || this.goal !== goal) return;
+      if (this.goalEvalGeneration !== generation) {
+        this.dropIncompleteLedgerEntry(ledgerEntry, goal, turnTokens);
+        return;
+      }
+      if (this.host().getBundle() !== bundle || this.goal !== goal) {
+        this.dropIncompleteLedgerEntry(ledgerEntry, goal, turnTokens);
+        return;
+      }
       if (this.goal.status !== "pursuing") return;
       const result = await runtime.completeSimple(
         model,
@@ -713,7 +806,14 @@ export class SessionModeController {
         },
         { maxTokens: 128, temperature: 0 },
       );
-      if (this.host().getBundle() !== bundle || this.goal !== goal) return;
+      if (this.goalEvalGeneration !== generation) {
+        this.dropIncompleteLedgerEntry(ledgerEntry, goal, turnTokens);
+        return;
+      }
+      if (this.host().getBundle() !== bundle || this.goal !== goal) {
+        this.dropIncompleteLedgerEntry(ledgerEntry, goal, turnTokens);
+        return;
+      }
       if (this.goal.status !== "pursuing") return;
       if (result.stopReason === "error" || result.stopReason === "aborted") {
         this.pauseAfterEvalFailure(goal, result.stopReason);
@@ -732,11 +832,13 @@ export class SessionModeController {
         .trim();
       const parsed = parseGoalEvalResponse(raw);
       goal.turns += 1;
+      ledgerEntry.turnIncremented = true;
       goal.lastReason = parsed.reason;
       this.persistGoalJournal();
       if (parsed.met) {
         goal.status = "achieved";
         this.goal = null;
+        this.goalTurnLedger = [];
         this.persistGoalJournal();
         if (this.agentMode === "goal") {
           this.agentMode = "agent";
@@ -765,11 +867,7 @@ export class SessionModeController {
       }
       this.emitGoal();
       if (bundle.session.isStreaming) return;
-      this.goalContinueInFlight = false;
-      await this.host().prompt(
-        buildGoalContinuePrompt(goal.condition, parsed.reason),
-      );
-      return;
+      continuePrompt = buildGoalContinuePrompt(goal.condition, parsed.reason);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (this.goal === goal && goal.status === "pursuing") {
@@ -783,6 +881,16 @@ export class SessionModeController {
       }
     } finally {
       this.goalContinueInFlight = false;
+    }
+
+    // Defer continue outside the settled critical section so the next
+    // agent_end can evaluate without nested await / re-entrancy confusion.
+    if (
+      continuePrompt &&
+      this.goalEvalGeneration === generation &&
+      this.goal?.status === "pursuing"
+    ) {
+      void this.host().prompt(continuePrompt);
     }
   }
 
@@ -846,4 +954,38 @@ export class SessionModeController {
   ): void {
     this.host().emitReplaceableNotice("session_mode", text, level);
   }
+
+  private dropIncompleteLedgerEntry(
+    ledgerEntry: GoalTurnLedgerEntry,
+    goal: GoalInfo,
+    turnTokens: number,
+  ): void {
+    const last = this.goalTurnLedger[this.goalTurnLedger.length - 1];
+    if (last !== ledgerEntry || ledgerEntry.turnIncremented) return;
+    this.goalTurnLedger.pop();
+    if (this.goal === goal) {
+      goal.tokensUsed = Math.max(0, goal.tokensUsed - turnTokens);
+    }
+  }
+}
+
+/** Best-effort ledger after journal restore (no per-turn entry ids). */
+function reconstructLedgerFromGoal(goal: GoalInfo): GoalTurnLedgerEntry[] {
+  const turns = Math.max(0, goal.turns);
+  const tokens = Math.max(0, goal.tokensUsed);
+  if (turns === 0 && tokens === 0) return [];
+  if (turns === 0) {
+    return [{ userEntryId: null, tokens, turnIncremented: false }];
+  }
+  const perTurn = Math.floor(tokens / turns);
+  const remainder = tokens - perTurn * turns;
+  const entries: GoalTurnLedgerEntry[] = [];
+  for (let i = 0; i < turns; i++) {
+    entries.push({
+      userEntryId: null,
+      tokens: perTurn + (i === turns - 1 ? remainder : 0),
+      turnIncremented: true,
+    });
+  }
+  return entries;
 }

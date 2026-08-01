@@ -1,6 +1,10 @@
 import {
+  appendPendingUser,
   applyAgentEvent,
   createEmptyState,
+  isPendingUserId,
+  makePendingUserId,
+  removePendingUser,
 } from "../src/stores/chat-store";
 
 function assert(cond: boolean, msg: string): void {
@@ -113,6 +117,39 @@ assert(
   "user order should be preserved (history_replace payload, then user_message)",
 );
 
+// Optimistic send: pending bubble must be replaced by the real user_message
+// (not duplicated), and dropped on send failure.
+{
+  let pending = createEmptyState();
+  const pendingId = makePendingUserId();
+  assert(isPendingUserId(pendingId), "pending id prefix");
+  pending = appendPendingUser(pending, "typed now", pendingId);
+  assert(
+    pending.length === 1 &&
+      pending[0]!.kind === "user" &&
+      pending[0]!.id === pendingId &&
+      pending[0]!.text === "typed now",
+    "appendPendingUser",
+  );
+  pending = applyAgentEvent(pending, {
+    type: "user_message",
+    text: "typed now",
+    id: "u-real",
+    entryId: "entry-1",
+  });
+  assert(
+    pending.length === 1 &&
+      pending[0]!.kind === "user" &&
+      pending[0]!.id === "u-real" &&
+      pending[0]!.entryId === "entry-1",
+    "real user_message should replace pending bubble",
+  );
+
+  let failed = appendPendingUser(createEmptyState(), "nope", pendingId);
+  failed = removePendingUser(failed, pendingId);
+  assert(failed.length === 0, "removePendingUser drops the optimistic bubble");
+}
+
 // usage_update / compaction events must not alter the transcript
 items = applyAgentEvent(items, {
   type: "usage_update",
@@ -142,5 +179,38 @@ assert(
   a3?.kind === "assistant" && a3.userEntryId === "entry-from-host",
   "assistant_start should prefer event.userEntryId over backfill",
 );
+
+// Late tool_update after tool_end must not overwrite the final result.
+{
+  let tools = createEmptyState();
+  tools = applyAgentEvent(tools, {
+    type: "tool_start",
+    toolCallId: "t1",
+    toolName: "bash",
+    args: { command: "ls" },
+  });
+  tools = applyAgentEvent(tools, {
+    type: "tool_update",
+    toolCallId: "t1",
+    partialResult: "partial",
+  });
+  tools = applyAgentEvent(tools, {
+    type: "tool_end",
+    toolCallId: "t1",
+    toolName: "bash",
+    result: "final",
+    isError: false,
+  });
+  tools = applyAgentEvent(tools, {
+    type: "tool_update",
+    toolCallId: "t1",
+    partialResult: "stale-late",
+  });
+  const t = tools.find((i) => i.kind === "tool" && i.id === "t1");
+  assert(
+    t?.kind === "tool" && t.done && t.result === "final",
+    "tool_update after done must be ignored",
+  );
+}
 
 console.log("test-chat-store: ok");

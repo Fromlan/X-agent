@@ -65,6 +65,7 @@ export function GodotSettingsPage({
     ...GODOT_DOCS_PRESET_BRANCHES,
   ]);
   const [docsCustomBranch, setDocsCustomBranch] = useState("");
+  const [docsPickingCustom, setDocsPickingCustom] = useState(false);
   const [scenePath, setScenePath] = useState("res://");
   const [importPaths, setImportPaths] = useState("res://");
 
@@ -519,9 +520,10 @@ export function GodotSettingsPage({
                   <SelectMenu
                     variant="control"
                     value={
-                      docsBranches.includes(prefs.godotDocsBranch)
-                        ? prefs.godotDocsBranch
-                        : "__custom__"
+                      docsPickingCustom ||
+                      !docsBranches.includes(prefs.godotDocsBranch)
+                        ? "__custom__"
+                        : prefs.godotDocsBranch
                     }
                     options={[
                       ...docsBranches.map((b) => ({
@@ -531,24 +533,13 @@ export function GodotSettingsPage({
                       { value: "__custom__", label: "自定义…" },
                     ]}
                     onChange={(v) => {
+                      if (v === "__custom__") {
+                        setDocsPickingCustom(true);
+                        setDocsMsg("输入自定义分支名后点击应用");
+                        return;
+                      }
+                      setDocsPickingCustom(false);
                       void (async () => {
-                        if (v === "__custom__") {
-                          const custom =
-                            docsCustomBranch.trim() || prefs.godotDocsBranch;
-                          const res =
-                            await window.xAgent.godotDocsSetBranch(custom);
-                          if (res.status) setDocsStatus(res.status);
-                          if (res.ok) {
-                            const next = await window.xAgent.getPrefs();
-                            onPrefsChanged?.(next);
-                            setDocsMsg(
-                              `已选择自定义分支：${next.godotDocsBranch}`,
-                            );
-                          } else {
-                            setDocsMsg(res.error ?? "切换失败");
-                          }
-                          return;
-                        }
                         const res = await window.xAgent.godotDocsSetBranch(v);
                         if (res.status) setDocsStatus(res.status);
                         if (res.ok) {
@@ -563,7 +554,8 @@ export function GodotSettingsPage({
                     aria-label="文档版本分支"
                   />
                 </div>
-                {!docsBranches.includes(prefs.godotDocsBranch) ||
+                {docsPickingCustom ||
+                !docsBranches.includes(prefs.godotDocsBranch) ||
                 docsCustomBranch ? (
                   <div className="settings-inline-row">
                     <input
@@ -587,6 +579,7 @@ export function GodotSettingsPage({
                             await window.xAgent.godotDocsSetBranch(branch);
                           if (res.status) setDocsStatus(res.status);
                           if (res.ok) {
+                            setDocsPickingCustom(false);
                             const next = await window.xAgent.getPrefs();
                             onPrefsChanged?.(next);
                             setDocsMsg(`已选择文档版本：${branch}`);
