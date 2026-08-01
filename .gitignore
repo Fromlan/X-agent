@@ -4,6 +4,7 @@ out
 release
 .DS_Store
 *.log
+docs/
 apps/desktop/node_modules
 apps/desktop/node_modules.broken*
 apps/desktop/out
