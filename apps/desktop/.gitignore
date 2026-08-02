@@ -6,3 +6,6 @@ out
 *.log
 .vite
 release
+
+# TypeScript build info cache
+*.tsbuildinfo
