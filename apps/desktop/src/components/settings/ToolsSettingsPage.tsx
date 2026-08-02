@@ -52,11 +52,6 @@ export function ToolsSettingsPage({
     <section className="settings-page">
       <div className="settings-page-head">
         <h3>启用工具</h3>
-        <p className="modal-hint">
-          Agent / 目标默认白名单；更改会清空本会话 API 缓存。
-          调研 / Plan 模式另有只读硬闸（含 bash 只读分类器）。文件类工具受项目
-          cwd 沙箱约束；bash 仍可能访问 cwd 外路径。
-        </p>
       </div>
 
       <div className="settings-block">

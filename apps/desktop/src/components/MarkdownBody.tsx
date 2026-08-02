@@ -8,6 +8,12 @@ interface Props {
   streaming?: boolean;
   /** Skip react-markdown (legacy / special-case perf). */
   plain?: boolean;
+  /**
+   * 关闭 Markdown 解析（性能优化路径）。
+   * true → 走 react-markdown；false → 走 plain `<pre>` 零解析。
+   * 流式期间建议设为 false，assistant 完成后切 true 一次解析定型。
+   */
+  useMarkdown?: boolean;
 }
 
 function isHttpUrl(href: string | undefined): href is string {
@@ -43,6 +49,7 @@ export const MarkdownBody = memo(function MarkdownBody({
   content,
   streaming = false,
   plain = false,
+  useMarkdown = true,
 }: Props) {
   if (!content && streaming) {
     return <div className="markdown stream-cursor" />;
@@ -52,7 +59,8 @@ export const MarkdownBody = memo(function MarkdownBody({
     return null;
   }
 
-  if (plain) {
+  // 性能路径：流式期间走 plain，避免每次 text_delta 重跑 react-markdown。
+  if (plain || !useMarkdown) {
     return (
       <pre className={streaming ? "markdown-plain stream-cursor" : "markdown-plain"}>
         {content}

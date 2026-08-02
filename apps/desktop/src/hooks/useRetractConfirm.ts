@@ -35,7 +35,7 @@ export function useRetractConfirm(deps: RetractDeps) {
   const beginConfirm = useCallback(
     async (mode: RetractConfirmMode, entryId: string, editText?: string) => {
       setError(null);
-      const preview = await window.xAgent.previewRetract(entryId);
+      const preview = await window.xAgent.turn.previewRetract(entryId);
       if (!preview.ok) {
         setError(preview.error ?? "无法预览撤回");
         return;
@@ -53,16 +53,16 @@ export function useRetractConfirm(deps: RetractDeps) {
       const { mode, entryId, editText } = confirmState;
       let result;
       if (mode === "retract") {
-        result = await window.xAgent.retractToUserMessage(entryId, {
+        result = await window.xAgent.turn.retract(entryId, {
           undoFiles: true,
         });
       } else if (mode === "edit") {
         const expanded = await expandAtPathsInPrompt(editText ?? editDraft);
-        result = await window.xAgent.editAndResend(entryId, expanded, {
+        result = await window.xAgent.turn.editAndResend(entryId, expanded, {
           undoFiles: true,
         });
       } else {
-        result = await window.xAgent.regenerateFromUser(entryId, {
+        result = await window.xAgent.turn.regenerate(entryId, {
           undoFiles: true,
         });
       }

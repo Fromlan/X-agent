@@ -16,7 +16,15 @@ import { ToolCard } from "./ToolCard";
 import { UserMessageBody } from "./UserMessageBody";
 import { ArrowDown, Brain, Hammer, Pencil, RotateCcw, Undo2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { isWritePlanTool, planFileLabel } from "../hooks/usePlanSession";
 import { isDisplayableTranscriptItem } from "../lib/chat-transcript-items";
@@ -28,14 +36,20 @@ import {
 
 /** Estimated row height before measure (px); includes inter-row gap. */
 const ESTIMATE_ROW_PX = 72;
+/** Streaming estimate: markdown is still growing + tool cards can be tall. */
+const ESTIMATE_ROW_PX_STREAMING = 120;
 const ROW_GAP_PX = 16;
 const OVERSCAN = 8;
+/** Overscan during streaming — larger to mask measure lag while content races. */
+const OVERSCAN_STREAMING = 12;
 /**
  * Absolute virtual rows mis-measure while content height races (streaming
  * text / thinking / tools), especially in a narrow pane — items overlap.
  * Use document flow until idle with a long transcript.
  */
 const VIRTUALIZE_MIN_ITEMS = 48;
+/** Lower bar while streaming so we virtualize sooner. */
+const VIRTUALIZE_STREAMING_MIN_ITEMS = 24;
 
 function prefersReducedMotion(): boolean {
   return (
@@ -266,7 +280,11 @@ const AssistantBubble = memo(function AssistantBubble(
           done={props.item.done}
         />
       )}
-      <MarkdownBody content={props.item.text} streaming={!props.item.done} />
+      <MarkdownBody
+        content={props.item.text}
+        streaming={!props.item.done}
+        useMarkdown={props.item.done}
+      />
       {clarifies.length > 0 && props.onClarifySelect && (
         <ClarifyPanel
           questions={clarifies}
@@ -301,20 +319,24 @@ type ToolRowProps = {
 
 const ToolRow = memo(function ToolRow(props: ToolRowProps) {
   const { item } = props;
+  const resultText = useMemo(() => formatMaybeJson(item.result), [item.result]);
+  const openInPanel = useMemo(
+    () =>
+      props.onOpenToolInPanel
+        ? () => props.onOpenToolInPanel?.(item.id, item.args)
+        : undefined,
+    [props.onOpenToolInPanel, item.id, item.args],
+  );
   return (
     <div className="tool-with-actions">
       <ToolCard
         toolCallId={item.id}
         toolName={item.toolName}
         args={item.args}
-        result={formatMaybeJson(item.result)}
+        result={resultText}
         isError={item.isError}
         done={item.done}
-        onOpenInPanel={
-          props.onOpenToolInPanel
-            ? () => props.onOpenToolInPanel?.(item.id, item.args)
-            : undefined
-        }
+        onOpenInPanel={openInPanel}
       />
       {isWritePlanTool(item.toolName) &&
         item.done &&
@@ -395,61 +417,95 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     [props.items, props.showThinking],
   );
 
-  // Flow layout while streaming (or short lists): heights change every delta and
-  // absolute virtual rows overlap when measure lags. Virtualize only when idle.
+  // Flow layout for very short lists: heights change every delta and
+  // absolute virtual rows overlap when measure lags. Long lists stay virtual
+  // even while streaming — use a higher estimate + larger overscan to mask
+  // the height race (markdown / thinking / tools).
   const useVirtualList =
-    !streaming && displayItems.length >= VIRTUALIZE_MIN_ITEMS;
+    displayItems.length >=
+    (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS);
 
   const virtualizer = useVirtualizer({
     count: useVirtualList ? displayItems.length : 0,
     getScrollElement: () => streamRef.current,
-    estimateSize: () => ESTIMATE_ROW_PX,
-    overscan: OVERSCAN,
+    estimateSize: () =>
+      streaming ? ESTIMATE_ROW_PX_STREAMING : ESTIMATE_ROW_PX,
+    overscan: streaming ? OVERSCAN_STREAMING : OVERSCAN,
     getItemKey: (index) => displayItems[index]?.id ?? index,
   });
 
-  const renderItem = (item: ChatItem) => {
-    if (item.kind === "user") {
+  const renderItem = useCallback(
+    (item: ChatItem) => {
+      if (item.kind === "user") {
+        return (
+          <UserBubble
+            item={item}
+            canAct={canAct}
+            editing={props.editingEntryId === (item.entryId ?? item.id)}
+            editDraft={props.editDraft}
+            onEditDraftChange={props.onEditDraftChange}
+            onStartEdit={props.onStartEdit}
+            onCancelEdit={props.onCancelEdit}
+            onConfirmEdit={props.onConfirmEdit}
+            onRetract={props.onRetract}
+          />
+        );
+      }
+      if (item.kind === "system") {
+        return <SystemBubble item={item} />;
+      }
+      if (item.kind === "assistant") {
+        return (
+          <AssistantBubble
+            item={item}
+            showThinking={props.showThinking}
+            canAct={canAct}
+            sessionMode={props.sessionMode}
+            onRegenerate={props.onRegenerate}
+            onClarifySelect={props.onClarifySelect}
+          />
+        );
+      }
       return (
-        <UserBubble
+        <ToolRow
           item={item}
-          canAct={canAct}
-          editing={props.editingEntryId === (item.entryId ?? item.id)}
-          editDraft={props.editDraft}
-          onEditDraftChange={props.onEditDraftChange}
-          onStartEdit={props.onStartEdit}
-          onCancelEdit={props.onCancelEdit}
-          onConfirmEdit={props.onConfirmEdit}
-          onRetract={props.onRetract}
-        />
-      );
-    }
-    if (item.kind === "system") {
-      return <SystemBubble item={item} />;
-    }
-    if (item.kind === "assistant") {
-      return (
-        <AssistantBubble
-          item={item}
-          showThinking={props.showThinking}
-          canAct={canAct}
           sessionMode={props.sessionMode}
-          onRegenerate={props.onRegenerate}
-          onClarifySelect={props.onClarifySelect}
+          planPath={props.planPath}
+          streaming={streaming}
+          onOpenToolInPanel={props.onOpenToolInPanel}
+          onBuildPlan={props.onBuildPlan}
         />
       );
-    }
-    return (
-      <ToolRow
-        item={item}
-        sessionMode={props.sessionMode}
-        planPath={props.planPath}
-        streaming={streaming}
-        onOpenToolInPanel={props.onOpenToolInPanel}
-        onBuildPlan={props.onBuildPlan}
-      />
-    );
-  };
+    },
+    [
+      canAct,
+      props.editingEntryId,
+      props.editDraft,
+      props.onEditDraftChange,
+      props.onStartEdit,
+      props.onCancelEdit,
+      props.onConfirmEdit,
+      props.onRetract,
+      props.showThinking,
+      props.sessionMode,
+      props.onRegenerate,
+      props.onClarifySelect,
+      props.planPath,
+      streaming,
+      props.onOpenToolInPanel,
+      props.onBuildPlan,
+    ],
+  );
+
+  const lastVirtualRowRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      // Always register with the virtualizer so it can measure the tail row's
+      // height; the tailRef is shared so IntersectionObserver can also watch it.
+      virtualizer.measureElement(el);
+      tailRef.current = el;
+    },
+    [virtualizer],
+  );
 
   const syncJumpVisibility = () => {
     const el = streamRef.current;
@@ -484,20 +540,18 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     setShowJump(false);
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
-      requestAnimationFrame(() => {
-        applyPin(
-          reduceChatScrollPin(pinStateRef.current, {
-            type: "programmatic_follow_end",
-          }),
-        );
-        applyPin(
-          reduceChatScrollPin(pinStateRef.current, {
-            type: "scroll",
-            nearBottom: isNearBottom(metricsOf(el)),
-          }),
-        );
-        syncJumpVisibility();
-      });
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "programmatic_follow_end",
+        }),
+      );
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "scroll",
+          nearBottom: isNearBottom(metricsOf(el)),
+        }),
+      );
+      syncJumpVisibility();
     });
   };
 
@@ -513,26 +567,23 @@ export function ChatTranscript(props: ChatTranscriptProps) {
         type: "programmatic_follow_start",
       }),
     );
-    el.scrollTop = el.scrollHeight;
-    // Second frame: layout may still grow (tool cards / markdown); keep pinned
-    // and only then clear the ignore window + sync jump button.
+    // Single frame is enough when the scrollport already has the content
+    // rendered; we avoid the double rAF that used to steal input from the
+    // user while streaming.
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
-      requestAnimationFrame(() => {
-        applyPin(
-          reduceChatScrollPin(pinStateRef.current, {
-            type: "programmatic_follow_end",
-          }),
-        );
-        // Re-assert pin from geometry after ignore clears.
-        applyPin(
-          reduceChatScrollPin(pinStateRef.current, {
-            type: "scroll",
-            nearBottom: isNearBottom(metricsOf(el)),
-          }),
-        );
-        syncJumpVisibility();
-      });
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "programmatic_follow_end",
+        }),
+      );
+      applyPin(
+        reduceChatScrollPin(pinStateRef.current, {
+          type: "scroll",
+          nearBottom: isNearBottom(metricsOf(el)),
+        }),
+      );
+      syncJumpVisibility();
     });
   };
 
@@ -659,6 +710,9 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     const content = contentRef.current;
     if (!content) return;
 
+    // ResizeObserver remains a viewport-size fallback (window resize / panel
+    // collapse). Per-row growth during streaming is handled by the tail-node
+    // IntersectionObserver below.
     const ro = new ResizeObserver(() => {
       scheduleFollow();
     });
@@ -667,9 +721,47 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     // Re-attach when empty ↔ flow ↔ virtual swaps the contentRef target.
   }, [props.items.length === 0, useVirtualList]);
 
+  // Tail-node observer: when the last row enters the viewport we know the
+  // user is still pinned. We auto-stick to the bottom only if pinned. If the
+  // user has unpinned (scroll up to read history), we leave them alone — this
+  // is what stops the chat from "fighting" the user's scroll while streaming.
+  const tailRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const tail = tailRef.current;
+    const scrollEl = streamRef.current;
+    if (!tail || !scrollEl) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          if (shouldFollow(pinStateRef.current)) {
+            scheduleFollow();
+          }
+        } else {
+          syncJumpVisibility();
+        }
+      },
+      {
+        root: scrollEl,
+        // Sub-pixel threshold so partial visibility counts as "in view".
+        threshold: 0,
+      },
+    );
+    io.observe(tail);
+    return () => io.disconnect();
+  }, [displayItems.length, useVirtualList]);
+
   useLayoutEffect(() => {
+    // Status edges (idle ↔ streaming ↔ retrying ↔ error) and layout-mode
+    // changes (empty ↔ flow ↔ virtual) need to re-assert follow. Per-text-delta
+    // updates deliberately skip this — the IntersectionObserver-driven
+    // follow path keeps the scroll glued to the bottom while the user is
+    // pinned, without stealing input on every delta.
     scheduleFollow();
-  }, [props.items, props.status, displayItems.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.status, useVirtualList]);
 
   useLayoutEffect(() => {
     if (!useVirtualList) return;
@@ -754,7 +846,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                 <div
                   key={virtualRow.key}
                   data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
+                  ref={isLast ? lastVirtualRowRef : virtualizer.measureElement}
                   className="virtual-row"
                   style={{
                     position: "absolute",
@@ -772,11 +864,18 @@ export function ChatTranscript(props: ChatTranscriptProps) {
           </div>
         ) : (
           <div className="message-stream-inner message-stream-flow" ref={contentRef}>
-            {displayItems.map((item) => (
-              <div key={item.id} className="transcript-flow-row">
-                {renderItem(item)}
-              </div>
-            ))}
+            {displayItems.map((item, idx) => {
+              const isLast = idx === displayItems.length - 1;
+              return (
+                <div
+                  key={item.id}
+                  className="transcript-flow-row"
+                  ref={isLast ? tailRef : undefined}
+                >
+                  {renderItem(item)}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

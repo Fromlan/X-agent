@@ -1,11 +1,9 @@
 import {
   branchEntriesToHistory,
   messagesToHistory,
-} from "../electron/agent/history";
-import {
   extractMessageText,
   textFromContent,
-} from "../electron/agent/transcript-mapper";
+} from "../shared/transcript/index.ts";
 
 const sample = [
   {

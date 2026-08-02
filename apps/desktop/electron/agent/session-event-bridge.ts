@@ -12,7 +12,7 @@ import {
   TRANSCRIPT_CAPS,
   extractMessageText,
   truncateTranscript,
-} from "./transcript-mapper";
+} from "../../shared/transcript";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import type { TurnFileTracker } from "./turn-file-tracker";
 import type { ShadowCheckpointTracker } from "./shadow-checkpoints";

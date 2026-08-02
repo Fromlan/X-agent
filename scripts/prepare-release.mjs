@@ -7,9 +7,11 @@
  *
  * Does not commit or push. After success:
  *   1. Review CHANGELOG.md + package.json
- *   2. npm run release:dist   # local typecheck + test + Windows exe
- *   3. git add … && git commit -m "release: vX.Y.Z"
- *   4. git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z
+ *   2. git add … && git commit -m "release: vX.Y.Z"
+ *   3. git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z
+ *   4. Wait for .github/workflows/release.yml (authoritative GitHub Release artifacts)
+ * Optional smoke before tagging: npm run release:dist (local typecheck + test + exe;
+ *   do not commit apps/desktop/release/ — CI rebuilds what users download)
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -112,16 +114,18 @@ function main() {
           ]
         : []),
       "Next:",
-      `  npm run release:dist`,
-      `    # typecheck + test + electron-builder → apps/desktop/release/`,
-      `    # 例如 X-agent-${version}-x64.exe（勿把 release/ 提交进 git）`,
       `  git add CHANGELOG.md apps/desktop/package.json apps/desktop/package-lock.json`,
       `  git commit -m "release: v${version}"`,
       `  git tag v${version}`,
       `  git push origin HEAD && git push origin v${version}`,
       "",
       "Tag push triggers .github/workflows/release.yml：",
-      "  - CI 再构建并上传 GitHub Releases（安装包 + latest.yml）",
+      "  - CI 构建并上传 GitHub Releases（安装包 + latest.yml）——用户下载的权威产物",
+      "",
+      "Optional local smoke（非必须；产物勿提交）：",
+      `  npm run release:dist`,
+      `    # typecheck + test + electron-builder → apps/desktop/release/`,
+      `    # 例如 X-agent-${version}-x64.exe`,
       "",
       "Release 正文将使用该 CHANGELOG 章节。",
     ].join("\n"),

@@ -15,6 +15,8 @@ import {
   looksLikeDeepSeekModelId,
   pruneStaleProviderKeys,
   repairDeepSeekModelsJson,
+  filterModelsByCatalogEnabled,
+  setProviderProfileEnabled,
   type ProviderPaths,
   upsertProviderProfile,
 } from "../electron/agent/provider-store";
@@ -85,18 +87,12 @@ try {
     paths,
   );
   assert(created.ok && created.profile, `create: ${created.error}`);
+  assert(created.profile!.enabled, "new profile enabled by default");
+  assert(created.syncedToPi || created.syncedActive, "enabled upsert syncs to Pi");
 
-  const listed = listProviderProfiles(paths);
-  assert(listed.length === 1 && !listed[0].active, "listed inactive");
-
-  const act = activateProviderProfile(created.profile!.id, paths, {
-    updatePrefs: false,
-  });
-  assert(act.ok, `activate: ${act.error}`);
-  assert(act.provider === "test-relay" && act.model === "model-a", "activate ids");
-
-  assert(existsSync(paths.authPath), "auth written");
-  assert(existsSync(paths.modelsPath), "models written");
+  // Enabled save writes auth/models.
+  assert(existsSync(paths.authPath), "auth written on upsert");
+  assert(existsSync(paths.modelsPath), "models written on upsert");
   const auth = JSON.parse(readFileSync(paths.authPath, "utf8")) as Record<
     string,
     { type: string; key: string }
@@ -112,8 +108,55 @@ try {
     "models baseUrl",
   );
 
-  const delActive = deleteProviderProfile(created.profile!.id, paths);
-  assert(!delActive.ok, "cannot delete active");
+  const listed = listProviderProfiles(paths);
+  assert(listed.length === 1, "listed one");
+  assert(listed[0]!.enabled, "listed as enabled");
+
+  // Disable → prune from Pi; catalog entry remains; TopBar filter hides it.
+  assert(
+    setProviderProfileEnabled(created.profile!.id, false, paths).ok,
+    "disable ok",
+  );
+  const modelsOff = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+    providers: Record<string, unknown>;
+  };
+  assert(!("test-relay" in modelsOff.providers), "disabled pruned from models");
+  assert(
+    getProviderProfile(created.profile!.id, paths)?.enabled === false,
+    "still in catalog disabled",
+  );
+  const filteredOff = filterModelsByCatalogEnabled(
+    [
+      { provider: "test-relay", id: "model-a" },
+      { provider: "openai", id: "gpt-4" },
+    ],
+    paths,
+  );
+  assert(
+    !filteredOff.some((m) => m.provider === "test-relay"),
+    "filter hides disabled catalog provider",
+  );
+  assert(
+    filteredOff.some((m) => m.provider === "openai"),
+    "filter keeps unmanaged providers",
+  );
+
+  // Re-enable → write back.
+  assert(
+    setProviderProfileEnabled(created.profile!.id, true, paths).ok,
+    "re-enable ok",
+  );
+  const modelsOn = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+    providers: Record<string, unknown>;
+  };
+  assert("test-relay" in modelsOn.providers, "re-enabled in models");
+  assert(
+    filterModelsByCatalogEnabled(
+      [{ provider: "Test-Relay", id: "model-a" }],
+      paths,
+    ).length === 1,
+    "filter shows enabled catalog provider (case-insensitive)",
+  );
 
   const other = upsertProviderProfile(
     {
@@ -127,11 +170,45 @@ try {
     paths,
   );
   assert(other.ok && other.profile, "second profile");
-  assert(
-    activateProviderProfile(other.profile!.id, paths, { updatePrefs: false }).ok,
-    "activate other",
+  const modelsBoth = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+    providers: Record<string, unknown>;
+  };
+  assert("test-relay" in modelsBoth.providers, "first provider kept");
+  assert("other" in modelsBoth.providers, "second provider present");
+
+  // Two profiles same providerId: disable one must not prune while other enabled.
+  const twin = upsertProviderProfile(
+    {
+      name: "Twin Relay",
+      providerId: "test-relay",
+      api: "openai-completions",
+      baseUrl: "https://relay.example.com/v1",
+      apiKey: "sk-twin-key-abcdef",
+      models: [{ id: "model-b" }],
+    },
+    paths,
   );
-  assert(deleteProviderProfile(created.profile!.id, paths).ok, "delete inactive");
+  assert(twin.ok && twin.profile, "twin profile");
+  assert(
+    setProviderProfileEnabled(created.profile!.id, false, paths).ok,
+    "disable first twin",
+  );
+  const modelsTwin = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+    providers: Record<string, unknown>;
+  };
+  assert(
+    "test-relay" in modelsTwin.providers,
+    "shared providerId kept while twin enabled",
+  );
+
+  assert(deleteProviderProfile(other.profile!.id, paths).ok, "delete other");
+  assert(deleteProviderProfile(twin.profile!.id, paths).ok, "delete twin");
+  assert(deleteProviderProfile(created.profile!.id, paths).ok, "delete first");
+  const modelsEmpty = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+    providers: Record<string, unknown>;
+  };
+  assert(!("test-relay" in modelsEmpty.providers), "pruned test-relay");
+  assert(!("other" in modelsEmpty.providers), "pruned other");
 
   // --- import from Pi auth/models ---
   const importRoot = mkdtempSync(join(tmpdir(), "alpha-providers-import-"));
@@ -648,7 +725,7 @@ try {
       paths,
     );
     assert(edited.ok && edited.profile, "upsert anthropic profile");
-    activateProviderProfile(edited.profile!.id, paths, { updatePrefs: false });
+    // Upsert already synced; activate is optional compat.
     const modelsAfter = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
       providers: Record<string, { models: Array<{ id: string }> }>;
     };
