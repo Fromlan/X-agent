@@ -104,7 +104,12 @@ export async function syncProfileToPi(
 
 /**
  * Remove providerId from Pi auth/models when no *enabled* catalog profile
- * still uses it (match is case-insensitive, including DeepSeek vs deepseek).
+ * still uses it.
+ *
+ * 匹配分两步,保证历史档案(老版本曾给同 baseUrl 加过 `-2` 后缀)也能被清理:
+ * 1. 大小写不敏感的 providerId 直接匹配 —— 删所有大小写变体。
+ * 2. 没命中且档案带 baseUrl 时,按 baseUrl 家族兜底匹配 Pi models 里的条目,
+ *    只删"baseUrl 完全一致"的 Pi key(避免误删 builtin OAuth 同名条目)。
  */
 export async function pruneProviderIdFromPi(
   providerId: string,
@@ -121,9 +126,17 @@ export async function pruneProviderIdFromPi(
   ) {
     return;
   }
+  const ownProfile = store.profiles.find(
+    (p) => p.providerId.toLowerCase() === keepLower,
+  );
+  const ownBaseUrl = ownProfile?.baseUrl.trim().replace(/\/+$/, "").toLowerCase();
 
   ensureParent(paths.authPath);
   ensureParent(paths.modelsPath);
+
+  const modelsFile = await readJsonFile<{
+    providers?: Record<string, { baseUrl?: string }>;
+  }>(paths.modelsPath, { providers: {} });
 
   const dropKeys = (obj: Record<string, unknown>): boolean => {
     let changed = false;
@@ -136,15 +149,43 @@ export async function pruneProviderIdFromPi(
     return changed;
   };
 
+  const dropByBaseUrl = (
+    obj: Record<string, unknown>,
+    baseUrl: string | undefined,
+    models: Record<string, { baseUrl?: string }> | undefined,
+  ): boolean => {
+    if (!baseUrl || !models) return false;
+    let changed = false;
+    for (const key of Object.keys(obj)) {
+      const cfg = models[key];
+      if (!cfg) continue;
+      const entryBase = (cfg.baseUrl ?? "").trim().replace(/\/+$/, "").toLowerCase();
+      if (entryBase && entryBase === baseUrl) {
+        delete obj[key];
+        changed = true;
+      }
+    }
+    return changed;
+  };
+
   const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
   if (dropKeys(auth)) {
     await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
   }
 
-  const modelsFile = await readJsonFile<{
-    providers?: Record<string, unknown>;
-  }>(paths.modelsPath, { providers: {} });
+  let modelsChanged = false;
   if (modelsFile.providers && dropKeys(modelsFile.providers)) {
+    modelsChanged = true;
+  }
+  // baseUrl 兜底:大小写匹配可能漏掉历史档案的拼写漂移(同 baseUrl 但 Pi key
+  // 与档案 providerId 不一致)。只要档案带 baseUrl,始终按 baseUrl 扫一遍
+  // 剩余 Pi key —— 同 baseUrl 的视为"指向同一供应商",一并清掉。
+  if (ownBaseUrl && modelsFile.providers) {
+    if (dropByBaseUrl(modelsFile.providers, ownBaseUrl, modelsFile.providers)) {
+      modelsChanged = true;
+    }
+  }
+  if (modelsChanged) {
     await writeFile(
       paths.modelsPath,
       JSON.stringify(modelsFile, null, 2),
