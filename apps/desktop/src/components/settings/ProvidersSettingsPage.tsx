@@ -415,6 +415,11 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   };
 
   const remove = async (profile: ProviderProfileSummary) => {
+    const enabledCount = profiles.filter((x) => x.enabled).length;
+    if (profile.enabled && enabledCount <= 1) {
+      setError("至少需要保留一个启用的供应商，无法删除");
+      return;
+    }
     const ok = await confirm({
       title: "删除订阅",
       message: `删除订阅「${profile.name}」？`,
@@ -605,7 +610,16 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                 暂无订阅档案。可点击「导入已有」从 Pi / cc-switch 同步，或新建 / 从预设添加。
               </div>
             )}
-            {profiles.map((p) => (
+            {profiles.map((p) => {
+              const enabledCount = profiles.filter((x) => x.enabled).length;
+              // 当前档案是唯一启用项时,关闭按钮置灰并解释原因。
+              const isLastEnabled = p.enabled && enabledCount <= 1;
+              const toggleTitle = isLastEnabled
+                ? "至少需要保留一个启用的供应商"
+                : p.enabled
+                  ? "关闭后从顶栏移除"
+                  : "启用后出现在顶栏";
+              return (
               <div
                 key={p.id}
                 className={
@@ -625,12 +639,12 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                 <div className="provider-card-actions">
                   <label
                     className="provider-card-toggle"
-                    title={p.enabled ? "关闭后从顶栏移除" : "启用后出现在顶栏"}
+                    title={toggleTitle}
                   >
                     <input
                       type="checkbox"
                       checked={p.enabled}
-                      disabled={busy}
+                      disabled={busy || isLastEnabled}
                       onChange={(e) => void setEnabled(p, e.target.checked)}
                       aria-label={
                         p.enabled ? `关闭 ${p.name}` : `启用 ${p.name}`
@@ -659,7 +673,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

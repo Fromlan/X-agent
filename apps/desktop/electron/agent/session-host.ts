@@ -962,6 +962,7 @@ export class SessionHost {
       provider: m.provider,
       id: m.id,
       name: (m as { name?: string }).name ?? m.id,
+      baseUrl: (m as { baseUrl?: string }).baseUrl,
     }));
     // Catalog enabled flag is authoritative for TopBar — not only models.json.
     const visible = await filterModelsByCatalogEnabled(mapped);
