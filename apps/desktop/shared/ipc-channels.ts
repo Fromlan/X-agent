@@ -108,6 +108,8 @@ export const IPC_CHANNELS = {
   clearUsageSummary: "clearUsageSummary",
   /** One-shot prefs recovery notice after corrupt x-agent.json backup. */
   getPrefsRecoveryNotice: "getPrefsRecoveryNotice",
+  /** SafeStorage fallback status (keychain unavailable / encrypt failed) for UI banner. */
+  getSecretCodecStatus: "getSecretCodecStatus",
   /** Renderer signals first paint so splash can reveal the main window. */
   appReady: "appReady",
 } as const;

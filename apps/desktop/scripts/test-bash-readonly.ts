@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   bashCommandEscapesCwd,
   isReadonlyBashCommand,
-} from "../electron/agent/bash-readonly.ts";
+} from "../electron/agent/session-mode/bash-readonly.ts";
 
 assert.equal(isReadonlyBashCommand("git status"), true);
 assert.equal(isReadonlyBashCommand("git status --short"), true);

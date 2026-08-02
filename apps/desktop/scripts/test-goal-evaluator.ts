@@ -4,7 +4,7 @@ import {
   buildGoalEvalPrompt,
   buildGoalTranscript,
   parseGoalEvalResponse,
-} from "../electron/agent/goal-evaluator.ts";
+} from "../electron/agent/session-mode/goal-evaluator.ts";
 import { buildGoalModeSystemAppend } from "../shared/mode-prompt.ts";
 
 assert.deepEqual(parseGoalEvalResponse("YES\nAll tests passed"), {

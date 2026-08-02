@@ -10,13 +10,13 @@ import { join } from "node:path";
 import {
   SessionModeController,
   type SessionModeHost,
-} from "../electron/agent/session-mode.ts";
+} from "../electron/agent/session-mode/index.ts";
 import { setAgentDirOverrideForTests } from "../electron/agent/prefs.ts";
 import {
   clearGoalJournal,
   loadGoalJournal,
   saveGoalJournal,
-} from "../electron/agent/goal-journal.ts";
+} from "../electron/agent/session-mode/goal-journal.ts";
 import type { GoalInfo, UiAgentEvent } from "../shared/ipc.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "x-agent-smoke-"));

@@ -51,12 +51,16 @@ function readSrc(rel: string): string {
 
 {
   const transcript = readSrc("src/components/ChatTranscript.tsx");
-  assert.equal(transcript.includes("history-virtualize-bar"), false);
-  assert.equal(transcript.includes("degradeMarkdown"), false);
-  assert.equal(transcript.includes("plainMarkdownCutoff"), false);
-  assert.match(transcript, /useVirtualizer/);
+  const virtualLib = readSrc("src/lib/chat-transcript-virtual.ts");
+  // Both files together own virtualization behavior since the virtualizer
+  // configuration was extracted to chat-transcript-virtual.ts.
+  const combined = transcript + "\n" + virtualLib;
+  assert.equal(combined.includes("history-virtualize-bar"), false);
+  assert.equal(combined.includes("degradeMarkdown"), false);
+  assert.equal(combined.includes("plainMarkdownCutoff"), false);
+  assert.match(combined, /useVirtualizer/);
   assert.match(
-    transcript,
+    combined,
     /VIRTUALIZE_MIN_ITEMS/,
     "must gate virtualization on a min item count",
   );
@@ -67,7 +71,7 @@ function readSrc(rel: string): string {
   // named VIRTUALIZE_STREAMING_MIN_ITEMS; the idle constant is
   // VIRTUALIZE_MIN_ITEMS.
   assert.match(
-    transcript,
+    combined,
     /VIRTUALIZE_STREAMING_MIN_ITEMS/,
     "must define a streaming-mode virtualize threshold",
   );
