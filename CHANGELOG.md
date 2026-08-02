@@ -8,25 +8,31 @@
 
 ## Unreleased
 
+## 0.3.12
+
+### 功能
+
+- **更新提示**：安装版静默检查到新版本时不自动下载，应用内提示条「立即更新 / 稍后」并在顶栏显示入口，引导用户按需下载或安装。
+
 ### 变更
 
 - **架构 · 主进程 IO 与校验加固**：prefs / usage / provider / auth / godot-rpc 五处持久化改为原子写（tmp + rename），prefs 与 usage 改走 `withStoreLock(path, ...)` 串行化（与 provider 同模式）；safeStorage 不可用时启动一次 probe 并在 UI 横幅告知「密钥以明文存储」；`setPrefs` 走 `ClientPrefsPatchSchema`（`additionalProperties: false`）拒绝未声明字段；`external-url` 显式拒绝 IPv4-mapped IPv6 / link-local / ULA / zone-id；`cwd-sandbox` 与 `plan-tools` 路径前缀比对做 Windows 大小写归一化；`applyBashShellPath` 写入前对 target 做 `--version` 自检。`bash-readonly` / `plan-mode-guard` / `plan-tools` / `goal-evaluator` / `goal-journal` / `session-mode` 6 个废弃入口合并到 `session-mode/*`。
 - **UI 拆分**：`PluginsPage`（805 → 90）/ `Sidebar`（528 → 105）拆到 `./plugins/` `./sidebar/` 子目录，顶层只保留壳与 re-export 兼容；`ChatTranscript` virtualizer 配置抽到 `src/lib/chat-transcript-virtual.ts`，5 个 bubble 子组件抽到 `./chat/bubbles.tsx`；`ChatPanel` 拆出 `useSlashMenu` hook 并加 `React.memo` 顶层包装。
 
-### 功能
-
-- **更新提示**：安装版静默检查到新版本时不自动下载，应用内提示条「立即更新 / 稍后」+ 顶栏角标引导下载或安装
-
 ### 改进
 
-- **发版流程**：本机 `release:dist` 改为可选冒烟；用户下载的权威产物以 CI GitHub Release 为准
-- **工程化**：新增 `apps/desktop/.editorconfig`（UTF-8 / LF / 2 空格缩进 / 去行尾空格 / 末尾换行）。
-- **文档**：`CONTEXT.md` / `CLAUDE.md` 修正 `shared/mode-tools.ts` 路径描述，补齐 8 个 `register-*-ipc.ts` 名单；`provider-activate.ts` 顶部注释指向唯一消费方；明确 ADR / 调研文档本地保留、不入 git。
+- **会话模式切换**：智能体 / 调研 / 计划 / 目标四种模式统一使用中文标签，并以蓝 / 青 / 紫 / 黄图标和同色选中态区分；补充 hover、禁用与 `aria-pressed` 状态，保留 `Shift+Tab` 快捷切换。
+- **供应商启用约束**：始终保留至少一个启用档案；最后一个启用档案不能被关闭、删除或保存为禁用，设置页会直接解释原因，避免模型列表被清空。
+- **发版流程**：本机 `release:dist` 改为可选冒烟；用户下载的权威产物以 CI GitHub Release 为准。
+- **工程化**：新增 `apps/desktop/.editorconfig`（UTF-8 / LF / 2 空格缩进 / 去行尾空格 / 末尾换行），停止跟踪 `*.tsbuildinfo`，并将供应商认证缓存回归测试纳入完整测试链。
+- **开发文档**：新增 `AGENT.md` 仓库协作指南；同步 `CONTEXT.md` / `CLAUDE.md` 的模块路径与发版约定；补充 Godot TileSet 结构格式调研，并明确本地 ADR / 调研草稿不参与发布。
 
 ### 修复
 
 - **prefs 并发丢更新**：`savePrefs` 加 `withStoreLock(path, ...)` 串行化，并发 `patchPrefs` 不再读到同一快照后写覆盖前写；`usage-store` 同步去掉自管 `writeQueue`，统一走 `withStoreLock`。
-
+- **供应商同步与模型过滤**：`providerId` 与 Pi 配置 key 漂移时，按 `baseUrl` 家族回退匹配并清理 `auth.json` / `models.json`，顶栏不再残留已停用模型；启用路径改为静态 ESM 导入，修复打包后切换供应商时的 `Cannot find module`。
+- **供应商认证状态缓存**：新增或删除供应商写入 `auth.json` 后主动失效 `checkAuth` 缓存，ReadyChecklist 不再继续误报「未配置供应商」。
+- **Windows 发布产物覆盖**：NSIS 安装包与 Portable 便携包使用独立文件名，避免后构建的便携包覆盖安装包，确保 `latest.yml` 的大小与 SHA-512 可用于自动更新校验。
 
 ## 0.3.11
 

@@ -2335,33 +2335,82 @@ body.is-resizing-column * {
 .composer-mode-pills {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border-primary);
+  gap: 3px;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--border-primary) 82%, var(--text-muted));
   border-radius: var(--radius-pill);
-  background: var(--bg-input);
+  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-app));
 }
 
 .composer-mode-pill {
+  --mode-color: var(--text-secondary);
   appearance: none;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 500;
   line-height: 1;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.composer-mode-pill[data-mode="agent"] {
+  --mode-color: var(--accent-blue);
+}
+
+.composer-mode-pill[data-mode="ask"] {
+  --mode-color: var(--ctx-messages);
+}
+
+.composer-mode-pill[data-mode="plan"] {
+  --mode-color: var(--ctx-skills);
+}
+
+.composer-mode-pill[data-mode="goal"] {
+  --mode-color: var(--accent-yellow);
+}
+
+.composer-mode-pill svg {
+  flex-shrink: 0;
+  color: var(--mode-color);
+  opacity: 0.78;
+  transition: opacity 0.15s ease;
 }
 
 .composer-mode-pill:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--bg-list-hover);
+  color: var(--mode-color);
+  background: color-mix(in srgb, var(--mode-color) 9%, transparent);
+  transform: translateY(-1px);
+}
+
+.composer-mode-pill:hover:not(:disabled) svg,
+.composer-mode-pill.is-active svg {
+  opacity: 1;
 }
 
 .composer-mode-pill.is-active {
-  color: var(--text-primary);
-  background: var(--bg-header);
+  color: var(--mode-color);
+  border-color: color-mix(in srgb, var(--mode-color) 38%, var(--border-primary));
+  background: color-mix(in srgb, var(--mode-color) 16%, var(--bg-header));
+}
+
+.composer-mode-pill.is-active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--mode-color) 21%, var(--bg-header));
+  transform: none;
 }
 
 .composer-mode-pill:disabled {

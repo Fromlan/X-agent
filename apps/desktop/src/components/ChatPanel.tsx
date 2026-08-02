@@ -8,7 +8,7 @@ import { isRestorableGoalStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
-import { Flag, Hammer, Send, Square } from "lucide-react";
+import { Bot, ClipboardList, Flag, Hammer, Search, Send, Square, Target } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -259,10 +259,14 @@ function ChatPanelImpl(props: Props) {
                   ? "composer-mode-pill is-active"
                   : "composer-mode-pill"
               }
+              data-mode="agent"
+              aria-pressed={sessionMode === "agent"}
               disabled={modeSwitchDisabled || !props.onSessionModeChange}
               onClick={() => props.onSessionModeChange?.("agent")}
+              title="执行任务并修改文件"
             >
-              Agent
+              <Bot size={14} strokeWidth={2} aria-hidden />
+              <span>智能体</span>
             </button>
             <button
               type="button"
@@ -271,11 +275,14 @@ function ChatPanelImpl(props: Props) {
                   ? "composer-mode-pill is-active"
                   : "composer-mode-pill"
               }
+              data-mode="ask"
+              aria-pressed={sessionMode === "ask"}
               disabled={modeSwitchDisabled || !props.onSessionModeChange}
               onClick={() => props.onSessionModeChange?.("ask")}
               title="只读研究与问答，不改文件"
             >
-              调研
+              <Search size={14} strokeWidth={2} aria-hidden />
+              <span>调研</span>
             </button>
             <button
               type="button"
@@ -284,11 +291,14 @@ function ChatPanelImpl(props: Props) {
                   ? "composer-mode-pill is-active"
                   : "composer-mode-pill"
               }
+              data-mode="plan"
+              aria-pressed={sessionMode === "plan"}
               disabled={modeSwitchDisabled || !props.onSessionModeChange}
               onClick={() => props.onSessionModeChange?.("plan")}
               title="只读研究并写出计划"
             >
-              Plan
+              <ClipboardList size={14} strokeWidth={2} aria-hidden />
+              <span>计划</span>
             </button>
             <button
               type="button"
@@ -297,11 +307,14 @@ function ChatPanelImpl(props: Props) {
                   ? "composer-mode-pill is-active"
                   : "composer-mode-pill"
               }
+              data-mode="goal"
+              aria-pressed={sessionMode === "goal"}
               disabled={modeSwitchDisabled || !props.onSessionModeChange}
               onClick={() => props.onSessionModeChange?.("goal")}
               title="设定完成条件并自动续轮"
             >
-              目标
+              <Target size={14} strokeWidth={2} aria-hidden />
+              <span>目标</span>
             </button>
           </div>
           <div className="composer-mode-actions">
