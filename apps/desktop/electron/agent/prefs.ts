@@ -9,6 +9,7 @@ import {
   existsSync,
 } from "node:fs";
 import { writeJsonAtomic, readJsonAsync, fileExistsAsync } from "./lib/atomic-write";
+import { withStoreLock } from "./lib/store-mutex";
 import {
   ClientPrefs,
   DEFAULT_PREFS,
@@ -252,15 +253,19 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
 
 export async function savePrefs(prefs: ClientPrefs): Promise<ClientPrefs> {
   ensureAgentDir();
-  cachedPrefs = prefs;
+  // 串行化所有 prefs 写:避免并发 patchPrefs 读同一 cache 后写覆盖前写。
+  // cachedPrefs 同步赋值放在锁内进行,保证 patchPrefs 链路上的读-改-写一致。
   const path = prefsPath();
-  try {
-    await writeJsonAtomic(path, prefs);
-  } catch {
-    // Windows 偶发 EPERM(目标文件被后台进程持锁);fallback 到同步写以保证
-    // IPC handler 仍能完成。atomic write 已通过路径覆盖保护,我们接受这一退化。
-    writeFileSync(path, JSON.stringify(prefs, null, 2), "utf8");
-  }
+  await withStoreLock(path, async () => {
+    cachedPrefs = prefs;
+    try {
+      await writeJsonAtomic(path, prefs);
+    } catch {
+      // Windows 偶发 EPERM(目标文件被后台进程持锁);fallback 到同步写以保证
+      // IPC handler 仍能完成。atomic write 已通过路径覆盖保护,我们接受这一退化。
+      writeFileSync(path, JSON.stringify(prefs, null, 2), "utf8");
+    }
+  });
   return prefs;
 }
 

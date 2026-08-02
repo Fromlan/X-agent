@@ -66,7 +66,7 @@ await patchPrefs({ provider: "old-prov", model: "old-model" });
   assert.equal(ok.model, "m1");
 }
 
-patchPrefs({ provider: "old-prov", model: "old-model" });
+await patchPrefs({ provider: "old-prov", model: "old-model" });
 {
   const fail = await activateProviderAndApply(
     id,
