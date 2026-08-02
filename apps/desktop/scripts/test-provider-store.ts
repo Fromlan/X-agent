@@ -114,6 +114,19 @@ try {
   assert(listed[0]!.enabled, "listed as enabled");
 
   // Disable → prune from Pi; catalog entry remains; TopBar filter hides it.
+  // 先加一条常驻档案,避免触发"至少保留一个启用档案"约束。
+  const always = await upsertProviderProfile(
+    {
+      name: "Always",
+      providerId: "always-on",
+      api: "openai-completions",
+      baseUrl: "https://always.example.com/v1",
+      apiKey: "sk-always-123456",
+      models: [{ id: "model-z" }],
+    },
+    paths,
+  );
+  assert(always.ok && always.profile, `create always: ${always.error}`);
   assert(
     await (await setProviderProfileEnabled(created.profile!.id, false, paths)).ok,
     "disable ok",
