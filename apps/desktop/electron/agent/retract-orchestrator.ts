@@ -9,7 +9,7 @@ import type {
   RetractPreview,
   RetractResult,
 } from "../../shared/ipc";
-import { extractMessageText } from "./transcript-mapper";
+import { extractMessageText } from "../../shared/transcript";
 import type { TurnFileTracker } from "./turn-file-tracker";
 import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 

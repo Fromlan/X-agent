@@ -39,6 +39,8 @@ import {
   type SettingsTabTarget,
 } from "./components/ReadyChecklist";
 import { TopBar } from "./components/TopBar";
+import { UpdateBanner } from "./components/UpdateBanner";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
 import {
   SettingsPanel,
@@ -66,7 +68,6 @@ import { useAutoCompact } from "./hooks/useAutoCompact";
 import { usePlanSessionAutoOpen } from "./hooks/usePlanSession";
 import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
-import { useUpdateStatus } from "./hooks/useUpdateStatus";
 import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
 import {
   appendPendingUser,
@@ -137,7 +138,17 @@ export default function App() {
   void usageVersion;
   const sessionUsage = getSessionUsageState();
   const compacting = getCompacting();
-  const updateStatus = useUpdateStatus();
+  const appUpdate = useAppUpdate({
+    onError: (message) => setError(message),
+  });
+  const {
+    status: updateStatus,
+    busy: updateActionBusy,
+    showBanner: showUpdateBanner,
+    dismiss: dismissUpdateBanner,
+    downloadOrInstall: applyUpdateAction,
+    onTopBarUpdateClick,
+  } = appUpdate;
 
   const {
     isGodotProject,
@@ -167,7 +178,7 @@ export default function App() {
   }, []);
 
   const refreshModels = useCallback(async () => {
-    const list = await window.xAgent.listModels();
+    const list = await window.xAgent.session.listModels();
     setModels(list);
   }, []);
 
@@ -290,7 +301,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const send = async () => {
+  const send = useCallback(async () => {
     if (!input.trim() || !cwd) return;
     const text = input.trim();
     setInput("");
@@ -361,36 +372,39 @@ export default function App() {
 
     const expanded = await expandAtPathsInPrompt(text);
     const result = await window.xAgent.turn.prompt(expanded);
-    if (!result.ok) {
+    if (!result.ok || result.silent) {
       setItems((prev) => removePendingUser(prev, pendingId));
-      setError(result.error ?? "发送失败");
+      if (!result.ok) setError(result.error ?? "发送失败");
     }
     await refreshSessions();
-  };
+  }, [input, cwd, sessionMode, goal, refreshSessions]);
 
-  const onSessionModeChange = async (mode: AgentSessionMode) => {
-    const result = await window.xAgent.plan.setMode(mode);
-    if (!result.ok) {
-      setError(result.error ?? "切换模式失败");
-      return;
-    }
-    if (result.info) {
-      setSessionMode(result.info.mode);
-      setPlanPath(result.info.planPath);
-    }
-    if (mode === "agent" || mode === "ask" || mode === "plan") {
-      setGoal(null);
-      // 离开目标模式时清掉输入框里残留的 /goal 命令草稿
-      setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
-    }
-    if (mode === "goal" && result.needGoalCondition) {
-      // 不预填 /goal；仅清空误留的 slash 草稿，让用户直接写完成条件
-      setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
-      setFollowNonce((n) => n + 1);
-    }
-  };
+  const onSessionModeChange = useCallback(
+    async (mode: AgentSessionMode) => {
+      const result = await window.xAgent.plan.setMode(mode);
+      if (!result.ok) {
+        setError(result.error ?? "切换模式失败");
+        return;
+      }
+      if (result.info) {
+        setSessionMode(result.info.mode);
+        setPlanPath(result.info.planPath);
+      }
+      if (mode === "agent" || mode === "ask" || mode === "plan") {
+        setGoal(null);
+        // 离开目标模式时清掉输入框里残留的 /goal 命令草稿
+        setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
+      }
+      if (mode === "goal" && result.needGoalCondition) {
+        // 不预填 /goal；仅清空误留的 slash 草稿，让用户直接写完成条件
+        setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
+        setFollowNonce((n) => n + 1);
+      }
+    },
+    [setError, setSessionMode, setPlanPath, setGoal, setInput, setFollowNonce],
+  );
 
-  const onBuildPlan = async () => {
+  const onBuildPlan = useCallback(async () => {
     setError(null);
     const result = await window.xAgent.plan.build();
     if (!result.ok) setError(result.error ?? "执行计划失败");
@@ -400,77 +414,86 @@ export default function App() {
       setPlanPath(mode.planPath);
     }
     await refreshSessions();
-  };
+  }, [refreshSessions, setError, setSessionMode, setPlanPath]);
 
-  const onClearGoal = async () => {
+  const onClearGoal = useCallback(async () => {
     const result = await window.xAgent.plan.clearGoal();
     if (!result.ok) setError(result.error ?? "清除目标失败");
     else {
       setGoal(null);
       setSessionMode("agent");
     }
-  };
+  }, [setError, setGoal, setSessionMode]);
 
-  const onPauseGoal = async () => {
+  const onPauseGoal = useCallback(async () => {
     const result = await window.xAgent.plan.pauseGoal();
     if (!result.ok) setError(result.error ?? "暂停目标失败");
     else if (result.goal) setGoal(result.goal);
-  };
+  }, [setError, setGoal]);
 
-  const onResumeGoal = async () => {
+  const onResumeGoal = useCallback(async () => {
     const result = await window.xAgent.plan.resumeGoal();
     if (!result.ok) setError(result.error ?? "继续目标失败");
     else {
       if (result.goal) setGoal(result.goal);
       setSessionMode("goal");
     }
-  };
+  }, [setError, setGoal, setSessionMode]);
 
   const MODE_CYCLE: AgentSessionMode[] = ["agent", "ask", "plan", "goal"];
 
-  const onCycleSessionMode = () => {
+  const onCycleSessionMode = useCallback(() => {
     if (status === "streaming" || status === "retrying" || !cwd) return;
     const idx = MODE_CYCLE.indexOf(sessionMode);
     const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length]!;
     void onSessionModeChange(next);
-  };
+  }, [status, cwd, sessionMode, onSessionModeChange]);
 
-  const abort = async () => {
+  const abort = useCallback(async () => {
     await window.xAgent.turn.abort();
-  };
+  }, []);
 
   const addPathToChat = useCallback((relPath: string) => {
     setInput((prev) => appendAtPath(prev, relPath));
   }, []);
 
-  const onStartEdit = (entryId: string, text: string) => {
-    setEditingEntryId(entryId);
-    setEditDraft(collapseFileBlocksToAtPaths(text));
-  };
+  const onStartEdit = useCallback(
+    (entryId: string, text: string) => {
+      setEditingEntryId(entryId);
+      setEditDraft(collapseFileBlocksToAtPaths(text));
+    },
+    [setEditingEntryId, setEditDraft],
+  );
 
-  const onCancelEdit = () => {
+  const onCancelEdit = useCallback(() => {
     setEditingEntryId(null);
     setEditDraft("");
-  };
+  }, [setEditingEntryId, setEditDraft]);
 
-  const onConfirmEdit = () => {
+  const onConfirmEdit = useCallback(() => {
     if (!editingEntryId || !editDraft.trim()) return;
     void beginConfirm("edit", editingEntryId, editDraft);
-  };
+  }, [editingEntryId, editDraft, beginConfirm]);
 
-  const onRetract = (entryId: string) => {
-    void beginConfirm("retract", entryId);
-  };
+  const onRetract = useCallback(
+    (entryId: string) => {
+      void beginConfirm("retract", entryId);
+    },
+    [beginConfirm],
+  );
 
-  const onRegenerate = (userEntryId: string) => {
-    void beginConfirm("regenerate", userEntryId);
-  };
+  const onRegenerate = useCallback(
+    (userEntryId: string) => {
+      void beginConfirm("regenerate", userEntryId);
+    },
+    [beginConfirm],
+  );
 
   const onModelChange = async (value: string) => {
     const [provider, ...rest] = value.split("/");
     const id = rest.join("/");
     if (!provider || !id) return;
-    const result = await window.xAgent.setModel(provider, id);
+    const result = await window.xAgent.session.setModel(provider, id);
     if (!result.ok) setError(result.error ?? "切换模型失败");
     else {
       setPrefs((prev) => (prev ? { ...prev, provider, model: id } : prev));
@@ -478,12 +501,12 @@ export default function App() {
   };
 
   const onThinkingChange = async (level: ThinkingLevel) => {
-    const result = await window.xAgent.setThinkingLevel(level);
+    const result = await window.xAgent.session.setThinkingLevel(level);
     if (!result.ok) {
       setError("切换 Thinking 失败（请先打开项目）");
       return;
     }
-    const next = await window.xAgent.getPrefs();
+    const next = await window.xAgent.prefs.get();
     setPrefs(next);
   };
 
@@ -581,11 +604,48 @@ export default function App() {
   };
 
   const ensureRightPanelOpen = useCallback(async () => {
-    if (!prefs || prefs.rightPanelOpen) return;
-    setPrefs({ ...prefs, rightPanelOpen: true });
+    if (prefs?.rightPanelOpen) return;
     const next = await window.xAgent.setPrefs({ rightPanelOpen: true });
     setPrefs(next);
-  }, [prefs]);
+  }, [prefs, setPrefs]);
+
+  const handleOpenToolInPanel = useCallback(
+    (toolId: string, args: unknown) => {
+      openToolInRightPanel(toolId, args, () => {
+        void ensureRightPanelOpen();
+      });
+    },
+    [ensureRightPanelOpen],
+  );
+
+  const onClarifySelect = useCallback(
+    async (reply: string) => {
+      if (!cwd || !reply.trim()) return;
+      const text = reply.trim();
+      setError(null);
+      setFollowNonce((n) => n + 1);
+      const pendingId = makePendingUserId();
+      setItems((prev) => appendPendingUser(prev, text, pendingId));
+      const expanded = await expandAtPathsInPrompt(text);
+      const result = await window.xAgent.turn.prompt(expanded);
+      if (!result.ok || result.silent) {
+        setItems((prev) => removePendingUser(prev, pendingId));
+        if (!result.ok) {
+          setError(result.error ?? "发送失败");
+          setInput(reply);
+        }
+      }
+      await refreshSessions();
+    },
+    [
+      cwd,
+      setError,
+      setFollowNonce,
+      setItems,
+      setInput,
+      refreshSessions,
+    ],
+  );
 
   usePlanSessionAutoOpen(planPath, ensureRightPanelOpen);
 
@@ -645,10 +705,13 @@ export default function App() {
     setSettingsOpen(true);
   };
 
-  const openSettingsAt = (tab: SettingsTabTarget) => {
-    setSettingsTab(tab);
-    setSettingsOpen(true);
-  };
+  const openSettingsAt = useCallback(
+    (tab: SettingsTabTarget) => {
+      setSettingsTab(tab);
+      setSettingsOpen(true);
+    },
+    [setSettingsTab, setSettingsOpen],
+  );
 
   const muteReadyChecklist = async () => {
     if (!prefs || !projectKey) return;
@@ -671,7 +734,7 @@ export default function App() {
     setPrefs(next);
   };
 
-  const enableGodotEditorTools = async () => {
+  const enableGodotEditorTools = useCallback(async () => {
     if (!prefs) return;
     setReadyBusy(true);
     try {
@@ -686,7 +749,7 @@ export default function App() {
     } finally {
       setReadyBusy(false);
     }
-  };
+  }, [prefs, setReadyBusy, setPrefs, dismissGodotToolsNudge]);
 
   const installRpcAddon = async () => {
     setReadyBusy(true);
@@ -770,9 +833,12 @@ export default function App() {
     }
   };
 
-  const pickStarter = (prompt: string) => {
-    setInput(prompt);
-  };
+  const pickStarter = useCallback(
+    (prompt: string) => {
+      setInput(prompt);
+    },
+    [setInput],
+  );
 
   const openPiLogin = async () => {
     setError(null);
@@ -818,12 +884,23 @@ export default function App() {
         onToggleTheme={toggleTheme}
         onToggleRightPanel={toggleRightPanel}
         onOpenSettings={openSettings}
-        onOpenUpdateSettings={() => openSettingsAt("general")}
+        onUpdateAction={onTopBarUpdateClick}
         updateStatus={updateStatus}
+        updateActionBusy={updateActionBusy}
         rightPanelOpen={prefs?.rightPanelOpen ?? false}
         compacting={compacting}
         busy={busy}
       />
+      {showUpdateBanner && updateStatus && (
+        <UpdateBanner
+          status={updateStatus}
+          busy={updateActionBusy}
+          onUpdate={() => {
+            void applyUpdateAction();
+          }}
+          onDismiss={dismissUpdateBanner}
+        />
+      )}
       {prefsRecovery && (
         <div className="banner warn">
           <AlertTriangle size={14} />
@@ -930,12 +1007,8 @@ export default function App() {
           compacting={compacting}
           onResume={resumeSession}
           onDelete={deleteSession}
-          onDeleteProjectSessions={(projectCwd) => {
-            void deleteProjectSessions(projectCwd);
-          }}
-          onHideProject={(projectCwd) => {
-            void hideProject(projectCwd);
-          }}
+          onDeleteProjectSessions={deleteProjectSessions}
+          onHideProject={hideProject}
           onRename={renameSession}
           onRefresh={refreshSessions}
           onResizePointerDown={onSidebarResizePointerDown}
@@ -977,11 +1050,7 @@ export default function App() {
                 ]
           }
           onPickStarter={pickStarter}
-          onOpenToolInPanel={(toolId, args) => {
-            openToolInRightPanel(toolId, args, () => {
-              void ensureRightPanelOpen();
-            });
-          }}
+          onOpenToolInPanel={handleOpenToolInPanel}
           editingEntryId={editingEntryId}
           editDraft={editDraft}
           onEditDraftChange={setEditDraft}
@@ -993,40 +1062,13 @@ export default function App() {
           sessionMode={sessionMode}
           planPath={planPath}
           goal={goal}
-          onSessionModeChange={(mode) => {
-            void onSessionModeChange(mode);
-          }}
-          onBuildPlan={() => {
-            void onBuildPlan();
-          }}
-          onClearGoal={() => {
-            void onClearGoal();
-          }}
-          onPauseGoal={() => {
-            void onPauseGoal();
-          }}
-          onResumeGoal={() => {
-            void onResumeGoal();
-          }}
+          onSessionModeChange={onSessionModeChange}
+          onBuildPlan={onBuildPlan}
+          onClearGoal={onClearGoal}
+          onPauseGoal={onPauseGoal}
+          onResumeGoal={onResumeGoal}
           onCycleSessionMode={onCycleSessionMode}
-          onClarifySelect={(reply) => {
-            void (async () => {
-              if (!cwd || !reply.trim()) return;
-              const text = reply.trim();
-              setError(null);
-              setFollowNonce((n) => n + 1);
-              const pendingId = makePendingUserId();
-              setItems((prev) => appendPendingUser(prev, text, pendingId));
-              const expanded = await expandAtPathsInPrompt(text);
-              const result = await window.xAgent.turn.prompt(expanded);
-              if (!result.ok) {
-                setItems((prev) => removePendingUser(prev, pendingId));
-                setError(result.error ?? "发送失败");
-                setInput(reply);
-              }
-              await refreshSessions();
-            })();
-          }}
+          onClarifySelect={onClarifySelect}
         />
         {prefs?.rightPanelOpen && (
           <RightPanel

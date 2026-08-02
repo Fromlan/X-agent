@@ -1,44 +1,11 @@
 /**
- * Package.json → GitHub feed resolution (mirrors auto-updater.resolveGithubFeed).
+ * Package.json → GitHub feed resolution (canonical: update-feed.resolveGithubFeed).
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  DEFAULT_GITHUB_OWNER,
-  DEFAULT_GITHUB_REPO,
-  parseGithubRepoUrl,
-} from "../electron/agent/update-feed";
-
-function resolveFromPackageJson(path: string): { owner: string; repo: string } {
-  const raw = JSON.parse(readFileSync(path, "utf8")) as {
-    repository?: string | { url?: string };
-    build?: {
-      publish?:
-        | { provider?: string; owner?: string; repo?: string }
-        | Array<{ provider?: string; owner?: string; repo?: string }>;
-    };
-  };
-  const publish = raw.build?.publish;
-  const publishEntry = Array.isArray(publish) ? publish[0] : publish;
-  if (
-    publishEntry?.provider === "github" &&
-    publishEntry.owner &&
-    publishEntry.repo
-  ) {
-    return { owner: publishEntry.owner, repo: publishEntry.repo };
-  }
-  const repoUrl =
-    typeof raw.repository === "string"
-      ? raw.repository
-      : raw.repository?.url;
-  if (repoUrl) {
-    const parsed = parseGithubRepoUrl(repoUrl);
-    if (parsed) return parsed;
-  }
-  return { owner: DEFAULT_GITHUB_OWNER, repo: DEFAULT_GITHUB_REPO };
-}
+import { resolveGithubFeed } from "../electron/agent/update-feed";
 
 const dir = mkdtempSync(join(tmpdir(), "x-agent-update-resolve-"));
 try {
@@ -53,7 +20,7 @@ try {
     }),
     "utf8",
   );
-  assert.deepEqual(resolveFromPackageJson(pkg), {
+  assert.deepEqual(resolveGithubFeed([pkg]), {
     owner: "Fromlan",
     repo: "X-agent",
   });
@@ -65,7 +32,7 @@ try {
     }),
     "utf8",
   );
-  assert.deepEqual(resolveFromPackageJson(pkg), {
+  assert.deepEqual(resolveGithubFeed([pkg]), {
     owner: "Acme",
     repo: "Other",
   });

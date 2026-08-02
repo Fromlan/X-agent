@@ -1,13 +1,13 @@
-import type { SessionSkillInfo } from "@shared/ipc";
+import type { SessionSkillInfo, SessionSlashItem } from "@shared/ipc";
+import {
+  applySlashItemInsert,
+  detectSlashFragment,
+  filterSlashItemsByQuery,
+  type SlashMatch,
+} from "./slash-menu";
 
-export type SkillSlashMatch = {
-  /** Absolute start index of `/` in the full input. */
-  start: number;
-  /** Absolute end index (exclusive) of the slash fragment (before cursor). */
-  end: number;
-  /** Text after `/` (may be empty). */
-  query: string;
-};
+/** @deprecated Prefer {@link SlashMatch}. */
+export type SkillSlashMatch = SlashMatch;
 
 /**
  * Detect an active skill slash fragment at the cursor:
@@ -17,18 +17,7 @@ export function detectSkillSlash(
   value: string,
   cursor: number,
 ): SkillSlashMatch | null {
-  const safeCursor = Math.max(0, Math.min(cursor, value.length));
-  const before = value.slice(0, safeCursor);
-  const m = before.match(/(?:^|[\s])\/([^\s]*)$/);
-  if (!m) return null;
-  const query = m[1] ?? "";
-  const slashIndex = before.length - query.length - 1;
-  if (value[slashIndex] !== "/") return null;
-  return {
-    start: slashIndex,
-    end: safeCursor,
-    query,
-  };
+  return detectSlashFragment(value, cursor);
 }
 
 /** Case-insensitive filter on name + description. */
@@ -36,13 +25,15 @@ export function filterSkillsByQuery(
   skills: SessionSkillInfo[],
   query: string,
 ): SessionSkillInfo[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return skills;
-  return skills.filter((s) => {
-    const name = s.name.toLowerCase();
-    const desc = (s.description ?? "").toLowerCase();
-    return name.includes(q) || desc.includes(q);
-  });
+  const asItems: SessionSlashItem[] = skills.map((s) => ({
+    name: s.name,
+    description: s.description ?? "",
+    source: "skill" as const,
+  }));
+  return filterSlashItemsByQuery(asItems, query).map((s) => ({
+    name: s.name,
+    description: s.description,
+  }));
 }
 
 /**
@@ -53,7 +44,9 @@ export function applySkillSlashInsert(
   match: SkillSlashMatch,
   skillName: string,
 ): { value: string; cursor: number } {
-  const token = `/skill:${skillName} `;
-  const next = value.slice(0, match.start) + token + value.slice(match.end);
-  return { value: next, cursor: match.start + token.length };
+  return applySlashItemInsert(value, match, {
+    name: skillName,
+    description: "",
+    source: "skill",
+  });
 }

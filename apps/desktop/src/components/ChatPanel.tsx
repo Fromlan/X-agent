@@ -2,18 +2,18 @@ import type {
   AgentSessionMode,
   AgentStatus,
   GoalInfo,
-  SessionSkillInfo,
+  SessionSlashItem,
 } from "@shared/ipc";
 import { isRestorableGoalStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
-import { SkillSlashMenu } from "./SkillSlashMenu";
+import { SlashMenu } from "./SlashMenu";
 import {
-  applySkillSlashInsert,
-  detectSkillSlash,
-  filterSkillsByQuery,
-  type SkillSlashMatch,
-} from "../lib/skill-slash";
+  applySlashItemInsert,
+  detectSlashFragment,
+  filterSlashItemsByQuery,
+  type SlashMatch,
+} from "../lib/slash-menu";
 import { Flag, Hammer, Send, Square } from "lucide-react";
 import {
   useCallback,
@@ -34,7 +34,7 @@ interface Props {
   onSend: () => void;
   onAbort: () => void;
   disabled: boolean;
-  /** Bump after reloadResources so skills cache refreshes. */
+  /** Bump after reloadResources so slash menu cache refreshes. */
   skillsRefreshKey?: string | number;
   queuedSteering?: string[];
   forceFollowKey?: string;
@@ -72,49 +72,49 @@ export function ChatPanel(props: Props) {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [cursor, setCursor] = useState(0);
-  const [skills, setSkills] = useState<SessionSkillInfo[]>([]);
-  const [skillsLoaded, setSkillsLoaded] = useState(false);
+  const [slashItems, setSlashItems] = useState<SessionSlashItem[]>([]);
+  const [slashItemsLoaded, setSlashItemsLoaded] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
 
-  const slashMatch: SkillSlashMatch | null = useMemo(() => {
+  const slashMatch: SlashMatch | null = useMemo(() => {
     if (composerLocked) return null;
-    return detectSkillSlash(props.input, cursor);
+    return detectSlashFragment(props.input, cursor);
   }, [composerLocked, props.input, cursor]);
 
   const menuOpen = Boolean(slashMatch) && !menuDismissed;
 
   const filtered = useMemo(
-    () => filterSkillsByQuery(skills, slashMatch?.query ?? ""),
-    [skills, slashMatch?.query],
+    () => filterSlashItemsByQuery(slashItems, slashMatch?.query ?? ""),
+    [slashItems, slashMatch?.query],
   );
 
   useEffect(() => {
-    setSkillsLoaded(false);
-    setSkills([]);
+    setSlashItemsLoaded(false);
+    setSlashItems([]);
   }, [props.skillsRefreshKey, props.disabled]);
 
   useEffect(() => {
-    if (!menuOpen || skillsLoaded || props.disabled) return;
+    if (!menuOpen || slashItemsLoaded || props.disabled) return;
     let cancelled = false;
     void (async () => {
       try {
-        const list = await window.xAgent.listSessionSkills();
+        const list = await window.xAgent.listSessionSlashItems();
         if (!cancelled) {
-          setSkills(list);
-          setSkillsLoaded(true);
+          setSlashItems(list);
+          setSlashItemsLoaded(true);
         }
       } catch {
         if (!cancelled) {
-          setSkills([]);
-          setSkillsLoaded(true);
+          setSlashItems([]);
+          setSlashItemsLoaded(true);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [menuOpen, skillsLoaded, props.disabled]);
+  }, [menuOpen, slashItemsLoaded, props.disabled]);
 
   useEffect(() => {
     setHighlight(0);
@@ -124,17 +124,17 @@ export function ChatPanel(props: Props) {
     if (!slashMatch) setMenuDismissed(false);
   }, [slashMatch]);
 
-  const selectSkill = useCallback(
-    (skill: SessionSkillInfo) => {
-      const match = detectSkillSlash(
+  const selectSlashItem = useCallback(
+    (item: SessionSlashItem) => {
+      const match = detectSlashFragment(
         props.input,
         textareaRef.current?.selectionStart ?? cursor,
       );
       if (!match) return;
-      const { value, cursor: nextCursor } = applySkillSlashInsert(
+      const { value, cursor: nextCursor } = applySlashItemInsert(
         props.input,
         match,
-        skill.name,
+        item,
       );
       props.setInput(value);
       setMenuDismissed(true);
@@ -181,8 +181,8 @@ export function ChatPanel(props: Props) {
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        const skill = filtered[highlight] ?? filtered[0];
-        if (skill) selectSkill(skill);
+        const item = filtered[highlight] ?? filtered[0];
+        if (item) selectSlashItem(item);
         return;
       }
     }
@@ -382,16 +382,16 @@ export function ChatPanel(props: Props) {
           </div>
         </div>
         <div className="composer-shell">
-          <SkillSlashMenu
+          <SlashMenu
             open={menuOpen}
-            skills={filtered}
+            items={filtered}
             query={slashMatch?.query ?? ""}
             highlightIndex={Math.min(
               highlight,
               Math.max(0, filtered.length - 1),
             )}
             onHighlightChange={setHighlight}
-            onSelect={selectSkill}
+            onSelect={selectSlashItem}
             onClose={() => setMenuDismissed(true)}
           />
           <textarea
@@ -444,7 +444,7 @@ export function ChatPanel(props: Props) {
                     : props.planPath
                       ? "Agent · 右栏可执行计划 · Shift+Tab"
                       : streaming
-                        ? "Steer · / 技能 · Shift+Tab"
+                        ? "Steer · / 命令 · Shift+Tab"
                         : "Enter 发送 · Shift+Tab"}
             </span>
             <div className="composer-actions">

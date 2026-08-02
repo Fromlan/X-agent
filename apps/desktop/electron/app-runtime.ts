@@ -39,6 +39,7 @@ import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { registerSessionIpc } from "./ipc/register-session-ipc";
 import { registerProviderIpc } from "./ipc/register-provider-ipc";
 import { registerGodotIpc } from "./ipc/register-godot-ipc";
+import { registerUpdateIpc } from "./ipc/register-update-ipc";
 
 export type RuntimeHooks = {
   getMainWindow: () => BrowserWindow | null;
@@ -180,6 +181,9 @@ function registerIpc(
   ipcMain.handle(IPC_CHANNELS.listSessionSkills, async () =>
     host.listSessionSkills(),
   );
+  ipcMain.handle(IPC_CHANNELS.listSessionSlashItems, async () =>
+    host.listSessionSlashItems(),
+  );
   ipcMain.handle(IPC_CHANNELS.readPlugin, async (_e, path: string) =>
     readPlugin(path, cwdOf()),
   );
@@ -226,10 +230,7 @@ function registerIpc(
   ipcMain.handle(IPC_CHANNELS.openExternalUrl, async (_e, url: string) =>
     hooks.openExternalHttpUrl(typeof url === "string" ? url : ""),
   );
-  ipcMain.handle(IPC_CHANNELS.getUpdateStatus, async () => updater.getStatus());
-  ipcMain.handle(IPC_CHANNELS.checkForUpdates, async () => updater.check());
-  ipcMain.handle(IPC_CHANNELS.downloadUpdate, async () => updater.download());
-  ipcMain.handle(IPC_CHANNELS.installUpdate, async () => updater.quitAndInstall());
+  registerUpdateIpc(ipcMain, updater);
   ipcMain.handle(IPC_CHANNELS.getPrefsRecoveryNotice, async () =>
     consumePrefsRecoveryNotice(),
   );

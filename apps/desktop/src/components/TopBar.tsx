@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   Brain,
   Download,
@@ -31,6 +32,7 @@ interface Props {
   rightPanelOpen: boolean;
   compacting?: boolean;
   updateStatus?: AppUpdateStatus | null;
+  updateActionBusy?: boolean;
   onOpenProject: () => void;
   onNewSession: () => void;
   onModelChange: (value: string) => void;
@@ -39,7 +41,8 @@ interface Props {
   onToggleTheme: () => void;
   onToggleRightPanel: () => void;
   onOpenSettings: () => void;
-  onOpenUpdateSettings?: () => void;
+  /** Download / install, or re-show the update prompt after dismiss. */
+  onUpdateAction?: () => void;
 }
 
 function statusLabel(status: AgentStatus): string {
@@ -54,7 +57,7 @@ function capitalizeLabel(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function TopBar(props: Props) {
+function TopBarImpl(props: Props) {
   const modelOptions =
     props.models.length === 0
       ? [{ value: "", label: "无可用模型", disabled: true }]
@@ -160,11 +163,16 @@ export function TopBar(props: Props) {
           <button
             type="button"
             className="btn btn-secondary btn-sm topbar-update-badge"
-            onClick={props.onOpenUpdateSettings ?? props.onOpenSettings}
+            onClick={props.onUpdateAction ?? props.onOpenSettings}
+            disabled={
+              props.updateActionBusy || props.updateStatus.downloading
+            }
             title={
               props.updateStatus.downloaded
                 ? `已下载 ${props.updateStatus.version ?? "新版本"}，可安装`
-                : `发现新版本 ${props.updateStatus.version ?? ""}`
+                : props.updateStatus.downloading
+                  ? `正在下载 ${props.updateStatus.version ?? "更新"}…`
+                  : `发现新版本 ${props.updateStatus.version ?? ""}`
             }
             aria-label="有可用更新"
           >
@@ -172,9 +180,11 @@ export function TopBar(props: Props) {
             <span className="btn-label">
               {props.updateStatus.downloaded
                 ? "安装更新"
-                : props.updateStatus.version
-                  ? `更新 ${props.updateStatus.version}`
-                  : "有更新"}
+                : props.updateStatus.downloading
+                  ? "下载中…"
+                  : props.updateStatus.version
+                    ? `更新 ${props.updateStatus.version}`
+                    : "有更新"}
             </span>
           </button>
         )}
@@ -208,3 +218,7 @@ export function TopBar(props: Props) {
     </header>
   );
 }
+
+// memo wrap: TopBar 只依赖会话外的状态（prefs / models / projectReadiness），
+// items 流式更新不应触发 TopBar re-render。
+export const TopBar = memo(TopBarImpl);

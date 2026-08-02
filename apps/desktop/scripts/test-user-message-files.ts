@@ -3,6 +3,8 @@ import {
   userMessageHasEmbeddedBlocks,
   userMessageHasFileBlocks,
   userMessageHasModeBlocks,
+  userMessageHasPromptBlocks,
+  userMessageHasSkillBlocks,
 } from "../src/lib/user-message-files";
 import { collapseFileBlocksToAtPaths } from "../src/lib/expandAtPaths";
 import { wrapWithModeBlock } from "../shared/mode-prompt";
@@ -101,6 +103,52 @@ function assert(cond: boolean, msg: string): void {
   );
   assert(!withMode.includes("<mode"), "no mode left");
   assert(!withMode.includes("<file"), "no file left");
+}
+
+{
+  const skill =
+    '<skill name="x-grill" location="/tmp/x-grill/SKILL.md">\nReferences are relative to /tmp/x-grill.\n\n# grill\n</skill>';
+  assert(userMessageHasSkillBlocks(skill), "has skill");
+  const segs = splitUserMessageFileBlocks(skill);
+  assert(segs.length === 1, "skill only");
+  assert(
+    segs[0]?.kind === "skill" &&
+      segs[0].name === "x-grill" &&
+      segs[0].content.includes("# grill"),
+    "skill chip",
+  );
+  assert(
+    collapseFileBlocksToAtPaths(skill) === "/skill:x-grill",
+    "collapse skill to slash",
+  );
+}
+
+{
+  const prompt =
+    '<prompt name="x-next" args="战斗">\nInspect. Focus: 战斗\n</prompt>\n\nextra';
+  assert(userMessageHasPromptBlocks(prompt), "has prompt");
+  const segs = splitUserMessageFileBlocks(prompt);
+  assert(segs.length === 2, `prompt+text got ${segs.length}`);
+  assert(
+    segs[0]?.kind === "prompt" &&
+      segs[0].name === "x-next" &&
+      segs[0].args === "战斗",
+    "prompt chip",
+  );
+  assert(segs[1]?.kind === "text" && segs[1].text.includes("extra"), "trail");
+  assert(
+    collapseFileBlocksToAtPaths(prompt) === "/x-next 战斗\n\nextra",
+    `collapse prompt got ${JSON.stringify(collapseFileBlocksToAtPaths(prompt))}`,
+  );
+}
+
+{
+  assert(
+    userMessageHasEmbeddedBlocks(
+      '<prompt name="x-next">\nbody\n</prompt>',
+    ),
+    "prompt is embedded",
+  );
 }
 
 console.log("test-user-message-files: ok");

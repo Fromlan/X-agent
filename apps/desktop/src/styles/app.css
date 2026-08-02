@@ -799,6 +799,26 @@ input:not([type]):-webkit-autofill {
   color: var(--text-error);
 }
 
+.banner.update-banner {
+  background: oklch(from var(--accent-blue) l c h / 0.12);
+  color: var(--text-primary);
+  justify-content: flex-start;
+}
+
+.update-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .main-row {
   display: grid;
   grid-template-columns: var(--sidebar-width, 260px) minmax(0, 1fr);
@@ -1900,6 +1920,15 @@ body.is-resizing-column * {
   font-size: 11px;
 }
 
+.user-file-ref-args {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 12em;
+  font-family: var(--font-mono);
+}
+
 .user-file-ref-body {
   margin: 0;
   padding: 8px 10px;
@@ -2537,10 +2566,35 @@ body.is-resizing-column * {
   box-shadow: inset 0 0 0 1px var(--focus-ring-soft);
 }
 
+.skill-slash-menu__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
 .skill-slash-menu__name {
   font-size: 13px;
   font-weight: 500;
   font-family: "JetBrains Mono", ui-monospace, monospace;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-slash-menu__kind {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.skill-slash-menu__hint {
+  font-size: 11px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  color: var(--text-muted);
+  opacity: 0.9;
 }
 
 .skill-slash-menu__desc {
@@ -2998,6 +3052,25 @@ body.is-resizing-column * {
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-input);
+}
+
+.provider-card--disabled {
+  opacity: 0.65;
+}
+
+.provider-card-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.provider-card-toggle input {
+  margin: 0;
+  cursor: pointer;
 }
 
 .provider-card.active {
@@ -3844,6 +3917,17 @@ body.is-resizing-column * {
 
 .plugin-item--disabled {
   opacity: 0.65;
+}
+
+.plugin-item--package {
+  cursor: default;
+  align-items: center;
+}
+
+.plugin-item-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+  align-self: center;
 }
 
 .plugin-item-toggle {

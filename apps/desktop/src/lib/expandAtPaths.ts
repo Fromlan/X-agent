@@ -5,7 +5,11 @@
  */
 
 import { stripModeBlocks } from "@shared/mode-prompt";
-import { FILE_BLOCK_RE } from "./user-message-files";
+import {
+  FILE_BLOCK_RE,
+  PROMPT_BLOCK_RE,
+  SKILL_BLOCK_RE,
+} from "./user-message-files";
 
 const AT_PATH_RE = /(?<![\w.])@([A-Za-z0-9_./\\-]+)/g;
 
@@ -17,19 +21,44 @@ export function appendAtPath(input: string, relPath: string): string {
 }
 
 /**
- * Inverse of expand for UI: put `@path` back and drop mode instruction blocks
- * so composer / edit drafts stay compact. Re-send expands `@path` again and
- * re-wraps Plan/Goal mode instructions from the current session mode.
+ * Inverse of expand for UI: put `@path` back, collapse skill/prompt to slash
+ * tokens, and drop mode instruction blocks so composer / edit drafts stay
+ * compact. Re-send expands `@path` again and re-wraps mode instructions.
  */
 export function collapseFileBlocksToAtPaths(text: string): string {
   let out = text.includes("<mode") ? stripModeBlocks(text) : text;
-  if (!out.includes("<file")) return out;
-  return out.replace(FILE_BLOCK_RE, (_full, name: string) => {
+  if (out.includes("<skill")) {
+    SKILL_BLOCK_RE.lastIndex = 0;
+    out = out.replace(SKILL_BLOCK_RE, (_full, name: string) => {
+      const id = String(name ?? "").trim();
+      return id ? `/skill:${id}` : "";
+    });
+  }
+  if (out.includes("<prompt")) {
+    PROMPT_BLOCK_RE.lastIndex = 0;
+    out = out.replace(
+      PROMPT_BLOCK_RE,
+      (_full, name: string, args: string | undefined) => {
+        const id = String(name ?? "").trim();
+        if (!id) return "";
+        const argsTrim = String(args ?? "")
+          .replace(/&quot;/g, '"')
+          .replace(/&amp;/g, "&")
+          .trim();
+        return argsTrim ? `/${id} ${argsTrim}` : `/${id}`;
+      },
+    );
+  }
+  if (!out.includes("<file")) {
+    return out.replace(/\n{3,}/g, "\n\n").trimEnd();
+  }
+  out = out.replace(FILE_BLOCK_RE, (_full, name: string) => {
     const rel = String(name ?? "")
       .trim()
       .replace(/\\/g, "/");
     return rel ? `@${rel}` : "@";
   });
+  return out.replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
 export async function expandAtPathsInPrompt(text: string): Promise<string> {

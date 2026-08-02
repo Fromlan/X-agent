@@ -3,10 +3,8 @@
  */
 import type { ProviderActivateResult } from "../../shared/ipc";
 import { loadPrefs, patchPrefs } from "./prefs";
-import {
-  activateProviderProfile,
-  type ProviderPaths,
-} from "./provider-store";
+import { activateProviderProfile } from "./provider-pi-sync";
+import type { ProviderPaths } from "./provider-persist";
 
 export type ApplyActivatedProvider = (
   provider: string,

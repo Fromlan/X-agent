@@ -16,9 +16,11 @@ import {
   dropRegistryPackagesBySource,
   findLivePackageSourcesByName,
   isResolvablePackageSource,
+  listInstalledPackages,
   packageNameForSource,
   pruneMissingPiPackageSources,
   readPiSettingsPackageSources,
+  reconcilePackageCatalog,
   writePiSettingsPackageSources,
 } from "../electron/agent/package-manager";
 import type { InstalledPackageInfo } from "../shared/ipc";
@@ -104,6 +106,43 @@ try {
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(agentHome, { recursive: true, force: true });
+}
+
+// Same package name from settings + Temp registry orphan → list shows one.
+const agentHome2 = mkdtempSync(join(tmpdir(), "x-agent-pkg-dedupe-"));
+const stable = join(agentHome2, "stable-godot-pi");
+const ephemeral = join(agentHome2, "Temp", "extract-abc", "resources", "godot-pi");
+mkdirSync(stable, { recursive: true });
+mkdirSync(ephemeral, { recursive: true });
+const manifest = JSON.stringify({ name: "@x-agent/godot-pi", version: "0.2.0" });
+writeFileSync(join(stable, "package.json"), manifest, "utf8");
+writeFileSync(join(ephemeral, "package.json"), manifest, "utf8");
+setAgentDirOverrideForTests(agentHome2);
+try {
+  writePiSettingsPackageSources([stable]);
+  writeFileSync(
+    join(agentHome2, "x-agent-packages.json"),
+    JSON.stringify({
+      packages: [
+        pkg("@x-agent/godot-pi", ephemeral),
+        pkg("@x-agent/godot-pi", stable),
+      ],
+    }),
+    "utf8",
+  );
+  const listed = listInstalledPackages();
+  assert.equal(listed.length, 1, "dedupe to one package name");
+  assert.ok(
+    listed[0]!.source.toLowerCase().includes("stable-godot-pi"),
+    "keeps settings / non-temp path",
+  );
+  const reconciled = reconcilePackageCatalog();
+  assert.ok(reconciled.removedRegistry >= 0);
+  const listedAgain = listInstalledPackages();
+  assert.equal(listedAgain.length, 1);
+} finally {
+  setAgentDirOverrideForTests(null);
+  rmSync(agentHome2, { recursive: true, force: true });
 }
 
 console.log("test-package-manager: ok");
