@@ -18,7 +18,7 @@ import {
   slugifyPlanTitle,
   stubPlanRejection,
   writePlanMarkdown,
-} from "../electron/agent/plan-tools.ts";
+} from "../electron/agent/session-mode/plan-tools.ts";
 import {
   PLAN_MODE_CORE_TOOLS,
   READONLY_CORE_TOOLS,

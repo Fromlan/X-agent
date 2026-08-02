@@ -23,7 +23,10 @@ export function resolveInsideCwd(
     if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
       return { ok: false, error: "路径超出项目目录" };
     }
-    if (abs !== root && !abs.startsWith(root + sep)) {
+    // Windows NTFS / ReFS 默认大小写不敏感 —— 大小写归一化后再做前缀比对。
+    const rootLower = root.toLowerCase();
+    const absLower = abs.toLowerCase();
+    if (absLower !== rootLower && !absLower.startsWith(rootLower + sep)) {
       return { ok: false, error: "路径超出项目目录" };
     }
     const rel = abs === root ? "" : relToRoot.replace(/\\/g, "/");
@@ -39,7 +42,10 @@ export function resolveInsideCwd(
   if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
     return { ok: false, error: "路径超出项目目录" };
   }
-  if (abs !== root && !abs.startsWith(root + sep)) {
+  // Windows NTFS / ReFS 默认大小写不敏感 —— 大小写归一化后再做前缀比对。
+  const rootLower = root.toLowerCase();
+  const absLower = abs.toLowerCase();
+  if (absLower !== rootLower && !absLower.startsWith(rootLower + sep)) {
     return { ok: false, error: "路径超出项目目录" };
   }
   const rel = abs === root ? "" : relToRoot.replace(/\\/g, "/");

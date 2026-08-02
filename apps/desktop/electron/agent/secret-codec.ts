@@ -3,6 +3,7 @@
  * Falls back to plaintext outside Electron (tests / CLI scripts).
  */
 import { createRequire } from "node:module";
+import type { SecretCodecReason, SecretCodecStatus } from "../../shared/ipc";
 
 const ENC_PREFIX = "enc:v1:";
 
@@ -11,6 +12,8 @@ type SafeStorageLike = {
   encryptString: (plain: string) => Buffer;
   decryptString: (encrypted: Buffer) => string;
 };
+
+let cachedStatus: SecretCodecStatus | null = null;
 
 function tryGetSafeStorage(): SafeStorageLike | null {
   try {
@@ -30,17 +33,52 @@ function tryGetSafeStorage(): SafeStorageLike | null {
   return null;
 }
 
+/** 解析一次并缓存 safeStorage 状态,供 getSecretCodecStatus() 复用。 */
+export function probeSecretCodecStatus(): SecretCodecStatus {
+  if (cachedStatus) return cachedStatus;
+  let reason: SecretCodecReason | undefined;
+  try {
+    const require = createRequire(import.meta.url);
+    const electron = require("electron") as { safeStorage?: SafeStorageLike };
+    if (!electron.safeStorage) {
+      reason = "no-electron";
+    } else if (!electron.safeStorage.isEncryptionAvailable()) {
+      reason = "keychain-unavailable";
+    }
+  } catch {
+    reason = "no-electron";
+  }
+  cachedStatus = reason
+    ? { available: false, reason }
+    : { available: true };
+  return cachedStatus;
+}
+
+/** IPC handler 入口:返回当前 safeStorage 状态供 UI 横幅。 */
+export function getSecretCodecStatus(): SecretCodecStatus {
+  return probeSecretCodecStatus();
+}
+
 /** Encrypt for disk; returns plaintext if safeStorage unavailable. */
 export function encryptSecret(plain: string): string {
   const trimmed = plain.trim();
   if (!trimmed) return "";
   if (trimmed.startsWith(ENC_PREFIX)) return trimmed;
   const ss = tryGetSafeStorage();
-  if (!ss) return trimmed;
+  if (!ss) {
+    // 记录 fallback —— 但 cachedStatus 已固定,这里仅覆盖 reason
+    if (cachedStatus?.available) {
+      cachedStatus = { available: false, reason: "keychain-unavailable" };
+    }
+    return trimmed;
+  }
   try {
     const buf = ss.encryptString(trimmed);
     return ENC_PREFIX + buf.toString("base64");
   } catch {
+    if (cachedStatus?.available) {
+      cachedStatus = { available: false, reason: "encrypt-failed" };
+    }
     return trimmed;
   }
 }

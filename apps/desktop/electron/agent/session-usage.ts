@@ -127,6 +127,8 @@ export function recordCompactionDelta(
         cacheWrite: 0,
         total: costTotal,
       },
+    }).catch(() => {
+      /* ignore */
     });
   } catch {
     /* ignore */

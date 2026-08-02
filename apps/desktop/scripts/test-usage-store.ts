@@ -6,6 +6,7 @@ import {
   clearUsageSummary,
   getUsageSummary,
   loadUsageStore,
+  loadUsageStoreAsync,
   localDateKey,
   modelUsageKey,
   recordTurnUsage,
@@ -45,11 +46,11 @@ try {
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterday = localDateKey(yesterdayDate);
 
-  recordTurnUsage(keyA, turn, today);
-  recordTurnUsage(keyA, turn, today);
-  recordTurnUsage(keyB, turn, yesterday);
+  await recordTurnUsage(keyA, turn, today);
+  await recordTurnUsage(keyA, turn, today);
+  await recordTurnUsage(keyB, turn, yesterday);
 
-  const store = loadUsageStore();
+  const store = await loadUsageStoreAsync();
   assert(store.days[today]?.turns === 2, "today 2 turns");
   assert(store.days[today]?.byModel[keyA]?.turns === 2, "model A 2 turns");
   assert(store.days[today]?.tokens.total === 330, "today tokens sum");
@@ -63,7 +64,7 @@ try {
     "model B yesterday",
   );
 
-  const summary = getUsageSummary({ days: 30 });
+  const summary = await getUsageSummary({ days: 30 });
   assert(summary.totals.turns === 3, "summary turns");
   assert(summary.totals.tokens.total === 495, "summary tokens");
   assert(summary.byModel.length === 2, "two models");
@@ -74,11 +75,11 @@ try {
   assert(summary.days.some((d) => d.date === today), "includes today");
   assert(summary.days.some((d) => d.date === yesterday), "includes yesterday");
 
-  const cleared = clearUsageSummary();
+  const cleared = await clearUsageSummary();
   assert(cleared.ok, "clear ok");
-  const empty = loadUsageStore();
+  const empty = await loadUsageStoreAsync();
   assert(Object.keys(empty.days).length === 0, "days cleared");
-  const emptySummary = getUsageSummary({ days: 30 });
+  const emptySummary = await getUsageSummary({ days: 30 });
   assert(emptySummary.totals.turns === 0, "empty summary");
 } finally {
   setUsageStorePathForTests(null);
