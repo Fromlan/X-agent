@@ -24,7 +24,7 @@ export function registerProviderIpc(
     getProviderProfile(id),
   );
   ipcMain.handle(IPC_CHANNELS.upsertProviderProfile, async (_e, input: ProviderUpsertInput) => {
-    const result = upsertProviderProfile(input);
+    const result = await upsertProviderProfile(input);
     // Enabled sync or disabled prune both change TopBar catalog.
     if (result.ok) {
       await sessionHost.reloadRuntime({ hard: true });
@@ -32,7 +32,7 @@ export function registerProviderIpc(
     return result;
   });
   ipcMain.handle(IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) => {
-    const result = deleteProviderProfile(id);
+    const result = await deleteProviderProfile(id);
     if (result.ok) {
       await sessionHost.reloadRuntime({ hard: true });
     }
@@ -41,7 +41,7 @@ export function registerProviderIpc(
   ipcMain.handle(
     IPC_CHANNELS.setProviderProfileEnabled,
     async (_e, id: string, enabled: boolean) => {
-      const result = setProviderProfileEnabled(id, enabled);
+      const result = await setProviderProfileEnabled(id, enabled);
       if (result.ok) {
         await sessionHost.reloadRuntime({ hard: true });
       }

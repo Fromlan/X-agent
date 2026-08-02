@@ -120,7 +120,7 @@
 | Packages | `pi install` 可安装任意来源包，注意供应链风险 |
 | 会话 | 仅存储在 `~/.pi/agent/x-agent/sessions/`，与 Pi CLI 会话隔离；Goal journal 在 `~/.pi/agent/x-agent/goals/` |
 
-变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。Plan / Goal 设计调研见 [`docs/research-plan-goal-modes.md`](docs/research-plan-goal-modes.md)。
+变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。Plan / Goal 设计见 [`CONTEXT.md`](CONTEXT.md)。
 
 ## 交流与反馈
 
