@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -15,6 +15,12 @@ import {
 } from "../../shared/model-context";
 import { getAgentDirPath } from "./prefs";
 import { decryptSecret, encryptSecret } from "./secret-codec";
+import {
+  writeJsonAtomic,
+  readJsonAsync,
+  fileExistsAsync,
+} from "./lib/atomic-write";
+import { withStoreLock } from "./lib/store-mutex";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -52,10 +58,13 @@ function emptyStore(): ProviderStoreFile {
   return { version: 1, activeId: null, profiles: [] };
 }
 
-export function readJsonFile<T>(path: string, fallback: T): T {
-  if (!existsSync(path)) return fallback;
+export async function readJsonFile<T>(
+  path: string,
+  fallback: T,
+): Promise<T> {
+  if (!(await fileExistsAsync(path))) return fallback;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as T;
+    return await readJsonAsync<T>(path, fallback);
   } catch {
     return fallback;
   }
@@ -89,9 +98,14 @@ function normalizeProfile(
   };
 }
 
-export function loadStore(paths: ProviderPaths): ProviderStoreFile {
+export async function loadStore(
+  paths: ProviderPaths,
+): Promise<ProviderStoreFile> {
   ensureParent(paths.storePath);
-  const raw = readJsonFile<Partial<ProviderStoreFile>>(paths.storePath, emptyStore());
+  const raw = await readJsonFile<Partial<ProviderStoreFile>>(
+    paths.storePath,
+    emptyStore(),
+  );
   const profiles = (Array.isArray(raw.profiles) ? raw.profiles : []).map((p) =>
     normalizeProfile(p as Partial<ProviderProfile>),
   );
@@ -102,7 +116,10 @@ export function loadStore(paths: ProviderPaths): ProviderStoreFile {
   };
 }
 
-export function saveStore(paths: ProviderPaths, store: ProviderStoreFile): void {
+export async function saveStore(
+  paths: ProviderPaths,
+  store: ProviderStoreFile,
+): Promise<void> {
   ensureParent(paths.storePath);
   const serialized: ProviderStoreFile = {
     ...store,
@@ -111,7 +128,10 @@ export function saveStore(paths: ProviderPaths, store: ProviderStoreFile): void 
       apiKey: encryptSecret(p.apiKey),
     })),
   };
-  writeFileSync(paths.storePath, JSON.stringify(serialized, null, 2), "utf8");
+  // 串行化所有写,避免并发 upsert / setEnabled / delete 互踩。
+  await withStoreLock(paths.storePath, () =>
+    writeJsonAtomic(paths.storePath, serialized),
+  );
 }
 
 export function maskApiKey(key: string): string {
@@ -156,11 +176,11 @@ function toSummary(profile: ProviderProfile): ProviderProfileSummary {
   };
 }
 
-function applyPiSyncForProfile(
+async function applyPiSyncForProfile(
   profile: ProviderProfile,
   paths: ProviderPaths,
   previousProviderId: string | null,
-): { ok: boolean; error?: string; syncedToPi: boolean } {
+): Promise<{ ok: boolean; error?: string; syncedToPi: boolean }> {
   const {
     syncProfileToPi,
     shouldSeedPrefsOnSync,
@@ -171,17 +191,17 @@ function applyPiSyncForProfile(
     previousProviderId &&
     previousProviderId !== profile.providerId
   ) {
-    pruneProviderIdFromPi(previousProviderId, paths);
+    await pruneProviderIdFromPi(previousProviderId, paths);
   }
 
   if (!profile.enabled) {
-    pruneProviderIdFromPi(profile.providerId, paths);
+    await pruneProviderIdFromPi(profile.providerId, paths);
     return { ok: true, syncedToPi: false };
   }
 
   const usingLiveAgentDir =
     paths.storePath === defaultProviderPaths().storePath;
-  const synced = syncProfileToPi(profile.id, paths, {
+  const synced = await syncProfileToPi(profile.id, paths, {
     updatePrefs: usingLiveAgentDir && shouldSeedPrefsOnSync(),
     setActiveId: true,
   });
@@ -200,13 +220,13 @@ function applyPiSyncForProfile(
  * Catalog-managed providers (case-insensitive match) only show when enabled;
  * providers not in the catalog pass through (e.g. Pi OAuth builtins).
  */
-export function isProviderEnabledInCatalog(
+export async function isProviderEnabledInCatalog(
   providerId: string,
   paths: ProviderPaths = defaultProviderPaths(),
-): boolean {
+): Promise<boolean> {
   const key = providerId.trim().toLowerCase();
   if (!key) return false;
-  const store = loadStore(paths);
+  const store = await loadStore(paths);
   const managed = store.profiles.filter(
     (p) => p.providerId.toLowerCase() === key,
   );
@@ -215,10 +235,13 @@ export function isProviderEnabledInCatalog(
 }
 
 /** Drop models whose provider is a disabled catalog profile. */
-export function filterModelsByCatalogEnabled<
+export async function filterModelsByCatalogEnabled<
   T extends { provider: string },
->(models: readonly T[], paths: ProviderPaths = defaultProviderPaths()): T[] {
-  const store = loadStore(paths);
+>(
+  models: readonly T[],
+  paths: ProviderPaths = defaultProviderPaths(),
+): Promise<T[]> {
+  const store = await loadStore(paths);
   if (store.profiles.length === 0) return [...models];
 
   const enabledByProvider = new Map<string, boolean>();
@@ -237,35 +260,35 @@ export function filterModelsByCatalogEnabled<
   });
 }
 
-export function listProviderProfiles(
+export async function listProviderProfiles(
   paths: ProviderPaths = defaultProviderPaths(),
-): ProviderProfileSummary[] {
+): Promise<ProviderProfileSummary[]> {
   // First launch: seed profiles from Pi auth/models and cc-switch if present.
-  if (!existsSync(paths.storePath)) {
+  if (!(await fileExistsAsync(paths.storePath))) {
     const { importExistingProviderProfiles } = nodeRequire(
       "./provider-import",
     ) as typeof import("./provider-import");
-    importExistingProviderProfiles(paths);
+    await importExistingProviderProfiles(paths);
   }
-  const store = loadStore(paths);
+  const store = await loadStore(paths);
   return store.profiles
     .slice()
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .map((p) => toSummary(p));
 }
 
-export function getProviderProfile(
+export async function getProviderProfile(
   id: string,
   paths: ProviderPaths = defaultProviderPaths(),
-): ProviderProfile | null {
-  const store = loadStore(paths);
+): Promise<ProviderProfile | null> {
+  const store = await loadStore(paths);
   return store.profiles.find((p) => p.id === id) ?? null;
 }
 
-export function upsertProviderProfile(
+export async function upsertProviderProfile(
   input: ProviderUpsertInput,
   paths: ProviderPaths = defaultProviderPaths(),
-): {
+): Promise<{
   ok: boolean;
   profile?: ProviderProfile;
   error?: string;
@@ -273,11 +296,11 @@ export function upsertProviderProfile(
   syncedToPi?: boolean;
   /** @deprecated Same as syncedToPi (compat for older UI). */
   syncedActive?: boolean;
-} {
+}> {
   const err = validateUpsert(input);
   if (err) return { ok: false, error: err };
 
-  const store = loadStore(paths);
+  const store = await loadStore(paths);
   const now = new Date().toISOString();
   const models = input.models
     .map((m) => {
@@ -333,9 +356,9 @@ export function upsertProviderProfile(
     store.profiles.push(profile);
   }
 
-  saveStore(paths, store);
+  await saveStore(paths, store);
 
-  const sync = applyPiSyncForProfile(profile, paths, previousProviderId);
+  const sync = await applyPiSyncForProfile(profile, paths, previousProviderId);
   if (!sync.ok) {
     return { ok: false, error: sync.error };
   }
@@ -348,12 +371,12 @@ export function upsertProviderProfile(
   };
 }
 
-export function setProviderProfileEnabled(
+export async function setProviderProfileEnabled(
   id: string,
   enabled: boolean,
   paths: ProviderPaths = defaultProviderPaths(),
-): { ok: boolean; error?: string; syncedToPi?: boolean } {
-  const store = loadStore(paths);
+): Promise<{ ok: boolean; error?: string; syncedToPi?: boolean }> {
+  const store = await loadStore(paths);
   const idx = store.profiles.findIndex((p) => p.id === id);
   if (idx < 0) return { ok: false, error: "档案不存在" };
   const profile = {
@@ -362,20 +385,20 @@ export function setProviderProfileEnabled(
     updatedAt: new Date().toISOString(),
   };
   store.profiles[idx] = profile;
-  saveStore(paths, store);
+  await saveStore(paths, store);
 
-  const sync = applyPiSyncForProfile(profile, paths, null);
+  const sync = await applyPiSyncForProfile(profile, paths, null);
   if (!sync.ok) {
     return { ok: false, error: sync.error };
   }
   return { ok: true, syncedToPi: sync.syncedToPi };
 }
 
-export function deleteProviderProfile(
+export async function deleteProviderProfile(
   id: string,
   paths: ProviderPaths = defaultProviderPaths(),
-): { ok: boolean; error?: string; prunedProviderId?: string } {
-  const store = loadStore(paths);
+): Promise<{ ok: boolean; error?: string; prunedProviderId?: string }> {
+  const store = await loadStore(paths);
   const idx = store.profiles.findIndex((p) => p.id === id);
   if (idx < 0) return { ok: false, error: "档案不存在" };
   const removed = store.profiles[idx]!;
@@ -383,12 +406,12 @@ export function deleteProviderProfile(
   if (store.activeId === id) {
     store.activeId = null;
   }
-  saveStore(paths, store);
+  await saveStore(paths, store);
 
   const { pruneProviderIdFromPi } = nodeRequire(
     "./provider-pi-sync",
   ) as typeof import("./provider-pi-sync");
-  pruneProviderIdFromPi(removed.providerId, paths);
+  await pruneProviderIdFromPi(removed.providerId, paths);
 
   return { ok: true, prunedProviderId: removed.providerId };
 }

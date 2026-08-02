@@ -35,7 +35,7 @@ import {
   type UiAgentEvent,
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
-import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
+import { getAgentDirPath, getCachedPrefs, patchPrefs } from "./prefs";
 import {
   dedupeModelInfosForUi,
   filterModelsByCatalogEnabled,
@@ -842,7 +842,7 @@ export class SessionHost {
       }
       // 先下发到 session，再持久化 prefs；任一步失败都不污染 prefs。
       await this.bundle.session.setModel(model);
-      patchPrefs({ provider, model: id });
+      void patchPrefs({ provider, model: id });
       this.emit({
         type: "session_info",
         sessionId: this.bundle.session.sessionId,
@@ -874,7 +874,7 @@ export class SessionHost {
     // Persist the model-clamped effective level so prefs / TopBar / Settings stay
     // aligned (e.g. DeepSeek V4 maps medium→high; unsupported → nearest).
     const effective = this.bundle.session.thinkingLevel as ThinkingLevel;
-    patchPrefs({ thinkingLevel: effective });
+    void patchPrefs({ thinkingLevel: effective });
     this.emit({
       type: "session_info",
       sessionId: this.bundle.session.sessionId,
@@ -891,7 +891,7 @@ export class SessionHost {
    * 且重建前后都会 emit notice，避免用户感到"会话无声闪烁"。
    */
   async applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
-    patchPrefs({ tools });
+    void patchPrefs({ tools });
     if (!this.bundle) return { ok: true };
 
     // Ask/Plan: update prefs + savedTools snapshot, keep ephemeral read-only tools.
@@ -957,14 +957,14 @@ export class SessionHost {
   async listModels(): Promise<ModelInfo[]> {
     const runtime = await this.ensureRuntime();
     const available = await runtime.getAvailable();
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const mapped = available.map((m) => ({
       provider: m.provider,
       id: m.id,
       name: (m as { name?: string }).name ?? m.id,
     }));
     // Catalog enabled flag is authoritative for TopBar — not only models.json.
-    const visible = filterModelsByCatalogEnabled(mapped);
+    const visible = await filterModelsByCatalogEnabled(mapped);
     return dedupeModelInfosForUi(visible, prefs.provider);
   }
 
@@ -977,7 +977,7 @@ export class SessionHost {
       model: this.bundle ? modelFromSession(this.bundle.session) : null,
       thinkingLevel:
         (this.bundle?.session.thinkingLevel as ThinkingLevel) ??
-        loadPrefs().thinkingLevel,
+        getCachedPrefs().thinkingLevel,
       error: this.lastError,
       hasSession: Boolean(this.bundle),
     };
@@ -999,7 +999,7 @@ export class SessionHost {
         filePath: join(p.path, "SKILL.md"),
       })),
       cwd,
-      loadPrefs().disabledSkills,
+      getCachedPrefs().disabledSkills,
     );
     const byName = new Map<string, SessionSkillInfo>();
     for (const s of filtered) {

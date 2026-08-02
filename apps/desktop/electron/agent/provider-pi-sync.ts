@@ -1,6 +1,6 @@
-import { writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import type { ProviderActivateResult } from "../../shared/ipc";
-import { loadPrefs, patchPrefs } from "./prefs";
+import { getCachedPrefs, patchPrefs } from "./prefs";
 import {
   modelEntryForPiModelsJson,
   pruneStaleProviderKeys,
@@ -13,6 +13,7 @@ import {
   saveStore,
   type ProviderPaths,
 } from "./provider-persist";
+import { writeJsonAtomic as atomicWriteJson } from "./lib/atomic-write";
 
 export type SyncProfileToPiOptions = {
   /**
@@ -31,15 +32,15 @@ export type SyncProfileToPiOptions = {
  * Write a catalog profile into Pi auth.json + models.json.
  * Does not reload ModelRuntime — caller should.
  */
-export function syncProfileToPi(
+export async function syncProfileToPi(
   id: string,
   paths: ProviderPaths = defaultProviderPaths(),
   options: SyncProfileToPiOptions = {},
-): ProviderActivateResult {
+): Promise<ProviderActivateResult> {
   const updatePrefs = options.updatePrefs === true;
   const setActiveId = options.setActiveId !== false;
 
-  const store = loadStore(paths);
+  const store = await loadStore(paths);
   const profile = store.profiles.find((p) => p.id === id);
   if (!profile) return { ok: false, error: "档案不存在" };
   if (!profile.enabled) return { ok: false, error: "档案未启用" };
@@ -50,7 +51,7 @@ export function syncProfileToPi(
   ensureParent(paths.authPath);
   ensureParent(paths.modelsPath);
 
-  const auth = readJsonFile<Record<string, unknown>>(paths.authPath, {});
+  const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
   // Drop DeepSeek vs deepseek style shadows only — never remove a different
   // providerId (e.g. deepseek vs deepseek-anthropic must coexist).
   pruneStaleProviderKeys(auth, profile.providerId);
@@ -58,12 +59,11 @@ export function syncProfileToPi(
     type: "api_key",
     key: profile.apiKey,
   };
-  writeFileSync(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
+  await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
 
-  const modelsFile = readJsonFile<{ providers?: Record<string, unknown> }>(
-    paths.modelsPath,
-    { providers: {} },
-  );
+  const modelsFile = await readJsonFile<{
+    providers?: Record<string, unknown>;
+  }>(paths.modelsPath, { providers: {} });
   if (!modelsFile.providers || typeof modelsFile.providers !== "object") {
     modelsFile.providers = {};
   }
@@ -81,15 +81,15 @@ export function syncProfileToPi(
       ),
     ),
   };
-  writeFileSync(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
+  await writeFile(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
 
   if (setActiveId) {
     store.activeId = profile.id;
-    saveStore(paths, store);
+    await saveStore(paths, store);
   }
 
   if (updatePrefs) {
-    patchPrefs({
+    void patchPrefs({
       provider: profile.providerId,
       model: primary.id,
     });
@@ -106,14 +106,14 @@ export function syncProfileToPi(
  * Remove providerId from Pi auth/models when no *enabled* catalog profile
  * still uses it (match is case-insensitive, including DeepSeek vs deepseek).
  */
-export function pruneProviderIdFromPi(
+export async function pruneProviderIdFromPi(
   providerId: string,
   paths: ProviderPaths = defaultProviderPaths(),
-): void {
+): Promise<void> {
   const keep = providerId.trim();
   if (!keep) return;
   const keepLower = keep.toLowerCase();
-  const store = loadStore(paths);
+  const store = await loadStore(paths);
   if (
     store.profiles.some(
       (p) => p.providerId.toLowerCase() === keepLower && p.enabled,
@@ -136,29 +136,32 @@ export function pruneProviderIdFromPi(
     return changed;
   };
 
-  const auth = readJsonFile<Record<string, unknown>>(paths.authPath, {});
+  const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
   if (dropKeys(auth)) {
-    writeFileSync(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
+    await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
   }
 
-  const modelsFile = readJsonFile<{ providers?: Record<string, unknown> }>(
-    paths.modelsPath,
-    { providers: {} },
-  );
+  const modelsFile = await readJsonFile<{
+    providers?: Record<string, unknown>;
+  }>(paths.modelsPath, { providers: {} });
   if (modelsFile.providers && dropKeys(modelsFile.providers)) {
-    writeFileSync(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
+    await writeFile(
+      paths.modelsPath,
+      JSON.stringify(modelsFile, null, 2),
+      "utf8",
+    );
   }
 }
 
 /**
  * Compat: ensure enabled + sync + optionally force prefs to primary model.
  */
-export function activateProviderProfile(
+export async function activateProviderProfile(
   id: string,
   paths: ProviderPaths = defaultProviderPaths(),
   options?: { updatePrefs?: boolean },
-): ProviderActivateResult {
-  const store = loadStore(paths);
+): Promise<ProviderActivateResult> {
+  const store = await loadStore(paths);
   const idx = store.profiles.findIndex((p) => p.id === id);
   if (idx < 0) return { ok: false, error: "档案不存在" };
   if (!store.profiles[idx]!.enabled) {
@@ -167,7 +170,7 @@ export function activateProviderProfile(
       enabled: true,
       updatedAt: new Date().toISOString(),
     };
-    saveStore(paths, store);
+    await saveStore(paths, store);
   }
   return syncProfileToPi(id, paths, {
     updatePrefs: options?.updatePrefs !== false,
@@ -178,21 +181,21 @@ export function activateProviderProfile(
 /** @deprecated Use {@link syncProfileToPi}. */
 export const syncActiveProfileToPi = syncProfileToPi;
 
-export function deactivateProviderProfile(
+export async function deactivateProviderProfile(
   paths: ProviderPaths = defaultProviderPaths(),
-): void {
-  const store = loadStore(paths);
+): Promise<void> {
+  const store = await loadStore(paths);
   store.activeId = null;
-  saveStore(paths, store);
+  await saveStore(paths, store);
 }
 
 /** Mark the catalog profile that owns provider/model as activeId (badge cache). */
-export function markProfileActiveForModel(
+export async function markProfileActiveForModel(
   provider: string,
   modelId: string,
   paths: ProviderPaths = defaultProviderPaths(),
-): void {
-  const store = loadStore(paths);
+): Promise<void> {
+  const store = await loadStore(paths);
   const match = store.profiles.find(
     (p) =>
       p.providerId === provider &&
@@ -201,7 +204,7 @@ export function markProfileActiveForModel(
   if (!match) return;
   if (store.activeId === match.id) return;
   store.activeId = match.id;
-  saveStore(paths, store);
+  await saveStore(paths, store);
 }
 
 /** Whether prefs still point at a model in this profile. */
@@ -218,6 +221,9 @@ export function profileMatchesPrefs(
 
 /** Seed prefs from first synced profile when user has no model selected yet. */
 export function shouldSeedPrefsOnSync(): boolean {
-  const prefs = loadPrefs();
+  const prefs = getCachedPrefs();
   return !prefs.provider || !prefs.model;
 }
+
+// Re-export atomic write for callers that need to write auth/models directly.
+export { atomicWriteJson as writeJsonAtomic };

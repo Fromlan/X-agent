@@ -55,8 +55,11 @@ function isPathInside(parent: string, child: string): boolean {
   const root = resolve(parent);
   const target = resolve(child);
   if (target === root) return true;
-  const prefix = root.endsWith(sep) ? root : root + sep;
-  return target.startsWith(prefix);
+  // Windows NTFS / ReFS 默认大小写不敏感 —— 前缀比对先做 lowercase 归一化。
+  const rootLower = root.toLowerCase();
+  const targetLower = target.toLowerCase();
+  const prefix = rootLower.endsWith(sep) ? rootLower : rootLower + sep;
+  return targetLower.startsWith(prefix);
 }
 
 export function classifyPlanLocation(

@@ -10,6 +10,9 @@
 
 ### 变更
 
+- **架构 · 主进程 IO 与校验加固**：prefs / usage / provider 三处持久化改为原子写（tmp + rename）+ per-path 串行队列；safeStorage 不可用时启动一次 probe 并在 UI 横幅告知「密钥以明文存储」；`setPrefs` 走 `ClientPrefsPatchSchema`（`additionalProperties: false`）拒绝未声明字段；`external-url` 显式拒绝 IPv4-mapped IPv6 / link-local / ULA / zone-id；`cwd-sandbox` 与 `plan-tools` 路径前缀比对做 Windows 大小写归一化；`applyBashShellPath` 写入前对 target 做 `--version` 自检。`bash-readonly` / `plan-mode-guard` / `plan-tools` / `goal-evaluator` / `goal-journal` / `session-mode` 6 个废弃入口合并到 `session-mode/*`。
+- **UI 拆分**：`PluginsPage`（805 → 90）/ `Sidebar`（528 → 105）拆到 `./plugins/` `./sidebar/` 子目录，顶层只保留壳与 re-export 兼容；`ChatTranscript` virtualizer 配置抽到 `src/lib/chat-transcript-virtual.ts`，5 个 bubble 子组件抽到 `./chat/bubbles.tsx`；`ChatPanel` 拆出 `useSlashMenu` hook 并加 `React.memo` 顶层包装。
+
 ### 功能
 
 - **更新提示**：安装版静默检查到新版本时不自动下载，应用内提示条「立即更新 / 稍后」+ 顶栏角标引导下载或安装
@@ -17,6 +20,8 @@
 ### 改进
 
 - **发版流程**：本机 `release:dist` 改为可选冒烟；用户下载的权威产物以 CI GitHub Release 为准
+- **工程化**：新增 `apps/desktop/.editorconfig`（UTF-8 / LF / 2 空格缩进 / 去行尾空格 / 末尾换行）。
+- **文档**：`CONTEXT.md` / `CLAUDE.md` 修正 `shared/mode-tools.ts` 路径描述，补齐 8 个 `register-*-ipc.ts` 名单；`provider-activate.ts` 顶部注释指向唯一消费方。
 
 ### 修复
 
@@ -68,7 +73,7 @@
 - **发送体验**：用户消息乐观气泡（Shadow 检查点完成前即可看见）
 - **安全收紧**：Godot RPC method allowlist；外链拒绝本地/私网地址；`will-navigate` 拒绝非本应用 `file:`；`pi install` 跳过 npm lifecycle scripts；单实例锁
 - **性能**：流式 `text_delta` / `thinking_delta` 尾部 O(1) 更新；无变化时跳过全量 `history_replace`
-- **代码审查**：补充 `docs/code-review-2026-08-01.md` 分诊结论与已落地项
+- **代码审查**：见 `0.3.8` 之前提交 / `git log --since=2026-08-01`；分诊结论已落入上面各条
 
 ## 0.3.8
 

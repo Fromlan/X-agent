@@ -8,14 +8,9 @@ import { isRestorableGoalStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
-import {
-  applySlashItemInsert,
-  detectSlashFragment,
-  filterSlashItemsByQuery,
-  type SlashMatch,
-} from "../lib/slash-menu";
 import { Flag, Hammer, Send, Square } from "lucide-react";
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -24,6 +19,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from "react";
+import { useSlashMenu } from "../hooks/useSlashMenu";
 
 interface Props {
   items: ChatItem[];
@@ -63,7 +59,7 @@ interface Props {
   onClarifySelect?: (reply: string) => void;
 }
 
-export function ChatPanel(props: Props) {
+function ChatPanelImpl(props: Props) {
   const streaming =
     props.status === "streaming" || props.status === "retrying";
   const composerLocked = props.disabled || Boolean(props.editingEntryId);
@@ -72,87 +68,29 @@ export function ChatPanel(props: Props) {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [cursor, setCursor] = useState(0);
-  const [slashItems, setSlashItems] = useState<SessionSlashItem[]>([]);
-  const [slashItemsLoaded, setSlashItemsLoaded] = useState(false);
-  const [highlight, setHighlight] = useState(0);
-  const [menuDismissed, setMenuDismissed] = useState(false);
 
-  const slashMatch: SlashMatch | null = useMemo(() => {
-    if (composerLocked) return null;
-    return detectSlashFragment(props.input, cursor);
-  }, [composerLocked, props.input, cursor]);
-
-  const menuOpen = Boolean(slashMatch) && !menuDismissed;
-
-  const filtered = useMemo(
-    () => filterSlashItemsByQuery(slashItems, slashMatch?.query ?? ""),
-    [slashItems, slashMatch?.query],
-  );
-
-  useEffect(() => {
-    setSlashItemsLoaded(false);
-    setSlashItems([]);
-  }, [props.skillsRefreshKey, props.disabled]);
-
-  useEffect(() => {
-    if (!menuOpen || slashItemsLoaded || props.disabled) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const list = await window.xAgent.listSessionSlashItems();
-        if (!cancelled) {
-          setSlashItems(list);
-          setSlashItemsLoaded(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setSlashItems([]);
-          setSlashItemsLoaded(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [menuOpen, slashItemsLoaded, props.disabled]);
-
-  useEffect(() => {
-    setHighlight(0);
-  }, [slashMatch?.query, slashMatch?.start]);
-
-  useEffect(() => {
-    if (!slashMatch) setMenuDismissed(false);
-  }, [slashMatch]);
-
-  const selectSlashItem = useCallback(
-    (item: SessionSlashItem) => {
-      const match = detectSlashFragment(
-        props.input,
-        textareaRef.current?.selectionStart ?? cursor,
-      );
-      if (!match) return;
-      const { value, cursor: nextCursor } = applySlashItemInsert(
-        props.input,
-        match,
-        item,
-      );
-      props.setInput(value);
-      setMenuDismissed(true);
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(nextCursor, nextCursor);
-        setCursor(nextCursor);
-      });
-    },
-    [cursor, props],
-  );
+  const {
+    slashMatch,
+    menuOpen,
+    filtered,
+    highlight,
+    setHighlight,
+    selectSlashItem,
+    dismissMenu,
+    resetDismiss,
+  } = useSlashMenu({
+    input: props.input,
+    cursor,
+    disabled: composerLocked,
+    skillsRefreshKey: props.skillsRefreshKey,
+    textareaRef,
+    setInput: props.setInput,
+  });
 
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     props.setInput(e.target.value);
     setCursor(e.target.selectionStart);
-    setMenuDismissed(false);
+    resetDismiss();
   };
 
   const syncCursor = () => {
@@ -164,7 +102,7 @@ export function ChatPanel(props: Props) {
     if (menuOpen) {
       if (e.key === "Escape") {
         e.preventDefault();
-        setMenuDismissed(true);
+        dismissMenu();
         return;
       }
       if (e.key === "ArrowDown") {
@@ -392,7 +330,7 @@ export function ChatPanel(props: Props) {
             )}
             onHighlightChange={setHighlight}
             onSelect={selectSlashItem}
-            onClose={() => setMenuDismissed(true)}
+            onClose={() => dismissMenu()}
           />
           <textarea
             ref={textareaRef}
@@ -478,3 +416,4 @@ export function ChatPanel(props: Props) {
     </section>
   );
 }
+export const ChatPanel = memo(ChatPanelImpl);

@@ -22,7 +22,7 @@ import {
   type TurnUsage,
   type UiAgentEvent,
 } from "../../shared/ipc";
-import { loadPrefs, patchPrefs } from "./prefs";
+import { getCachedPrefs, patchPrefs } from "./prefs";
 import { branchEntriesToHistory } from "../../shared/transcript";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { displaySessionName } from "./session-title";
@@ -148,7 +148,7 @@ export class SessionLifecycle {
     cwd: string,
     sessionManager: SessionManager,
   ): Promise<OpenProjectResult> {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const modelRuntime = await this.a().ensureRuntime();
     const agentDir = getAgentDir();
     // Mode resets with each new session bundle.
@@ -165,7 +165,7 @@ export class SessionLifecycle {
         skills: applyXAgentSkillsFilter(
           base.skills,
           cwd,
-          loadPrefs().disabledSkills,
+          getCachedPrefs().disabledSkills,
         ),
         diagnostics: base.diagnostics,
       }),
@@ -180,7 +180,7 @@ export class SessionLifecycle {
         createPlanModeGuardExtension({
           getMode: () => this.a().sessionMode.getMode(),
           getAllowedTools: () => {
-            const prefsTools = loadPrefs().tools;
+            const prefsTools = getCachedPrefs().tools;
             const mode = this.a().sessionMode.getMode();
             if (mode === "ask") return computeAskModeTools(prefsTools);
             if (mode === "plan") return computePlanModeTools(prefsTools);
@@ -255,7 +255,7 @@ export class SessionLifecycle {
     session.setThinkingLevel(prefs.thinkingLevel);
     const effectiveThinking = session.thinkingLevel as ThinkingLevel;
     if (effectiveThinking !== prefs.thinkingLevel) {
-      patchPrefs({ thinkingLevel: effectiveThinking });
+      void patchPrefs({ thinkingLevel: effectiveThinking });
     }
     // Initial active set = user prefs only (write_plan stays registered but inactive
     // until Plan mode). Must run after createAgentSession so registry is built.
@@ -298,7 +298,7 @@ export class SessionLifecycle {
       // 写回 prefs 并显式通知；否则每次启动都以为已配置，实际却被静默回退。
       const previousWasLegacyDefault =
         prefs.provider === "deepseek" && prefs.model === "deepseek-v4-flash";
-      patchPrefs({
+      void patchPrefs({
         provider: session.model.provider,
         model: session.model.id,
       });
@@ -310,7 +310,7 @@ export class SessionLifecycle {
         );
       }
     }
-    patchPrefs({
+    void patchPrefs({
       lastProjectPath: cwd,
       lastSessionPath: sessionPath,
     });
@@ -357,12 +357,12 @@ export class SessionLifecycle {
   private unhideProjectKey(cwd: string): void {
     const key = normalizeProjectKey(cwd);
     if (!key) return;
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const nextHidden = prefs.hiddenProjectKeys.filter(
       (k) => normalizeProjectKey(k) !== key,
     );
     if (nextHidden.length !== prefs.hiddenProjectKeys.length) {
-      patchPrefs({ hiddenProjectKeys: nextHidden });
+      void patchPrefs({ hiddenProjectKeys: nextHidden });
     }
   }
 
@@ -447,9 +447,9 @@ export class SessionLifecycle {
       unlinkSync(sessionPath);
       clearGoalJournal(sessionPath);
 
-      const prefs = loadPrefs();
+      const prefs = getCachedPrefs();
       if (prefs.lastSessionPath === sessionPath) {
-        patchPrefs({ lastSessionPath: null });
+        void patchPrefs({ lastSessionPath: null });
       }
 
       if (!wasActive) {
@@ -515,7 +515,7 @@ export class SessionLifecycle {
       }
 
       let deleted = 0;
-      const prefs = loadPrefs();
+      const prefs = getCachedPrefs();
       let clearLastSession = false;
       for (const sessionPath of paths) {
         if (!isXAgentSessionPath(sessionPath)) continue;
@@ -529,7 +529,7 @@ export class SessionLifecycle {
       }
 
       if (clearLastSession) {
-        patchPrefs({ lastSessionPath: null });
+        void patchPrefs({ lastSessionPath: null });
       }
 
       if (activeInProject) {
@@ -556,12 +556,12 @@ export class SessionLifecycle {
   }
 
   async emitClosedWorkspace(cwd?: string | null): Promise<void> {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const patch: Partial<ClientPrefs> = { lastSessionPath: null };
     if (cwd && normalizeProjectKey(prefs.lastProjectPath ?? "") === normalizeProjectKey(cwd)) {
       patch.lastProjectPath = null;
     }
-    patchPrefs(patch);
+    void patchPrefs(patch);
     this.a().setLastHistoryFingerprint(this.a().historyFingerprint([]));
     this.a().emit({ type: "history_replace", items: [] });
     this.a().emit({
@@ -569,7 +569,7 @@ export class SessionLifecycle {
       sessionId: "",
       cwd: "",
       model: null,
-      thinkingLevel: loadPrefs().thinkingLevel,
+      thinkingLevel: getCachedPrefs().thinkingLevel,
       sessionPath: null,
     });
     this.a().setStatus("idle");

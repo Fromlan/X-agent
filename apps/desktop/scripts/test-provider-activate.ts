@@ -10,7 +10,7 @@ import {
   upsertProviderProfile,
   type ProviderPaths,
 } from "../electron/agent/provider-store";
-import { patchPrefs, loadPrefs } from "../electron/agent/prefs";
+import { patchPrefs, loadPrefs, setAgentDirOverrideForTests } from "../electron/agent/prefs";
 
 const root = mkdtempSync(join(tmpdir(), "x-agent-provider-activate-"));
 const paths: ProviderPaths = {
@@ -32,7 +32,13 @@ writeFileSync(
 // provider-activate uses loadPrefs/patchPrefs from real prefs path.
 // We only assert rollback contract with a fake applyRuntime.
 
-const created = upsertProviderProfile(
+void (async () => {
+setAgentDirOverrideForTests(root);
+
+// Load once under the override so any subsequent patchPrefs writes to root.
+loadPrefs();
+
+const created = await upsertProviderProfile(
   {
     name: "test",
     providerId: "test-prov",
@@ -47,7 +53,7 @@ assert.ok(created.ok && created.profile, "upsert");
 const id = created.profile!.id;
 
 const before = loadPrefs();
-patchPrefs({ provider: "old-prov", model: "old-model" });
+await patchPrefs({ provider: "old-prov", model: "old-model" });
 
 {
   const ok = await activateProviderAndApply(
@@ -74,6 +80,11 @@ patchPrefs({ provider: "old-prov", model: "old-model" });
   assert.equal(prefs.model, "old-model");
 }
 
-patchPrefs({ provider: before.provider, model: before.model });
+await patchPrefs({ provider: before.provider, model: before.model });
+setAgentDirOverrideForTests(null);
 rmSync(root, { recursive: true, force: true });
 console.log("test-provider-activate: ok");
+})().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});
