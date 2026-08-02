@@ -10,7 +10,7 @@
 
 ### 变更
 
-- **架构 · 主进程 IO 与校验加固**：prefs / usage / provider 三处持久化改为原子写（tmp + rename）+ per-path 串行队列；safeStorage 不可用时启动一次 probe 并在 UI 横幅告知「密钥以明文存储」；`setPrefs` 走 `ClientPrefsPatchSchema`（`additionalProperties: false`）拒绝未声明字段；`external-url` 显式拒绝 IPv4-mapped IPv6 / link-local / ULA / zone-id；`cwd-sandbox` 与 `plan-tools` 路径前缀比对做 Windows 大小写归一化；`applyBashShellPath` 写入前对 target 做 `--version` 自检。`bash-readonly` / `plan-mode-guard` / `plan-tools` / `goal-evaluator` / `goal-journal` / `session-mode` 6 个废弃入口合并到 `session-mode/*`。
+- **架构 · 主进程 IO 与校验加固**：prefs / usage / provider / auth / godot-rpc 五处持久化改为原子写（tmp + rename），prefs 与 usage 改走 `withStoreLock(path, ...)` 串行化（与 provider 同模式）；safeStorage 不可用时启动一次 probe 并在 UI 横幅告知「密钥以明文存储」；`setPrefs` 走 `ClientPrefsPatchSchema`（`additionalProperties: false`）拒绝未声明字段；`external-url` 显式拒绝 IPv4-mapped IPv6 / link-local / ULA / zone-id；`cwd-sandbox` 与 `plan-tools` 路径前缀比对做 Windows 大小写归一化；`applyBashShellPath` 写入前对 target 做 `--version` 自检。`bash-readonly` / `plan-mode-guard` / `plan-tools` / `goal-evaluator` / `goal-journal` / `session-mode` 6 个废弃入口合并到 `session-mode/*`。
 - **UI 拆分**：`PluginsPage`（805 → 90）/ `Sidebar`（528 → 105）拆到 `./plugins/` `./sidebar/` 子目录，顶层只保留壳与 re-export 兼容；`ChatTranscript` virtualizer 配置抽到 `src/lib/chat-transcript-virtual.ts`，5 个 bubble 子组件抽到 `./chat/bubbles.tsx`；`ChatPanel` 拆出 `useSlashMenu` hook 并加 `React.memo` 顶层包装。
 
 ### 功能
@@ -21,9 +21,12 @@
 
 - **发版流程**：本机 `release:dist` 改为可选冒烟；用户下载的权威产物以 CI GitHub Release 为准
 - **工程化**：新增 `apps/desktop/.editorconfig`（UTF-8 / LF / 2 空格缩进 / 去行尾空格 / 末尾换行）。
-- **文档**：`CONTEXT.md` / `CLAUDE.md` 修正 `shared/mode-tools.ts` 路径描述，补齐 8 个 `register-*-ipc.ts` 名单；`provider-activate.ts` 顶部注释指向唯一消费方。
+- **文档**：`CONTEXT.md` / `CLAUDE.md` 修正 `shared/mode-tools.ts` 路径描述，补齐 8 个 `register-*-ipc.ts` 名单；`provider-activate.ts` 顶部注释指向唯一消费方；明确 ADR / 调研文档本地保留、不入 git。
 
 ### 修复
+
+- **prefs 并发丢更新**：`savePrefs` 加 `withStoreLock(path, ...)` 串行化，并发 `patchPrefs` 不再读到同一快照后写覆盖前写；`usage-store` 同步去掉自管 `writeQueue`，统一走 `withStoreLock`。
+
 
 ## 0.3.11
 
