@@ -14,6 +14,7 @@ import {
   type ProviderPaths,
 } from "./provider-persist";
 import { writeJsonAtomic as atomicWriteJson } from "./lib/atomic-write";
+import { invalidateAuthCache } from "./auth-check";
 
 export type SyncProfileToPiOptions = {
   /**
@@ -60,6 +61,7 @@ export async function syncProfileToPi(
     key: profile.apiKey,
   };
   await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
+  invalidateAuthCache();
 
   const modelsFile = await readJsonFile<{
     providers?: Record<string, unknown>;
@@ -171,6 +173,7 @@ export async function pruneProviderIdFromPi(
   const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
   if (dropKeys(auth)) {
     await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
+    invalidateAuthCache();
   }
 
   let modelsChanged = false;

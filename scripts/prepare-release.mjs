@@ -125,7 +125,7 @@ function main() {
       "Optional local smoke（非必须；产物勿提交）：",
       `  npm run release:dist`,
       `    # typecheck + test + electron-builder → apps/desktop/release/`,
-      `    # 例如 X-agent-${version}-x64.exe`,
+      `    # 例如 X-agent-Setup-${version}-x64.exe / X-agent-Portable-${version}-x64.exe`,
       "",
       "Release 正文将使用该 CHANGELOG 章节。",
     ].join("\n"),
