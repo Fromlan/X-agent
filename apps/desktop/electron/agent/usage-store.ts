@@ -8,10 +8,8 @@ import type {
   UsageSummary,
 } from "../../shared/ipc";
 import { ensureAgentDir, getAgentDirPath } from "./prefs";
-import {
-  readJsonAsync,
-  writeJsonAtomic,
-} from "./lib/atomic-write";
+import { readJsonAsync, writeJsonAtomic } from "./lib/atomic-write";
+import { withStoreLock } from "./lib/store-mutex";
 
 export interface UsageStoreFile {
   version: 1;
@@ -29,9 +27,8 @@ const EMPTY_TOKENS: TokenUsage = {
 /** Test override for store file path. */
 let usagePathOverride: string | null = null;
 
-/** 模块级 cache + 串行化队列 —— 避免多 turn 并发覆盖。 */
+/** 模块级 cache —— 由 withStoreLock 串行化所有写。 */
 let storeCache: UsageStoreFile | null = null;
-let writeQueue: Promise<void> = Promise.resolve();
 
 export function setUsageStorePathForTests(path: string | null): void {
   usagePathOverride = path;
@@ -117,18 +114,12 @@ export async function loadUsageStoreAsync(): Promise<UsageStoreFile> {
   return loaded;
 }
 
-/** 异步原子写入 usage。串行到 writeQueue 保证不丢并发 turn。 */
+/** 异步原子写入 usage。串行到 withStoreLock 保证不丢并发 turn。 */
 export async function saveUsageStore(store: UsageStoreFile): Promise<void> {
   if (!usagePathOverride) ensureAgentDir();
   storeCache = store;
   const path = usagePath();
-  const next = writeQueue.then(() => writeJsonAtomic(path, store));
-  // 链上,即使前一个失败也继续;不让一个失败永久阻塞后续写。
-  writeQueue = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  await next;
+  await withStoreLock(path, () => writeJsonAtomic(path, store));
 }
 
 export function modelUsageKey(provider: string, modelId: string): string {
