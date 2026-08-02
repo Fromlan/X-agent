@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { shouldBlockReadonlyModeToolCall } from "../electron/agent/plan-mode-guard.ts";
-import { isReadonlyBashCommand } from "../electron/agent/bash-readonly.ts";
+import { shouldBlockReadonlyModeToolCall } from "../electron/agent/session-mode/plan-mode-guard.ts";
+import { isReadonlyBashCommand } from "../electron/agent/session-mode/bash-readonly.ts";
 
 const planAllowed = [
   "read",

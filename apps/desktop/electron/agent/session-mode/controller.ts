@@ -16,7 +16,7 @@ import {
   DEFAULT_GOAL_MAX_TURNS,
   isRestorableGoalStatus,
 } from "../../../shared/ipc";
-import { loadPrefs } from "../prefs";
+import { getCachedPrefs } from "../prefs";
 import {
   buildImplementPrompt,
   classifyPlanLocation,
@@ -153,7 +153,7 @@ export class SessionModeController {
     }
     const bundle = this.host().getBundle();
     if (!bundle) return;
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     this.savedTools = withoutWritePlan(bundle.session.getActiveToolNames());
     if (this.savedTools.length === 0) {
       this.savedTools = [...prefs.tools];
@@ -162,7 +162,7 @@ export class SessionModeController {
 
   /** Restore tools saved before ask/plan; clear savedTools. */
   private takeRestoredTools(): string[] {
-    const tools = this.savedTools ?? loadPrefs().tools;
+    const tools = this.savedTools ?? getCachedPrefs().tools;
     this.savedTools = null;
     return tools;
   }
@@ -270,7 +270,7 @@ export class SessionModeController {
     if (mode === "ask") {
       this.clearGoalState("cleared", { silent: true });
       this.captureSavedToolsFromSession();
-      const prefs = loadPrefs();
+      const prefs = getCachedPrefs();
       this.agentMode = "ask";
       this.refreshSystemPrompt(computeAskModeTools(prefs.tools));
       this.emitSessionMode();
@@ -286,7 +286,7 @@ export class SessionModeController {
     if (mode === "plan") {
       this.clearGoalState("cleared", { silent: true });
       this.captureSavedToolsFromSession();
-      const prefs = loadPrefs();
+      const prefs = getCachedPrefs();
       this.agentMode = "plan";
       this.refreshSystemPrompt(computePlanModeTools(prefs.tools));
       const active = bundle.session.getActiveToolNames();
@@ -458,7 +458,7 @@ export class SessionModeController {
       return { ok: false, error: "请等待当前回合结束后再执行计划" };
     }
     const planPath = this.planPath;
-    const restore = this.savedTools ?? loadPrefs().tools;
+    const restore = this.savedTools ?? getCachedPrefs().tools;
     this.agentMode = "agent";
     this.savedTools = null;
     this.refreshSystemPrompt(restore);
@@ -588,7 +588,7 @@ export class SessionModeController {
     if (trimmed.length > 4000) {
       return { ok: false, error: "目标条件过长（最多 4000 字符）" };
     }
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const maxTurns = clampMaxTurns(prefs.goalMaxTurns);
     const maxTokens = clampMaxTokens(prefs.goalMaxTokens);
     this.goal = {
@@ -655,7 +655,7 @@ export class SessionModeController {
       return { ok: false, error: `目标状态为 ${this.goal.status}，无法继续` };
     }
     if (this.goal.status === "budget_limited") {
-      const prefs = loadPrefs();
+      const prefs = getCachedPrefs();
       const nextMaxTurns = clampMaxTurns(prefs.goalMaxTurns);
       const nextMaxTokens = clampMaxTokens(prefs.goalMaxTokens);
       if (
@@ -922,7 +922,7 @@ export class SessionModeController {
   }
 
   refreshAfterResourceReload(): void {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     if (this.agentMode === "ask") {
       this.refreshSystemPrompt(computeAskModeTools(prefs.tools));
     } else if (this.agentMode === "plan") {

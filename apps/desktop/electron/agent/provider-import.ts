@@ -238,12 +238,12 @@ function extractApiKeyFromAuthEntry(entry: unknown): string | null {
   return null;
 }
 
-function collectPiCandidates(paths: ProviderPaths): ImportCandidate[] {
-  const auth = readJsonFile<Record<string, unknown>>(paths.authPath, {});
-  const modelsFile = readJsonFile<{
+async function collectPiCandidates(paths: ProviderPaths): Promise<ImportCandidate[]> {
+  const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
+  const modelsFile = await readJsonFile<{
     providers?: Record<string, Record<string, unknown>>;
   }>(paths.modelsPath, { providers: {} });
-  const settings = readJsonFile<{
+  const settings = await readJsonFile<{
     defaultProvider?: string;
     defaultModel?: string;
   }>(join(paths.agentDir, "settings.json"), {});
@@ -506,11 +506,11 @@ function collectCcSwitchCandidates(dbPath: string): ImportCandidate[] {
  * Import provider profiles from existing Pi auth/models and cc-switch DB.
  * Dedupes by api+baseUrl+apiKey fingerprint against already saved profiles.
  */
-export function importExistingProviderProfiles(
+export async function importExistingProviderProfiles(
   paths: ProviderPaths = defaultProviderPaths(),
   options?: { ccSwitchDbPath?: string },
-): ProviderImportResult {
-  const store = loadStore(paths);
+): Promise<ProviderImportResult> {
+  const store = await loadStore(paths);
   const usedIds = new Set(store.profiles.map((p) => p.providerId));
   const existingFp = new Set(
     store.profiles.map((p) =>
@@ -523,7 +523,7 @@ export function importExistingProviderProfiles(
     ),
   );
 
-  const pi = collectPiCandidates(paths);
+  const pi = await collectPiCandidates(paths);
   const cc = collectCcSwitchCandidates(
     options?.ccSwitchDbPath ?? defaultCcSwitchDbPath(),
   );
@@ -574,10 +574,10 @@ export function importExistingProviderProfiles(
     if (!store.activeId && activeCandidateId) {
       store.activeId = activeCandidateId;
     }
-    saveStore(paths, store);
+    await saveStore(paths, store);
   } else if (!existsSync(paths.storePath)) {
     // Persist empty store so listProviderProfiles does not re-scan forever.
-    saveStore(paths, store);
+    await saveStore(paths, store);
   }
 
   return {

@@ -16,6 +16,7 @@ import type {
   PiCliStatus,
   PrefsRecoveryNotice,
   RetractPreview,
+  SecretCodecStatus,
   ThinkingLevel,
 } from "@shared/ipc";
 import type { RetractConfirmMode } from "../components/RetractConfirmModal";
@@ -55,6 +56,7 @@ export type UseWorkspaceSessionOpts = {
   setFollowNonce: Dispatch<SetStateAction<number>>;
   setPrefs: Dispatch<SetStateAction<ClientPrefs | null>>;
   setPrefsRecovery: Dispatch<SetStateAction<PrefsRecoveryNotice | null>>;
+  setSecretCodec: Dispatch<SetStateAction<SecretCodecStatus | null>>;
   setBash: Dispatch<SetStateAction<BashCheckResult | null>>;
   setGit: Dispatch<SetStateAction<GitCheckResult | null>>;
   setAuth: Dispatch<SetStateAction<AuthStatus | null>>;
@@ -84,6 +86,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setFollowNonce,
     setPrefs,
     setPrefsRecovery,
+    setSecretCodec,
     setBash,
     setGit,
     setAuth,
@@ -421,13 +424,15 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     let cancelled = false;
     (async () => {
       try {
-        const [p, recovery] = await Promise.all([
+        const [p, recovery, codec] = await Promise.all([
           window.xAgent.prefs.get(),
           window.xAgent.prefs.getRecoveryNotice(),
+          window.xAgent.prefs.getSecretCodecStatus(),
         ]);
         if (cancelled) return;
         setPrefs(p);
         if (recovery) setPrefsRecovery(recovery);
+        if (codec) setSecretCodec(codec);
         applyTheme(p.themeId, p.colorMode);
         setBash(await window.xAgent.prefs.checkBash());
         setGit(await window.xAgent.prefs.checkGit());
@@ -485,6 +490,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setPiCli,
     setPrefs,
     setPrefsRecovery,
+    setSecretCodec,
     setQueuedSteering,
     setSessionId,
     syncFromHost,

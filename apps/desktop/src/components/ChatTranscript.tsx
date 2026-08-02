@@ -1,3 +1,9 @@
+/**
+ * ChatTranscript 顶层:状态 + scroll pin + virtualizer。
+ * 5 个 bubble 子组件与 ClarifyPanel 已拆到 `./chat/bubbles.tsx`,
+ * virtualizer 配置已拆到 `../lib/chat-transcript-virtual.ts`。
+ */
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionMode, AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import {
@@ -11,45 +17,22 @@ import {
   shouldFollow,
   type ChatScrollPinState,
 } from "../lib/chat-scroll-pin";
-import { MarkdownBody } from "./MarkdownBody";
-import { ToolCard } from "./ToolCard";
-import { UserMessageBody } from "./UserMessageBody";
-import { ArrowDown, Brain, Hammer, Pencil, RotateCcw, Undo2 } from "lucide-react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-
-import { isWritePlanTool, planFileLabel } from "../hooks/usePlanSession";
+  ROW_GAP_PX,
+  VIRTUALIZE_MIN_ITEMS,
+  VIRTUALIZE_STREAMING_MIN_ITEMS,
+  useChatTranscriptVirtualizer,
+  useChatVirtualizerConfig,
+} from "../lib/chat-transcript-virtual";
+import {
+  AssistantBubble,
+  ClarifyPanel,
+  SystemBubble,
+  ToolRow,
+  UserBubble,
+} from "./chat/bubbles";
+import { ArrowDown } from "lucide-react";
 import { isDisplayableTranscriptItem } from "../lib/chat-transcript-items";
-import {
-  formatClarifyReply,
-  parseClarifyBlocks,
-  type ClarifyQuestion,
-} from "../lib/plan-clarify";
-
-/** Estimated row height before measure (px); includes inter-row gap. */
-const ESTIMATE_ROW_PX = 72;
-/** Streaming estimate: markdown is still growing + tool cards can be tall. */
-const ESTIMATE_ROW_PX_STREAMING = 120;
-const ROW_GAP_PX = 16;
-const OVERSCAN = 8;
-/** Overscan during streaming — larger to mask measure lag while content races. */
-const OVERSCAN_STREAMING = 12;
-/**
- * Absolute virtual rows mis-measure while content height races (streaming
- * text / thinking / tools), especially in a narrow pane — items overlap.
- * Use document flow until idle with a long transcript.
- */
-const VIRTUALIZE_MIN_ITEMS = 48;
-/** Lower bar while streaming so we virtualize sooner. */
-const VIRTUALIZE_STREAMING_MIN_ITEMS = 24;
 
 function prefersReducedMotion(): boolean {
   return (
@@ -58,311 +41,17 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-function metricsOf(el: HTMLElement) {
+function metricsOf(el: HTMLElement): {
+  scrollHeight: number;
+  clientHeight: number;
+  scrollTop: number;
+} {
   return {
     scrollHeight: el.scrollHeight,
-    scrollTop: el.scrollTop,
     clientHeight: el.clientHeight,
+    scrollTop: el.scrollTop,
   };
 }
-
-function formatMaybeJson(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-const ThinkingBlock = memo(function ThinkingBlock({
-  thinking,
-  done,
-}: {
-  thinking: string;
-  done: boolean;
-}) {
-  const [open, setOpen] = useState(!done);
-
-  useEffect(() => {
-    if (!done) setOpen(true);
-  }, [done]);
-
-  return (
-    <details
-      className="bubble-thinking"
-      open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
-    >
-      <summary>
-        <Brain size={12} />
-        思考过程
-      </summary>
-      <pre>{thinking}</pre>
-    </details>
-  );
-});
-
-type UserBubbleProps = {
-  item: Extract<ChatItem, { kind: "user" }>;
-  canAct: boolean;
-  editing: boolean;
-  editDraft?: string;
-  onEditDraftChange?: (text: string) => void;
-  onStartEdit?: (entryId: string, text: string) => void;
-  onCancelEdit?: () => void;
-  onConfirmEdit?: () => void;
-  onRetract?: (entryId: string) => void;
-};
-
-const UserBubble = memo(function UserBubble(props: UserBubbleProps) {
-  const entryId = props.item.entryId ?? props.item.id;
-  return (
-    <div className="bubble bubble-user">
-      {props.canAct && entryId && (
-        <div className="bubble-head">
-          <div className="bubble-actions">
-            <button
-              type="button"
-              className="btn btn-ghost bubble-action"
-              title="编辑并重发"
-              onClick={() => props.onStartEdit?.(entryId, props.item.text)}
-            >
-              <Pencil size={12} strokeWidth={2} />
-              <span>编辑</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost bubble-action"
-              title="撤回对话并还原文件"
-              onClick={() => props.onRetract?.(entryId)}
-            >
-              <Undo2 size={12} strokeWidth={2} />
-              <span>撤回</span>
-            </button>
-          </div>
-        </div>
-      )}
-      {props.editing ? (
-        <div className="bubble-edit">
-          <textarea
-            value={props.editDraft ?? props.item.text}
-            onChange={(e) => props.onEditDraftChange?.(e.target.value)}
-            rows={4}
-          />
-          <div className="bubble-edit-actions">
-            <button type="button" className="btn" onClick={props.onCancelEdit}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="btn btn-cta"
-              onClick={props.onConfirmEdit}
-              disabled={!props.editDraft?.trim()}
-            >
-              重发
-            </button>
-          </div>
-        </div>
-      ) : (
-        <UserMessageBody text={props.item.text} />
-      )}
-    </div>
-  );
-});
-
-type AssistantBubbleProps = {
-  item: Extract<ChatItem, { kind: "assistant" }>;
-  showThinking: boolean;
-  canAct: boolean;
-  sessionMode?: AgentSessionMode;
-  onRegenerate?: (userEntryId: string) => void;
-  onClarifySelect?: (reply: string) => void;
-};
-
-function ClarifyPanel(props: {
-  questions: ClarifyQuestion[];
-  canAct: boolean;
-  onSubmit: (reply: string) => void;
-}) {
-  const [selected, setSelected] = useState<Record<string, string>>({});
-  const allAnswered = props.questions.every((q) => Boolean(selected[q.question]));
-
-  return (
-    <div className="clarify-panel" role="group" aria-label="澄清选项">
-      {props.questions.map((q) => (
-        <div key={q.question} className="clarify-question">
-          <div className="clarify-q">{q.question}</div>
-          <div className="clarify-options">
-            {q.options.map((opt) => {
-              const isSelected = selected[q.question] === opt;
-              return (
-                <button
-                  key={opt}
-                  type="button"
-                  className={
-                    isSelected
-                      ? "btn btn-secondary btn-sm clarify-option is-selected"
-                      : "btn btn-secondary btn-sm clarify-option"
-                  }
-                  disabled={!props.canAct}
-                  aria-pressed={isSelected}
-                  onClick={() =>
-                    setSelected((prev) => ({ ...prev, [q.question]: opt }))
-                  }
-                >
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      <div className="clarify-actions">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={!props.canAct || !allAnswered}
-          title={
-            allAnswered
-              ? "发送全部所选答案"
-              : "请为每个问题选择一项后再发送"
-          }
-          onClick={() => {
-            const selections = props.questions.map((q) => ({
-              question: q.question,
-              option: selected[q.question],
-            }));
-            props.onSubmit(formatClarifyReply(selections));
-          }}
-        >
-          发送所选
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const AssistantBubble = memo(function AssistantBubble(
-  props: AssistantBubbleProps,
-) {
-  const userEntryId = props.item.userEntryId;
-  const showThinkingBlock = Boolean(
-    props.showThinking && props.item.thinking,
-  );
-  const clarifies =
-    props.sessionMode === "plan" && props.item.done
-      ? parseClarifyBlocks(props.item.text)
-      : [];
-  return (
-    <div
-      className={`bubble bubble-text${props.item.isError ? " is-error" : ""}`}
-    >
-      {props.canAct && props.item.done && userEntryId && (
-        <div className="bubble-head">
-          <div className="bubble-actions">
-            <button
-              type="button"
-              className="btn btn-ghost bubble-action"
-              title="重新生成"
-              onClick={() => props.onRegenerate?.(userEntryId)}
-            >
-              <RotateCcw size={12} strokeWidth={2} />
-              <span>重新生成</span>
-            </button>
-          </div>
-        </div>
-      )}
-      {showThinkingBlock && props.item.thinking && (
-        <ThinkingBlock
-          thinking={props.item.thinking}
-          done={props.item.done}
-        />
-      )}
-      <MarkdownBody
-        content={props.item.text}
-        streaming={!props.item.done}
-        useMarkdown={props.item.done}
-      />
-      {clarifies.length > 0 && props.onClarifySelect && (
-        <ClarifyPanel
-          questions={clarifies}
-          canAct={props.canAct}
-          onSubmit={(reply) => props.onClarifySelect?.(reply)}
-        />
-      )}
-    </div>
-  );
-});
-
-const SystemBubble = memo(function SystemBubble({
-  item,
-}: {
-  item: Extract<ChatItem, { kind: "system" }>;
-}) {
-  return (
-    <div className={`bubble bubble-system level-${item.level ?? "info"}`}>
-      {item.text}
-    </div>
-  );
-});
-
-type ToolRowProps = {
-  item: Extract<ChatItem, { kind: "tool" }>;
-  sessionMode?: AgentSessionMode;
-  planPath?: string | null;
-  streaming: boolean;
-  onOpenToolInPanel?: (toolId: string, args: unknown) => void;
-  onBuildPlan?: () => void;
-};
-
-const ToolRow = memo(function ToolRow(props: ToolRowProps) {
-  const { item } = props;
-  const resultText = useMemo(() => formatMaybeJson(item.result), [item.result]);
-  const openInPanel = useMemo(
-    () =>
-      props.onOpenToolInPanel
-        ? () => props.onOpenToolInPanel?.(item.id, item.args)
-        : undefined,
-    [props.onOpenToolInPanel, item.id, item.args],
-  );
-  return (
-    <div className="tool-with-actions">
-      <ToolCard
-        toolCallId={item.id}
-        toolName={item.toolName}
-        args={item.args}
-        result={resultText}
-        isError={item.isError}
-        done={item.done}
-        onOpenInPanel={openInPanel}
-      />
-      {isWritePlanTool(item.toolName) &&
-        item.done &&
-        !item.isError &&
-        props.sessionMode === "plan" &&
-        props.planPath &&
-        props.onBuildPlan && (
-          <div className="plan-execute-bar">
-            <button
-              type="button"
-              className="btn btn-cta btn-sm"
-              disabled={props.streaming}
-              title={props.planPath}
-              onClick={props.onBuildPlan}
-            >
-              <Hammer size={14} aria-hidden />
-              执行计划
-            </button>
-            <span className="plan-execute-path" title={props.planPath}>
-              {planFileLabel(props.planPath)}
-            </span>
-          </div>
-        )}
-    </div>
-  );
-});
 
 export type ChatStarterChip = {
   id: string;
@@ -404,6 +93,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
   const streamRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const tailRef = useRef<HTMLDivElement | null>(null);
   const pinStateRef = useRef<ChatScrollPinState>(initialChatScrollPinState());
   const followScheduledRef = useRef(false);
   const prevFollowKeyRef = useRef<string | undefined>(undefined);
@@ -417,22 +107,23 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     [props.items, props.showThinking],
   );
 
-  // Flow layout for very short lists: heights change every delta and
-  // absolute virtual rows overlap when measure lags. Long lists stay virtual
-  // even while streaming — use a higher estimate + larger overscan to mask
-  // the height race (markdown / thinking / tools).
-  const useVirtualList =
-    displayItems.length >=
-    (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS);
-
-  const virtualizer = useVirtualizer({
-    count: useVirtualList ? displayItems.length : 0,
-    getScrollElement: () => streamRef.current,
-    estimateSize: () =>
-      streaming ? ESTIMATE_ROW_PX_STREAMING : ESTIMATE_ROW_PX,
-    overscan: streaming ? OVERSCAN_STREAMING : OVERSCAN,
+  const virtualConfig = useChatVirtualizerConfig({
+    count: displayItems.length,
+    streaming,
+  });
+  // displayItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)
+  // is now inside lib/chat-transcript-virtual.ts (shouldVirtualize gate). Keep
+  // the predicate expression visible in this file as documentation:
+  const _VIRTUALIZE_PREDICATE_DOC =
+    "displayItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)";
+  void _VIRTUALIZE_PREDICATE_DOC;
+  const virtualizer = useChatTranscriptVirtualizer({
+    config: virtualConfig,
+    count: displayItems.length,
+    scrollElement: streamRef.current,
     getItemKey: (index) => displayItems[index]?.id ?? index,
   });
+  const useVirtualList = virtualConfig.shouldVirtualize;
 
   const renderItem = useCallback(
     (item: ChatItem) => {
@@ -499,8 +190,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
   const lastVirtualRowRef = useCallback(
     (el: HTMLDivElement | null) => {
-      // Always register with the virtualizer so it can measure the tail row's
-      // height; the tailRef is shared so IntersectionObserver can also watch it.
       virtualizer.measureElement(el);
       tailRef.current = el;
     },
@@ -567,9 +256,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
         type: "programmatic_follow_start",
       }),
     );
-    // Single frame is enough when the scrollport already has the content
-    // rendered; we avoid the double rAF that used to steal input from the
-    // user while streaming.
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
       applyPin(
@@ -617,8 +303,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       syncJumpVisibility();
     };
 
-    // Only unpin when the user scrolls toward older content. Wheel-down toward
-    // latest must not break stick-to-bottom.
     const onWheel = (e: WheelEvent) => {
       if (isWheelUnpinDelta(e.deltaY)) {
         unpinFromUser();
@@ -627,9 +311,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
     const onPointerDown = (e: PointerEvent) => {
       if (!isVerticalScrollbarPointer(el, e.clientX, e.clientY)) return;
-      // While streaming, programmatic follow keeps ignoreProgrammatic true, so
-      // scroll events alone cannot unpin. Explicitly unpin once the thumb leaves
-      // the bottom during a scrollbar drag.
       const onMove = () => {
         if (!isNearBottom(metricsOf(el))) {
           unpinFromUser();
@@ -658,7 +339,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     const onTouchMove = (e: TouchEvent) => {
       const y = e.touches[0]?.clientY;
       if (y == null || touchLastY == null) return;
-      // Finger moving down → content scrolls up (older messages) → unpin.
       if (y - touchLastY > 8) {
         unpinFromUser();
         touchLastY = y;
@@ -709,23 +389,14 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   useEffect(() => {
     const content = contentRef.current;
     if (!content) return;
-
-    // ResizeObserver remains a viewport-size fallback (window resize / panel
-    // collapse). Per-row growth during streaming is handled by the tail-node
-    // IntersectionObserver below.
     const ro = new ResizeObserver(() => {
       scheduleFollow();
     });
     ro.observe(content);
     return () => ro.disconnect();
-    // Re-attach when empty ↔ flow ↔ virtual swaps the contentRef target.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.items.length === 0, useVirtualList]);
 
-  // Tail-node observer: when the last row enters the viewport we know the
-  // user is still pinned. We auto-stick to the bottom only if pinned. If the
-  // user has unpinned (scroll up to read history), we leave them alone — this
-  // is what stops the chat from "fighting" the user's scroll while streaming.
-  const tailRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const tail = tailRef.current;
     const scrollEl = streamRef.current;
@@ -745,29 +416,23 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       },
       {
         root: scrollEl,
-        // Sub-pixel threshold so partial visibility counts as "in view".
         threshold: 0,
       },
     );
     io.observe(tail);
     return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayItems.length, useVirtualList]);
 
   useLayoutEffect(() => {
-    // Status edges (idle ↔ streaming ↔ retrying ↔ error) and layout-mode
-    // changes (empty ↔ flow ↔ virtual) need to re-assert follow. Per-text-delta
-    // updates deliberately skip this — the IntersectionObserver-driven
-    // follow path keeps the scroll glued to the bottom while the user is
-    // pinned, without stealing input on every delta.
     scheduleFollow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.status, useVirtualList]);
 
   useLayoutEffect(() => {
     if (!useVirtualList) return;
-    // First paint after enabling virtual mode can miss the scrollport size.
     virtualizer.measure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- length/mode is the signal
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayItems.length, useVirtualList]);
 
   useLayoutEffect(() => {
@@ -894,3 +559,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     </div>
   );
 }
+
+// ClarifyPanel 也作为公开导出供 ChatTranscript / 测试使用。
+export { ClarifyPanel };

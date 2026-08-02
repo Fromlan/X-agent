@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { SessionHost } from "../agent/session-host";
-import { loadPrefs, patchPrefs } from "../agent/prefs";
+import { getCachedPrefs, patchPrefs } from "../agent/prefs";
 import { installGodotRpcAddon } from "../agent/godot-addon-install";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
@@ -71,7 +71,7 @@ export function registerGodotIpc(
   }));
 
   ipcMain.handle(IPC_CHANNELS.pickGodotEditor, async () => {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const result = await dialog.showOpenDialog({
       title: "选择 Godot 引擎可执行文件",
       defaultPath: prefs.godotEditorPath ?? undefined,
@@ -91,12 +91,12 @@ export function registerGodotIpc(
       return { ok: false, canceled: true };
     }
     const path = result.filePaths[0]!;
-    patchPrefs({ godotEditorPath: path });
+    await patchPrefs({ godotEditorPath: path });
     return { ok: true, path };
   });
 
   ipcMain.handle(IPC_CHANNELS.launchGodotEditor, async () => {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const editor = prefs.godotEditorPath;
     if (!editor) {
       return { ok: false, error: "请先选择 Godot 引擎路径" };
@@ -149,7 +149,7 @@ export function registerGodotIpc(
   });
 
   ipcMain.handle(IPC_CHANNELS.installGodotRpcAddon, async () => {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
     if (!project) {
       return { ok: false, error: "请先打开项目或设置 lastProjectPath" };
@@ -158,7 +158,7 @@ export function registerGodotIpc(
   });
 
   ipcMain.handle(IPC_CHANNELS.pickGodotScene, async () => {
-    const prefs = loadPrefs();
+    const prefs = getCachedPrefs();
     const project =
       sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
     const result = await dialog.showOpenDialog({

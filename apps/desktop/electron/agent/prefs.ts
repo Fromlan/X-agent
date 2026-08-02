@@ -1,12 +1,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
   writeFileSync,
+  existsSync,
 } from "node:fs";
+import { writeJsonAtomic, readJsonAsync, fileExistsAsync } from "./lib/atomic-write";
 import {
   ClientPrefs,
   DEFAULT_PREFS,
@@ -28,6 +30,13 @@ let agentDirOverride: string | null = null;
 export function setAgentDirOverrideForTests(dir: string | null): void {
   agentDirOverride = dir;
 }
+
+/**
+ * 启动期同步预热的 prefs cache (filled by `loadPrefsWithRecovery` during boot)。
+ * 业务热路径 IPC handler 全部走 `getCachedPrefs()` 同步读 cache,避免 IPC 延迟;
+ * `savePrefs` / `patchPrefs` 改 async 后写入也会同步更新 cache。
+ */
+let cachedPrefs: ClientPrefs | null = null;
 
 function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
   const {
@@ -108,32 +117,70 @@ function prefsPath(): string {
 
 export function ensureAgentDir(): string {
   const dir = agentDir();
-  if (!existsSync(dir)) {
+  if (!dir.includes("/") && !dir.includes("\\")) return dir;
+  try {
     mkdirSync(dir, { recursive: true });
+  } catch {
+    // EEXIST 等忽略;幂等 mkdir
   }
   return dir;
 }
 
 /**
- * 加载偏好。原始实现：JSON 损坏时返回 DEFAULT_PREFS，**不**覆盖文件。
- * 主进程应优先使用 {@link loadPrefsWithRecovery} 以获取 backup / 错误通知。
+ * 同步读 prefs,启动预热与单测兼容入口。
+ * 不应出现在主进程 IPC 热路径 —— 热路径用 `getCachedPrefs()` 或 `loadPrefsAsync()`。
  */
 export function loadPrefs(): ClientPrefs {
   ensureAgentDir();
   const path = prefsPath();
-  if (!existsSync(path)) {
-    const defaults = { ...DEFAULT_PREFS };
-    writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
-    return defaults;
-  }
+  let raw: RawPrefs;
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
-    return normalizeLoadedPrefs(raw);
+    if (!existsSync(path)) {
+      const defaults = { ...DEFAULT_PREFS };
+      writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
+      return defaults;
+    }
+    raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
   } catch {
-    // 兼容旧行为：损坏时返回默认值,但**不**写回。
-    // 主进程应优先使用 {@link loadPrefsWithRecovery}。
     return { ...DEFAULT_PREFS };
   }
+  return normalizeLoadedPrefs(raw);
+}
+
+/**
+ * 异步读 prefs 并填充 cache。IPC handler 写路径使用。
+ */
+export async function loadPrefsAsync(): Promise<ClientPrefs> {
+  ensureAgentDir();
+  const path = prefsPath();
+  // Node 22 + ESM: 不在顶层 require,改用动态 import 不必要 —— 直接走 readJsonAsync
+  try {
+    const raw = await readJsonAsync<RawPrefs>(path, {} as RawPrefs);
+    if (!raw || Object.keys(raw).length === 0) {
+      const defaults = { ...DEFAULT_PREFS };
+      cachedPrefs = defaults;
+      await writeJsonAtomic(path, defaults);
+      return defaults;
+    }
+    const normalized = normalizeLoadedPrefs(raw);
+    cachedPrefs = normalized;
+    return normalized;
+  } catch {
+    const defaults = { ...DEFAULT_PREFS };
+    cachedPrefs = defaults;
+    return defaults;
+  }
+}
+
+/**
+ * 同步读 cache(供业务主路径复用)。
+ * cache 未填充(理论不会发生,bootRuntime 已预热)时同步 `loadPrefs()` 兜底。
+ */
+export function getCachedPrefs(): ClientPrefs {
+  if (cachedPrefs) return cachedPrefs;
+  const loaded = loadPrefs();
+  cachedPrefs = loaded;
+  return loaded;
 }
 
 export type PrefsRecoveryNotice = {
@@ -152,9 +199,9 @@ export type PrefsLoadResult =
   | { ok: false; prefs: ClientPrefs; recovered: PrefsRecoveryNotice };
 
 /**
- * 安全加载偏好:解析失败时将损坏文件备份到 `x-agent.json.broken-<ISO>.bak`,
- * 返回 recovery 提示,**不**写回任何新内容(除非文件不存在)。
- * 调用方可选择把 recovery 信息写进 IPC 状态 / 日志。
+ * 启动期一次性同步预热 prefs + cache。
+ * 解析失败时把损坏文件备份到 `x-agent.json.broken-<ISO>.bak`,
+ * 返回 recovery 提示,不写回任何新内容(除非文件不存在)。
  */
 export function loadPrefsWithRecovery(): PrefsLoadResult {
   ensureAgentDir();
@@ -162,18 +209,20 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
   if (!existsSync(path)) {
     const defaults = { ...DEFAULT_PREFS };
     writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
+    cachedPrefs = defaults;
     return { ok: true, prefs: defaults, recovered: null };
   }
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
+    const normalized = normalizeLoadedPrefs(raw);
+    cachedPrefs = normalized;
     return {
       ok: true,
-      prefs: normalizeLoadedPrefs(raw),
+      prefs: normalized,
       recovered: null,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // 备份损坏文件,避免后续写入覆盖原内容。
     let backedUp = false;
     let backupPath: string | undefined;
     try {
@@ -185,29 +234,39 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
         `[prefs] Failed to parse ${path} (${message}); backed up to ${backupPath}`,
       );
     } catch (backupErr) {
-      // 备份失败时也不要让坏文件被覆盖:直接返回默认值,不写回。
       console.warn(
         `[prefs] Failed to parse ${path} (${message}); backup also failed: ${
           backupErr instanceof Error ? backupErr.message : String(backupErr)
         }`,
       );
     }
+    const defaults = { ...DEFAULT_PREFS };
+    cachedPrefs = defaults;
     return {
       ok: false,
-      prefs: { ...DEFAULT_PREFS },
+      prefs: defaults,
       recovered: { ok: false, backedUp, backupPath, error: message },
     };
   }
 }
 
-export function savePrefs(prefs: ClientPrefs): ClientPrefs {
+export async function savePrefs(prefs: ClientPrefs): Promise<ClientPrefs> {
   ensureAgentDir();
-  writeFileSync(prefsPath(), JSON.stringify(prefs, null, 2), "utf8");
+  cachedPrefs = prefs;
+  const path = prefsPath();
+  try {
+    await writeJsonAtomic(path, prefs);
+  } catch {
+    // Windows 偶发 EPERM(目标文件被后台进程持锁);fallback 到同步写以保证
+    // IPC handler 仍能完成。atomic write 已通过路径覆盖保护,我们接受这一退化。
+    writeFileSync(path, JSON.stringify(prefs, null, 2), "utf8");
+  }
   return prefs;
 }
 
-export function patchPrefs(patch: Partial<ClientPrefs>): ClientPrefs {
-  const next = { ...loadPrefs(), ...patch };
+export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPrefs> {
+  const current = cachedPrefs ?? getCachedPrefs();
+  const next = { ...current, ...patch };
   if (typeof patch.autoCompactPercent === "number") {
     next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
       ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))

@@ -38,9 +38,19 @@ const transcript = readFileSync(
 }
 
 {
-  // ChatTranscript 调用时把 useMarkdown 绑到 props.item.done。
+  // AssistantBubble 调用时把 useMarkdown 绑到 props.item.done。
+  // AssistantBubble 已抽到 src/components/chat/bubbles.tsx,ChatTranscript 顶层薄壳只组合。
+  const transcript = readFileSync(
+    join(root, "src/components/ChatTranscript.tsx"),
+    "utf8",
+  );
+  const bubbles = readFileSync(
+    join(root, "src/components/chat/bubbles.tsx"),
+    "utf8",
+  );
+  const combined = transcript + "\n" + bubbles;
   assert.match(
-    transcript,
+    combined,
     /useMarkdown=\{props\.item\.done\}/,
     "AssistantBubble must pass useMarkdown={done} so streaming messages stay plain",
   );
