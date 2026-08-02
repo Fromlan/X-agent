@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Check,
   Download,
   Import,
   Pencil,
@@ -325,7 +324,22 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     );
   };
 
-  const saveProfile = async (andActivate: boolean) => {
+  const saveProfile = async () => {
+    const providerId = form.providerId.trim();
+    const conflict = profiles.find(
+      (p) =>
+        p.providerId === providerId &&
+        (!form.id || p.id !== form.id),
+    );
+    if (conflict) {
+      const proceed = await confirm({
+        title: "覆盖同 providerId",
+        message: `已有档案「${conflict.name}」使用相同 providerId「${providerId}」。保存后将覆盖顶栏中该 provider 的模型列表。是否继续？`,
+        confirmLabel: "继续保存",
+      });
+      if (!proceed) return;
+    }
+
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -355,25 +369,12 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         setError(result.error ?? "保存失败");
         return;
       }
-      if (andActivate && !result.syncedActive) {
-        const act = await window.xAgent.activateProviderProfile(
-          result.profile.id,
-        );
-        if (!act.ok) {
-          setError(act.error ?? "启用失败");
-          await refreshProfiles();
-          return;
-        }
-        setMessage(`已保存并启用：${result.profile.name}`);
-        onProvidersChanged?.();
-      } else if (andActivate && result.syncedActive) {
-        setMessage(`已保存并启用：${result.profile.name}`);
-        onProvidersChanged?.();
-      } else {
-        setMessage(`已保存：${result.profile.name}`);
-        // 编辑的是当前启用档案时，upsert 已同步 models.json；刷新顶栏模型列表。
-        onProvidersChanged?.();
-      }
+      setMessage(
+        result.syncedToPi || result.syncedActive
+          ? `已保存：${result.profile.name}（已启用，模型在顶栏）`
+          : `已保存：${result.profile.name}`,
+      );
+      onProvidersChanged?.();
       setEditing(false);
       resetFetchPanel();
       await refreshProfiles();
@@ -382,19 +383,32 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     }
   };
 
-  const activate = async (id: string) => {
+  const setEnabled = async (profile: ProviderProfileSummary, enabled: boolean) => {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const result = await window.xAgent.activateProviderProfile(id);
-      if (!result.ok) {
-        setError(result.error ?? "启用失败");
+      if (typeof window.xAgent.setProviderProfileEnabled !== "function") {
+        setError("当前版本缺少启用开关接口，请完全退出并重启应用");
         return;
       }
-      setMessage(`已启用 ${result.provider}/${result.model}`);
+      const result = await window.xAgent.setProviderProfileEnabled(
+        profile.id,
+        enabled,
+      );
+      if (!result.ok) {
+        setError(result.error ?? "切换启用状态失败");
+        return;
+      }
+      setMessage(
+        enabled
+          ? `已启用 ${profile.name}（模型已出现在顶栏）`
+          : `已关闭 ${profile.name}（已从顶栏移除）`,
+      );
       await refreshProfiles();
       onProvidersChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -417,6 +431,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         return;
       }
       await refreshProfiles();
+      onProvidersChanged?.();
     } finally {
       setBusy(false);
     }
@@ -490,10 +505,6 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
           <div className="providers-head">
             <div>
               <h3>供应商 / 订阅</h3>
-              <p className="modal-hint">
-                可从 Pi 认证与 cc-switch 导入；预设覆盖常见厂商与兼容模板。
-                API Key 在本机用系统凭据加密落盘（Electron safeStorage）；激活时仍写入 Pi auth.json。
-              </p>
             </div>
             <div className="modal-actions">
               <button
@@ -597,15 +608,14 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
             {profiles.map((p) => (
               <div
                 key={p.id}
-                className={p.active ? "provider-card active" : "provider-card"}
+                className={
+                  p.enabled
+                    ? "provider-card"
+                    : "provider-card provider-card--disabled"
+                }
               >
                 <div className="provider-card-main">
-                  <div className="provider-card-title">
-                    {p.name}
-                    {p.active && (
-                      <span className="provider-badge">当前启用</span>
-                    )}
-                  </div>
+                  <div className="provider-card-title">{p.name}</div>
                   <div className="provider-card-meta">
                     {p.providerId} · {p.api} · {p.modelCount} 模型 ·{" "}
                     {p.apiKeyHint}
@@ -613,16 +623,20 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                   <div className="provider-card-meta">{p.baseUrl}</div>
                 </div>
                 <div className="provider-card-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-icon"
-                    disabled={busy || p.active}
-                    title="启用"
-                    aria-label="启用"
-                    onClick={() => void activate(p.id)}
+                  <label
+                    className="provider-card-toggle"
+                    title={p.enabled ? "关闭后从顶栏移除" : "启用后出现在顶栏"}
                   >
-                    <Check size={14} />
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={p.enabled}
+                      disabled={busy}
+                      onChange={(e) => void setEnabled(p, e.target.checked)}
+                      aria-label={
+                        p.enabled ? `关闭 ${p.name}` : `启用 ${p.name}`
+                      }
+                    />
+                  </label>
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon"
@@ -937,19 +951,11 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
           <div className="modal-actions">
             <button
               type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() => void saveProfile(false)}
-            >
-              保存
-            </button>
-            <button
-              type="button"
               className="btn btn-primary"
               disabled={busy}
-              onClick={() => void saveProfile(true)}
+              onClick={() => void saveProfile()}
             >
-              保存并启用
+              保存
             </button>
           </div>
         </section>

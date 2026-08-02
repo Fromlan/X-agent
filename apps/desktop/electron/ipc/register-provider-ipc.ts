@@ -6,6 +6,7 @@ import {
   importExistingProviderProfiles,
   listProviderPresets,
   listProviderProfiles,
+  setProviderProfileEnabled,
   upsertProviderProfile,
 } from "../agent/provider-store";
 import { fetchProviderModels } from "../agent/model-fetch";
@@ -24,15 +25,30 @@ export function registerProviderIpc(
   );
   ipcMain.handle(IPC_CHANNELS.upsertProviderProfile, async (_e, input: ProviderUpsertInput) => {
     const result = upsertProviderProfile(input);
-    // Active profile edit rewrites models.json — reload so TopBar drops the pre-edit list.
-    if (result.ok && result.syncedActive) {
-      await sessionHost.reloadRuntime();
+    // Enabled sync or disabled prune both change TopBar catalog.
+    if (result.ok) {
+      await sessionHost.reloadRuntime({ hard: true });
     }
     return result;
   });
-  ipcMain.handle(IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) =>
-    deleteProviderProfile(id),
+  ipcMain.handle(IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) => {
+    const result = deleteProviderProfile(id);
+    if (result.ok) {
+      await sessionHost.reloadRuntime({ hard: true });
+    }
+    return result;
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.setProviderProfileEnabled,
+    async (_e, id: string, enabled: boolean) => {
+      const result = setProviderProfileEnabled(id, enabled);
+      if (result.ok) {
+        await sessionHost.reloadRuntime({ hard: true });
+      }
+      return result;
+    },
   );
+  // Compat: enable + sync + apply session model.
   ipcMain.handle(IPC_CHANNELS.activateProviderProfile, async (_e, id: string) =>
     activateProviderAndApply(id, (provider, model) =>
       sessionHost.applyActivatedProvider(provider, model),

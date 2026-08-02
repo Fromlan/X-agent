@@ -4,7 +4,6 @@ import { SettingsNotice, useAutoClearNotice } from "../SettingsNotice";
 import {
   THEME_IDS,
   THEME_LABELS,
-  type AppUpdateStatus,
   type BashCheckResult,
   type ClientPrefs,
   type ColorMode,
@@ -17,6 +16,7 @@ import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
   NODE_JS_DOWNLOAD_URL,
 } from "@shared/runtime-deps";
+import { useAppUpdate } from "../../hooks/useAppUpdate";
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
@@ -54,34 +54,36 @@ export function GeneralSettingsPage({
   const [authHint, setAuthHint] = useState<string | null>(null);
   const [piLoginBusy, setPiLoginBusy] = useState(false);
   const [piInstallBusy, setPiInstallBusy] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus | null>(null);
-  const [updateBusy, setUpdateBusy] = useState(false);
+  const {
+    status: updateStatus,
+    busy: updateBusy,
+    check: checkUpdates,
+    download: downloadUpdate,
+    install: installUpdate,
+  } = useAppUpdate({
+    enabled: open,
+    onError: (message) => setGeneralMsg(message),
+  });
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      const [bashStatus, gitStatus, piStatus, update] = await Promise.all([
-        window.xAgent.checkBash(),
-        window.xAgent.checkGit(),
-        window.xAgent.checkPiCli(),
-        window.xAgent.getUpdateStatus(),
+      const [bashStatus, gitStatus, piStatus] = await Promise.all([
+        window.xAgent.prefs.checkBash(),
+        window.xAgent.prefs.checkGit(),
+        window.xAgent.prefs.checkPiCli(),
       ]);
       if (cancelled) return;
       setBash(bashStatus);
       setGit(gitStatus);
       setPiCli(piStatus);
-      setUpdateStatus(update);
       onBashChanged?.(bashStatus);
       onGitChanged?.(gitStatus);
       onPiCliChanged?.(piStatus);
     })();
-    const off = window.xAgent.onUpdateStatus((status) => {
-      setUpdateStatus(status);
-    });
     return () => {
       cancelled = true;
-      off();
     };
     // Intentionally only re-run when the page opens; callbacks are optional paint syncs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -483,15 +485,8 @@ export function GeneralSettingsPage({
                         updateStatus?.checking ||
                         updateStatus?.downloading
                       }
-                      onClick={async () => {
-                        setUpdateBusy(true);
-                        try {
-                          setUpdateStatus(
-                            await window.xAgent.checkForUpdates(),
-                          );
-                        } finally {
-                          setUpdateBusy(false);
-                        }
+                      onClick={() => {
+                        void checkUpdates();
                       }}
                     >
                       {updateStatus?.checking ? "检查中…" : "检查更新"}
@@ -506,13 +501,8 @@ export function GeneralSettingsPage({
                         updateStatus.downloading ||
                         !updateStatus.supported
                       }
-                      onClick={async () => {
-                        setUpdateBusy(true);
-                        try {
-                          setUpdateStatus(await window.xAgent.downloadUpdate());
-                        } finally {
-                          setUpdateBusy(false);
-                        }
+                      onClick={() => {
+                        void downloadUpdate();
                       }}
                     >
                       {updateStatus?.downloading ? "下载中…" : "下载更新"}
@@ -525,16 +515,8 @@ export function GeneralSettingsPage({
                         !updateStatus?.downloaded ||
                         !updateStatus.supported
                       }
-                      onClick={async () => {
-                        setUpdateBusy(true);
-                        try {
-                          const result = await window.xAgent.installUpdate();
-                          if (!result.ok) {
-                            setGeneralMsg(result.error ?? "安装失败");
-                          }
-                        } finally {
-                          setUpdateBusy(false);
-                        }
+                      onClick={() => {
+                        void installUpdate();
                       }}
                     >
                       安装并重启

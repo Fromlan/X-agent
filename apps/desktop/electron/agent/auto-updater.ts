@@ -1,19 +1,16 @@
 /**
  * Packaged-app auto-update via electron-updater (GitHub Releases).
  */
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, type BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
 import type { AppUpdateStatus } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
 import {
-  DEFAULT_GITHUB_OWNER,
-  DEFAULT_GITHUB_REPO,
   feedMessage,
   githubReleasesUrl,
+  resolveGithubFeed as resolveGithubFeedFromPaths,
   type GithubFeed,
-  parseGithubRepoUrl,
 } from "./update-feed";
 
 export { feedMessage, githubReleasesUrl } from "./update-feed";
@@ -33,50 +30,13 @@ const DEV_STATUS: AppUpdateStatus = {
 };
 
 /** Prefer package.json repository / publish; fall back to known release repo. */
-export function resolveGithubFeed(
-  packageJsonPath?: string,
-): GithubFeed {
+export function resolveGithubFeed(packageJsonPath?: string): GithubFeed {
   const candidates = [
     packageJsonPath,
     join(app.getAppPath(), "package.json"),
     join(__dirname, "..", "..", "package.json"),
   ].filter((p): p is string => Boolean(p));
-
-  for (const path of candidates) {
-    try {
-      const raw = JSON.parse(readFileSync(path, "utf8")) as {
-        repository?: string | { url?: string };
-        build?: {
-          publish?:
-            | { provider?: string; owner?: string; repo?: string }
-            | Array<{ provider?: string; owner?: string; repo?: string }>;
-        };
-      };
-
-      const publish = raw.build?.publish;
-      const publishEntry = Array.isArray(publish) ? publish[0] : publish;
-      if (
-        publishEntry?.provider === "github" &&
-        publishEntry.owner &&
-        publishEntry.repo
-      ) {
-        return { owner: publishEntry.owner, repo: publishEntry.repo };
-      }
-
-      const repoUrl =
-        typeof raw.repository === "string"
-          ? raw.repository
-          : raw.repository?.url;
-      if (repoUrl) {
-        const parsed = parseGithubRepoUrl(repoUrl);
-        if (parsed) return parsed;
-      }
-    } catch {
-      // try next candidate
-    }
-  }
-
-  return { owner: DEFAULT_GITHUB_OWNER, repo: DEFAULT_GITHUB_REPO };
+  return resolveGithubFeedFromPaths(candidates);
 }
 
 export class AppAutoUpdater {

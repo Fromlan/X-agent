@@ -275,21 +275,113 @@ export function getInstalledPackageRoots(): string[] {
   return roots;
 }
 
+/** Electron / OS temp extract paths — common debris from one-click install. */
+function looksLikeEphemeralPackagePath(source: string): boolean {
+  const n = source.replace(/\\/g, "/").toLowerCase();
+  return (
+    n.includes("/temp/") ||
+    n.includes("/tmp/") ||
+    n.includes("/appdata/local/temp/")
+  );
+}
+
+/** Higher score = prefer keeping this source when deduping by package name. */
+function packageSourcePreferScore(source: string): number {
+  let score = 0;
+  if (/^(npm:|git\+|https?:|ssh:)/i.test(source.trim())) return 100;
+  if (!looksLikeEphemeralPackagePath(source)) score += 50;
+  try {
+    if (existsSync(source)) score += 20;
+  } catch {
+    // ignore
+  }
+  return score;
+}
+
 /**
- * Merge Pi settings packages (canonical) with x-agent-packages.json metadata.
+ * Heal catalog for end users:
+ * - drop missing filesystem sources
+ * - Pi settings keeps at most one live path per package.json name
+ * - x-agent registry only mirrors remaining settings entries (no orphan Temp rows)
+ */
+export function reconcilePackageCatalog(): {
+  removedSettings: string[];
+  removedRegistry: number;
+} {
+  const pruned = pruneMissingPiPackageSources();
+  const sources = readPiSettingsPackageSources();
+  const kept: string[] = [];
+  const removedSettings: string[] = [...pruned.removed];
+  const winnerByName = new Map<string, string>();
+
+  for (const source of sources) {
+    if (/^(npm:|git\+|https?:|ssh:)/i.test(source.trim())) {
+      kept.push(source);
+      continue;
+    }
+    const name = packageNameForSource(source)?.toLowerCase();
+    if (!name) {
+      kept.push(source);
+      continue;
+    }
+    const prev = winnerByName.get(name);
+    if (!prev) {
+      winnerByName.set(name, source);
+      continue;
+    }
+    const preferNew =
+      packageSourcePreferScore(source) > packageSourcePreferScore(prev);
+    if (preferNew) {
+      removedSettings.push(prev);
+      winnerByName.set(name, source);
+    } else {
+      removedSettings.push(source);
+    }
+  }
+  for (const source of winnerByName.values()) {
+    kept.push(source);
+  }
+
+  const beforeSettings = sources.map(normalizeSourceKey).sort().join("\0");
+  const afterSettings = kept.map(normalizeSourceKey).sort().join("\0");
+  if (beforeSettings !== afterSettings) {
+    writePiSettingsPackageSources(kept);
+  }
+
+  const keepKeys = new Set(kept.map(normalizeSourceKey));
+  const reg = readRegistry();
+  const nextReg: InstalledPackageInfo[] = [];
+  let removedRegistry = 0;
+  for (const p of reg.packages) {
+    const key = normalizeSourceKey(p.source);
+    if (keepKeys.has(key)) {
+      nextReg.push(p);
+    } else {
+      removedRegistry += 1;
+    }
+  }
+  if (removedRegistry > 0 || nextReg.length !== reg.packages.length) {
+    writeRegistry({ packages: nextReg });
+  }
+
+  return { removedSettings, removedRegistry };
+}
+
+/**
+ * List packages from Pi settings (canonical, same as `pi list`).
+ * Registry only supplies metadata; orphans are reconciled away.
  */
 export function listInstalledPackages(): InstalledPackageInfo[] {
+  reconcilePackageCatalog();
   const reg = readRegistry();
   const byKey = new Map(
     reg.packages.map((p) => [normalizeSourceKey(p.source), p] as const),
   );
   const fromPi = readPiSettingsPackageSources();
   const out: InstalledPackageInfo[] = [];
-  const seen = new Set<string>();
 
   for (const source of fromPi) {
     const key = normalizeSourceKey(source);
-    seen.add(key);
     const existing = byKey.get(key);
     const abs = existsSync(source) ? resolve(source) : source;
     const base: InstalledPackageInfo = {
@@ -301,13 +393,6 @@ export function listInstalledPackages(): InstalledPackageInfo[] {
       path: existsSync(abs) ? abs : existing?.path,
     };
     out.push(enrichPackageCounts(base));
-  }
-
-  // Keep app-only records (installed before settings sync / manual registry).
-  for (const p of reg.packages) {
-    const key = normalizeSourceKey(p.source);
-    if (seen.has(key)) continue;
-    out.push(enrichPackageCounts(p));
   }
 
   return out.sort((a, b) => {
@@ -474,9 +559,11 @@ export async function installPackage(source: string): Promise<PackageInstallResu
       path: absSource,
     });
     const reg = readRegistry();
-    reg.packages = dropRegistryPackagesBySource(reg.packages, entry.source);
-    reg.packages.push(entry);
-    writeRegistry(reg);
+    let next = dropRegistryPackagesBySource(reg.packages, entry.source);
+    next = next.filter((p) => p.name.toLowerCase() !== pkgName.toLowerCase());
+    next.push(entry);
+    writeRegistry({ packages: next });
+    reconcilePackageCatalog();
     return { ok: true, package: entry, output: preOutput.trim().slice(-400) };
   }
   const { code, output } = await runPiPackageCommand(
@@ -501,9 +588,15 @@ export async function installPackage(source: string): Promise<PackageInstallResu
     path: existsSync(absSource) ? absSource : undefined,
   });
   const reg = readRegistry();
-  reg.packages = dropRegistryPackagesBySource(reg.packages, entry.source);
-  reg.packages.push(entry);
-  writeRegistry(reg);
+  // Drop prior registry rows for this source *and* same package name (Temp debris).
+  let next = dropRegistryPackagesBySource(reg.packages, entry.source);
+  if (entry.name) {
+    const nameKey = entry.name.toLowerCase();
+    next = next.filter((p) => p.name.toLowerCase() !== nameKey);
+  }
+  next.push(entry);
+  writeRegistry({ packages: next });
+  reconcilePackageCatalog();
   return {
     ok: true,
     package: entry,

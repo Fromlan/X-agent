@@ -460,27 +460,36 @@ export function PluginsPage({
               ) : (
                 <div className="plugins-list">
                 {packages.map((pkg) => (
-                  <div key={`${pkg.name}-${pkg.source}`} className="plugin-item">
-                    <div className="plugin-item-title">{pkg.name}</div>
-                    <div className="plugin-item-meta" title={pkg.source}>
-                      {[
-                        pkg.skillCount != null ? `${pkg.skillCount} 技能` : null,
-                        pkg.promptCount != null
-                          ? `${pkg.promptCount} 提示词`
-                          : null,
-                        pkg.extensionCount != null
-                          ? `${pkg.extensionCount} 扩展`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || pkg.source}
-                    </div>
-                    <div className="plugin-item-meta" title={pkg.source}>
-                      {pkg.source}
+                  <div
+                    key={`${pkg.name}-${pkg.source}`}
+                    className="plugin-item plugin-item--package"
+                  >
+                    <div className="plugin-item-body">
+                      <div className="plugin-item-title" title={pkg.name}>
+                        {pkg.name}
+                      </div>
+                      <div className="plugin-item-meta">
+                        {[
+                          pkg.skillCount != null
+                            ? `${pkg.skillCount} 技能`
+                            : null,
+                          pkg.promptCount != null
+                            ? `${pkg.promptCount} 提示词`
+                            : null,
+                          pkg.extensionCount != null
+                            ? `${pkg.extensionCount} 扩展`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Package"}
+                      </div>
+                      <div className="plugin-item-meta" title={pkg.source}>
+                        {pkg.source}
+                      </div>
                     </div>
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
+                      className="btn btn-ghost btn-sm plugin-item-action"
                       disabled={busy}
                       onClick={async () => {
                         const ok = await confirm({

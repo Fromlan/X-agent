@@ -11,8 +11,9 @@ import type {
   SessionUsageSnapshot,
   TurnUsage,
 } from "../../shared/ipc";
+import { TRANSCRIPT_CAPS, truncateSerialized } from "../../shared/transcript";
 
-export const TOOL_DETAIL_MAX_CHARS = 256 * 1024;
+export const TOOL_DETAIL_MAX_CHARS = TRANSCRIPT_CAPS.toolDetail;
 
 export type ToolDetailRecord = {
   toolCallId: string;
@@ -27,20 +28,7 @@ export type ToolDetailRecord = {
 export function serializeForDetail(
   value: unknown,
 ): { value: unknown; truncated: boolean } {
-  try {
-    const text =
-      typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    if (!text) return { value, truncated: false };
-    if (text.length <= TOOL_DETAIL_MAX_CHARS) {
-      return { value, truncated: false };
-    }
-    return {
-      value: `${text.slice(0, TOOL_DETAIL_MAX_CHARS)}\n…(截断 ${text.length - TOOL_DETAIL_MAX_CHARS} 字符)`,
-      truncated: true,
-    };
-  } catch {
-    return { value: String(value), truncated: false };
-  }
+  return truncateSerialized(value, TOOL_DETAIL_MAX_CHARS);
 }
 
 export function modelFromSession(session: AgentSession): ModelInfo | null {

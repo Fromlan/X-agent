@@ -73,6 +73,7 @@ export const IPC_CHANNELS = {
   // plugins (prompt / skill / extension / theme) (see electron/main.ts)
   listPlugins: "listPlugins",
   listSessionSkills: "listSessionSkills",
+  listSessionSlashItems: "listSessionSlashItems",
   readPlugin: "readPlugin",
   writePlugin: "writePlugin",
   createPlugin: "createPlugin",
@@ -84,6 +85,7 @@ export const IPC_CHANNELS = {
   getProviderProfile: "getProviderProfile",
   upsertProviderProfile: "upsertProviderProfile",
   deleteProviderProfile: "deleteProviderProfile",
+  setProviderProfileEnabled: "setProviderProfileEnabled",
   activateProviderProfile: "activateProviderProfile",
   listProviderPresets: "listProviderPresets",
   importExistingProviderProfiles: "importExistingProviderProfiles",

@@ -3,7 +3,13 @@ import {
   detectSkillSlash,
   filterSkillsByQuery,
 } from "../src/lib/skill-slash";
+import {
+  applySlashItemInsert,
+  detectSlashFragment,
+  filterSlashItemsByQuery,
+} from "../src/lib/slash-menu";
 import { parseSkillReadFromTool } from "../src/lib/skill-tool";
+import type { SessionSlashItem } from "../shared/ipc";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -108,6 +114,51 @@ function assert(cond: boolean, msg: string): void {
     parseSkillReadFromTool("read", { path: "notes/SKILL.md.bak" }) === null,
     "not SKILL.md",
   );
+}
+
+// unified slash menu (prompts / commands / skills)
+{
+  const items: SessionSlashItem[] = [
+    { name: "godot-rpc-status", description: "RPC hint", source: "command" },
+    {
+      name: "x-next",
+      description: "Next implementation step",
+      source: "prompt",
+      argumentHint: "[focus area]",
+    },
+    { name: "x-grill", description: "Interview the user", source: "skill" },
+  ];
+  assert(
+    filterSlashItemsByQuery(items, "next")[0]?.name === "x-next",
+    "filter prompt by name",
+  );
+  assert(
+    filterSlashItemsByQuery(items, "focus")[0]?.name === "x-next",
+    "filter prompt by argumentHint",
+  );
+  assert(
+    filterSlashItemsByQuery(items, "skill:grill")[0]?.name === "x-grill",
+    "filter skill via skill: prefix query",
+  );
+  assert(
+    filterSlashItemsByQuery(items, "rpc")[0]?.source === "command",
+    "filter command",
+  );
+
+  const match = detectSlashFragment("/x-n", 4)!;
+  const promptInsert = applySlashItemInsert("/x-n", match, items[1]!);
+  assert(promptInsert.value === "/x-next ", "prompt inserts /name ");
+
+  const cmdMatch = detectSlashFragment("/god", 4)!;
+  const cmdInsert = applySlashItemInsert("/god", cmdMatch, items[0]!);
+  assert(
+    cmdInsert.value === "/godot-rpc-status ",
+    "command inserts /name ",
+  );
+
+  const skillMatch = detectSlashFragment("/x", 2)!;
+  const skillInsert = applySlashItemInsert("/x", skillMatch, items[2]!);
+  assert(skillInsert.value === "/skill:x-grill ", "skill keeps /skill: prefix");
 }
 
 console.log("test-skill-slash: ok");

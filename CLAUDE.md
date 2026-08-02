@@ -35,15 +35,15 @@ npm run release:prepare -- x.y.z
 npm run release:notes -- x.y.z
 # minor 线起点（如 0.3.0）的 notes 会附带上一线 0.2.x 汇总；加 --no-aggregate 可关闭
 npm run release:test-changelog # 可选：验证 CHANGELOG 抽取 / 汇总
-npm run release:dist           # 发版前本地 typecheck + test + 打 Windows exe
+npm run release:dist           # 可选：本地 typecheck + test + 打 Windows exe（冒烟）
 ```
 
 ### 发版流程
 
 1. `npm run release:prepare -- x.y.z`（改版本号、校验 CHANGELOG）
-2. `npm run release:dist`（本地 typecheck、测试，并用 electron-builder 产出安装包；产物在 `apps/desktop/release/`，如 `X-agent-x.y.z-x64.exe`）
-3. 提交并打标签：`git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z`
-4. [`.github/workflows/release.yml`](.github/workflows/release.yml) 在 CI 再构建并上传 **GitHub Releases**（勿提交 `apps/desktop/release/` 产物）
+2. 提交并打标签：`git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z`
+3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 在 CI 构建并上传 **GitHub Releases**（用户下载的权威产物：安装包 + `latest.yml`；勿提交 `apps/desktop/release/`）
+4. （可选）打 tag 前本机 `npm run release:dist` 冒烟；CI 仍会重建，本地 exe 不是发布源
 5. Windows 代码签名（可选）：本地或 Actions 设置 `CSC_LINK` + `CSC_KEY_PASSWORD`（或 `WIN_CSC_LINK`）；未设置则产出未签名包
 
 `npm test`（在 `apps/desktop`）串联：
@@ -62,7 +62,7 @@ Electron 三进程边界：
 
 - `electron/main.ts`：注册 IPC；持有 `SessionHost`、`GodotRpcBridge`、`AppAutoUpdater`。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索均在主进程。
 - `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关；新增能力需同步改 `shared/ipc.ts`、main handler、preload。
-- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。
+- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。新代码优先走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / …）；扁平方法仅作兼容。
 - `shared/ipc.ts`：跨进程协议源；`shared/godot-rpc.ts`：Godot TCP 协议。
 
 ### UI 壳层
@@ -93,9 +93,9 @@ Electron 三进程边界：
 
 ### 供应商
 
-- `provider-store.ts` → `~/.pi/agent/x-agent-providers.json`；启用时写 Pi auth / models
+- `provider-store.ts` → `~/.pi/agent/x-agent-providers.json`；档案保存到本地，**启用**才同步 Pi `auth.json` / `models.json` 并出现在顶栏；关闭则从 Pi 摘掉（无其它启用档案共用 providerId 时）
 - `model-fetch.ts`：探测 `/v1/models` 等；IPC `fetchProviderModels`
-- UI：设置 → 供应商
+- UI：设置 → 供应商（每张档案有启用开关）
 
 ### 插件与 Packages
 
@@ -125,7 +125,7 @@ Electron 三进程边界：
 ### 认证与自动更新
 
 - `auth-check.ts` / `pi-cli.ts`（含 `openPiLogin`）
-- `auto-updater.ts` / `update-feed.ts`：仅打包版启用 `electron-updater`，`provider: "github"` → `Fromlan/X-agent` Releases；启动后静默检查，设置可「打开 Releases」回退
+- `auto-updater.ts` / `update-feed.ts`：仅打包版启用 `electron-updater`，`provider: "github"` → `Fromlan/X-agent` Releases；启动后静默检查（不自动下载），有更新时应用内提示条 + 顶栏角标引导下载/安装；设置可「打开 Releases」回退
 - UI：设置 → 通用 → 检查 / 下载 / 安装更新；顶栏角标；`loadPrefsWithRecovery` 损坏偏好备份提示
 - 安全说明见 README「安全与隐私」；临时只读用会话「调研」/ Plan（硬闸关闭 write/edit，bash 仅放行只读命令且路径须落在项目 cwd 内）
 
@@ -134,7 +134,7 @@ Electron 三进程边界：
 | 路径 | 用途 |
 |---|---|
 | `~/.pi/agent/x-agent.json` | 客户端偏好 |
-| `~/.pi/agent/x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时仍明文写入 Pi `auth.json`） |
+| `~/.pi/agent/x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时明文同步写入 Pi `auth.json`） |
 | `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint（含握手 token；须同步更新编辑器插件） |
 | `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent-usage.json` | 用量汇总 |

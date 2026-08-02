@@ -1,6 +1,6 @@
 /**
- * Display helpers for expanded `@path` payloads and mode instruction blocks
- * stored in user messages (`<file>` / `<mode>`).
+ * Display helpers for expanded payloads stored in user messages:
+ * `<file>` / `<mode>` / `<skill>` / `<prompt>`.
  */
 
 import { MODE_BLOCK_RE } from "@shared/mode-prompt";
@@ -8,40 +8,84 @@ import { MODE_BLOCK_RE } from "@shared/mode-prompt";
 export type UserMessageSegment =
   | { kind: "text"; text: string }
   | { kind: "file"; name: string; content: string }
-  | { kind: "mode"; name: string; content: string };
+  | { kind: "mode"; name: string; content: string }
+  | { kind: "skill"; name: string; content: string; location?: string }
+  | { kind: "prompt"; name: string; content: string; args?: string };
 
 export const FILE_BLOCK_RE =
   /<file\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/file>/g;
 
-const COMBINED_BLOCK_RE =
-  /<(file)\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/file>|<(mode)\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/mode>/g;
+export const SKILL_BLOCK_RE =
+  /<skill\s+name="([^"]*)"(?:\s+location="([^"]*)")?\s*>\r?\n?([\s\S]*?)\r?\n?<\/skill>/g;
 
-/** Split stored user text into plain runs, file refs, and mode chips. */
+export const PROMPT_BLOCK_RE =
+  /<prompt\s+name="([^"]*)"(?:\s+args="([^"]*)")?\s*>\r?\n?([\s\S]*?)\r?\n?<\/prompt>/g;
+
+const BLOCK_RE =
+  /<(file|mode|skill|prompt)\s+([^>]*)>(\r?\n)?([\s\S]*?)\r?\n?<\/\1>/g;
+
+function parseAttrs(attrStr: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const re = /(\w+)="([^"]*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(attrStr)) !== null) {
+    out[m[1]!] = m[2] ?? "";
+  }
+  return out;
+}
+
+function decodeAttr(value: string): string {
+  return value.replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+}
+
+/** Split stored user text into plain runs and collapsible chips. */
 export function splitUserMessageFileBlocks(text: string): UserMessageSegment[] {
   if (!text) return [{ kind: "text", text: "" }];
-  if (!text.includes("<file") && !text.includes("<mode")) {
+  if (
+    !text.includes("<file") &&
+    !text.includes("<mode") &&
+    !text.includes("<skill") &&
+    !text.includes("<prompt")
+  ) {
     return [{ kind: "text", text }];
   }
 
   const segments: UserMessageSegment[] = [];
   let last = 0;
-  COMBINED_BLOCK_RE.lastIndex = 0;
+  BLOCK_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = COMBINED_BLOCK_RE.exec(text)) !== null) {
+  while ((match = BLOCK_RE.exec(text)) !== null) {
     if (match.index > last) {
       segments.push({ kind: "text", text: text.slice(last, match.index) });
     }
-    if (match[1] === "file") {
+    const tag = match[1] ?? "";
+    const attrs = parseAttrs(match[2] ?? "");
+    const content = match[4] ?? "";
+    if (tag === "file") {
       segments.push({
         kind: "file",
-        name: match[2] ?? "",
-        content: match[3] ?? "",
+        name: attrs.name ?? "",
+        content,
       });
-    } else {
+    } else if (tag === "mode") {
       segments.push({
         kind: "mode",
-        name: match[5] ?? "",
-        content: match[6] ?? "",
+        name: attrs.name ?? "",
+        content,
+      });
+    } else if (tag === "skill") {
+      segments.push({
+        kind: "skill",
+        name: attrs.name ?? "",
+        content,
+        ...(attrs.location ? { location: attrs.location } : {}),
+      });
+    } else if (tag === "prompt") {
+      segments.push({
+        kind: "prompt",
+        name: attrs.name ?? "",
+        content,
+        ...(attrs.args ? { args: decodeAttr(attrs.args) } : {}),
       });
     }
     last = match.index + match[0].length;
@@ -65,6 +109,21 @@ export function userMessageHasModeBlocks(text: string): boolean {
   return MODE_BLOCK_RE.test(text);
 }
 
+export function userMessageHasSkillBlocks(text: string): boolean {
+  SKILL_BLOCK_RE.lastIndex = 0;
+  return SKILL_BLOCK_RE.test(text);
+}
+
+export function userMessageHasPromptBlocks(text: string): boolean {
+  PROMPT_BLOCK_RE.lastIndex = 0;
+  return PROMPT_BLOCK_RE.test(text);
+}
+
 export function userMessageHasEmbeddedBlocks(text: string): boolean {
-  return userMessageHasFileBlocks(text) || userMessageHasModeBlocks(text);
+  return (
+    userMessageHasFileBlocks(text) ||
+    userMessageHasModeBlocks(text) ||
+    userMessageHasSkillBlocks(text) ||
+    userMessageHasPromptBlocks(text)
+  );
 }

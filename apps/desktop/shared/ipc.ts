@@ -181,12 +181,13 @@ export const ALL_TOGGLEABLE_TOOLS = [
   ...GODOT_TOOLS,
 ] as const;
 
-/**
- * Custom Plan tool — registered on the session but not prefs-toggleable.
- * Must be included in createAgentSession `tools` allowlist or Pi silently
- * drops it from the tool registry.
- */
-export const WRITE_PLAN_TOOL = "write_plan" as const;
+export {
+  WRITE_PLAN_TOOL,
+  READONLY_CORE_TOOLS,
+  PLAN_MODE_CORE_TOOLS,
+  PLAN_MODE_OPTIONAL_READONLY_TOOLS,
+} from "./mode-tools";
+import { WRITE_PLAN_TOOL } from "./mode-tools";
 
 /** Full tool registry names for createAgentSession (toggleable + write_plan). */
 export const SESSION_TOOL_REGISTRY = [
@@ -196,20 +197,6 @@ export const SESSION_TOOL_REGISTRY = [
 
 /** Session interaction mode — mutually exclusive. */
 export type AgentSessionMode = "agent" | "ask" | "plan" | "goal";
-
-/** Shared read-only builtins for Ask / Plan modes. */
-export const READONLY_CORE_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
-
-/** Core tools active while in Plan mode (write_plan is a custom tool, not prefs-toggleable). */
-export const PLAN_MODE_CORE_TOOLS = [
-  ...READONLY_CORE_TOOLS,
-  WRITE_PLAN_TOOL,
-] as const;
-
-/** Read-only Godot tools allowed in Ask/Plan when already enabled in prefs. */
-export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
-  "godot_editor_info",
-] as const;
 
 export type GoalStatus =
   | "pursuing"
@@ -439,6 +426,11 @@ export interface OpenProjectResult {
 export interface PromptResult {
   ok: boolean;
   error?: string;
+  /**
+   * True when an extension slash command ran with no user bubble
+   * (renderer should drop the optimistic pending message).
+   */
+  silent?: boolean;
 }
 
 /** Serializable chat history item shared by main ↔ renderer. */
@@ -755,6 +747,19 @@ export interface SessionSkillInfo {
   description: string;
 }
 
+/** Slash menu entry source (Pi runtime: skills / prompt templates / extension commands). */
+export type SessionSlashSource = "skill" | "prompt" | "command";
+
+/** Unified slash autocomplete item for the chat composer. */
+export interface SessionSlashItem {
+  /** Display + match name (skills omit the `skill:` insert prefix). */
+  name: string;
+  description: string;
+  source: SessionSlashSource;
+  /** Prompt templates may expose frontmatter `argument-hint`. */
+  argumentHint?: string;
+}
+
 export type ProviderApiKind =
   | "openai-completions"
   | "openai-responses"
@@ -778,6 +783,8 @@ export interface ProviderProfile {
   models: ProviderModelEntry[];
   notes?: string;
   updatedAt: string;
+  /** When true, profile is synced into Pi auth/models and appears in TopBar. */
+  enabled: boolean;
 }
 
 export interface ProviderProfileSummary {
@@ -787,7 +794,10 @@ export interface ProviderProfileSummary {
   api: ProviderApiKind;
   baseUrl: string;
   modelCount: number;
+  /** @deprecated Use {@link enabled}. Kept for older callers; mirrors enabled. */
   active: boolean;
+  /** Synced into Pi / visible in TopBar model list. */
+  enabled: boolean;
   updatedAt: string;
   /** Masked key hint for UI, e.g. sk-…xxxx */
   apiKeyHint: string;
@@ -820,6 +830,8 @@ export interface ProviderUpsertInput {
   apiKey: string;
   models: ProviderModelEntry[];
   notes?: string;
+  /** Omit to keep existing value on edit; new profiles default to true. */
+  enabled?: boolean;
 }
 
 export interface ProviderActivateResult {
@@ -932,6 +944,93 @@ export type PlanApi = {
   getGoal: XAgentApiFlat["getGoal"];
 };
 
+/** Active session tuning / context (flat methods remain). Prefer over flat in new code. */
+export type SessionApi = {
+  setModel: XAgentApiFlat["setModel"];
+  setThinkingLevel: XAgentApiFlat["setThinkingLevel"];
+  listModels: XAgentApiFlat["listModels"];
+  getSessionUsage: XAgentApiFlat["getSessionUsage"];
+  compactSession: XAgentApiFlat["compactSession"];
+  getToolDetail: XAgentApiFlat["getToolDetail"];
+  reloadResources: XAgentApiFlat["reloadResources"];
+  listSessionSkills: XAgentApiFlat["listSessionSkills"];
+  listSessionSlashItems: XAgentApiFlat["listSessionSlashItems"];
+};
+
+/** Client prefs + runtime dependency checks. */
+export type PrefsApi = {
+  get: XAgentApiFlat["getPrefs"];
+  set: XAgentApiFlat["setPrefs"];
+  getRecoveryNotice: XAgentApiFlat["getPrefsRecoveryNotice"];
+  checkBash: XAgentApiFlat["checkBash"];
+  applyBashShellPath: XAgentApiFlat["applyBashShellPath"];
+  pickBashShell: XAgentApiFlat["pickBashShell"];
+  checkGit: XAgentApiFlat["checkGit"];
+  checkAuth: XAgentApiFlat["checkAuth"];
+  checkPiCli: XAgentApiFlat["checkPiCli"];
+  installPiCli: XAgentApiFlat["installPiCli"];
+};
+
+export type ProjectApi = {
+  listDir: XAgentApiFlat["listProjectDir"];
+  readFile: XAgentApiFlat["readProjectFile"];
+  revealInFolder: XAgentApiFlat["revealInFolder"];
+};
+
+export type GodotApi = {
+  rpcStatus: XAgentApiFlat["godotRpcStatus"];
+  rpcStart: XAgentApiFlat["godotRpcStart"];
+  rpcStop: XAgentApiFlat["godotRpcStop"];
+  rpcPing: XAgentApiFlat["godotRpcPing"];
+  rpcRequest: XAgentApiFlat["godotRpcRequest"];
+  rpcSetActiveClient: XAgentApiFlat["godotRpcSetActiveClient"];
+  pickEditor: XAgentApiFlat["pickGodotEditor"];
+  launchEditor: XAgentApiFlat["launchGodotEditor"];
+  installRpcAddon: XAgentApiFlat["installGodotRpcAddon"];
+  pickScene: XAgentApiFlat["pickGodotScene"];
+};
+
+export type PluginsApi = {
+  list: XAgentApiFlat["listPlugins"];
+  read: XAgentApiFlat["readPlugin"];
+  write: XAgentApiFlat["writePlugin"];
+  create: XAgentApiFlat["createPlugin"];
+  delete: XAgentApiFlat["deletePlugin"];
+  reveal: XAgentApiFlat["revealPlugin"];
+};
+
+export type ProvidersApi = {
+  list: XAgentApiFlat["listProviderProfiles"];
+  get: XAgentApiFlat["getProviderProfile"];
+  upsert: XAgentApiFlat["upsertProviderProfile"];
+  delete: XAgentApiFlat["deleteProviderProfile"];
+  setEnabled: XAgentApiFlat["setProviderProfileEnabled"];
+  activate: XAgentApiFlat["activateProviderProfile"];
+  listPresets: XAgentApiFlat["listProviderPresets"];
+  importExisting: XAgentApiFlat["importExistingProviderProfiles"];
+  fetchModels: XAgentApiFlat["fetchProviderModels"];
+};
+
+export type PackagesApi = {
+  list: XAgentApiFlat["listInstalledPackages"];
+  install: XAgentApiFlat["installPackage"];
+  uninstall: XAgentApiFlat["uninstallPackage"];
+  installGodotPi: XAgentApiFlat["installGodotPiPackage"];
+};
+
+export type UpdatesApi = {
+  getStatus: XAgentApiFlat["getUpdateStatus"];
+  check: XAgentApiFlat["checkForUpdates"];
+  download: XAgentApiFlat["downloadUpdate"];
+  install: XAgentApiFlat["installUpdate"];
+  onStatus: XAgentApiFlat["onUpdateStatus"];
+};
+
+export type UsageApi = {
+  getSummary: XAgentApiFlat["getUsageSummary"];
+  clearSummary: XAgentApiFlat["clearUsageSummary"];
+};
+
 /** Flat IPC surface (legacy; prefer workspace / turn / plan facades). */
 export interface XAgentApiFlat {
   openProject: (
@@ -1027,6 +1126,8 @@ export interface XAgentApiFlat {
   listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
   /** Skills indexed for the current session cwd (godot-* filtered when not a Godot project). */
   listSessionSkills: () => Promise<SessionSkillInfo[]>;
+  /** Skills + prompt templates + extension commands for composer `/` autocomplete. */
+  listSessionSlashItems: () => Promise<SessionSlashItem[]>;
   readPlugin: (path: string) => Promise<PluginReadResult>;
   writePlugin: (path: string, content: string) => Promise<PluginWriteResult>;
   createPlugin: (input: PluginCreateInput) => Promise<PluginMutateResult>;
@@ -1041,10 +1142,16 @@ export interface XAgentApiFlat {
     ok: boolean;
     profile?: ProviderProfile;
     error?: string;
-    /** True when upsert already activated/synced the active profile. */
+    /** Profile was written into Pi auth/models (enabled profiles only). */
+    syncedToPi?: boolean;
+    /** @deprecated Same as syncedToPi. */
     syncedActive?: boolean;
   }>;
   deleteProviderProfile: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  setProviderProfileEnabled: (
+    id: string,
+    enabled: boolean,
+  ) => Promise<{ ok: boolean; error?: string; syncedToPi?: boolean }>;
   activateProviderProfile: (id: string) => Promise<ProviderActivateResult>;
   listProviderPresets: () => Promise<ProviderPreset[]>;
   importExistingProviderProfiles: () => Promise<ProviderImportResult>;
@@ -1081,4 +1188,13 @@ export interface XAgentApi extends XAgentApiFlat {
   workspace: WorkspaceApi;
   turn: TurnApi;
   plan: PlanApi;
+  session: SessionApi;
+  prefs: PrefsApi;
+  project: ProjectApi;
+  godot: GodotApi;
+  plugins: PluginsApi;
+  providers: ProvidersApi;
+  packages: PackagesApi;
+  updates: UpdatesApi;
+  usage: UsageApi;
 }

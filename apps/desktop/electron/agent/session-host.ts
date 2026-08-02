@@ -1,12 +1,8 @@
 import type { BrowserWindow } from "electron";
-import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import {
-  createAgentSession,
   DefaultResourceLoader,
   ModelRuntime,
-  SessionManager,
-  getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
@@ -32,6 +28,7 @@ import {
   type SessionModeInfo,
   type SessionModeResult,
   type SessionSkillInfo,
+  type SessionSlashItem,
   type SessionUsageSnapshot,
   type ThinkingLevel,
   type TurnUsage,
@@ -39,48 +36,43 @@ import {
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
 import { getAgentDirPath, loadPrefs, patchPrefs } from "./prefs";
-import { clearGoalJournal } from "./goal-journal";
-import { dedupeModelInfosForUi, repairDeepSeekModelsJson } from "./provider-store";
-import { branchEntriesToHistory } from "./history";
-import { extractMessageText } from "./transcript-mapper";
-import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import {
-  displaySessionName,
-  ensureSessionTitle,
-} from "./session-title";
+  dedupeModelInfosForUi,
+  filterModelsByCatalogEnabled,
+  repairDeepSeekModelsJson,
+} from "./provider-store";
+import {
+  branchEntriesToHistory,
+  extractMessageText,
+} from "../../shared/transcript";
+import { ensureSessionTitle } from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
-import { createGodotTools } from "./godot-tools";
-import {
-  computeAskModeTools,
-  computePlanModeTools,
-  createWritePlanTools,
-  isReadonlySessionMode,
-} from "./plan-tools";
-import { createPlanModeGuardExtension } from "./plan-mode-guard";
+import { wrapPromptSlashAsBlock } from "./prompt-slash-wrap";
+import { buildSessionSlashItems } from "./session-slash-items";
 import {
   SessionModeController,
   type SessionModeHost,
-} from "./session-mode";
+  isReadonlySessionMode,
+} from "./session-mode/index";
 import {
   RetractOrchestrator,
   type RetractOrchestratorHost,
 } from "./retract-orchestrator";
 import { TurnFileTracker } from "./turn-file-tracker";
 import { ShadowCheckpointTracker } from "./shadow-checkpoints";
-import {
-  normalizeProjectKey,
-  pickFallbackSessionPath,
-  sessionPathsForProject,
-} from "../../shared/project-path";
 import { applyXAgentSkillsFilter } from "./filter-session-skills";
 import { listPlugins } from "./plugin-host";
 import { reloadAuthStorageCache } from "./model-runtime-auth";
 import {
   emptyUsageSnapshot,
-  failOpen,
   modelFromSession,
   type ToolDetailRecord,
 } from "./session-host-helpers";
+import {
+  SessionLifecycle,
+  type SessionBundle,
+  type SessionLifecycleAccess,
+} from "./session-lifecycle";
 import {
   bridgeSessionEvents,
   type SessionEventBridgeDeps,
@@ -94,12 +86,6 @@ import {
 
 export type { ToolDetailRecord } from "./session-host-helpers";
 
-type SessionBundle = {
-  session: AgentSession;
-  unsubscribe: () => void;
-  cwd: string;
-  sessionPath: string | null;
-};
 
 export class SessionHost {
   private bundle: SessionBundle | null = null;
@@ -126,6 +112,8 @@ export class SessionHost {
   private compactionRecording = false;
   /** Plan/Goal session mode orchestration. */
   private sessionMode: SessionModeController;
+  /** Workspace open/resume/dispose orchestration. */
+  private lifecycle: SessionLifecycle;
   /** 撤回撤销 pipeline orchestration. */
   private retractOrchestrator: RetractOrchestrator;
   /** Live resource loader for mutating mode system-append without full recreate. */
@@ -143,8 +131,54 @@ export class SessionHost {
     this.retractOrchestrator = new RetractOrchestrator(() =>
       this.asRetractHost(),
     );
+    this.lifecycle = new SessionLifecycle(() => this.asLifecycleAccess());
   }
 
+  private asLifecycleAccess(): SessionLifecycleAccess {
+    return {
+      getBundle: () => this.bundle,
+      setBundle: (bundle) => {
+        this.bundle = bundle;
+      },
+      getResourceLoader: () => this.resourceLoader,
+      setResourceLoader: (loader) => {
+        this.resourceLoader = loader;
+      },
+      getBaseAppendPrompt: () => this.baseAppendPrompt,
+      setBaseAppendPrompt: (base) => {
+        this.baseAppendPrompt = base;
+      },
+      setLastTurnUsage: (u) => {
+        this.lastTurnUsage = u;
+      },
+      clearCompactionState: () => {
+        this.compactionStatsBaseline = null;
+        this.compactionRecording = false;
+      },
+      setAutoTitleInFlight: (v) => {
+        this.autoTitleInFlight = v;
+      },
+      setLastHistoryFingerprint: (fp) => {
+        this.lastHistoryFingerprint = fp;
+      },
+      toolDetails: this.toolDetails,
+      fileTracker: this.fileTracker,
+      shadowCheckpoints: this.shadowCheckpoints,
+      sessionMode: this.sessionMode,
+      godotRpc: this.godotRpc,
+      runReplaceExclusive: (fn) => this.runReplaceExclusive(fn),
+      ensureRuntime: () => this.ensureRuntime(),
+      bridgeEvents: (session) => this.bridgeEvents(session),
+      emit: (event) => this.emit(event),
+      emitReplaceableNotice: (replaceKey, notice, level) =>
+        this.emitReplaceableNotice(replaceKey, notice, level),
+      setStatus: (status, error) => this.setStatus(status, error),
+      emitUsageUpdate: () => this.emitUsageUpdate(),
+      historyFingerprint: (items) => this.historyFingerprint(items),
+    };
+  }
+
+  /** Host bag for SessionModeController: session + emit + prompt + runtime. */
   private asModeHost(): SessionModeHost {
     return {
       getBundle: () => this.getBundle(),
@@ -524,7 +558,14 @@ export class SessionHost {
     return this.modelRuntime;
   }
 
-  async reloadRuntime(): Promise<void> {
+  async reloadRuntime(options?: { hard?: boolean }): Promise<void> {
+    // Provider enable/disable must drop removed providers; soft reloadConfig can
+    // leave builtins / stale composition in place — hard recreates ModelRuntime.
+    if (options?.hard) {
+      this.modelRuntime = null;
+      await this.ensureRuntime();
+      return;
+    }
     if (this.modelRuntime) {
       try {
         reloadAuthStorageCache(this.modelRuntime);
@@ -586,44 +627,6 @@ export class SessionHost {
     }
   }
 
-  private sessionFileOf(session: AgentSession): string | null {
-    const file = (session as { sessionFile?: string | null }).sessionFile;
-    return file ?? null;
-  }
-
-  private async disposeBundle(bundle: SessionBundle | null): Promise<void> {
-    if (!bundle) return;
-    try {
-      if (bundle.session.isStreaming) {
-        await bundle.session.abort();
-      }
-    } catch {
-      // ignore
-    }
-    try {
-      bundle.unsubscribe();
-      bundle.session.dispose();
-    } catch {
-      // ignore
-    }
-    // Drop tool detail cache so IDs from a prior session cannot leak into the panel.
-    this.toolDetails.clear();
-    this.fileTracker.clear();
-    this.shadowCheckpoints.clear();
-    this.autoTitleInFlight = false;
-    this.lastHistoryFingerprint = null;
-    // Do NOT clear resourceLoader here — createSession assigns the next loader
-    // before disposing the previous bundle; wiping it would break Plan/Goal
-    // system-append refresh and setActiveToolsByName via sessionMode.refreshSystemPrompt.
-    this.sessionMode.reset({ emit: false });
-  }
-
-  /** Clear loader/state when the host no longer has an active session. */
-  private clearResourceLoader(): void {
-    this.resourceLoader = null;
-    this.baseAppendPrompt = [];
-  }
-
   /**
    * Status-style notices that should not stack in the transcript.
    * Same replaceKey replaces the previous bubble (mode / model / tools / …).
@@ -636,7 +639,8 @@ export class SessionHost {
       | "resources"
       | "plan"
       | "goal_eval"
-      | "session",
+      | "session"
+      | "extension",
     text: string,
     level: "info" | "warn" | "error" = "info",
   ): void {
@@ -691,450 +695,45 @@ export class SessionHost {
     return this.sessionMode.clearGoal();
   }
 
-  private async createSession(
-    cwd: string,
-    sessionManager: SessionManager,
-  ): Promise<OpenProjectResult> {
-    const prefs = loadPrefs();
-    const modelRuntime = await this.ensureRuntime();
-    const agentDir = getAgentDir();
-    // Mode resets with each new session bundle.
-    this.sessionMode.reset({ emit: false });
-    this.baseAppendPrompt = [];
-    const loader = new DefaultResourceLoader({
-      cwd,
-      agentDir,
-      // Pi auto-loads ~/.agents/skills (Cursor/Claude skills). X-agent only
-      // uses ~/.pi/agent/skills + project .pi/skills (+ installed packages).
-      // Godot-tier skills (godot-*) are indexed only when cwd has project.godot.
-      // User-disabled skills (prefs.disabledSkills) are dropped from the index.
-      skillsOverride: (base) => ({
-        skills: applyXAgentSkillsFilter(
-          base.skills,
-          cwd,
-          loadPrefs().disabledSkills,
-        ),
-        diagnostics: base.diagnostics,
-      }),
-      // Plan/Goal instructions live in system append (not per user message).
-      // SessionHost mutates the returned array on mode change, then rebuilds
-      // via setActiveToolsByName → getAppendSystemPrompt().
-      appendSystemPromptOverride: (base) => {
-        this.setBaseAppendPrompt([...base]);
-        return this.sessionMode.composeModeAppend(base);
-      },
-      extensionFactories: [
-        createPlanModeGuardExtension({
-          getMode: () => this.sessionMode.getMode(),
-          getAllowedTools: () => {
-            const prefsTools = loadPrefs().tools;
-            const mode = this.sessionMode.getMode();
-            if (mode === "ask") return computeAskModeTools(prefsTools);
-            if (mode === "plan") return computePlanModeTools(prefsTools);
-            return prefsTools;
-          },
-          getCwd: () => this.bundle?.cwd ?? null,
-        }),
-      ],
-    });
-    await loader.reload();
-    this.resourceLoader = loader;
-
-    let selectedModel =
-      prefs.provider && prefs.model
-        ? modelRuntime.getModel(prefs.provider, prefs.model)
-        : undefined;
-
-    if (!selectedModel) {
-      // 偏好模型不可用(虚构 id / 旧 prefs 残留) → 退到 Pi 实际可用的真实模型并通知用户。
-      // 我们**不**再硬编"deepseek-v4-flash":那是 DEFAULT_PREFS 之前的虚构 id,即使
-      // 出现在 available[0] 也不一定是用户真正想用的;优先 Pi 内置 anthropic provider,
-      // 其次首条 available[0]。
-      const available = await modelRuntime.getAvailable();
-      selectedModel =
-        available.find((m) => m.provider === "anthropic") ?? available[0];
-      if (selectedModel) {
-        const usedKey =
-          prefs.provider && prefs.model
-            ? `${prefs.provider}/${prefs.model}`
-            : "未配置";
-        this.emitReplaceableNotice(
-          "model",
-          `偏好模型 ${usedKey} 不可用,已切换到 ${selectedModel.provider}/${selectedModel.id}`,
-          "warn",
-        );
-      }
-    }
-
-    // Resumed sessions already have thinking_level_change in the file. If we
-    // pass thinkingLevel into createAgentSession, Pi sets agent state but skips
-    // appending when an entry exists — leaving the file stale. Omit the option
-    // so the agent restores the file level, then setThinkingLevel applies prefs
-    // and persists the change.
-    const hasThinkingEntry = sessionManager
-      .getBranch()
-      .some((entry) => entry.type === "thinking_level_change");
-
-    const { session, modelFallbackMessage } = await createAgentSession({
-      cwd,
-      agentDir,
-      resourceLoader: loader,
-      modelRuntime,
-      sessionManager,
-      // Pi uses `tools` as both registry allowlist AND initial active set.
-      // Register the full toggleable set + write_plan so later prefs / Plan mode
-      // can activate via setActiveToolsByName; unknown names are silently ignored
-      // and would otherwise drop custom tools from the registry entirely.
-      tools: [...SESSION_TOOL_REGISTRY],
-      customTools: [
-        ...(this.godotRpc ? createGodotTools(this.godotRpc) : []),
-        ...createWritePlanTools(
-          (path) => {
-            this.sessionMode.onPlanWritten(path);
-          },
-          () => this.sessionMode.getPlanPath(),
-        ),
-      ],
-      ...(selectedModel ? { model: selectedModel } : {}),
-      ...(!hasThinkingEntry ? { thinkingLevel: prefs.thinkingLevel } : {}),
-    });
-    // Apply「默认 Thinking」to the live session (clamps to model capabilities).
-    session.setThinkingLevel(prefs.thinkingLevel);
-    const effectiveThinking = session.thinkingLevel as ThinkingLevel;
-    if (effectiveThinking !== prefs.thinkingLevel) {
-      patchPrefs({ thinkingLevel: effectiveThinking });
-    }
-    // Initial active set = user prefs only (write_plan stays registered but inactive
-    // until Plan mode). Must run after createAgentSession so registry is built.
-    session.setActiveToolsByName(prefs.tools);
-
-    const unsubscribe = this.bridgeEvents(session);
-    const nextBundle: SessionBundle = {
-      session,
-      unsubscribe,
-      cwd,
-      sessionPath: this.sessionFileOf(session),
-    };
-
-    const previous = this.bundle;
-    this.bundle = nextBundle;
-    await this.disposeBundle(previous);
-    // Re-bind after disposeBundle — must stay set for Plan/Goal mode switches.
-    this.resourceLoader = loader;
-    // Fresh in-memory mode; restore pursuing/paused goal from journal if any.
-    this.sessionMode.emitSessionMode();
-    this.sessionMode.emitGoal();
-    this.sessionMode.restoreGoalFromJournal();
-
-    const sessionPath = this.sessionFileOf(session);
-    if (session.model) {
-      // 若用户偏好仍是旧的虚构默认("deepseek/deepseek-v4-flash")，把真实生效模型
-      // 写回 prefs 并显式通知；否则每次启动都以为已配置，实际却被静默回退。
-      const previousWasLegacyDefault =
-        prefs.provider === "deepseek" && prefs.model === "deepseek-v4-flash";
-      patchPrefs({
-        provider: session.model.provider,
-        model: session.model.id,
-      });
-      if (previousWasLegacyDefault) {
-        this.emitReplaceableNotice(
-          "model",
-          `已重置默认模型：旧值 deepseek/deepseek-v4-flash 不可用，已切换到 ${session.model.provider}/${session.model.id}`,
-          "warn",
-        );
-      }
-    }
-    patchPrefs({
-      lastProjectPath: cwd,
-      lastSessionPath: sessionPath,
-    });
-    this.bundle.sessionPath = sessionPath;
-
-    this.fileTracker.setCwd(cwd);
-    this.fileTracker.clear();
-    this.fileTracker.loadFromSession(session.sessionManager);
-    await this.shadowCheckpoints.setCwd(cwd);
-    this.shadowCheckpoints.loadFromSession(session.sessionManager);
-
-    const history: HistoryItem[] = branchEntriesToHistory(
-      session.sessionManager.getBranch(),
-    );
-
-    const info: OpenProjectResult = {
-      ok: true,
-      cwd,
-      sessionId: session.sessionId,
-      model: modelFromSession(session),
-      thinkingLevel: effectiveThinking,
-      ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
-    };
-
-    this.emit({
-      type: "session_info",
-      sessionId: session.sessionId,
-      cwd,
-      model: info.model,
-      thinkingLevel: info.thinkingLevel,
-      sessionPath,
-    });
-    this.lastHistoryFingerprint = this.historyFingerprint(history);
-    this.emit({ type: "history_replace", items: history });
-    if (modelFallbackMessage) {
-      this.emitReplaceableNotice("model", modelFallbackMessage, "warn");
-    }
-    this.lastTurnUsage = undefined;
-    this.setStatus("idle");
-    this.emitUsageUpdate();
-    return info;
-  }
-
-  private unhideProjectKey(cwd: string): void {
-    const key = normalizeProjectKey(cwd);
-    if (!key) return;
-    const prefs = loadPrefs();
-    const nextHidden = prefs.hiddenProjectKeys.filter(
-      (k) => normalizeProjectKey(k) !== key,
-    );
-    if (nextHidden.length !== prefs.hiddenProjectKeys.length) {
-      patchPrefs({ hiddenProjectKeys: nextHidden });
-    }
-  }
-
   async openProject(cwd: string, mode: "continue" | "new" = "continue"): Promise<OpenProjectResult> {
-    return this.runReplaceExclusive(async () => {
-      try {
-        const root = getXAgentSessionsRoot();
-        const sessionManager =
-          mode === "new"
-            ? SessionManager.create(cwd, root)
-            : SessionManager.continueRecent(cwd, root);
-        const result = await this.createSession(cwd, sessionManager);
-        if (result.ok) this.unhideProjectKey(cwd);
-        return result;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.setStatus("error", message);
-        return failOpen(message, this.bundle?.cwd ?? cwd);
-      }
-    });
+    return this.lifecycle.openProject(cwd, mode);
   }
 
   async newSession(): Promise<OpenProjectResult> {
-    const cwd = this.bundle?.cwd;
-    if (!cwd) {
-      return failOpen("尚未打开项目");
-    }
-    return this.openProject(cwd, "new");
+    return this.lifecycle.newSession();
   }
 
   async resumeSession(sessionPath: string): Promise<OpenProjectResult> {
-    return this.runReplaceExclusive(async () => {
-      try {
-        if (!isXAgentSessionPath(sessionPath)) {
-          return failOpen("只能恢复本客户端创建的会话（与 Pi CLI 会话已隔离）");
-        }
-        if (!existsSync(sessionPath)) {
-          return failOpen("会话文件不存在");
-        }
-        const sessionManager = SessionManager.open(
-          sessionPath,
-          getXAgentSessionsRoot(),
-        );
-        const cwd = sessionManager.getCwd();
-        if (!cwd) {
-          return failOpen(
-            "无法从会话文件解析项目路径，请先打开对应项目后再恢复",
-          );
-        }
-        const result = await this.createSession(cwd, sessionManager);
-        if (result.ok) this.unhideProjectKey(cwd);
-        return result;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.setStatus("error", message);
-        return failOpen(message, this.bundle?.cwd ?? "");
-      }
-    });
+    return this.lifecycle.resumeSession(sessionPath);
   }
 
   async deleteSession(sessionPath: string): Promise<{ ok: boolean; error?: string }> {
-    return this.runReplaceExclusive(async () => {
-      if (!isXAgentSessionPath(sessionPath)) {
-        return { ok: false, error: "只能删除本客户端会话" };
-      }
-      if (!existsSync(sessionPath)) {
-        return { ok: false, error: "会话文件不存在" };
-      }
-
-      const wasActive = this.bundle?.sessionPath === sessionPath;
-      const cwd = wasActive ? this.bundle!.cwd : null;
-
-      if (wasActive) {
-        // Null the bundle before dispose so bridgeSessionEvents ignores abort
-        // traffic from the doomed session (getSession() !== session).
-        const doomed = this.bundle;
-        this.bundle = null;
-        await this.disposeBundle(doomed);
-        this.clearResourceLoader();
-      }
-
-      unlinkSync(sessionPath);
-      clearGoalJournal(sessionPath);
-
-      const prefs = loadPrefs();
-      if (prefs.lastSessionPath === sessionPath) {
-        patchPrefs({ lastSessionPath: null });
-      }
-
-      if (!wasActive) {
-        return { ok: true };
-      }
-
-      // Prefer another session in the same project; never silently create a new one.
-      const remaining = await this.listSessions();
-      const fallbackPath = pickFallbackSessionPath(
-        remaining,
-        cwd ?? "",
-        sessionPath,
-      );
-      if (fallbackPath) {
-        try {
-          const sessionManager = SessionManager.open(
-            fallbackPath,
-            getXAgentSessionsRoot(),
-          );
-          const fallbackCwd = sessionManager.getCwd() || cwd;
-          if (!fallbackCwd) {
-            await this.emitClosedWorkspace();
-            return { ok: true };
-          }
-          await this.createSession(fallbackCwd, sessionManager);
-          return { ok: true };
-        } catch {
-          await this.emitClosedWorkspace(cwd);
-          return { ok: true };
-        }
-      }
-
-      await this.emitClosedWorkspace(cwd);
-      return { ok: true };
-    });
+    return this.lifecycle.deleteSession(sessionPath);
   }
 
-  /** Delete all X-agent sessions belonging to a project cwd. */
   async deleteProjectSessions(
     projectCwd: string,
   ): Promise<{ ok: boolean; deleted?: number; error?: string }> {
-    return this.runReplaceExclusive(async () => {
-      const key = normalizeProjectKey(projectCwd);
-      const listed = await this.listSessions();
-      const paths = sessionPathsForProject(listed, projectCwd);
-      if (paths.length === 0) {
-        return { ok: true, deleted: 0 };
-      }
-
-      const activePath = this.bundle?.sessionPath ?? null;
-      const activeCwd = this.bundle?.cwd ?? null;
-      const activeInProject =
-        Boolean(this.bundle) &&
-        (activePath
-          ? paths.includes(activePath)
-          : normalizeProjectKey(activeCwd ?? "") === key);
-
-      if (activeInProject) {
-        const doomed = this.bundle;
-        this.bundle = null;
-        await this.disposeBundle(doomed);
-        this.clearResourceLoader();
-      }
-
-      let deleted = 0;
-      const prefs = loadPrefs();
-      let clearLastSession = false;
-      for (const sessionPath of paths) {
-        if (!isXAgentSessionPath(sessionPath)) continue;
-        if (!existsSync(sessionPath)) continue;
-        unlinkSync(sessionPath);
-        clearGoalJournal(sessionPath);
-        deleted += 1;
-        if (prefs.lastSessionPath === sessionPath) {
-          clearLastSession = true;
-        }
-      }
-
-      if (clearLastSession) {
-        patchPrefs({ lastSessionPath: null });
-      }
-
-      if (activeInProject) {
-        await this.emitClosedWorkspace(activeCwd ?? projectCwd);
-      }
-
-      return { ok: true, deleted };
-    });
+    return this.lifecycle.deleteProjectSessions(projectCwd);
   }
 
-  /** Close current workspace without deleting session files (sidebar hide). */
   async closeWorkspace(): Promise<{ ok: boolean; error?: string }> {
-    return this.runReplaceExclusive(async () => {
-      const cwd = this.bundle?.cwd ?? null;
-      const doomed = this.bundle;
-      this.bundle = null;
-      await this.disposeBundle(doomed);
-      this.clearResourceLoader();
-      this.lastTurnUsage = undefined;
-      this.compactionStatsBaseline = null;
-      this.compactionRecording = false;
-      await this.emitClosedWorkspace(cwd);
-      return { ok: true };
-    });
-  }
-
-  private async emitClosedWorkspace(cwd?: string | null): Promise<void> {
-    const prefs = loadPrefs();
-    const patch: Partial<ClientPrefs> = { lastSessionPath: null };
-    if (cwd && normalizeProjectKey(prefs.lastProjectPath ?? "") === normalizeProjectKey(cwd)) {
-      patch.lastProjectPath = null;
-    }
-    patchPrefs(patch);
-    this.lastHistoryFingerprint = this.historyFingerprint([]);
-    this.emit({ type: "history_replace", items: [] });
-    this.emit({
-      type: "session_info",
-      sessionId: "",
-      cwd: "",
-      model: null,
-      thinkingLevel: loadPrefs().thinkingLevel,
-      sessionPath: null,
-    });
-    this.setStatus("idle");
+    return this.lifecycle.closeWorkspace();
   }
 
   async renameSession(
     sessionPath: string,
     name: string,
   ): Promise<{ ok: boolean; error?: string }> {
-    return this.runReplaceExclusive(async () => {
-      const trimmed = name.trim();
-      if (!trimmed) return { ok: false, error: "名称不能为空" };
-      if (!isXAgentSessionPath(sessionPath)) {
-        return { ok: false, error: "只能重命名本客户端会话" };
-      }
-      try {
-        if (this.bundle?.sessionPath === sessionPath) {
-          this.bundle.session.setSessionName(trimmed);
-          return { ok: true };
-        }
-        const sm = SessionManager.open(sessionPath, getXAgentSessionsRoot());
-        sm.appendSessionInfo(trimmed);
-        return { ok: true };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    });
+    return this.lifecycle.renameSession(sessionPath, name);
+  }
+
+  async listSessions(): Promise<SessionInfo[]> {
+    return this.lifecycle.listSessions();
+  }
+
+  async dispose(): Promise<void> {
+    return this.lifecycle.dispose();
   }
 
   async prompt(text: string): Promise<PromptResult> {
@@ -1149,19 +748,37 @@ export class SessionHost {
 
     try {
       const { session } = bundle;
+      const slashName = trimmed.startsWith("/")
+        ? (trimmed.match(/^\/([^\s]+)/)?.[1] ?? "")
+        : "";
+      const isExtensionCommand =
+        Boolean(slashName) &&
+        !slashName.startsWith("skill:") &&
+        Boolean(session.extensionRunner.getCommand(slashName));
+
+      // Wrap prompt templates as `<prompt>` so the UI can chip them
+      // (Pi already wraps `/skill:name` as `<skill>`).
+      let sendText = trimmed;
+      if (!isExtensionCommand) {
+        const wrapped = wrapPromptSlashAsBlock(trimmed, [
+          ...session.promptTemplates,
+        ]);
+        if (wrapped) sendText = wrapped;
+      }
+
       if (session.isStreaming) {
-        await session.prompt(trimmed, { streamingBehavior: "steer" });
+        await session.prompt(sendText, { streamingBehavior: "steer" });
       } else {
         await this.shadowCheckpoints.preparePromptCheckpoint();
         if (this.bundle !== bundle) {
           return { ok: false, error: "会话已切换" };
         }
-        await session.prompt(trimmed);
+        await session.prompt(sendText);
       }
       if (this.bundle !== bundle) {
         return { ok: false, error: "会话已切换" };
       }
-      return { ok: true };
+      return isExtensionCommand ? { ok: true, silent: true } : { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (this.bundle === bundle) {
@@ -1346,36 +963,9 @@ export class SessionHost {
       id: m.id,
       name: (m as { name?: string }).name ?? m.id,
     }));
-    return dedupeModelInfosForUi(mapped, prefs.provider);
-  }
-
-  async listSessions(): Promise<SessionInfo[]> {
-    try {
-      const all = await SessionManager.listAll(getXAgentSessionsRoot());
-      return all
-        .slice()
-        .sort((a, b) => {
-          const at = new Date(a.modified ?? a.created ?? 0).getTime();
-          const bt = new Date(b.modified ?? b.created ?? 0).getTime();
-          return bt - at;
-        })
-        .slice(0, 100)
-        .map((s) => ({
-          id: s.id,
-          name: displaySessionName(s.name, s.firstMessage),
-          path: s.path,
-          cwd: s.cwd ?? "",
-          updatedAt: new Date(s.modified ?? s.created ?? Date.now()).toISOString(),
-        }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.emitReplaceableNotice(
-        "session",
-        `列出会话失败: ${message}`,
-        "warn",
-      );
-      return [];
-    }
+    // Catalog enabled flag is authoritative for TopBar — not only models.json.
+    const visible = filterModelsByCatalogEnabled(mapped);
+    return dedupeModelInfosForUi(visible, prefs.provider);
   }
 
   getStatus(): HostStatus {
@@ -1420,6 +1010,54 @@ export class SessionHost {
       });
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Composer `/` menu: extension commands + prompt templates + filtered skills.
+   * Prefer Pi runtime lists; fall back to plugin-host prompt scan when needed.
+   */
+  listSessionSlashItems(): SessionSlashItem[] {
+    const cwd = this.bundle?.cwd;
+    if (!cwd) return [];
+
+    const skills = this.listSessionSkills();
+
+    type PromptSeed = {
+      name: string;
+      description: string;
+      argumentHint?: string;
+    };
+    let prompts: PromptSeed[] = (
+      this.resourceLoader?.getPrompts().prompts ?? []
+    ).map((p) => ({
+      name: p.name,
+      description: p.description ?? "",
+      argumentHint: p.argumentHint,
+    }));
+    if (prompts.length === 0 && this.bundle?.session) {
+      prompts = this.bundle.session.promptTemplates.map((p) => ({
+        name: p.name,
+        description: p.description ?? "",
+        argumentHint: p.argumentHint,
+      }));
+    }
+    if (prompts.length === 0) {
+      prompts = listPlugins(cwd)
+        .filter((p) => p.kind === "prompt")
+        .map((p) => ({
+          name: p.name,
+          description: p.description ?? "",
+        }));
+    }
+
+    const commands = (
+      this.bundle?.session.extensionRunner.getRegisteredCommands() ?? []
+    ).map((c) => ({
+      name: (c.invocationName || c.name).trim(),
+      description: c.description ?? "",
+    }));
+
+    return buildSessionSlashItems({ skills, prompts, commands });
   }
 
   getSessionUsage(): SessionUsageSnapshot | null {
@@ -1493,15 +1131,4 @@ export class SessionHost {
     }
   }
 
-  async dispose(): Promise<void> {
-    return this.runReplaceExclusive(async () => {
-      const doomed = this.bundle;
-      this.bundle = null;
-      await this.disposeBundle(doomed);
-      this.clearResourceLoader();
-      this.lastTurnUsage = undefined;
-      this.compactionStatsBaseline = null;
-      this.compactionRecording = false;
-    });
-  }
 }

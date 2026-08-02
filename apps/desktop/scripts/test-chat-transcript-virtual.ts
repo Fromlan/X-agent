@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isDisplayableTranscriptItem } from "../src/lib/chat-transcript-items.ts";
+import { isDisplayableTranscriptItem } from "../shared/transcript/index.ts";
 import type { ChatItem } from "../src/stores/chat-store";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -60,15 +60,26 @@ function readSrc(rel: string): string {
     /VIRTUALIZE_MIN_ITEMS/,
     "must gate virtualization on a min item count",
   );
+  // Both idle and streaming paths must virtualize long transcripts. The exact
+  // threshold can vary per mode (streaming uses a lower bar) but virtualization
+  // must not be hard-disabled while streaming — that was the cause of the
+  // chat-stuck-during-streaming regression. The streaming-mode constant is
+  // named VIRTUALIZE_STREAMING_MIN_ITEMS; the idle constant is
+  // VIRTUALIZE_MIN_ITEMS.
   assert.match(
     transcript,
-    /!streaming && displayItems\.length >= VIRTUALIZE_MIN_ITEMS/,
-    "must disable absolute virtual rows while streaming (overlap)",
+    /VIRTUALIZE_STREAMING_MIN_ITEMS/,
+    "must define a streaming-mode virtualize threshold",
+  );
+  assert.match(
+    transcript,
+    /displayItems\.length\s*>=\s*\(\s*streaming\s*\?\s*VIRTUALIZE_STREAMING_MIN_ITEMS\s*:\s*VIRTUALIZE_MIN_ITEMS/,
+    "virtualization must be mode-aware (streaming gets a lower bar)",
   );
   assert.match(
     transcript,
     /message-stream-flow/,
-    "streaming / short lists use document-flow layout",
+    "very short lists use document-flow layout",
   );
 
   const panel = readSrc("src/components/ChatPanel.tsx");

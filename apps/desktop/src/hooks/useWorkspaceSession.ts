@@ -99,7 +99,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const fetchSessionUsage = useCallback(() => {
     const gen = ++usageFetchGen.current;
-    void window.xAgent.getSessionUsage().then((u) => {
+    void window.xAgent.session.getSessionUsage().then((u) => {
       if (gen !== usageFetchGen.current) return;
       if (u) setSessionUsage(u);
       else setSessionUsage(null);
@@ -183,7 +183,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setCwd(result.cwd);
         setSessionId(result.sessionId);
         if (result.warning) setError(result.warning);
-        const p = await window.xAgent.getPrefs();
+        const p = await window.xAgent.prefs.get();
         setPrefs(p);
         await refreshSessions();
         await refreshProjectReadiness(result.cwd);
@@ -261,7 +261,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setSessionId(result.sessionId);
         setFollowNonce((n) => n + 1);
         if (result.warning) setError(result.warning);
-        const p = await window.xAgent.getPrefs();
+        const p = await window.xAgent.prefs.get();
         setPrefs(p);
         await refreshSessions();
       } finally {
@@ -388,7 +388,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
           (prefs.hiddenProjectKeys ?? []).map((k) => normalizeProjectKey(k)),
         );
         hidden.add(key);
-        const next = await window.xAgent.setPrefs({
+        const next = await window.xAgent.prefs.set({
           hiddenProjectKeys: [...hidden],
         });
         setPrefs(next);
@@ -422,17 +422,17 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     (async () => {
       try {
         const [p, recovery] = await Promise.all([
-          window.xAgent.getPrefs(),
-          window.xAgent.getPrefsRecoveryNotice(),
+          window.xAgent.prefs.get(),
+          window.xAgent.prefs.getRecoveryNotice(),
         ]);
         if (cancelled) return;
         setPrefs(p);
         if (recovery) setPrefsRecovery(recovery);
         applyTheme(p.themeId, p.colorMode);
-        setBash(await window.xAgent.checkBash());
-        setGit(await window.xAgent.checkGit());
-        setAuth(await window.xAgent.checkAuth());
-        setPiCli(await window.xAgent.checkPiCli());
+        setBash(await window.xAgent.prefs.checkBash());
+        setGit(await window.xAgent.prefs.checkGit());
+        setAuth(await window.xAgent.prefs.checkAuth());
+        setPiCli(await window.xAgent.prefs.checkPiCli());
         if (cancelled) return;
         await refreshModels();
         if (cancelled) return;

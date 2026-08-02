@@ -1,3 +1,4 @@
+import { memo } from "react";
 import {
   useCallback,
   useEffect,
@@ -62,7 +63,7 @@ interface Props {
   resizing?: boolean;
 }
 
-export function Sidebar({
+function SidebarImpl({
   sessions,
   hiddenProjectKeys,
   activeSessionId,
@@ -78,7 +79,7 @@ export function Sidebar({
   onRefresh,
   onResizePointerDown,
   onResizeDoubleClick,
-  resizing,
+  resizing = false,
 }: Props) {
   const confirm = useConfirm();
   const locked =
@@ -521,3 +522,7 @@ export function Sidebar({
     </aside>
   );
 }
+
+// memo wrap: Sidebar 接收的 props 全部来自 App 顶层；items 流式更新不应触发
+// Sidebar re-render（state-of-app.status / items 与 Sidebar 视图无关）。
+export const Sidebar = memo(SidebarImpl);

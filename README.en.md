@@ -45,7 +45,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 - **Usage** — local usage summary (Settings → Usage)
 - **Auth** — in-app Pi login guidance
 - **Theme** — dark default / light; toggle in Settings and the top bar
-- **Updates** — packaged builds silently check GitHub Releases; Settings has check / download / install; **Open Releases** fallback in the browser
+- **Updates** — packaged builds silently check GitHub Releases (no auto-download); in-app prompt + TopBar entry to download / install; Settings and **Open Releases** fallback
 
 ## Requirements
 
@@ -103,7 +103,7 @@ Under `~/.pi/agent/`:
 
 ## Updates & trust
 
-- **Auto-update**: packaged builds silently check **GitHub Releases** after launch; Settings → General also has check / download / install. Use **Open Releases** if auto-update fails (or the contact channels below).
+- **Auto-update**: packaged builds silently check **GitHub Releases** after launch (no auto-download). When a new version is found, an in-app prompt offers **Update now** / **Later**, and the TopBar shows a badge. Settings → General also has check / download / install. Use **Open Releases** if auto-update fails (or the contact channels below).
 - **Code signing**: Provide `CSC_LINK` + `CSC_KEY_PASSWORD` in the build env so electron-builder signs Windows installers (helps with SmartScreen). Builds still succeed without a certificate (unsigned).
 
 ## Security & privacy
