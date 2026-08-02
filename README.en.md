@@ -123,7 +123,7 @@ This is a coding agent with substantial local power—tighten as needed:
 
 The desktop UI is currently **Chinese-only**. This English README documents the product; an in-app locale switch is not shipped yet. macOS/Linux installers are not shipped yet (Windows-first).
 
-See [`CHANGELOG.md`](CHANGELOG.md) for release notes, [`CLAUDE.md`](CLAUDE.md) for development guidance, and [`docs/research-plan-goal-modes.md`](docs/research-plan-goal-modes.md) for Plan / Goal design notes.
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes, [`CLAUDE.md`](CLAUDE.md) for development guidance, and [`CONTEXT.md`](CONTEXT.md) for Plan / Goal design notes.
 
 ## Contact & feedback
 

@@ -99,12 +99,13 @@ try {
     "utf8",
   );
   const loaded = loadPrefs();
+  console.log("DEBUG loaded.disabledSkills:", loaded.disabledSkills);
   assert.deepEqual(
     loaded.disabledSkills,
     ["x-grill", "x-tdd"],
     "disabledSkills trims and drops invalid entries",
   );
-  const patched = patchPrefs({ disabledSkills: ["  Foo ", ""] });
+  const patched = await patchPrefs({ disabledSkills: ["  Foo ", ""] });
   assert.deepEqual(patched.disabledSkills, ["Foo"], "patchPrefs normalizes");
 } finally {
   setAgentDirOverrideForTests(null);

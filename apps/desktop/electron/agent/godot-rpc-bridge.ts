@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from "node:net";
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,7 @@ import type {
 } from "../../shared/godot-rpc";
 import { GODOT_RPC_BASE_TIMEOUT_MS, GODOT_RPC_DEFAULT_PORT } from "../../shared/godot-rpc";
 import { ensureAgentDir } from "./prefs";
+import { fileExistsAsync } from "./lib/atomic-write";
 
 type Listener = (status: GodotRpcBridgeStatus) => void;
 
@@ -128,10 +129,10 @@ export class GodotRpcBridge {
     for (const listener of this.listeners) listener(status);
   }
 
-  private writeEndpointFile(): boolean {
+  private async writeEndpointFile(): Promise<boolean> {
     try {
       ensureAgentDir();
-      writeFileSync(
+      await writeFile(
         godotRpcEndpointPath(),
         JSON.stringify(
           {
@@ -157,10 +158,10 @@ export class GodotRpcBridge {
     }
   }
 
-  private clearEndpointFile(): boolean {
+  private async clearEndpointFile(): Promise<boolean> {
     try {
       const path = godotRpcEndpointPath();
-      if (existsSync(path)) unlinkSync(path);
+      if (await fileExistsAsync(path)) await unlink(path);
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -261,8 +262,9 @@ export class GodotRpcBridge {
           this.lastWarning = `端口 ${preferredPort} 被占用，已自动改用 ${port}`;
         }
         this.lastError = undefined;
-        this.writeEndpointFile();
         this.emitStatus();
+        // 异步写 endpoint 文件 —— 不阻塞 listen 路径,但失败会 emit 到 status
+        void this.writeEndpointFile();
         return this.getStatus();
       }
       lastErr = result.err;
@@ -303,7 +305,7 @@ export class GodotRpcBridge {
       }
       server.close(() => resolve());
     });
-    this.clearEndpointFile();
+    await this.clearEndpointFile();
     this.emitStatus();
   }
 

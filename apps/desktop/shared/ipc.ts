@@ -1,5 +1,6 @@
 /** Shared IPC types between main and renderer. */
 
+import { Type } from "typebox";
 import type {
   GodotRpcBridgeStatus,
   GodotRpcCall,
@@ -412,6 +413,78 @@ export const DEFAULT_PREFS: ClientPrefs = {
   goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
   goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
 };
+
+/**
+ * Runtime validation schemas for IPC `setPrefs` payloads.
+ * - ClientPrefsSchema: strict,所有字段非 optional(读取已 normalize 的完整 prefs)
+ * - ClientPrefsPatchSchema: 接受部分字段 + additionalProperties:false,拒绝任何未声明键
+ *
+ * 由 `app-runtime.ts` 中 setPrefs handler 入口通过 `Value.Check` 校验 patch,
+ * 拒绝被攻陷的 renderer 写入任意字段(如 godotEditorPath、lastProjectPath、shellPath)。
+ */
+export const ClientPrefsSchema = Type.Object({
+  themeId: Type.Union(THEME_IDS.map((t) => Type.Literal(t)) as never),
+  colorMode: Type.Union([Type.Literal("light"), Type.Literal("dark")]),
+  showThinking: Type.Boolean(),
+  lastProjectPath: Type.Union([Type.Null(), Type.String()]),
+  lastSessionPath: Type.Union([Type.Null(), Type.String()]),
+  provider: Type.Union([Type.Null(), Type.String()]),
+  model: Type.Union([Type.Null(), Type.String()]),
+  thinkingLevel: Type.Union(
+    (
+      [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ] as const
+    ).map((l) => Type.Literal(l)) as never,
+  ),
+  tools: Type.Array(Type.String()),
+  disabledSkills: Type.Array(Type.String()),
+  godotEditorPath: Type.Union([Type.Null(), Type.String()]),
+  rightPanelOpen: Type.Boolean(),
+  sidebarWidth: Type.Number(),
+  rightPanelWidth: Type.Number(),
+  hiddenProjectKeys: Type.Array(Type.String()),
+  dismissedReadyChecklistKeys: Type.Array(Type.String()),
+  dismissedGodotToolsNudgeKeys: Type.Array(Type.String()),
+  autoCompactPercent: Type.Number(),
+  goalMaxTurns: Type.Number(),
+  goalMaxTokens: Type.Number(),
+});
+
+export const ClientPrefsPatchSchema = Type.Partial(ClientPrefsSchema, {
+  additionalProperties: false,
+});
+
+/** Surface the `secret-codec` fallback status to the renderer for UI banner. */
+export type SecretCodecReason =
+  | "no-electron"
+  | "keychain-unavailable"
+  | "encrypt-failed";
+
+export interface SecretCodecStatus {
+  available: boolean;
+  reason?: SecretCodecReason;
+}
+
+export const SecretCodecStatusSchema = Type.Object(
+  {
+    available: Type.Boolean(),
+    reason: Type.Optional(
+      Type.Union([
+        Type.Literal("no-electron"),
+        Type.Literal("keychain-unavailable"),
+        Type.Literal("encrypt-failed"),
+      ]),
+    ),
+  },
+  { additionalProperties: false },
+);
 
 export interface OpenProjectResult {
   ok: boolean;
@@ -962,6 +1035,7 @@ export type PrefsApi = {
   get: XAgentApiFlat["getPrefs"];
   set: XAgentApiFlat["setPrefs"];
   getRecoveryNotice: XAgentApiFlat["getPrefsRecoveryNotice"];
+  getSecretCodecStatus: XAgentApiFlat["getSecretCodecStatus"];
   checkBash: XAgentApiFlat["checkBash"];
   applyBashShellPath: XAgentApiFlat["applyBashShellPath"];
   pickBashShell: XAgentApiFlat["pickBashShell"];
@@ -1086,6 +1160,7 @@ export interface XAgentApiFlat {
   setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
   /** Returns and clears the startup prefs-recovery notice, if any. */
   getPrefsRecoveryNotice: () => Promise<PrefsRecoveryNotice | null>;
+  getSecretCodecStatus: () => Promise<SecretCodecStatus>;
   checkBash: () => Promise<BashCheckResult>;
   applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
   pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;

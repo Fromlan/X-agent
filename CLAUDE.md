@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.3.1`）。
+X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.3.11`）。
 
 **当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
 
@@ -48,7 +48,7 @@ npm run release:dist           # 可选：本地 typecheck + test + 打 Windows 
 
 `npm test`（在 `apps/desktop`）串联：
 
-`test-history-mapper`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-event-bridge-stale`、`test-cwd-sandbox`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`test-history-mapper`、`test-transcript-golden`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-addon-install`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-user-message-files`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-chat-markdown-streaming`、`test-chat-scroll-throttle`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-slash-items`、`test-prompt-slash-wrap`、`test-extension-ui`、`test-session-event-bridge-stale`、`test-cwd-sandbox`、`test-external-url`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
 冒烟（需本机认证）：
 
@@ -168,12 +168,12 @@ Electron 三进程边界：
 
 ### Issue tracker
 
-Issues live in GitHub Issues for `Fromlan/X-agent` (via `gh`). See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues for `Fromlan/X-agent` (via `gh`): `gh issue list --repo Fromlan/X-agent`.
 
 ### Triage labels
 
-Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). 用 `gh issue list --label <name> --repo Fromlan/X-agent` 过滤。
 
 ### Domain docs
 
-Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: root [`CONTEXT.md`](CONTEXT.md) 描述了核心架构与持久化路径(对应 ADR 摘要)。项目内不再保留 `docs/` 子目录,所有约定在此 CLAUDE.md。

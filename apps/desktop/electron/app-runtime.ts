@@ -1,4 +1,5 @@
 import { dialog, ipcMain, shell, type BrowserWindow } from "electron";
+import { Value } from "typebox/value";
 import { applyBashShellPath, checkBash } from "./agent/bash-check";
 import { checkAuth } from "./agent/auth-check";
 import { checkGit } from "./agent/git-exec";
@@ -29,8 +30,10 @@ import {
   writePlugin,
 } from "./agent/plugin-host";
 import { clearUsageSummary, getUsageSummary } from "./agent/usage-store";
-import type {
+import { getSecretCodecStatus } from "./agent/secret-codec";
+import {
   ClientPrefs,
+  ClientPrefsPatchSchema,
   PluginCreateInput,
   PrefsRecoveryNotice,
 } from "../shared/ipc";
@@ -113,30 +116,45 @@ function registerIpc(
   registerSessionIpc(ipcMain, host);
 
   ipcMain.handle(IPC_CHANNELS.getPrefs, async () => loadPrefs());
-  ipcMain.handle(IPC_CHANNELS.setPrefs, async (_e, patch: Partial<ClientPrefs>) => {
-    if (patch.tools) {
+  ipcMain.handle(IPC_CHANNELS.setPrefs, async (_e, patch: unknown) => {
+    // S4: 运行时 schema 校验。拒绝任何未声明字段(如 `language` / `theme` legacy),
+    // 拒绝类型越界,挡下被攻陷 renderer 写入任意路径或布尔值。
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+      throw new Error("prefs patch 必须是对象");
+    }
+    if (!Value.Check(ClientPrefsPatchSchema, patch)) {
+      const errors = Value.Errors(ClientPrefsPatchSchema, patch);
+      throw new Error(
+        `prefs patch 校验失败:${errors
+          .slice(0, 3)
+          .map((e) => `${e.instancePath || "/"}${e.message ? `: ${e.message}` : ""}`)
+          .join("; ")}`,
+      );
+    }
+    const typedPatch = patch as Partial<ClientPrefs>;
+    if (typedPatch.tools) {
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
-      await host.applyTools(patch.tools.filter((t) => allowed.has(t)));
-      const { tools: _drop, ...rest } = patch;
-      if (Object.keys(rest).length === 0) return loadPrefs();
-      const next = patchPrefs(rest);
+      await host.applyTools(typedPatch.tools.filter((t) => allowed.has(t)));
+      const { tools: _drop, ...rest } = typedPatch;
+      if (Object.keys(rest).length === 0) return await loadPrefs();
+      const next = await patchPrefs(rest);
       if (rest.disabledSkills !== undefined) {
         await host.reloadResources();
       }
       return next;
     }
-    const next = patchPrefs(patch);
-    if (patch.disabledSkills !== undefined) {
+    const next = await patchPrefs(typedPatch);
+    if (typedPatch.disabledSkills !== undefined) {
       await host.reloadResources();
     }
     return next;
   });
-  ipcMain.handle(IPC_CHANNELS.checkBash, async () => checkBash());
+  ipcMain.handle(IPC_CHANNELS.checkBash, async () => await checkBash());
   ipcMain.handle(IPC_CHANNELS.applyBashShellPath, async (_e, shellPath?: string) =>
-    applyBashShellPath(shellPath),
+    await applyBashShellPath(shellPath),
   );
   ipcMain.handle(IPC_CHANNELS.pickBashShell, async () => {
-    const current = checkBash();
+    const current = await checkBash();
     const result = await dialog.showOpenDialog({
       title: "选择 bash 可执行文件",
       defaultPath: current.shellPath ?? current.suggestedShellPath ?? undefined,
@@ -154,7 +172,7 @@ function registerIpc(
     }
     return { ok: true, path: result.filePaths[0]! };
   });
-  ipcMain.handle(IPC_CHANNELS.checkAuth, async () => checkAuth());
+  ipcMain.handle(IPC_CHANNELS.checkAuth, async () => await checkAuth());
   ipcMain.handle(IPC_CHANNELS.checkGit, async () => checkGit());
   ipcMain.handle(IPC_CHANNELS.checkPiCli, async () => checkPiCli());
   ipcMain.handle(IPC_CHANNELS.installPiCli, async () => installPiCli());
@@ -234,10 +252,13 @@ function registerIpc(
   ipcMain.handle(IPC_CHANNELS.getPrefsRecoveryNotice, async () =>
     consumePrefsRecoveryNotice(),
   );
-  ipcMain.handle(IPC_CHANNELS.getUsageSummary, async (_e, options?: { days?: number }) =>
-    getUsageSummary(options),
+  ipcMain.handle(IPC_CHANNELS.getSecretCodecStatus, async () =>
+    getSecretCodecStatus(),
   );
-  ipcMain.handle(IPC_CHANNELS.clearUsageSummary, async () => clearUsageSummary());
+  ipcMain.handle(IPC_CHANNELS.getUsageSummary, async (_e, options?: { days?: number }) =>
+    await getUsageSummary(options),
+  );
+  ipcMain.handle(IPC_CHANNELS.clearUsageSummary, async () => await clearUsageSummary());
   ipcMain.handle(IPC_CHANNELS.appReady, async () => {
     hooks.revealMainWindow();
     return { ok: true as const };

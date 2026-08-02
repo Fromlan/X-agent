@@ -214,14 +214,14 @@ export function bridgeSessionEvents(
             deps.usage.setLastTurnUsage(turnUsage);
             const model = deps.getSession()?.model;
             if (model && !deps.usage.isCompactionRecording()) {
-              try {
-                recordTurnUsage(
-                  modelUsageKey(model.provider, model.id),
-                  turnUsage,
-                );
-              } catch {
+              // recordTurnUsage 改为 async (写盘走 atomic rename + 串行队列)。
+              // event-bridge 是 sync callback,fire-and-forget + 内层 try/catch 吞错。
+              void recordTurnUsage(
+                modelUsageKey(model.provider, model.id),
+                turnUsage,
+              ).catch(() => {
                 /* ignore persist errors */
-              }
+              });
             }
           }
           deps.emit({

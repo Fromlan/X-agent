@@ -1,7 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { BashCheckResult } from "../../shared/ipc";
+
+const execFileAsync = promisify(execFile);
 
 const CANDIDATES = [
   "C:\\Program Files\\Git\\bin\\bash.exe",
@@ -12,51 +17,74 @@ function settingsPath(): string {
   return join(homedir(), ".pi", "agent", "settings.json");
 }
 
-function whichBashOnPath(): string | null {
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readSettings(): Promise<{ shellPath?: string }> {
+  try {
+    const raw = await readFile(settingsPath(), "utf8");
+    return JSON.parse(raw) as { shellPath?: string };
+  } catch {
+    return {};
+  }
+}
+
+async function whichBashOnPath(): Promise<string | null> {
   const pathEnv = process.env.PATH ?? "";
-  const parts = pathEnv.split(process.platform === "win32" ? ";" : ":");
-  for (const part of parts) {
-    const candidate = join(part.trim(), process.platform === "win32" ? "bash.exe" : "bash");
-    if (existsSync(candidate)) {
+  const sep = process.platform === "win32" ? ";" : ":";
+  const exeName = process.platform === "win32" ? "bash.exe" : "bash";
+  for (const part of pathEnv.split(sep)) {
+    const candidate = join(part.trim(), exeName);
+    if (await fileExists(candidate)) {
       return candidate;
     }
   }
   return null;
 }
 
-function findSuggestedBash(): string | null {
+async function findSuggestedBash(): Promise<string | null> {
   for (const candidate of CANDIDATES) {
-    if (existsSync(candidate)) return candidate;
+    if (await fileExists(candidate)) return candidate;
   }
   return whichBashOnPath();
 }
 
-export function checkBash(): BashCheckResult {
+/**
+ * 验证路径是否实际可执行 bash(对 spawn(target, ["--version"]) 做一次短时自检,
+ * 防止被攻陷的 renderer 写入任意可执行路径后被 Pi bash 工具执行)。
+ */
+async function probeBash(target: string): Promise<boolean> {
   try {
-    const path = settingsPath();
-    if (existsSync(path)) {
-      const settings = JSON.parse(readFileSync(path, "utf8")) as {
-        shellPath?: string;
-      };
-      if (settings.shellPath && existsSync(settings.shellPath)) {
-        return {
-          ok: true,
-          shellPath: settings.shellPath,
-          message: `已配置 shellPath: ${settings.shellPath}`,
-          suggestedShellPath: settings.shellPath,
-        };
-      }
-    }
+    await execFileAsync(target, ["--version"], { timeout: 2000 });
+    return true;
   } catch {
-    // ignore
+    return false;
+  }
+}
+
+export async function checkBash(): Promise<BashCheckResult> {
+  const settings = await readSettings();
+  if (settings.shellPath && (await fileExists(settings.shellPath))) {
+    return {
+      ok: true,
+      shellPath: settings.shellPath,
+      message: `已配置 shellPath: ${settings.shellPath}`,
+      suggestedShellPath: settings.shellPath,
+    };
   }
 
-  const suggested = findSuggestedBash();
+  const suggested = await findSuggestedBash();
   if (suggested) {
     return {
       ok: true,
       shellPath: suggested,
-      message: `已找到 bash: ${suggested}（可写入 Pi settings）`,
+      message: `已找到 bash: ${suggested}(可写入 Pi settings)`,
       suggestedShellPath: suggested,
     };
   }
@@ -66,14 +94,16 @@ export function checkBash(): BashCheckResult {
     shellPath: null,
     suggestedShellPath: null,
     message:
-      "未检测到 bash。Pi 的 bash 工具需要 Git Bash。请安装 Git for Windows，或点击「写入 shellPath」手动指定。",
+      "未检测到 bash。Pi 的 bash 工具需要 Git Bash。请安装 Git for Windows,或点击「写入 shellPath」手动指定。",
   };
 }
 
-/** Persist shellPath into ~/.pi/agent/settings.json */
-export function applyBashShellPath(shellPath?: string): BashCheckResult {
-  const target = shellPath || findSuggestedBash();
-  if (!target || !existsSync(target)) {
+/** Persist shellPath into ~/.pi/agent/settings.json (with self-check first). */
+export async function applyBashShellPath(
+  shellPath?: string,
+): Promise<BashCheckResult> {
+  const target = shellPath || (await findSuggestedBash());
+  if (!target || !(await fileExists(target))) {
     return {
       ok: false,
       shellPath: null,
@@ -81,19 +111,26 @@ export function applyBashShellPath(shellPath?: string): BashCheckResult {
       message: "没有可用的 bash 路径可写入",
     };
   }
+  if (!(await probeBash(target))) {
+    return {
+      ok: false,
+      shellPath: null,
+      suggestedShellPath: target,
+      message: `该路径不是 bash 可执行:${target}(--version 自检失败)`,
+    };
+  }
 
   const path = settingsPath();
-  mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+  await mkdir(join(homedir(), ".pi", "agent"), { recursive: true });
   let settings: Record<string, unknown> = {};
-  if (existsSync(path)) {
-    try {
-      settings = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    } catch {
-      settings = {};
-    }
+  try {
+    const raw = await readFile(path, "utf8");
+    settings = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    settings = {};
   }
   settings.shellPath = target;
-  writeFileSync(path, JSON.stringify(settings, null, 2), "utf8");
+  await writeFile(path, JSON.stringify(settings, null, 2), "utf8");
   return {
     ok: true,
     shellPath: target,

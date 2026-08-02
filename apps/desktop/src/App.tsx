@@ -20,6 +20,7 @@ import type {
   ModelInfo,
   PiCliStatus,
   PrefsRecoveryNotice,
+  SecretCodecStatus,
   SessionInfo,
   ThemeId,
   ThinkingLevel,
@@ -128,6 +129,9 @@ export default function App() {
   const [readyNotice, setReadyNotice] = useState<string | null>(null);
   const [prefsRecovery, setPrefsRecovery] =
     useState<PrefsRecoveryNotice | null>(null);
+  const [secretCodec, setSecretCodec] = useState<SecretCodecStatus | null>(
+    null,
+  );
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const usageVersion = useSyncExternalStore(
@@ -224,6 +228,7 @@ export default function App() {
     setFollowNonce,
     setPrefs,
     setPrefsRecovery,
+    setSecretCodec,
     setBash,
     setGit,
     setAuth,
@@ -914,6 +919,27 @@ export default function App() {
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => setPrefsRecovery(null)}
+          >
+            关闭
+          </button>
+        </div>
+      )}
+      {secretCodec && !secretCodec.available && (
+        <div className="banner warn">
+          <AlertTriangle size={14} />
+          <span>
+            供应商密钥将以明文存储——系统密钥链不可用
+            {secretCodec.reason === "keychain-unavailable"
+              ? "(safeStorage 不可用)"
+              : secretCodec.reason === "encrypt-failed"
+                ? "(safeStorage 加密失败)"
+                : "(未在 Electron 环境中)"}
+            。请到「设置 → 供应商」检查密钥是否需要重新保存。
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setSecretCodec(null)}
           >
             关闭
           </button>
