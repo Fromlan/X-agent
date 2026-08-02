@@ -176,4 +176,13 @@ Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready
 
 ### Domain docs
 
-Single-context: root [`CONTEXT.md`](CONTEXT.md) 描述了核心架构与持久化路径(对应 ADR 摘要)。项目内不再保留 `docs/` 子目录,所有约定在此 CLAUDE.md。
+Single-context: root [`CONTEXT.md`](CONTEXT.md) 描述了核心架构与持久化路径(对应 ADR 摘要)。
+
+本地 `docs/` 仅供个人维护 ADR / 调研 / code-review 草稿(已被 `.gitignore` 排除,不入 git 也不发布):
+
+- `docs/adr/*.md` — 单条 ADR(对应于 git 历史 commit 摘要,新决策请直接补到本文或 CONTEXT.md)
+- `docs/agents/{domain,issue-tracker,triage-labels}.md` — 给 skills 读的领域/协作规则,与本节同步更新
+- `docs/Godot-Tileset-结构格式调研.md` 与 `docs/research-plan-goal-modes.md` — 历史调研沉淀
+- `docs/code-review-2026-08-01.md` — 0.3.8 全量审查,分诊结论已落入 CHANGELOG 与 ADR
+
+约定:对外约定请写在本 `CLAUDE.md` 或 `CONTEXT.md`;`docs/` 内容不进 release、不参与协作,清理后下次会话可重建。
