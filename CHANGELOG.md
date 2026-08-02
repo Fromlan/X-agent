@@ -20,6 +20,16 @@
 
 ### 修复
 
+## 0.3.11
+
+### 修复
+
+- **对话卡顿 + 流式期间无法浏览历史**：流式增量每帧都触发整树 ReactMarkdown 全量重解析 + 强制关闭虚拟化 + 双 rAF 抢回 scrollTop，三者叠加导致长文本流式期间主线程被吃满、用户拖滚动条被强抢。MarkdownBody 在 streaming 时降级到 plain `<pre>`，assistant_end 后一次解析定型；长对话在 streaming 期也走虚拟列表（≥ 24 条）；用 IntersectionObserver 观察尾节点，pinned 才 follow，未 pinned 绝不抢滚动条。
+
+### 改进
+
+- **App / ChatPanel 回调 memo 化**：把传进 ChatPanel / Sidebar 的 inline lambda 全部 `useCallback` 化；TopBar / Sidebar 加 `React.memo`，流式事件不再触发无关组件重渲染。MarkdownBody / UserMessageBody / ToolRow 内部的 `JSON.stringify` / `splitUserMessageFileBlocks` 用 `useMemo` 缓存。
+
 ## 0.3.10
 
 ### 功能
