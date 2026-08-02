@@ -1,5 +1,4 @@
 import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
@@ -21,8 +20,8 @@ import {
   fileExistsAsync,
 } from "./lib/atomic-write";
 import { withStoreLock } from "./lib/store-mutex";
-
-const nodeRequire = createRequire(import.meta.url);
+import * as providerPiSync from "./provider-pi-sync";
+import { importExistingProviderProfiles } from "./provider-import";
 
 export interface ProviderStoreFile {
   version: 1;
@@ -76,6 +75,43 @@ export function ensureParent(filePath: string): void {
 
 function normalizeEnabled(value: unknown): boolean {
   return value !== false;
+}
+
+/**
+ * 用户必须保留至少一个启用的供应商档案;否则 Pi auth/models 会被清空,
+ * 顶栏模型列表空,无法发起请求。这是产品约束,而非临时状态。
+ */
+export const PROVIDER_LAST_ENABLED_ERROR =
+  "必须至少保留一个启用的供应商，否则顶栏没有可用模型";
+
+/**
+ * 检查启用集合变更后是否仍满足"至少一个启用档案"。
+ *
+ * 用于 setEnabled / upsert-enabled 路径:
+ * - nextEnabled=true:任意剩余档案即可满足(本条就变 enabled)
+ * - nextEnabled=false:检查除 excludeId 之外的档案是否还有 enabled
+ *
+ * delete 路径请用 {@link hasOtherEnabledProfilePure},因为没有"把它替换成什么 enabled"的概念。
+ */
+function hasOtherEnabledProfile(
+  profiles: readonly ProviderProfile[],
+  excludeId: string,
+  nextEnabled: boolean,
+): boolean {
+  if (nextEnabled) return true;
+  return hasOtherEnabledProfilePure(profiles, excludeId);
+}
+
+/** 剩余档案(不含 excludeId)中是否还有 enabled? */
+function hasOtherEnabledProfilePure(
+  profiles: readonly ProviderProfile[],
+  excludeId: string,
+): boolean {
+  for (const p of profiles) {
+    if (p.id === excludeId) continue;
+    if (p.enabled) return true;
+  }
+  return false;
 }
 
 function normalizeProfile(
@@ -185,7 +221,7 @@ async function applyPiSyncForProfile(
     syncProfileToPi,
     shouldSeedPrefsOnSync,
     pruneProviderIdFromPi,
-  } = nodeRequire("./provider-pi-sync") as typeof import("./provider-pi-sync");
+  } = providerPiSync;
 
   if (
     previousProviderId &&
@@ -217,26 +253,49 @@ async function applyPiSyncForProfile(
 
 /**
  * Whether a runtime provider id should appear in the TopBar model list.
- * Catalog-managed providers (case-insensitive match) only show when enabled;
- * providers not in the catalog pass through (e.g. Pi OAuth builtins).
+ *
+ * 主路径:大小写不敏感地匹配 catalog 档案的 providerId,有任意 enabled 档案即放行。
+ * 兜底:当传入的 providerId 不在 catalog 时,若传入了 baseUrl,则按 baseUrl 查找
+ * catalog 中的档案——用于历史档案的 providerId 拼写漂移场景。
+ * 既不在 catalog 又无 baseUrl 的(如未在 Pi 注册的)按"放行"处理,等价 builtin。
  */
 export async function isProviderEnabledInCatalog(
   providerId: string,
+  pathsOrBaseUrl?: ProviderPaths | string,
   paths: ProviderPaths = defaultProviderPaths(),
 ): Promise<boolean> {
+  // 兼容新签名 (providerId, baseUrl, paths) 与旧签名 (providerId, paths)。
+  const baseUrl =
+    typeof pathsOrBaseUrl === "string" ? pathsOrBaseUrl : undefined;
+  const resolvedPaths: ProviderPaths =
+    typeof pathsOrBaseUrl === "object"
+      ? (pathsOrBaseUrl as ProviderPaths)
+      : paths;
   const key = providerId.trim().toLowerCase();
   if (!key) return false;
-  const store = await loadStore(paths);
+  const store = await loadStore(resolvedPaths);
   const managed = store.profiles.filter(
     (p) => p.providerId.toLowerCase() === key,
   );
-  if (managed.length === 0) return true;
+  if (managed.length === 0) {
+    // providerId 不在 catalog,尝试 baseUrl 兜底。
+    if (baseUrl) {
+      const norm = baseUrl.trim().replace(/\/+$/, "").toLowerCase();
+      if (!norm) return true;
+      return store.profiles.some(
+        (p) =>
+          p.enabled &&
+          p.baseUrl.trim().replace(/\/+$/, "").toLowerCase() === norm,
+      );
+    }
+    return true;
+  }
   return managed.some((p) => p.enabled);
 }
 
 /** Drop models whose provider is a disabled catalog profile. */
 export async function filterModelsByCatalogEnabled<
-  T extends { provider: string },
+  T extends { provider: string; baseUrl?: string },
 >(
   models: readonly T[],
   paths: ProviderPaths = defaultProviderPaths(),
@@ -253,10 +312,35 @@ export async function filterModelsByCatalogEnabled<
     );
   }
 
+  // baseUrl 兜底用于处理历史档案的 providerId 拼写/大小写漂移:
+  // 例如老版本 import 时给同 baseUrl 加了 "-2" 后缀,Pi 仍按原始 key 暴露。
+  // 只有"catalog 中存在任意档案(不论 enabled)共享此 baseUrl"时,才把带该
+  // baseUrl 但 provider 不在 catalog 的模型视为指向档案 —— 否则 Pi OAuth
+  // builtin 等未在 catalog 的端点会被误伤。
+  const catalogBaseUrls = new Set<string>();
+  for (const p of store.profiles) {
+    const base = p.baseUrl.trim().replace(/\/+$/, "").toLowerCase();
+    if (base) catalogBaseUrls.add(base);
+  }
+
   return models.filter((m) => {
     const key = m.provider.toLowerCase();
-    if (!enabledByProvider.has(key)) return true;
-    return enabledByProvider.get(key) === true;
+    if (enabledByProvider.has(key)) {
+      return enabledByProvider.get(key) === true;
+    }
+    if (m.baseUrl) {
+      const modelBase = m.baseUrl.trim().replace(/\/+$/, "").toLowerCase();
+      // baseUrl 命中 catalog 内某条档案:
+      //   若该档案 enabled 则放行;否则视为指向 disabled 档案,隐藏。
+      if (modelBase && catalogBaseUrls.has(modelBase)) {
+        return store.profiles.some(
+          (p) =>
+            p.enabled &&
+            p.baseUrl.trim().replace(/\/+$/, "").toLowerCase() === modelBase,
+        );
+      }
+    }
+    return true;
   });
 }
 
@@ -265,9 +349,6 @@ export async function listProviderProfiles(
 ): Promise<ProviderProfileSummary[]> {
   // First launch: seed profiles from Pi auth/models and cc-switch if present.
   if (!(await fileExistsAsync(paths.storePath))) {
-    const { importExistingProviderProfiles } = nodeRequire(
-      "./provider-import",
-    ) as typeof import("./provider-import");
     await importExistingProviderProfiles(paths);
   }
   const store = await loadStore(paths);
@@ -324,6 +405,16 @@ export async function upsertProviderProfile(
     if (idx < 0) return { ok: false, error: "档案不存在" };
     const prev = store.profiles[idx]!;
     previousProviderId = prev.providerId;
+    const nextEnabled =
+      input.enabled !== undefined ? input.enabled !== false : prev.enabled;
+    // 编辑路径下也不允许把唯一启用档案改成 disabled。
+    if (
+      prev.enabled &&
+      !nextEnabled &&
+      !hasOtherEnabledProfile(store.profiles, prev.id, nextEnabled)
+    ) {
+      return { ok: false, error: PROVIDER_LAST_ENABLED_ERROR };
+    }
     profile = {
       ...prev,
       name: input.name.trim(),
@@ -334,10 +425,7 @@ export async function upsertProviderProfile(
       models,
       notes: input.notes?.trim() || undefined,
       updatedAt: now,
-      enabled:
-        input.enabled !== undefined
-          ? input.enabled !== false
-          : prev.enabled,
+      enabled: nextEnabled,
     };
     store.profiles[idx] = profile;
   } else {
@@ -379,9 +467,19 @@ export async function setProviderProfileEnabled(
   const store = await loadStore(paths);
   const idx = store.profiles.findIndex((p) => p.id === id);
   if (idx < 0) return { ok: false, error: "档案不存在" };
+  const prev = store.profiles[idx]!;
+  const nextEnabled = enabled !== false;
+  // 关掉当前档案后是否还有其它启用档案;没有则拒绝。
+  if (
+    prev.enabled &&
+    !nextEnabled &&
+    !hasOtherEnabledProfile(store.profiles, id, nextEnabled)
+  ) {
+    return { ok: false, error: PROVIDER_LAST_ENABLED_ERROR };
+  }
   const profile = {
-    ...store.profiles[idx]!,
-    enabled: enabled !== false,
+    ...prev,
+    enabled: nextEnabled,
     updatedAt: new Date().toISOString(),
   };
   store.profiles[idx] = profile;
@@ -402,15 +500,17 @@ export async function deleteProviderProfile(
   const idx = store.profiles.findIndex((p) => p.id === id);
   if (idx < 0) return { ok: false, error: "档案不存在" };
   const removed = store.profiles[idx]!;
+  // 删除最后一个启用档案后,启用集合为空:拒绝。
+  if (removed.enabled && !hasOtherEnabledProfilePure(store.profiles, id)) {
+    return { ok: false, error: PROVIDER_LAST_ENABLED_ERROR };
+  }
   store.profiles.splice(idx, 1);
   if (store.activeId === id) {
     store.activeId = null;
   }
   await saveStore(paths, store);
 
-  const { pruneProviderIdFromPi } = nodeRequire(
-    "./provider-pi-sync",
-  ) as typeof import("./provider-pi-sync");
+  const { pruneProviderIdFromPi } = providerPiSync;
   await pruneProviderIdFromPi(removed.providerId, paths);
 
   return { ok: true, prunedProviderId: removed.providerId };
