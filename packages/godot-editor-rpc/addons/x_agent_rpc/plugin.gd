@@ -5,14 +5,20 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
+const ADDON_VERSION := "0.3.0"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
-const CONNECT_TIMEOUT_SEC := 3.0
+const CONNECT_TIMEOUT_SEC := 1.2
 const FALLBACK_PORT_START := 8765
 const FALLBACK_PORT_END_INCLUSIVE := 8774
 const DEFAULT_RUN_WAIT_MS := 3000
 const MAX_RUN_WAIT_MS := 15000
 const MAX_PLAY_ERRORS := 50
+## 每秒检查一次 endpoint 文件 mtime；变更或消失时立即重解析并重连。
+## Godot 4 无 inotify 绑定，1s 轮询是跨平台最稳的方案。
+const ENDPOINT_POLL_SEC := 1.0
+## 断开后再次尝试连入的间隔。
+const RECONNECT_DELAY_SEC := 1.0
 
 # --- TCP connection ---
 var _peer: StreamPeerTCP = StreamPeerTCP.new()
@@ -25,6 +31,10 @@ var _auth_token: String = ""
 var _ports_to_try: Array[int] = []
 var _port_try_index: int = 0
 var _connect_started_ms: int = 0
+
+# --- Endpoint mtime polling ---
+var _endpoint_mtime: int = 0
+var _endpoint_check_in: float = 0.0
 
 # --- Play error capture ---
 var _debugger: EditorDebuggerPlugin
@@ -41,6 +51,7 @@ func _enter_tree() -> void:
 	_setup_debugger()
 	_resolve_endpoint()
 	_build_ports_to_try()
+	_endpoint_mtime = _read_endpoint_mtime()
 	_try_connect()
 
 func _exit_tree() -> void:
@@ -53,6 +64,7 @@ func _exit_tree() -> void:
 
 func _process(_delta: float) -> void:
 	_tick_pending_run()
+	_maybe_poll_endpoint(_delta)
 	# Do not poll STATUS_NONE — Godot errors with "_sock.is_null() || !_sock->is_open()".
 	var status := _peer.get_status()
 	if status == StreamPeerTCP.STATUS_CONNECTING or status == StreamPeerTCP.STATUS_CONNECTED:
@@ -68,6 +80,7 @@ func _process(_delta: float) -> void:
 				"godotVersion": str(Engine.get_version_info().get("string", "unknown")),
 				"projectPath": ProjectSettings.globalize_path("res://"),
 				"token": _auth_token,
+				"addonVersion": ADDON_VERSION,
 			})
 		_poll_messages()
 		return
@@ -87,7 +100,7 @@ func _process(_delta: float) -> void:
 			print("X-agent RPC: disconnected")
 		_reconnect_in -= _delta
 		if _reconnect_in <= 0.0:
-			_reconnect_in = 2.0
+			_reconnect_in = RECONNECT_DELAY_SEC
 			_resolve_endpoint()
 			_build_ports_to_try()
 			_port_try_index = 0
@@ -217,6 +230,40 @@ func _endpoint_config_path() -> String:
 	if home == "":
 		return ""
 	return home.path_join(".pi").path_join("agent").path_join("x-agent-godot-rpc.json")
+
+## FileAccess.get_modified_time 在文件不存在/不可读时返回 0。
+func _read_endpoint_mtime() -> int:
+	var path := _endpoint_config_path()
+	if path == "" or not FileAccess.file_exists(path):
+		return 0
+	return int(FileAccess.get_modified_time(path))
+
+## 每秒检查一次 endpoint 文件 mtime；变更或消失时立即重解析并重连。
+func _maybe_poll_endpoint(delta: float) -> void:
+	_endpoint_check_in -= delta
+	if _endpoint_check_in > 0.0:
+		return
+	_endpoint_check_in = ENDPOINT_POLL_SEC
+	var path := _endpoint_config_path()
+	if path == "":
+		return
+	var mtime := int(FileAccess.get_modified_time(path))
+	if mtime == 0:
+		# endpoint 文件被删除或不可读 → 立即重读并回退默认端口。
+		if _endpoint_mtime != 0:
+			_endpoint_mtime = 0
+			_resolve_endpoint()
+			_build_ports_to_try()
+			_port_try_index = 0
+			_try_connect()
+		return
+	if mtime != _endpoint_mtime:
+		# endpoint 文件被更新 → X-agent 重启或 token 换新。
+		_endpoint_mtime = mtime
+		_resolve_endpoint()
+		_build_ports_to_try()
+		_port_try_index = 0
+		_try_connect()
 
 func _resolve_endpoint() -> void:
 	_host = DEFAULT_HOST

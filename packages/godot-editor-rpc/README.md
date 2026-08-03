@@ -25,7 +25,23 @@ Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌�
 
 ### 握手 token
 
-桌面桥每次 `start` 会在 endpoint JSON 写入一次性 `token`；插件在 `editor_ready` 中回传同一 token。旧版插件（无 token 字段）会被拒绝，设置页/桥状态会提示「token 不匹配」——请用应用内「安装/更新 RPC 插件」覆盖 addon 后重启 Godot。
+桌面桥 `start` 时优先 **复用上次 endpoint** 的 token 与端口，使「先启动 Godot、后启动 X-agent」也能在 ~1s 内自动握手成功，无需重装插件。
+
+- endpoint 文件格式（`x-agent-godot-rpc.json`）：
+
+  ```json
+  {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "token": "<32 位 hex>",
+    "version": 1,
+    "updatedAt": "2026-08-03T..."
+  }
+  ```
+
+  `host` 仅接受回环地址；`token` 必须是 32 位 hex；任一校验失败回退到新生成。
+- 0.3.0+ 插件 `editor_ready` 会附 `addonVersion`，让桌面端能明确判断「插件过旧 / 协议不匹配」。
+- 握手失败的细分原因会通过 `lastHandshakeFailure`（`missing_token` / `bad_token`）回传到设置页与就绪清单。
 
 ## Agent 工具
 

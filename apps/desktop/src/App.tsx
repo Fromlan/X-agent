@@ -786,8 +786,8 @@ export default function App() {
       }
       if (status.warning) {
         setReadyNotice(status.warning);
-      } else if (status.running && (status.clients ?? 0) > 0) {
-        setReadyNotice(`桥接已连接 Godot（${status.clients}）`);
+      } else if (status.running && (status.authenticatedClients ?? 0) > 0) {
+        setReadyNotice(`桥接已连接 Godot（${status.authenticatedClients}）`);
       } else if (status.running) {
         setReadyNotice(
           `桥接已启动（端口 ${status.port}）。请在 Godot 启用 X-agent RPC 并保持编辑器打开。`,
