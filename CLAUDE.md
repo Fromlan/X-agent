@@ -108,13 +108,13 @@ Electron 三进程边界：
 | 组件 | 路径 |
 |---|---|
 | 协议 | `apps/desktop/shared/godot-rpc.ts` |
-| 桥接 | `electron/agent/godot-rpc-bridge.ts`（多客户端 id / 活动选路） |
+| 桥接 | `electron/agent/godot-rpc-bridge.ts`（多客户端 id / 活动选路；启动优先复用上次 endpoint 的 token+端口） |
 | 编辑器工具 | `electron/agent/godot-tools.ts`（`GODOT_TOOLS`，默认关） |
 | 惯例技能 | `packages/godot-pi/skills/godot-docs-4-7`（仅 Godot 项目索引） |
 | Addon 安装 | `electron/agent/godot-addon-install.ts` |
-| Addon | `packages/godot-editor-rpc` |
+| Addon | `packages/godot-editor-rpc`（0.3.0：endpoint mtime 轮询、`editor_ready` 上报 addonVersion） |
 
-要点：默认端口 `8765`（回退 `8765–8774`），endpoint 写入 `x-agent-godot-rpc.json`；`run_current_scene` / `play_main_scene` 短时收集报错；`import_resources` 扫描或按路径 reimport。设置入口：**设置 → Godot → 编辑器连接**。详见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
+要点：默认端口 `8765`（回退 `8765–8774`），endpoint 写入 `x-agent-godot-rpc.json`（`{host,port,token,version,updatedAt}`）；`stop()` 不再删除 endpoint —— 残留文件让下次启动复用旧 token，已运行的 Godot 插件无需重装即可恢复。`run_current_scene` / `play_main_scene` 短时收集报错；`import_resources` 扫描或按路径 reimport。就绪清单的 `rpcBridge` 状态分五态（宽限中 / 已连接 / 握手失败 → 引导更新插件 / 未启动 / 启动编辑器）。设置入口：**设置 → Godot → 编辑器连接**。详见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
 
 ### 用量与上下文面板
 
@@ -135,7 +135,7 @@ Electron 三进程边界：
 |---|---|
 | `~/.pi/agent/x-agent.json` | 客户端偏好 |
 | `~/.pi/agent/x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时明文同步写入 Pi `auth.json`） |
-| `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint（含握手 token；须同步更新编辑器插件） |
+| `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint（host/port/token/version/updatedAt；`stop()` 不再删除，下次启动复用） |
 | `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent-usage.json` | 用量汇总 |
 | `~/.pi/agent/x-agent/sessions/` | 本应用会话 |
