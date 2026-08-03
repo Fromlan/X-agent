@@ -408,6 +408,58 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.items.length === 0, useVirtualList]);
 
+  /**
+   * 监听滚动容器尺寸变化(virtual 模式尤其需要),容器宽度变化
+   * 会让行内 markdown / 代码块换行,行高改变;若不主动重测,
+   * virtualizer.itemSizeCache 仍为旧高度,translateY 错位 / 行重叠。
+   *
+   * 与上一个 commit(已修)的"items.length 触发 measure() 清空 cache"区分:
+   * 这里只在容器尺寸真正变化时清空一次,不会在流式期间反复抖。
+   *
+   * 同时监听 document.body.dataset.theme(主题切换会让 CSS 变量替换,
+   * 行高可能微变),以及 window 'resize' 兜底。
+   */
+  useEffect(() => {
+    const el = streamRef.current;
+    if (!el) return;
+    let rafId: number | null = null;
+    const handleResize = () => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        if (useVirtualList) {
+          virtualizer.measure();
+        }
+        scheduleFollow();
+      });
+    };
+    const ro = new ResizeObserver(handleResize);
+    ro.observe(el);
+    window.addEventListener("resize", handleResize);
+    // 主题切换通过 dataset.theme 变化传播,MutationObserver 同步触发。
+    const mo = new MutationObserver(handleResize);
+    mo.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-theme", "class"],
+    });
+    // Electron 后台回到前台 / 浏览器切回标签页:可能携带尺寸或样式
+    // 重排后的状态;主动重测一遍避免"什么都不动就错位"。
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        handleResize();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+      ro.disconnect();
+      window.removeEventListener("resize", handleResize);
+      mo.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useVirtualList]);
+
   useEffect(() => {
     const tail = tailRef.current;
     const scrollEl = streamRef.current;
