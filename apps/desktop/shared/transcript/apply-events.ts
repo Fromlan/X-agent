@@ -134,9 +134,15 @@ function appendAssistantDelta(
     return next;
   }
   const prev = indexOfById(items, "assistant" as const, messageId);
-  const prevText = prev >= 0
-    ? (items[prev] as Extract<ChatItem, { kind: "assistant" }>)[field] ?? ""
-    : "";
+  if (prev < 0) {
+    // Defensive: text_delta before assistant_start (event lost / reorder) — drop
+    // the delta instead of creating an orphan assistant, otherwise the next
+    // assistant_start would either create a duplicate or leave a half-formed
+    // bubble that subsequent history_replace can only partially fix.
+    return items;
+  }
+  const prevText =
+    (items[prev] as Extract<ChatItem, { kind: "assistant" }>)[field] ?? "";
   return upsertAssistant(items, messageId, {
     [field]: prevText + delta,
   });
@@ -165,6 +171,19 @@ export function applyAgentEvent(
       const last = items[items.length - 1];
       if (last?.kind === "user" && isPendingUserId(last.id)) {
         return [...items.slice(0, -1), nextItem];
+      }
+      // Plan / goal 模式里 event-bridge 可能在 assistant_start 之前先 emit
+      // 了 system notice(模式切换提示)或 tool_start(预读),把乐观 user 推离末尾;
+      // 此时仍要替换最早的 pending user,避免真实消息被追加成第二条 bubble。
+      if (!event.id) {
+        const pendingIdx = items.findIndex(
+          (i) => i.kind === "user" && isPendingUserId(i.id),
+        );
+        if (pendingIdx >= 0) {
+          const next = items.slice();
+          next[pendingIdx] = nextItem;
+          return next;
+        }
       }
       return [...items, nextItem];
     }
@@ -200,7 +219,22 @@ export function applyAgentEvent(
             }
           : {}),
       });
-    case "tool_start":
+    case "tool_start": {
+      // Pi 在 abort / retract 边界可能重发 tool_start;若同 id 已存在则
+      // upsert 而不是 push,避免 chat 流里出现两条同 id tool 行,叠加
+      // 引发绝对定位行错位 + virtual 列表 translateY 错位。
+      const idx = indexOfById(items, "tool" as const, event.toolCallId);
+      if (idx >= 0) {
+        const cur = items[idx] as Extract<ChatItem, { kind: "tool" }>;
+        const next = items.slice();
+        next[idx] = {
+          ...cur,
+          toolName: event.toolName,
+          args: event.args,
+          done: false,
+        };
+        return next;
+      }
       return [
         ...items,
         {
@@ -211,6 +245,7 @@ export function applyAgentEvent(
           done: false,
         },
       ];
+    }
     case "tool_update": {
       const idx = indexOfById(items, "tool" as const, event.toolCallId);
       if (idx === -1) return items;

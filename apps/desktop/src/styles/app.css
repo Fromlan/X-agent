@@ -1262,6 +1262,7 @@ body.is-resizing-column * {
   flex-direction: column;
   align-items: stretch;
   width: 100%;
+  min-width: 0;
 }
 
 .virtual-row {
@@ -1270,6 +1271,10 @@ body.is-resizing-column * {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  /* 防止 tool card / 注释 / 长 markdown 行内内容超出 virtual-row 边界
+     引起相邻 absolute 行视觉重叠。 */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .markdown-plain {
@@ -2158,8 +2163,11 @@ body.is-resizing-column * {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Flow 模式:让 .bubble-tool 内部 align-self: flex-start 生效;virtual 模式
+     由 .virtual-row 的 align-items: stretch 接管外层宽度。 */
   align-items: flex-start;
   max-width: 100%;
+  min-width: 0;
 }
 
 .plan-execute-bar {
