@@ -494,6 +494,13 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
   useLayoutEffect(() => {
     scheduleFollow();
+    // Plan / goal 模式里 assistant 回合中可能插入 tool_start / notice,
+    // 改变 displayItems.length;此时 virtual 行可能因新行 absolute 占位
+    // 而让旧行的 transform 出现 1~N 像素错位,视觉上"工具行 + 后续对话"重叠。
+    // 这里主动 measure() 一次让 virtualizer 重算所有行高,再跟随贴底。
+    if (useVirtualList) {
+      virtualizer.measure();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayItems.length, useVirtualList]);
 
