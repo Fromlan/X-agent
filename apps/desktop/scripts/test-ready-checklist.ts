@@ -79,8 +79,10 @@ const godotItems = buildReadyItems({
     running: true,
     port: 8765,
     clients: 1,
+    authenticatedClients: 1,
     clientInfos: [],
     activeClientId: null,
+    startedAt: Date.now() - 10_000,
   },
   addonInstalled: false,
 });
@@ -102,8 +104,11 @@ const waiting = buildReadyItems({
     running: true,
     port: 8765,
     clients: 0,
+    authenticatedClients: 0,
     clientInfos: [],
     activeClientId: null,
+    // 越过 8s 宽限期 → 走"启动编辑器"分支
+    startedAt: Date.now() - 10_000,
   },
   addonInstalled: true,
 });
@@ -133,6 +138,63 @@ assert.equal(
   offline.find((i) => i.id === "rpcBridge")?.actionKind,
   "startBridge",
 );
+
+// 宽限期内：标记为可选，不出现 actionable
+const inGrace = buildReadyItems({
+  piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
+  auth: authOk,
+  modelCount: 1,
+  bash: bashOk,
+  git: gitOk,
+  isGodotProject: true,
+  prefs: prefsOff,
+  rpc: {
+    running: true,
+    port: 8765,
+    clients: 0,
+    authenticatedClients: 0,
+    clientInfos: [],
+    activeClientId: null,
+    startedAt: Date.now() - 3_000, // 3s, 仍在 8s 宽限内
+  },
+  addonInstalled: true,
+});
+const graceBridge = inGrace.find((i) => i.id === "rpcBridge");
+assert.ok(graceBridge && !graceBridge.done, "grace item exists");
+assert.equal(graceBridge?.label, "RPC 桥接启动中");
+assert.equal(graceBridge?.optional, true, "grace 期为可选,不阻塞清单");
+assert.equal(graceBridge?.actionKind, undefined, "grace 期无按钮");
+
+// 握手失败：引导更新插件
+const handshakeFailed = buildReadyItems({
+  piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
+  auth: authOk,
+  modelCount: 1,
+  bash: bashOk,
+  git: gitOk,
+  isGodotProject: true,
+  prefs: prefsOff,
+  rpc: {
+    running: true,
+    port: 8765,
+    clients: 2,
+    authenticatedClients: 0,
+    clientInfos: [],
+    activeClientId: null,
+    startedAt: Date.now() - 10_000,
+    handshakeFailures: 2,
+    lastHandshakeFailure: "bad_token",
+    lastAddonVersion: "0.2.0",
+    warning: "Godot RPC 握手失败:token 不匹配(插件 v0.2.0)。请重新安装 RPC 插件并重启 Godot。",
+  },
+  addonInstalled: true,
+});
+const failBridge = handshakeFailed.find((i) => i.id === "rpcBridge");
+assert.ok(failBridge && !failBridge.done, "failed item exists");
+assert.equal(failBridge?.actionKind, "installAddon");
+assert.match(failBridge?.detail ?? "", /v0\.2\.0/, "detail 透出插件版本");
+assert.match(failBridge?.detail ?? "", /token/, "detail 透出 warning");
+assert.match(failBridge?.detail ?? "", /2 次/, "detail 透出失败次数");
 
 assert.equal(allGodotEditorToolsEnabled(prefsOff), false);
 const prefsOn: ClientPrefs = {
