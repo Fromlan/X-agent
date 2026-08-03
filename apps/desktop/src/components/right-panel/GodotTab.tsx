@@ -118,7 +118,7 @@ export function GodotTab({ active, items }: Props) {
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={busy || !status?.running || (status?.clients ?? 0) < 1}
+          disabled={busy || !status?.running || (status?.authenticatedClients ?? 0) < 1}
           onClick={() => void ping()}
         >
           Ping
@@ -141,7 +141,11 @@ export function GodotTab({ active, items }: Props) {
           <span className="tabular">{status?.port ?? "—"}</span>
         </div>
         <div className="rp-kv">
-          <span>客户端数</span>
+          <span>已鉴权客户端</span>
+          <span className="tabular">{status?.authenticatedClients ?? 0}</span>
+        </div>
+        <div className="rp-kv">
+          <span>总连接数</span>
           <span className="tabular">{status?.clients ?? 0}</span>
         </div>
         <div className="rp-kv">

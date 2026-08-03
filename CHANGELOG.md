@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+### 改进
+
+- **Godot RPC 自动重连**：X-agent 启动时优先复用上次 endpoint 的 token 与端口，已运行的 Godot 插件通常无需任何操作即可在 ~1s 内握手成功（Godot 插件 0.3.0+ 每秒轮询 endpoint 文件 mtime，变更即跳到正确端口）。就绪清单 `rpcBridge` 状态新增 8s 启动宽限；区分「握手失败 → 更新 RPC 插件」与「未连接 → 启动编辑器」，并透出 `lastHandshakeFailure` 与插件版本号。`stop()` 不再删除 endpoint 文件（崩溃 / `taskkill` 路径行为对齐）。0.2.0 旧插件仍能工作，只是不上报 `addonVersion`。
+
 ## 0.3.12
 
 ### 功能

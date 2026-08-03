@@ -21,11 +21,19 @@ export const GODOT_RPC_MAX_WAIT_MS = 15000;
 /** Base RPC round-trip timeout (excluding play wait window). */
 export const GODOT_RPC_BASE_TIMEOUT_MS = 8000;
 
+/**
+ * 桥接启动后的重连宽限期。
+ * 期间就绪清单不提示「未连接」，留给已在运行的 Godot 插件完成重连。
+ */
+export const GODOT_RPC_GRACE_PERIOD_MS = 8000;
+
 /** Connected Godot editor client (bridge-assigned id). */
 export interface GodotRpcClientInfo {
   id: string;
   projectPath?: string;
   godotVersion?: string;
+  /** Addon version from plugin.cfg (0.3.0+ only). */
+  addonVersion?: string;
   connectedAt: string;
 }
 
@@ -90,15 +98,24 @@ export type GodotRpcEvent =
       projectPath: string;
       /** Shared secret from x-agent-godot-rpc.json (required by bridge). */
       token?: string;
+      /** Addon version from plugin.cfg (reported by 0.3.0+ only). */
+      addonVersion?: string;
       clientId?: string;
     }
   | { type: "scene_changed"; path: string; clientId?: string }
   | { type: "play_error"; severity: string; message: string; clientId?: string }
   | { type: "disconnected"; clientId?: string };
 
+/** 握手失败原因，用于就绪清单区分「插件过旧」与「token 不匹配」。 */
+export type GodotRpcHandshakeFailure = "missing_token" | "bad_token";
+
 export interface GodotRpcBridgeStatus {
   running: boolean;
   port: number;
+  /**
+   * 已建立的 TCP 连接数（含尚未通过 token 握手的裸 socket）。
+   * 判断「真正连上了」请用 `authenticatedClients`。
+   */
   clients: number;
   /** Connected editors with bridge-assigned ids. */
   clientInfos: GodotRpcClientInfo[];
@@ -109,6 +126,16 @@ export interface GodotRpcBridgeStatus {
   error?: string;
   /** Non-fatal note (e.g. fell back to another port). */
   warning?: string;
+  /** 桥接最近一次成功 start 的 Unix ms；renderer 据此计算重连宽限期。 */
+  startedAt?: number;
+  /** 已通过 token 握手的客户端数。 */
+  authenticatedClients?: number;
+  /** 自上次 start 以来的握手失败累计次数。 */
+  handshakeFailures?: number;
+  /** 最近一次握手失败原因。 */
+  lastHandshakeFailure?: GodotRpcHandshakeFailure;
+  /** 最近一次成功握手上报的插件版本（0.3.0+ 才会上报）。 */
+  lastAddonVersion?: string;
 }
 
 export type GodotRpcRequestOptions = {

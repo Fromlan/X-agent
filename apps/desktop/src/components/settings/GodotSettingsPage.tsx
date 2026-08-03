@@ -17,8 +17,8 @@ function rpcStatusLabel(rpc: GodotRpcStatusDto | null): {
 } {
   if (rpc?.error) return { text: "错误", tone: "is-error" };
   if (!rpc?.running) return { text: "桥接未启动", tone: "is-off" };
-  if (rpc.clients > 0) {
-    return { text: `已连接 · ${rpc.clients}`, tone: "is-ok" };
+  if ((rpc.authenticatedClients ?? 0) > 0) {
+    return { text: `已连接 · ${rpc.authenticatedClients}`, tone: "is-ok" };
   }
   return { text: "等待连接", tone: "is-warn" };
 }
@@ -137,8 +137,11 @@ export function GodotSettingsPage({
           </span>
         </div>
         <p className="modal-hint">
-          端口 {rpc?.port ?? 8765}。安装并启用 X-agent RPC 插件（非
-          godot_agent）。桥接写入 endpoint 含共享 token；插件握手校验后才接受调用。
+          端口 {rpc?.port ?? 8765}。X-agent 启动时会优先复用上次的 token 与端口，
+          已运行的 Godot 插件通常无需重启即可连上。
+          安装并启用 X-agent RPC 插件（非 godot_agent）。
+          桥接写入 endpoint 含共享 token；插件握手校验后才接受调用。
+          握手失败时点「安装/更新 RPC 插件」覆盖后再启动 Godot。
         </p>
         {(rpc?.clientInfos?.length ?? 0) > 0 && (
           <div className="field">
@@ -148,7 +151,7 @@ export function GodotSettingsPage({
               value={rpc?.activeClientId ?? ""}
               options={rpc!.clientInfos.map((c) => ({
                 value: c.id,
-                label: `${(c.projectPath || "unknown project").slice(-48)} · ${c.godotVersion ?? "?"} · ${c.id.slice(0, 8)}`,
+                label: `${(c.projectPath || "unknown project").slice(-48)} · ${c.godotVersion ?? "?"}${c.addonVersion ? ` · addon v${c.addonVersion}` : ""} · ${c.id.slice(0, 8)}`,
               }))}
               onChange={(id) => {
                 void (async () => {

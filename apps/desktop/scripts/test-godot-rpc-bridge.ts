@@ -2,7 +2,14 @@
  * Offline test for GodotRpcBridge request/response pairing and timeout.
  */
 import { createConnection } from "node:net";
-import { GodotRpcBridge } from "../electron/agent/godot-rpc-bridge";
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  GodotRpcBridge,
+  godotRpcEndpointPath,
+  setGodotRpcEndpointPathForTests,
+} from "../electron/agent/godot-rpc-bridge";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -26,12 +33,17 @@ async function withBridge(
   port: number,
   fn: (bridge: GodotRpcBridge) => Promise<void>,
 ): Promise<void> {
+  // 隔离 endpoint 文件 I/O，避免 start() 复用路径读到开发者机器上真实残留的 endpoint。
+  const dir = mkdtempSync(join(tmpdir(), "xagent-rpc-test-"));
+  setGodotRpcEndpointPathForTests(join(dir, "x-agent-godot-rpc.json"));
   const bridge = new GodotRpcBridge();
-  await bridge.start(port);
   try {
+    await bridge.start(port);
     await fn(bridge);
   } finally {
     await bridge.stop();
+    setGodotRpcEndpointPathForTests(null);
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -122,6 +134,19 @@ await withBridge(18765, async (bridge) => {
     })}\n`,
   );
   await waitFor(() => bridge.getStatus().clients === 0, "bad token disconnects");
+  assert(
+    (bridge.getStatus().handshakeFailures ?? 0) === 1,
+    "handshakeFailures 累计 (bad_token)",
+  );
+  assert(
+    bridge.getStatus().lastHandshakeFailure === "bad_token",
+    "lastHandshakeFailure = bad_token",
+  );
+  assert(
+    typeof bridge.getStatus().warning === "string" &&
+      bridge.getStatus().warning!.includes("token"),
+    "warning 描述 token 失败",
+  );
 
   const mock2 = await connectMockClient(18765, (line, write) => {
     const msg = JSON.parse(line) as { id: string; method: string };
@@ -233,5 +258,125 @@ await withBridge(18767, async (bridge) => {
   assert(recovered.running && !recovered.error, "port free after stop");
   await b.stop();
 }
+
+// ─── token 复用：start 沿用上次 endpoint 的 token + 端口 ───
+{
+  const dir = mkdtempSync(join(tmpdir(), "xagent-rpc-reuse-"));
+  const epPath = join(dir, "x-agent-godot-rpc.json");
+  setGodotRpcEndpointPathForTests(epPath);
+  try {
+    const b1 = new GodotRpcBridge();
+    const port = 18801;
+    await b1.start(port);
+    const token1 = b1.getAuthToken();
+    assert(/^[0-9a-f]{32}$/.test(token1), "first token 是 32 hex");
+    assert(
+      typeof b1.getStatus().startedAt === "number" && b1.getStatus().startedAt! > 0,
+      "startedAt 已设",
+    );
+    // endpoint 文件应被原子写出
+    assert(existsSync(epPath), "endpoint 文件存在");
+    // stop() 不再删除 endpoint
+    await b1.stop();
+    assert(existsSync(epPath), "stop() 不再删除 endpoint");
+
+    const b2 = new GodotRpcBridge();
+    const status = await b2.start(port);
+    assert(status.running, "复用路径仍能 listen");
+    assert(b2.getAuthToken() === token1, "第二次启动 token 复用");
+    assert(
+      typeof status.warning === "string" &&
+        status.warning!.includes("沿用上次 endpoint"),
+      "warning 标注复用",
+    );
+    await b2.stop();
+  } finally {
+    setGodotRpcEndpointPathForTests(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── 非法 endpoint 拒绝复用（host 非回环 / token 格式错 / JSON 损坏） ───
+{
+  const dir = mkdtempSync(join(tmpdir(), "xagent-rpc-bad-"));
+  const epPath = join(dir, "x-agent-godot-rpc.json");
+  setGodotRpcEndpointPathForTests(epPath);
+  try {
+    // host 非回环
+    writeFileSync(
+      epPath,
+      JSON.stringify({
+        host: "0.0.0.0",
+        port: 18802,
+        token: "a".repeat(32),
+      }),
+    );
+    const b1 = new GodotRpcBridge();
+    await b1.start(18802);
+    assert(
+      b1.getAuthToken() !== "a".repeat(32),
+      "host 非回环 → 不复用旧 token",
+    );
+    await b1.stop();
+
+    // token 格式错误
+    writeFileSync(
+      epPath,
+      JSON.stringify({
+        host: "127.0.0.1",
+        port: 18803,
+        token: "not-hex",
+      }),
+    );
+    const b2 = new GodotRpcBridge();
+    await b2.start(18803);
+    assert(
+      /^[0-9a-f]{32}$/.test(b2.getAuthToken()),
+      "token 格式错 → 新生成 32 hex",
+    );
+    await b2.stop();
+
+    // JSON 损坏
+    writeFileSync(epPath, "{ this is not valid json");
+    const b3 = new GodotRpcBridge();
+    const s3 = await b3.start(18804);
+    assert(s3.running, "JSON 损坏仍能 listen");
+    assert(/^[0-9a-f]{32}$/.test(b3.getAuthToken()), "JSON 损坏 → 新生成 token");
+    await b3.stop();
+  } finally {
+    setGodotRpcEndpointPathForTests(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ─── 缺 token 握手失败计数 ───
+await withBridge(18805, async (bridge) => {
+  const mock = await connectMockClient(18805, () => {});
+  await waitFor(() => bridge.getStatus().clients === 1, "connected");
+  // 故意发不带 token 的 editor_ready（模拟 0.2.0 之前的老插件）
+  mock.socket.write(
+    `${JSON.stringify({
+      type: "editor_ready",
+      godotVersion: "4.3",
+      projectPath: "D:/proj",
+    })}\n`,
+  );
+  await waitFor(() => bridge.getStatus().clients === 0, "missing token 断开");
+  assert(
+    (bridge.getStatus().handshakeFailures ?? 0) === 1,
+    "handshakeFailures 累计 (missing_token)",
+  );
+  assert(
+    bridge.getStatus().lastHandshakeFailure === "missing_token",
+    "lastHandshakeFailure = missing_token",
+  );
+});
+
+// sanity: godotRpcEndpointPath 在没有 override 时仍指向家目录
+assert(
+  godotRpcEndpointPath().includes(".pi") &&
+    godotRpcEndpointPath().endsWith("x-agent-godot-rpc.json"),
+  "默认 endpoint 路径未受影响",
+);
 
 console.log("test-godot-rpc-bridge: ok");
