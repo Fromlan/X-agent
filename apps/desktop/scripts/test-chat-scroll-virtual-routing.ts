@@ -191,8 +191,62 @@ const transcript = readFileSync(
   );
 }
 
-// 9. 容器尺寸 / 窗口 / 主题 / 切回前台必须触发 virtualizer 重测
-// (后续 commit 扩:这部分断言紧随其后追加)。
-/* (resize 重测断言见后续 commit) */
+// 9. 容器尺寸 / 窗口 / 主题 / 切回前台必须触发 virtualizer 重测,
+// 否则切窗口或"什么都不动"会让 itemSizeCache 与真实行高脱节,
+// virtual-row 的 translateY 错位 / 行重叠。
+{
+  // 9a. 存在 ResizeObserver 监听 streamRef(外层 .message-stream)。
+  assert.match(
+    transcript,
+    /ro\.observe\(el\)/,
+    "ChatTranscript must observe its scroll container with ResizeObserver to react to size changes",
+  );
+
+  // 9b. ResizeObserver 回调里在 virtual 模式下必须调用 virtualizer.measure()
+  //     以重测所有行(itemSizeCache 清空后,React 重新 render 时 ref
+  //     会通过 measureElement 局部填回)。
+  const resizeBlock = transcript.match(
+    /const\s+handleResize\s*=\s*\(\)\s*=>\s*\{[\s\S]*?\};/,
+  );
+  assert.ok(resizeBlock, "handleResize function body must exist");
+  assert.match(
+    resizeBlock[0]!,
+    /virtualizer\.measure\(\)/,
+    "handleResize must call virtualizer.measure() in virtual mode to fix stale itemSizeCache",
+  );
+  // 必须用 rAF 合并多次 resize 事件,避免连续 layout thrash。
+  assert.match(
+    resizeBlock[0]!,
+    /requestAnimationFrame/,
+    "handleResize must coalesce via rAF",
+  );
+
+  // 9c. 监听 window 'resize' 兜底(覆盖 Electron 窗口拖拽变化)。
+  assert.match(
+    transcript,
+    /window\.addEventListener\(\s*["']resize["']\s*,\s*handleResize\s*\)/,
+    "ChatTranscript must listen to window 'resize' for Electron window drag",
+  );
+
+  // 9d. 监听 body[data-theme] / class 变化(主题切换会让 CSS 变量替换,
+  //     行高可能微变)。
+  assert.match(
+    transcript,
+    /new\s+MutationObserver\(\s*handleResize\s*\)/,
+    "ChatTranscript must observe body attribute changes to react to theme switch",
+  );
+  assert.match(
+    transcript,
+    /attributeFilter:\s*\[\s*["']data-theme["']\s*,\s*["']class["']\s*\]/,
+    "MutationObserver must filter on data-theme / class",
+  );
+
+  // 9e. 监听 visibilitychange(切回前台 / 标签页回到可见时主动重测)。
+  assert.match(
+    transcript,
+    /document\.addEventListener\(\s*["']visibilitychange["']/,
+    "ChatTranscript must listen to visibilitychange to handle background→foreground",
+  );
+}
 
 console.log("test-chat-scroll-virtual-routing: ok");
