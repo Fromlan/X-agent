@@ -209,37 +209,26 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     pinStateRef.current = next;
   };
 
-  /**
-   * 将消息滚动容器移动到当前真实布局的底部。
-   * 虚拟模式使用 scrollToOffset(避免 scrollToIndex 启动 5 秒 reconcile 循环),
-   * 非虚拟模式按 behavior 退化为 DOM scrollTo / scrollTop。
-   */
-  const scrollElementToBottom = (
-    el: HTMLElement,
-    behavior: ScrollBehavior,
-  ) => {
-    const bottomOffset = Math.max(0, el.scrollHeight - el.clientHeight);
-    if (useVirtualList) {
-      virtualizer.scrollToOffset(bottomOffset, { behavior });
-      return;
-    }
-    if (behavior === "smooth") {
-      el.scrollTo({ top: bottomOffset, behavior: "smooth" });
-      return;
-    }
-    el.scrollTop = bottomOffset;
-  };
-
   const scrollToBottom = (behavior: ScrollBehavior) => {
     const el = streamRef.current;
     if (!el) return;
     applyPin(reduceChatScrollPin(pinStateRef.current, { type: "force_pin" }));
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
-    scrollElementToBottom(el, resolved);
+    const last = displayItems.length - 1;
+    if (useVirtualList && last >= 0) {
+      virtualizer.scrollToIndex(last, {
+        align: "end",
+        behavior: resolved === "smooth" ? "smooth" : "auto",
+      });
+    } else if (resolved === "smooth") {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
     setShowJump(false);
     requestAnimationFrame(() => {
-      scrollElementToBottom(el, "auto");
+      el.scrollTop = el.scrollHeight;
       applyPin(
         reduceChatScrollPin(pinStateRef.current, {
           type: "programmatic_follow_end",
@@ -268,7 +257,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       }),
     );
     requestAnimationFrame(() => {
-      scrollElementToBottom(el, "auto");
+      el.scrollTop = el.scrollHeight;
       applyPin(
         reduceChatScrollPin(pinStateRef.current, {
           type: "programmatic_follow_end",
@@ -408,58 +397,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.items.length === 0, useVirtualList]);
 
-  /**
-   * 监听滚动容器尺寸变化(virtual 模式尤其需要),容器宽度变化
-   * 会让行内 markdown / 代码块换行,行高改变;若不主动重测,
-   * virtualizer.itemSizeCache 仍为旧高度,translateY 错位 / 行重叠。
-   *
-   * 与上一个 commit(已修)的"items.length 触发 measure() 清空 cache"区分:
-   * 这里只在容器尺寸真正变化时清空一次,不会在流式期间反复抖。
-   *
-   * 同时监听 document.body.dataset.theme(主题切换会让 CSS 变量替换,
-   * 行高可能微变),以及 window 'resize' 兜底。
-   */
-  useEffect(() => {
-    const el = streamRef.current;
-    if (!el) return;
-    let rafId: number | null = null;
-    const handleResize = () => {
-      if (rafId != null) return;
-      rafId = window.requestAnimationFrame(() => {
-        rafId = null;
-        if (useVirtualList) {
-          virtualizer.measure();
-        }
-        scheduleFollow();
-      });
-    };
-    const ro = new ResizeObserver(handleResize);
-    ro.observe(el);
-    window.addEventListener("resize", handleResize);
-    // 主题切换通过 dataset.theme 变化传播,MutationObserver 同步触发。
-    const mo = new MutationObserver(handleResize);
-    mo.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["data-theme", "class"],
-    });
-    // Electron 后台回到前台 / 浏览器切回标签页:可能携带尺寸或样式
-    // 重排后的状态;主动重测一遍避免"什么都不动就错位"。
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") {
-        handleResize();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      if (rafId != null) window.cancelAnimationFrame(rafId);
-      ro.disconnect();
-      window.removeEventListener("resize", handleResize);
-      mo.disconnect();
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useVirtualList]);
-
   useEffect(() => {
     const tail = tailRef.current;
     const scrollEl = streamRef.current;
@@ -493,16 +430,33 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   }, [props.status, useVirtualList]);
 
   useLayoutEffect(() => {
-    scheduleFollow();
     // Plan / goal 模式里 assistant 回合中可能插入 tool_start / notice,
     // 改变 displayItems.length;此时 virtual 行可能因新行 absolute 占位
     // 而让旧行的 transform 出现 1~N 像素错位,视觉上"工具行 + 后续对话"重叠。
     // 这里主动 measure() 一次让 virtualizer 重算所有行高,再跟随贴底。
-    if (useVirtualList) {
-      virtualizer.measure();
-    }
+    if (!useVirtualList) return;
+    virtualizer.measure();
+    scheduleFollow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayItems.length, useVirtualList]);
+
+  /**
+   * assistant_end(status 从 streaming/retrying 切到 idle/error)是"行内
+   * 真实高度"跳变的关键时刻:流式期间 MarkdownBody 走 plain <pre>,终态
+   * 切到 <ReactMarkdown> DOM 子树完全换掉,行高可能从 200px 跳到 600px;
+   * ThinkingBlock 也会从开/关切到另一态,details 高度变化;若不在这一帧
+   * 主动 measure,virtualizer 仍按流式 estimate 算 transform,后续 absolute
+   * 行整体偏移,出现"长对话被切成两段,工具行插在中间"的视觉错位。
+   * displayItems.length 没变(同一个 assistant 收尾),所以上面 length
+   * 触发的 useLayoutEffect 不会跑,这里专门覆盖这条路径。
+   */
+  useLayoutEffect(() => {
+    if (!useVirtualList) return;
+    if (props.status === "streaming" || props.status === "retrying") return;
+    virtualizer.measure();
+    scheduleFollow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.status, useVirtualList]);
 
   useLayoutEffect(() => {
     if (props.forceFollowKey == null) return;

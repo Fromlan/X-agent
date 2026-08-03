@@ -161,31 +161,41 @@ export function applyAgentEvent(
       if (items.some((i) => i.kind === "user" && i.id === id)) {
         return items;
       }
-      const nextItem: ChatItem = {
-        kind: "user",
-        id,
-        text: event.text,
-        ...(event.entryId ? { entryId: event.entryId } : {}),
-      };
-      // Replace the trailing optimistic bubble so we do not flash a duplicate.
+      // 替换 pending 时**保持原 pending 的 id**(仅更新 text/entryId),
+      // 避免 getItemKey 改变导致 virtual-row React unmount + remount,
+      // 视觉上 user bubble 闪烁、滚动位置丢失。
       const last = items[items.length - 1];
-      if (last?.kind === "user" && isPendingUserId(last.id)) {
-        return [...items.slice(0, -1), nextItem];
+      const replaceTrailing =
+        last?.kind === "user" && isPendingUserId(last.id);
+      const replaceIdx =
+        !event.id && !replaceTrailing
+          ? items.findIndex(
+              (i) => i.kind === "user" && isPendingUserId(i.id),
+            )
+          : -1;
+      if (replaceTrailing || replaceIdx >= 0) {
+        const idx = replaceTrailing ? items.length - 1 : replaceIdx;
+        const prev = items[idx] as Extract<ChatItem, { kind: "user" }>;
+        const merged: ChatItem = {
+          ...prev,
+          text: event.text,
+          ...(event.entryId ? { entryId: event.entryId } : {}),
+          // 若事件自带 id,则用真实 id 覆盖 pending 占位 id(主路径有 id)。
+          ...(event.id ? { id } : {}),
+        };
+        const next = items.slice();
+        next[idx] = merged;
+        return next;
       }
-      // Plan / goal 模式里 event-bridge 可能在 assistant_start 之前先 emit
-      // 了 system notice(模式切换提示)或 tool_start(预读),把乐观 user 推离末尾;
-      // 此时仍要替换最早的 pending user,避免真实消息被追加成第二条 bubble。
-      if (!event.id) {
-        const pendingIdx = items.findIndex(
-          (i) => i.kind === "user" && isPendingUserId(i.id),
-        );
-        if (pendingIdx >= 0) {
-          const next = items.slice();
-          next[pendingIdx] = nextItem;
-          return next;
-        }
-      }
-      return [...items, nextItem];
+      return [
+        ...items,
+        {
+          kind: "user",
+          id,
+          text: event.text,
+          ...(event.entryId ? { entryId: event.entryId } : {}),
+        },
+      ];
     }
     case "assistant_start":
       return upsertAssistant(items, event.messageId, {
