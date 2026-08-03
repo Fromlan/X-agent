@@ -209,26 +209,37 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     pinStateRef.current = next;
   };
 
+  /**
+   * 将消息滚动容器移动到当前真实布局的底部。
+   * 虚拟模式使用 scrollToOffset(避免 scrollToIndex 启动 5 秒 reconcile 循环),
+   * 非虚拟模式按 behavior 退化为 DOM scrollTo / scrollTop。
+   */
+  const scrollElementToBottom = (
+    el: HTMLElement,
+    behavior: ScrollBehavior,
+  ) => {
+    const bottomOffset = Math.max(0, el.scrollHeight - el.clientHeight);
+    if (useVirtualList) {
+      virtualizer.scrollToOffset(bottomOffset, { behavior });
+      return;
+    }
+    if (behavior === "smooth") {
+      el.scrollTo({ top: bottomOffset, behavior: "smooth" });
+      return;
+    }
+    el.scrollTop = bottomOffset;
+  };
+
   const scrollToBottom = (behavior: ScrollBehavior) => {
     const el = streamRef.current;
     if (!el) return;
     applyPin(reduceChatScrollPin(pinStateRef.current, { type: "force_pin" }));
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
-    const last = displayItems.length - 1;
-    if (useVirtualList && last >= 0) {
-      virtualizer.scrollToIndex(last, {
-        align: "end",
-        behavior: resolved === "smooth" ? "smooth" : "auto",
-      });
-    } else if (resolved === "smooth") {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    } else {
-      el.scrollTop = el.scrollHeight;
-    }
+    scrollElementToBottom(el, resolved);
     setShowJump(false);
     requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
+      scrollElementToBottom(el, "auto");
       applyPin(
         reduceChatScrollPin(pinStateRef.current, {
           type: "programmatic_follow_end",
@@ -257,7 +268,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       }),
     );
     requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
+      scrollElementToBottom(el, "auto");
       applyPin(
         reduceChatScrollPin(pinStateRef.current, {
           type: "programmatic_follow_end",
@@ -430,8 +441,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   }, [props.status, useVirtualList]);
 
   useLayoutEffect(() => {
-    if (!useVirtualList) return;
-    virtualizer.measure();
+    scheduleFollow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayItems.length, useVirtualList]);
 
