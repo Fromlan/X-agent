@@ -129,6 +129,30 @@ export interface BashCheckResult {
   suggestedShellPath?: string | null;
 }
 
+/**
+ * Result of probeBashLiveness. Tri-state plus a "no tool" terminal state:
+ * - live       round-trip works (commands + stdout both observable)
+ * - half_dead  commands run (file side-effects) but stdout is not returned
+ * - ull_dead  bash did not produce the probe (timeout / non-zero / wrong)
+ * - 
+o_bash    no usable bash binary on this machine
+ */
+export type BashLivenessKind = "live" | "half_dead" | "full_dead" | "no_bash";
+
+export interface BashLivenessResult {
+  kind: BashLivenessKind;
+  ok: boolean;
+  shellPath: string | null;
+  message: string;
+  marker: string;
+  probePath: string;
+  ranSomething: boolean;
+  timedOut: boolean;
+  exitNonZero: boolean;
+  stdoutPreview: string;
+  stderrPreview: string;
+}
+
 export interface GitCheckResult {
   ok: boolean;
   gitPath: string | null;
@@ -1037,6 +1061,7 @@ export type PrefsApi = {
   getRecoveryNotice: XAgentApiFlat["getPrefsRecoveryNotice"];
   getSecretCodecStatus: XAgentApiFlat["getSecretCodecStatus"];
   checkBash: XAgentApiFlat["checkBash"];
+  checkBashLiveness: XAgentApiFlat["checkBashLiveness"];
   applyBashShellPath: XAgentApiFlat["applyBashShellPath"];
   pickBashShell: XAgentApiFlat["pickBashShell"];
   checkGit: XAgentApiFlat["checkGit"];
@@ -1162,6 +1187,7 @@ export interface XAgentApiFlat {
   getPrefsRecoveryNotice: () => Promise<PrefsRecoveryNotice | null>;
   getSecretCodecStatus: () => Promise<SecretCodecStatus>;
   checkBash: () => Promise<BashCheckResult>;
+  checkBashLiveness: () => Promise<BashLivenessResult>;
   applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
   pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
   checkGit: () => Promise<GitCheckResult>;

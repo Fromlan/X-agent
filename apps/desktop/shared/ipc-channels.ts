@@ -44,6 +44,7 @@ export const IPC_CHANNELS = {
   getPrefs: "getPrefs",
   setPrefs: "setPrefs",
   checkBash: "checkBash",
+  checkBashLiveness: "checkBashLiveness",
   applyBashShellPath: "applyBashShellPath",
   pickBashShell: "pickBashShell",
   checkGit: "checkGit",

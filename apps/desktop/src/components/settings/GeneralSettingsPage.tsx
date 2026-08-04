@@ -5,6 +5,7 @@ import {
   THEME_IDS,
   THEME_LABELS,
   type BashCheckResult,
+  type BashLivenessResult,
   type ClientPrefs,
   type ColorMode,
   type GitCheckResult,
@@ -48,6 +49,9 @@ export function GeneralSettingsPage({
   onOpenProviders,
 }: Props) {
   const [bash, setBash] = useState<BashCheckResult | null>(null);
+  const [bashLiveness, setBashLiveness] =
+    useState<BashLivenessResult | null>(null);
+  const [bashLivenessBusy, setBashLivenessBusy] = useState(false);
   const [git, setGit] = useState<GitCheckResult | null>(null);
   const [piCli, setPiCli] = useState<PiCliStatus | null>(null);
   const [generalMsg, setGeneralMsg] = useState<string | null>(null);
@@ -322,6 +326,24 @@ export function GeneralSettingsPage({
                     >
                       浏览…
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={!bash?.shellPath || bashLivenessBusy}
+                      title="跑一个 2 秒探针，区分 live / half-dead / full-dead / no-bash"
+                      onClick={async () => {
+                        setBashLivenessBusy(true);
+                        try {
+                          const result = await window.xAgent.prefs.checkBashLiveness();
+                          setBashLiveness(result);
+                          setGeneralMsg(result.message);
+                        } finally {
+                          setBashLivenessBusy(false);
+                        }
+                      }}
+                    >
+                      {bashLivenessBusy ? "诊断中…" : "诊断"}
+                    </button>
                     {bash && !bash.ok && !bash.suggestedShellPath && (
                       <button
                         type="button"
@@ -340,6 +362,23 @@ export function GeneralSettingsPage({
                         建议路径：{bash.suggestedShellPath}
                       </p>
                     )}
+                  {bashLiveness && (
+                    <div className="modal-hint bash-liveness-hint" data-kind={bashLiveness.kind}>
+                      <strong>诊断结果：{bashLivenessLabel(bashLiveness.kind)}</strong>
+                      <span className="bash-liveness-detail">{bashLiveness.message}</span>
+                      {bashLiveness.kind === "half_dead" && (
+                        <span className="bash-liveness-detail">
+                          半死状态可继续用：写文件、git commit 这类有副作用的命令仍能成功。
+                          AI 看不到输出时，请用「文件副作用」验证（命令写文件 → read 工具读文件确认）。
+                        </span>
+                      )}
+                      {bashLiveness.kind === "full_dead" && (
+                        <span className="bash-liveness-detail">
+                          建议：重启 X-agent，或重新指定 bash 路径。
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="settings-block">
@@ -578,4 +617,17 @@ export function GeneralSettingsPage({
                 )}
               </section>
   );
+}
+
+function bashLivenessLabel(kind: BashLivenessResult["kind"]): string {
+  switch (kind) {
+    case "live":
+      return "✅ 正常";
+    case "half_dead":
+      return "🟡 半死（命令能执行但输出回不来）";
+    case "full_dead":
+      return "🔴 全死（命令也无法完成）";
+    case "no_bash":
+      return "⚠ 未找到 bash";
+  }
 }

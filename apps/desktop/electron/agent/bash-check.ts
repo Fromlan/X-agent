@@ -48,7 +48,7 @@ async function whichBashOnPath(): Promise<string | null> {
   return null;
 }
 
-async function findSuggestedBash(): Promise<string | null> {
+export async function findSuggestedBash(): Promise<string | null> {
   for (const candidate of CANDIDATES) {
     if (await fileExists(candidate)) return candidate;
   }

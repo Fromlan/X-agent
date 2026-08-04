@@ -1,6 +1,7 @@
 import { dialog, ipcMain, shell, type BrowserWindow } from "electron";
 import { Value } from "typebox/value";
-import { applyBashShellPath, checkBash } from "./agent/bash-check";
+import { applyBashShellPath, checkBash, findSuggestedBash } from "./agent/bash-check";
+import { probeBashLiveness } from "./agent/bash-liveness";
 import { checkAuth } from "./agent/auth-check";
 import { checkGit } from "./agent/git-exec";
 import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
@@ -150,6 +151,9 @@ function registerIpc(
     return next;
   });
   ipcMain.handle(IPC_CHANNELS.checkBash, async () => await checkBash());
+  ipcMain.handle(IPC_CHANNELS.checkBashLiveness, async () =>
+    await probeBashLiveness({ findSuggested: findSuggestedBash }),
+  );
   ipcMain.handle(IPC_CHANNELS.applyBashShellPath, async (_e, shellPath?: string) =>
     await applyBashShellPath(shellPath),
   );
