@@ -53,6 +53,15 @@ function metricsOf(el: HTMLElement): {
   };
 }
 
+/**
+ * 计算聊天行的层叠顺序，让上方气泡的溢出内容可以覆盖下方行。
+ * 虚拟行通过 transform 形成独立层叠上下文，因此必须在行本身设置顺序，
+ * 只提高气泡子节点的 z-index 无法越过相邻虚拟行。
+ */
+function transcriptRowZIndex(index: number, itemCount: number): number {
+  return itemCount - index;
+}
+
 export type ChatStarterChip = {
   id: string;
   label: string;
@@ -430,30 +439,24 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   }, [props.status, useVirtualList]);
 
   useLayoutEffect(() => {
-    // Plan / goal 模式里 assistant 回合中可能插入 tool_start / notice,
-    // 改变 displayItems.length;此时 virtual 行可能因新行 absolute 占位
-    // 而让旧行的 transform 出现 1~N 像素错位,视觉上"工具行 + 后续对话"重叠。
-    // 这里主动 measure() 一次让 virtualizer 重算所有行高,再跟随贴底。
-    if (!useVirtualList) return;
-    virtualizer.measure();
+    // 行数变化(append / 中间插入 tool_start / notice)不需要全量重测:
+    // 全量重测会清空 itemSizeCache,已挂载行全部退回 estimate 高度,
+    // 长行后的下一行仍按 estimate 定位,一屏以上时出现大面积行重叠。
+    // tanstack 对新挂载行会在 ref 里实测高度,内容变化由内部
+    // ResizeObserver 触发 resizeItem 校正,后续行 transform 随之重算;
+    // 这里只需按 pin 状态跟随贴底。
     scheduleFollow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayItems.length, useVirtualList]);
 
   /**
-   * assistant_end(status 从 streaming/retrying 切到 idle/error)是"行内
-   * 真实高度"跳变的关键时刻:流式期间 MarkdownBody 走 plain <pre>,终态
-   * 切到 <ReactMarkdown> DOM 子树完全换掉,行高可能从 200px 跳到 600px;
-   * ThinkingBlock 也会从开/关切到另一态,details 高度变化;若不在这一帧
-   * 主动 measure,virtualizer 仍按流式 estimate 算 transform,后续 absolute
-   * 行整体偏移,出现"长对话被切成两段,工具行插在中间"的视觉错位。
-   * displayItems.length 没变(同一个 assistant 收尾),所以上面 length
-   * 触发的 useLayoutEffect 不会跑,这里专门覆盖这条路径。
+   * assistant_end(status 从 streaming/retrying 切到 idle/error)行内容
+   * 高度可能跳变(plain <pre> → <ReactMarkdown>、ThinkingBlock 开合)。
+   * 收尾行始终挂载,tanstack 内部 ResizeObserver 会检测到该行尺寸变化
+   * 并重算后续行,不需要全量重测(全量会清空 itemSizeCache,把未变化
+   * 行的实测高度退回 estimate,反而造成长行后重叠)。
    */
   useLayoutEffect(() => {
-    if (!useVirtualList) return;
-    if (props.status === "streaming" || props.status === "retrying") return;
-    virtualizer.measure();
     scheduleFollow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.status, useVirtualList]);
@@ -542,6 +545,12 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                     left: 0,
                     width: "100%",
                     transform: `translateY(${virtualRow.start}px)`,
+                    // 不为气泡的操作头或溢出内容预留布局空间；按消息顺序
+                    // 反向叠放，让上方气泡在发生尺寸误差时覆盖下方行。
+                    zIndex: transcriptRowZIndex(
+                      virtualRow.index,
+                      displayItems.length,
+                    ),
                     paddingBottom: isLast ? 0 : ROW_GAP_PX,
                   }}
                 >
@@ -559,6 +568,12 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                   key={item.id}
                   className="transcript-flow-row"
                   ref={isLast ? tailRef : undefined}
+                  style={{
+                    // Flow 行也保持与虚拟行一致的反向层叠顺序，避免短列表
+                    // 与长列表在切换时出现不同的遮挡规则。
+                    position: "relative",
+                    zIndex: transcriptRowZIndex(idx, displayItems.length),
+                  }}
                 >
                   {renderItem(item)}
                 </div>

@@ -10,3 +10,5 @@ apps/desktop/node_modules.broken*
 apps/desktop/out
 apps/desktop/dist
 apps/desktop/release
+# Local repro pages and build reports
+.scratch/

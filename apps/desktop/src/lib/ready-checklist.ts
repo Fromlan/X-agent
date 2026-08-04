@@ -169,8 +169,9 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
   const rpcWarning = input.rpc?.warning;
   // 桥接真的在跑、且已超过宽限期，才算"稳态未连接"；否则按宽限内处理。
   const bridgeInGrace =
-    !bridgeRunning ||
-    (bridgeStartedAt > 0 && Date.now() - bridgeStartedAt < GODOT_RPC_GRACE_PERIOD_MS);
+    bridgeRunning &&
+    bridgeStartedAt > 0 &&
+    Date.now() - bridgeStartedAt < GODOT_RPC_GRACE_PERIOD_MS;
 
   if (bridgeOk) {
     items.push({

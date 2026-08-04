@@ -47,6 +47,23 @@ async function withBridge(
   }
 }
 
+/**
+ * 为不依赖具体 bridge 实例的端口测试隔离 endpoint 文件，避免读取开发者机器状态。
+ */
+async function withIsolatedEndpoint(
+  prefix: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  setGodotRpcEndpointPathForTests(join(dir, "x-agent-godot-rpc.json"));
+  try {
+    await fn();
+  } finally {
+    setGodotRpcEndpointPathForTests(null);
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function connectMockClient(
   port: number,
   handler: (line: string, write: (obj: unknown) => void) => void,
@@ -230,7 +247,7 @@ await withBridge(18767, async (bridge) => {
 });
 
 // EADDRINUSE with fallbackPorts:0 → soft error; with default fallback → next port
-{
+await withIsolatedEndpoint("xagent-rpc-fallback-", async () => {
   const a = new GodotRpcBridge();
   const b = new GodotRpcBridge();
   const port = 18766;
@@ -257,7 +274,7 @@ await withBridge(18767, async (bridge) => {
   const recovered = await b.start(port, { fallbackPorts: 0 });
   assert(recovered.running && !recovered.error, "port free after stop");
   await b.stop();
-}
+});
 
 // ─── token 复用：start 沿用上次 endpoint 的 token + 端口 ───
 {

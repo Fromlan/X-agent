@@ -1263,6 +1263,7 @@ body.is-resizing-column * {
   align-items: stretch;
   width: 100%;
   min-width: 0;
+  overflow: visible;
 }
 
 .virtual-row {
@@ -1271,10 +1272,22 @@ body.is-resizing-column * {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* 防止 tool card / 注释 / 长 markdown 行内内容超出 virtual-row 边界
-     引起相邻 absolute 行视觉重叠。 */
+  /*
+   * 行高由 virtualizer 测量，但操作头、折叠工具条的紧凑负边距以及流式
+   * 内容都可能暂时超出测量盒。这里必须允许可见溢出，否则工具调用会被
+   * 行盒直接裁掉；层叠顺序由 ChatTranscript 在行本身控制。
+   */
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+}
+
+/*
+ * 展开工具卡或操作气泡获得临时顶层，允许其向下展开并覆盖下一行；
+ * !important 用于覆盖 JSX 为虚拟行设置的默认顺序。
+ */
+.virtual-row:has(.bubble:hover, .bubble:focus-within, .bubble-tool:hover, .bubble-tool:focus-within, .bubble-tool[open]),
+.transcript-flow-row:has(.bubble:hover, .bubble:focus-within, .bubble-tool:hover, .bubble-tool:focus-within, .bubble-tool[open]) {
+  z-index: 100 !important;
 }
 
 .markdown-plain {
@@ -1512,6 +1525,7 @@ body.is-resizing-column * {
   max-width: min(82%, 100%);
   border: 1px solid var(--border-primary);
   position: relative;
+  z-index: 2;
   box-sizing: border-box;
 }
 
@@ -1525,6 +1539,10 @@ body.is-resizing-column * {
   font-weight: 500;
 }
 
+/*
+ * 操作头故意不参与布局，依靠气泡 / 行的层叠顺序覆盖相邻内容。
+ * 同时保留较高的子层级，确保它在气泡自身内容之上可点击。
+ */
 .bubble-head {
   position: absolute;
   right: 0;
@@ -1536,7 +1554,7 @@ body.is-resizing-column * {
   width: max-content;
   margin: 0;
   min-height: 0;
-  z-index: 2;
+  z-index: 3;
 }
 
 .bubble-actions {
@@ -1990,6 +2008,8 @@ body.is-resizing-column * {
 }
 
 .bubble-tool {
+  position: relative;
+  z-index: 2;
   align-self: flex-start;
   background: var(--bubble-tool);
   border-left: 3px solid var(--warning-accent);
@@ -2160,6 +2180,8 @@ body.is-resizing-column * {
 }
 
 .tool-with-actions {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 6px;
