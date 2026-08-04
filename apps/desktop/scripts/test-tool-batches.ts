@@ -271,9 +271,10 @@ function runningTool(id: string): ChatItem {
 
 // ----------------------- toolBatchOpenForDoneTransition -----------------------
 
-assert.equal(toolBatchOpenForDoneTransition(false, false), true, "running → open");
-assert.equal(toolBatchOpenForDoneTransition(true, false), true, "still running → open");
-assert.equal(toolBatchOpenForDoneTransition(false, true), false, "just finished → close once");
+// 移除 auto-expand 后,running 不再强制展开,保持 null (不干扰用户)
+assert.equal(toolBatchOpenForDoneTransition(false, false), null, "running → 不强制展开");
+assert.equal(toolBatchOpenForDoneTransition(true, false), null, "still running → 不强制展开");
+assert.equal(toolBatchOpenForDoneTransition(false, true), false, "just finished → 折叠一次");
 assert.equal(toolBatchOpenForDoneTransition(true, true), null, "already done → leave user alone");
 
 console.log("test-tool-batches: ok");
