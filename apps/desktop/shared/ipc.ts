@@ -197,6 +197,9 @@ export const GODOT_TOOLS = [
   "godot_import_resources",
   "godot_play_errors",
   "godot_stop_scene",
+  // 1.2 扩展：场景内省（只读）
+  "godot_get_scene_tree",
+  "godot_get_node_properties",
 ] as const;
 
 export type GodotToolName = (typeof GODOT_TOOLS)[number];
