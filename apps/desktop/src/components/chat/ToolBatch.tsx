@@ -42,16 +42,9 @@ export interface ToolBatchProps {
   onBuildPlan?: () => void;
 }
 
-/**
- * 批次默认开合：与现有 `toolDetailsOpenForDoneTransition` 同思路。
- * - 有 running → 强制展开（让用户看进度）
- * - 刚刚 all done → 强制折叠一次
- * - 已 all done → 不再干扰用户手动开合（返回 null）
- */
-function batchOpenForState(allDone: boolean): boolean | null {
-  if (!allDone) return true;
-  return null;
-}
+// 注意:不再保留 auto-expand。批次始终保持折叠,
+// 等待用户主动点击标题展开;若用户先前手动展开过,
+// `toolBatchOpenForDoneTransition` 会在刚 allDone 时一次性折叠。
 
 /**
  * 工具批次容器组件。
@@ -68,7 +61,7 @@ export const ToolBatch = memo(function ToolBatch(props: ToolBatchProps) {
 
   const summary = useMemo(() => summarizeToolBatch(item.items), [item.items]);
 
-  // 边缘触发：running → 展开；刚 allDone → 折叠一次；其余不动。
+  // 边缘触发：刚 allDone → 折叠一次（仅当用户先前手动展开过才产生可见效果）；其余不动。
   useEffect(() => {
     const el = detailsRef.current;
     if (!el) return;
@@ -81,16 +74,12 @@ export const ToolBatch = memo(function ToolBatch(props: ToolBatchProps) {
     el.open = next;
   }, [summary.allDone]);
 
-  // 首挂时根据 allDone 决定初始开合（与 ToolCard 的 mount-only effect 一致）。
+  // 首挂时强制折叠 — 不再有"running → 展开"的自动行为,
+  // 避免连续工具合并时先弹出再收纳的视觉跳动。
   useEffect(() => {
     const el = detailsRef.current;
     if (!el) return;
-    const next = batchOpenForState(summary.allDone);
-    if (next === null) {
-      el.open = !summary.allDone;
-    } else {
-      el.open = next;
-    }
+    el.open = false;
     prevAllDoneRef.current = summary.allDone;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

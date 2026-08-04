@@ -99,11 +99,12 @@ export function summarizeToolBatch(items: Extract<ChatItem, { kind: "tool" }>[])
 }
 
 /**
- * 批次默认开合态的边缘转换函数。
+ * 批次默认开合态的边缘转换函数（仅控制自动折叠，不自动展开）。
  *
- * - 有运行中（running > 0）→ 强制保持展开（用户要看进度）
+ * - running → 返回 null（不强制展开，让用户主动点击查看进度）
  * - 刚刚全部完成（prevAllDone=false, allDone=true）→ 强制折叠一次
- * - 已全部完成 → 不再干扰用户的手动开合（返回 null）
+ *   （仅当用户先前手动展开过批次才产生可见效果）
+ * - 已全部完成 → 返回 null（不再干扰用户后续手动开合）
  *
  * 调用方式与现有 `toolDetailsOpenForDoneTransition` 一致：
  * `useEffect([allDone], ...)` 内根据返回值同步 `<details>.open`。
@@ -112,7 +113,6 @@ export function toolBatchOpenForDoneTransition(
   prevAllDone: boolean,
   allDone: boolean,
 ): boolean | null {
-  if (!allDone) return true;
   if (!prevAllDone && allDone) return false;
   return null;
 }
