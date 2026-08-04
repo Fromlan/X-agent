@@ -2818,6 +2818,35 @@ body.is-resizing-column * {
   color: var(--text-muted);
 }
 
+/* —— 1.6 @-补全菜单 —— 复用 slash menu 样式，左边加一道 accent-blue 以示区别 */
+.at-menu {
+  border-left: 2px solid var(--accent-blue);
+}
+
+.at-menu .skill-slash-menu__header {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-list-hover);
+}
+
+.at-menu .skill-slash-menu__kind--path {
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
+}
+
+.at-menu .skill-slash-menu__kind--mode {
+  background: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
+  color: var(--accent-yellow);
+}
+
+.at-menu .skill-slash-menu__kind--skill {
+  background: color-mix(in srgb, var(--ctx-skills) 22%, transparent);
+  color: var(--ctx-skills);
+}
+
 .queue-banner {
   margin: 0 14px 0;
   padding: 8px 10px;
