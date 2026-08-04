@@ -1,4 +1,5 @@
 import type { HistoryItem, UiAgentEvent } from "../ipc";
+import { formatErrorBubble } from "./error-format";
 
 export type ChatItem = HistoryItem;
 
@@ -224,7 +225,7 @@ export function applyAgentEvent(
                   (i) => i.kind === "assistant" && i.id === event.messageId,
                 ) as Extract<ChatItem, { kind: "assistant" }> | undefined;
                 if (prev?.text) return prev.text;
-                return event.errorMessage;
+                return formatErrorBubble(event.errorMessage);
               })(),
             }
           : {}),

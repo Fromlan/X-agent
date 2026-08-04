@@ -149,4 +149,60 @@ const argsText =
   typeof tool.args === "string" ? tool.args : JSON.stringify(tool.args);
 assert.ok(argsText.includes("截断"), "restore tool args should truncate");
 
+// Auth-failure path: assistant message with empty content but a populated
+// errorMessage must still land in history so the user can see what failed.
+// Regression guard for the "401 ... invalid api key flashes for a second
+// then disappears" bug (branch-mapper used to drop error-only assistants).
+const errorEntries: BranchMessageEntry[] = [
+  {
+    type: "message",
+    id: "u-1",
+    message: { role: "user", content: [{ type: "text", text: "你好" }] },
+  },
+  {
+    type: "message",
+    id: "a-err",
+    message: {
+      role: "assistant",
+      content: [],
+      errorMessage: '401 {"error":{"message":"Authentication Fails"}}',
+    },
+  },
+];
+const errorHistory = branchEntriesToHistory(errorEntries);
+const errorAssistant = errorHistory.find(
+  (i) => i.kind === "assistant" && i.entryId === "a-err",
+);
+assert.ok(errorAssistant, "error-only assistant must survive branch-mapper");
+assert.equal(
+  errorAssistant?.isError,
+  true,
+  "error-only assistant must be flagged isError",
+);
+assert.ok(
+  errorAssistant?.text.includes("Authentication Fails"),
+  "errorMessage should populate assistant.text so history_replace keeps it",
+);
+
+// Sanity: an assistant with truly empty content (no text, no thinking, no
+// toolCall, no error) still gets dropped — we only rescue error assistants.
+const emptyEntries: BranchMessageEntry[] = [
+  {
+    type: "message",
+    id: "u-x",
+    message: { role: "user", content: [{ type: "text", text: "ping" }] },
+  },
+  {
+    type: "message",
+    id: "a-empty",
+    message: { role: "assistant", content: [] },
+  },
+];
+const emptyHistory = branchEntriesToHistory(emptyEntries);
+assert.equal(
+  emptyHistory.some((i) => i.kind === "assistant" && i.entryId === "a-empty"),
+  false,
+  "empty assistant with no error must still be dropped",
+);
+
 console.log("transcript golden ok");
