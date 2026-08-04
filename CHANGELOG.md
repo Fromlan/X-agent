@@ -8,9 +8,28 @@
 
 ## Unreleased
 
+（占位：下个版本的变更说明）
+
+## 0.3.14
+
+### 功能
+
+- **@ 补全菜单**：聊天输入框输入 `@` 弹出三类候选（技能 / 会话模式 / 文件路径），选中即插入，长列表带键盘导航与排序去重（`useAtCompletion` + `AtMenu`）。
+- **Godot 场景内省**：新增 `get_scene_tree` / `get_node_properties` 两个 RPC 方法（Godot 插件 0.4.0），Agent 可直接查看当前场景的节点树与节点属性，为场景级编辑提供上下文。
+- **连续工具调用折叠**：同一回合的连续 tool 调用自动折叠为可展开批次，长工具序列不再占满对话；运行中的批次不自动展开，完成后可一键展开 / 收起（`ToolBatch` + `test-tool-batches` 契约锁定）。
+
 ### 修复
 
 - **确认弹窗「第一次点击无效果」**：在工具白名单切换等需要 confirm 的场景下，用户快速连续点击切换按钮（或自动批处理、键盘连按等）会让前一次的 await confirm(...) 永远不 resolve —— pendingRef.current 被新调用覆盖，前一次的 resolve 函数丢失，表现为「要点两次确认才生效」。src/lib/app-confirm.tsx 新 confirm 启动前先把旧的 pending resolve 为 false，避免 Promise 泄露。新增 scripts/test-confirm-provider.ts 锁住合约。
+- **Godot RPC 断开后无法自动重连**：桥接关闭期间插件每次重连都重置回主端口，fallback 端口（8765–8774）从未被遍历（本机端口无监听是立即 RST，不会走连接超时推进路径），桥接重启后端口 / token 变化时插件永远连不上。插件 0.4.1 重写重连调度：每次重连前重读 endpoint 感知配置变化、同一端口连续重试约 2s 后推进下一候选端口、重连间隔缩短到 0.5s，桥接重启后 0.5–1s 内自动恢复，无需重启编辑器；Godot 设置页同步增加桥接状态轮询，连接 / 断开实时可见。
+- **Plan 内联 `<clarify>` 解析**：模型输出带 markdown 包裹的内联 clarify 块时按块边界解析而不是整段吞掉，选项可正常点选发送（`test-plan-clarify` 锁定）。
+
+### 改进
+
+- **Plan 澄清面板重设计**：多题 clarify 选项面板重构选中态 / 间距 / 布局，误触率下降、可见性提升。
+- **bash 健康探针 + 设置诊断**：设置页新增 bash 环境诊断，显示 liveness 探测结果与 shell 路径问题，排查更快。
+- **工程化 · CI 门槛**：引入 Vitest 单测（node 环境，含 cwd-sandbox / retract-orchestrator / shadow-checkpoints / usage-store / godot-rpc-bridge 关键模块）+ Playwright E2E 基础用例（应用外壳 / 模式切换），CI 增加测试与覆盖率门槛。
+- **文档**：新增 `AGENTS.md` 仓库协作入口 + `ROADMAP.md`（1.1 / 1.6 完成标记），开发者与 Agent 上手路径补齐。
 
 ## 0.3.13
 
