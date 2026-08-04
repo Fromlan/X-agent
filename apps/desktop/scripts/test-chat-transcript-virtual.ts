@@ -130,6 +130,56 @@ function readSrc(rel: string): string {
     /\.message-stream-flow[\s\S]*?\.transcript-flow-row:has/,
     "flow mode must compact consecutive collapsed tools",
   );
+
+  // 操作头(撤回 / 重新生成)绝对定位在气泡下方且不占布局高度。
+  // 设计约定是不为它额外推开下一行，而是让当前行通过层叠顺序覆盖下方。
+  assert.doesNotMatch(
+    css,
+    /\.bubble:has\(\.bubble-head\)\s*\{[^}]*margin-bottom\s*:/,
+    "bubbles with action heads must not reserve layout space",
+  );
+  assert.match(
+    css,
+    /\.bubble-head\s*\{[^}]*z-index:\s*[1-9]\d*/,
+    "bubble action head must have an elevated stacking level",
+  );
+  const toolRule = css.match(/\.bubble-tool\s*\{[^}]+\}/);
+  assert.ok(toolRule, "bubble-tool rule");
+  assert.match(
+    toolRule![0]!,
+    /position:\s*relative[\s\S]*z-index:\s*[1-9]\d*/,
+    "tool bubbles must stay above adjacent row content",
+  );
+
+  // 虚拟行不能裁剪测量盒外的紧凑工具条 / 气泡溢出内容。
+  assert.match(
+    virtualRowBlock![0]!,
+    /overflow:\s*visible/,
+    "virtual-row must allow tool cards and bubbles to overflow their measured box",
+  );
+  assert.doesNotMatch(
+    virtualRowBlock![0]!,
+    /overflow:\s*hidden/,
+    "virtual-row must not clip tool cards or bubble action heads",
+  );
+
+  // transform 会让每个虚拟行成为独立层叠上下文,所以顺序必须设在行本身;
+  // flow 与 virtual 两条路径都要复用同一套反向顺序。
+  assert.match(
+    transcript,
+    /function transcriptRowZIndex\s*\(index:\s*number,\s*itemCount:\s*number\)/,
+    "transcript rows must expose a deterministic stacking-order helper",
+  );
+  assert.match(
+    transcript,
+    /zIndex:\s*transcriptRowZIndex\([\s\S]*?virtualRow\.index/,
+    "virtual rows must receive the stacking order on the transformed row",
+  );
+  assert.match(
+    transcript,
+    /zIndex:\s*transcriptRowZIndex\(idx,\s*displayItems\.length\)/,
+    "flow rows must receive the same stacking order",
+  );
 }
 
 console.log("test-chat-transcript-virtual ok");
