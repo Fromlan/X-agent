@@ -27,6 +27,8 @@ interface Props {
   items: ChatItem[];
   showThinking: boolean;
   status: AgentStatus;
+  /** Live API status for the line above the textarea (null when idle). */
+  apiStatus?: { phase: "thinking" | "receiving" | "retrying"; waitedMs?: number } | null;
   input: string;
   setInput: (v: string) => void;
   onSend: () => void;
@@ -59,6 +61,13 @@ interface Props {
   /** Cycle Agent → 调研 → Plan → 目标 (Shift+Tab). */
   onCycleSessionMode?: () => void;
   onClarifySelect?: (reply: string) => void;
+}
+
+/** Render an "已等待 12s" suffix when the wait exceeds 3 seconds. */
+function formatWait(waitedMs?: number): string {
+  if (typeof waitedMs !== "number" || waitedMs < 3000) return "";
+  const sec = Math.round(waitedMs / 1000);
+  return `（已等待 ${sec}s）`;
 }
 
 function ChatPanelImpl(props: Props) {
@@ -410,6 +419,24 @@ function ChatPanelImpl(props: Props) {
             onSelect={selectAtCandidate}
             onClose={() => dismissAtMenu()}
           />
+          {props.apiStatus && (
+            <div
+              className={`api-status-line api-status-${props.apiStatus.phase}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="api-status-dot" aria-hidden="true" />
+              <span className="api-status-text">
+                {props.apiStatus.phase === "thinking" && (
+                  <>模型响应中{formatWait(props.apiStatus.waitedMs)}…</>
+                )}
+                {props.apiStatus.phase === "receiving" && <>正在接收回复…</>}
+                {props.apiStatus.phase === "retrying" && (
+                  <>自动重试中{formatWait(props.apiStatus.waitedMs)}…</>
+                )}
+              </span>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={props.input}
