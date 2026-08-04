@@ -41,11 +41,11 @@ const transcript = readFileSync(
   );
 }
 
-// 3. displayItems.length 变化的 layout effect:只 scheduleFollow,不 measure,
+// 3. renderItems.length 变化的 layout effect:只 scheduleFollow,不 measure,
 //    且不能对 flow 模式早退(flow 也需要跟随)。
 {
   const itemsEffect = transcript.match(
-    /useLayoutEffect\(\(\)\s*=>\s*\{[\s\S]*?\},\s*\[displayItems\.length,\s*useVirtualList\]\)/,
+    /useLayoutEffect\(\(\)\s*=>\s*\{[\s\S]*?\},\s*\[renderItems\.length,\s*useVirtualList]\)/,
   );
   assert.ok(itemsEffect, "items-length useLayoutEffect must exist");
   assert.match(

@@ -2067,6 +2067,122 @@ body.is-resizing-column * {
   border-left-color: var(--accent-blue);
 }
 
+/* ===== Tool batch container: 连续 tool 的合并折叠容器 ===== */
+/* 折叠态 = 单行 pill,展开态 = 竖排子 ToolCard (子卡保留各自开合记忆)。
+   视觉风格沿用 bubble-tool,但容器有自己的间距策略以避免与相邻行收紧规则冲突。 */
+.bubble-tool-batch {
+  position: relative;
+  align-self: flex-start;
+  background: var(--bubble-tool);
+  border-left: 3px solid var(--warning-accent);
+  max-width: 82%;
+  border-radius: var(--radius-container);
+}
+
+/* 折叠: 单行 pill */
+.bubble-tool-batch:not([open]) {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+/* 整体完成: 绿色左边框 (与单 ToolCard 一致) */
+.bubble-tool-batch.toolbatch-done:not(.toolbatch-failed) {
+  border-left-color: var(--accent-green);
+}
+
+/* 任意失败: 红色左边框 */
+.bubble-tool-batch.toolbatch-failed {
+  border-left-color: var(--accent-red);
+}
+
+/* 标题行 summary: 与 .tool-head 视觉对齐 */
+.toolbatch-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  list-style: none;
+  cursor: pointer;
+}
+
+.bubble-tool-batch > summary.toolbatch-head::-webkit-details-marker {
+  display: none;
+}
+
+/* 折叠态标题更紧凑 */
+.bubble-tool-batch:not([open]) .toolbatch-head {
+  min-height: 20px;
+  gap: 6px;
+}
+
+/* 标题左侧: chevron + 图标 + 名称 + 状态徽标 */
+.toolbatch-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.bubble-tool-batch:not([open]) .toolbatch-name {
+  font-size: 11.5px;
+}
+
+/* 折叠态隐藏详细状态徽标文本,只留图标 */
+.bubble-tool-batch:not([open]) .toolbatch-status {
+  display: none;
+}
+
+/* chevron 旋转 (与 .tool-chevron 一致) */
+.toolbatch-chevron {
+  transition: transform 0.15s ease;
+}
+
+.bubble-tool-batch[open] .toolbatch-chevron {
+  transform: rotate(90deg);
+}
+
+/* 状态徽标文本 (折叠态隐藏) */
+.toolbatch-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border-primary);
+  padding-left: 8px;
+  margin-left: 2px;
+}
+
+.toolbatch-status.is-running {
+  color: var(--warning-accent);
+}
+
+.toolbatch-status.is-failed {
+  color: var(--accent-red);
+}
+
+.toolbatch-status.is-done {
+  color: var(--accent-green);
+}
+
+/* 标题右侧: 状态图标 */
+.toolbatch-state {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+/* 批次内容: 竖排子卡,内边距给 children 一些呼吸 */
+.toolbatch-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 子卡去掉自身 max-width,避免与容器 82% 双重缩窄 */
+.toolbatch-body > .tool-with-actions > .bubble-tool {
+  max-width: 100%;
+}
+
 .bubble-tool.is-skill .tool-name {
   font-family: var(--font-sans);
 }
@@ -3436,6 +3552,36 @@ body.is-resizing-column * {
   margin: 0 0 12px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.bash-liveness-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--text-muted);
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 4px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.bash-liveness-hint[data-kind="live"] {
+  border-left-color: var(--success, #4caf50);
+}
+.bash-liveness-hint[data-kind="half_dead"] {
+  border-left-color: #e0a91d;
+  background: rgba(224, 169, 29, 0.08);
+}
+.bash-liveness-hint[data-kind="full_dead"] {
+  border-left-color: #d44;
+  background: rgba(221, 68, 68, 0.08);
+}
+.bash-liveness-hint[data-kind="no_bash"] {
+  border-left-color: var(--text-muted);
+}
+.bash-liveness-detail {
+  color: var(--text-muted);
 }
 
 .settings-subhead {
