@@ -26,6 +26,7 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS, isRestorableGoalStatus } from "@shared/ipc";
+import { dbgLog, dbgTimer } from "@shared/debug-log";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
   NODE_JS_DOWNLOAD_URL,
@@ -65,6 +66,7 @@ import {
   useColumnResize,
 } from "./hooks/useColumnResize";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
+import type { ApiStatus } from "./hooks/useAgentEventRouter";
 import { useAutoCompact } from "./hooks/useAutoCompact";
 import { usePlanSessionAutoOpen } from "./hooks/usePlanSession";
 import { useProjectReadiness } from "./hooks/useProjectReadiness";
@@ -125,6 +127,25 @@ export default function App() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [followNonce, setFollowNonce] = useState(0);
+  // Live API-phase for the composer's status line ("模型响应中… 67s" etc).
+  // Ref-captured callback so the router effect stays stable; plain state for render.
+  const apiStatusRef = useRef<(status: ApiStatus) => void>(() => undefined);
+  const [apiStatus, setApiStatus] = useState<ApiStatus>(null);
+  apiStatusRef.current = (next) => setApiStatus(next);
+  // Tick once a second so the "已等待 Ns" counter re-renders while waiting.
+  const [, setApiTick] = useState(0);
+  useEffect(() => {
+    if (!apiStatus) return;
+    if (apiStatus.phase === "receiving") return;
+    const id = setInterval(() => setApiTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [apiStatus]);
+  // View-model for the composer: include waitedMs only when we have a start time.
+  const apiStatusView = apiStatus
+    ? apiStatus.phase === "receiving"
+      ? { phase: "receiving" as const }
+      : { phase: apiStatus.phase, waitedMs: Date.now() - apiStatus.startedAt }
+    : null;
   const [readyBusy, setReadyBusy] = useState(false);
   const [readyNotice, setReadyNotice] = useState<string | null>(null);
   const [prefsRecovery, setPrefsRecovery] =
@@ -269,6 +290,7 @@ export default function App() {
     setPlanPath,
     setGoal,
     refreshSessions,
+    onApiStatus: apiStatusRef,
   });
 
   useEffect(() => {
@@ -307,11 +329,15 @@ export default function App() {
   }, []);
 
   const send = useCallback(async () => {
-    if (!input.trim() || !cwd) return;
+    if (!input.trim() || !cwd) {
+      dbgLog("chat", "send skipped (empty or no cwd)", { hasInput: !!input, hasCwd: !!cwd });
+      return;
+    }
     const text = input.trim();
     setInput("");
     setError(null);
     setFollowNonce((n) => n + 1);
+    dbgLog("chat", "send invoked", { len: text.length, preview: text.slice(0, 80), status, sessionMode });
 
     // Slash: /goal — host IPC, not model prompt.
     if (/^\/goal\s+clear\b/i.test(text) || /^\/goal\s*$/i.test(text)) {
@@ -375,14 +401,19 @@ export default function App() {
     const pendingId = makePendingUserId();
     setItems((prev) => appendPendingUser(prev, text, pendingId));
 
+    const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
     const expanded = await expandAtPathsInPrompt(text);
+    doneExpand();
+    const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
     const result = await window.xAgent.turn.prompt(expanded);
+    doneRoundtrip();
+    dbgLog("chat", "turn.prompt resolved", { ok: result.ok, silent: result.silent, error: result.error });
     if (!result.ok || result.silent) {
       setItems((prev) => removePendingUser(prev, pendingId));
       if (!result.ok) setError(result.error ?? "发送失败");
     }
     await refreshSessions();
-  }, [input, cwd, sessionMode, goal, refreshSessions]);
+  }, [input, cwd, sessionMode, goal, refreshSessions, status]);
 
   const onSessionModeChange = useCallback(
     async (mode: AgentSessionMode) => {
@@ -455,7 +486,14 @@ export default function App() {
   }, [status, cwd, sessionMode, onSessionModeChange]);
 
   const abort = useCallback(async () => {
-    await window.xAgent.turn.abort();
+    dbgLog("chat", "abort invoked");
+    const done = dbgTimer("chat", "window.xAgent.turn.abort roundtrip");
+    try {
+      await window.xAgent.turn.abort();
+      done();
+    } catch (err) {
+      dbgLog("chat", "abort threw", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const addPathToChat = useCallback((relPath: string) => {
@@ -1045,6 +1083,7 @@ export default function App() {
           items={items}
           showThinking={prefs?.showThinking ?? true}
           status={status}
+          apiStatus={apiStatusView}
           input={input}
           setInput={setInput}
           onSend={send}

@@ -2698,6 +2698,41 @@ body.is-resizing-column * {
   color: var(--text-dim);
 }
 
+/* Live API status line above the textarea. Mirrors `.status-icon-dot` tones. */
+.api-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.api-status-line .api-status-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.api-status-line .api-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.api-status-line.api-status-thinking .api-status-dot,
+.api-status-line.api-status-retrying .api-status-dot {
+  background: var(--warning-accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.api-status-line.api-status-receiving .api-status-dot {
+  background: var(--accent-green);
+}
+
 .composer-actions {
   display: flex;
   align-items: center;
