@@ -72,6 +72,7 @@ const flatApi: XAgentApiFlat = {
   getSecretCodecStatus: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getSecretCodecStatus),
   checkBash: () => ipcRenderer.invoke(IPC_CHANNELS.checkBash),
+  checkBashLiveness: () => ipcRenderer.invoke(IPC_CHANNELS.checkBashLiveness),
   applyBashShellPath: (shellPath?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.applyBashShellPath, shellPath),
   pickBashShell: () => ipcRenderer.invoke(IPC_CHANNELS.pickBashShell),
@@ -217,6 +218,7 @@ const api: XAgentApi = {
     getRecoveryNotice: flatApi.getPrefsRecoveryNotice,
     getSecretCodecStatus: flatApi.getSecretCodecStatus,
     checkBash: flatApi.checkBash,
+    checkBashLiveness: flatApi.checkBashLiveness,
     applyBashShellPath: flatApi.applyBashShellPath,
     pickBashShell: flatApi.pickBashShell,
     checkGit: flatApi.checkGit,
