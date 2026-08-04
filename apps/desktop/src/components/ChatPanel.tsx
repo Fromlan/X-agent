@@ -8,6 +8,7 @@ import { isRestorableGoalStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
+import { AtMenu } from "./AtMenu";
 import { Bot, ClipboardList, Flag, Hammer, Search, Send, Square, Target } from "lucide-react";
 import {
   memo,
@@ -20,6 +21,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useSlashMenu } from "../hooks/useSlashMenu";
+import { useAtCompletion } from "../hooks/useAtCompletion";
 
 interface Props {
   items: ChatItem[];
@@ -87,6 +89,32 @@ function ChatPanelImpl(props: Props) {
     setInput: props.setInput,
   });
 
+  // 1.6 @-补全 —— 复用现有 slash 列表作为 skill 候选；path 候选待 file-tree IPC 接入
+  const atSkillCandidates = useMemo(
+    () =>
+      filtered
+        .filter((it) => it.source === "skill")
+        .map((it) => ({ name: it.name, description: it.description })),
+    [filtered],
+  );
+  const {
+    match: atMatch,
+    menuOpen: atMenuOpen,
+    candidates: atCandidates,
+    highlight: atHighlight,
+    setHighlight: setAtHighlight,
+    selectCandidate: selectAtCandidate,
+    dismissMenu: dismissAtMenu,
+  } = useAtCompletion({
+    input: props.input,
+    cursor,
+    disabled: composerLocked,
+    pathCandidates: [],
+    skillCandidates: atSkillCandidates,
+    textareaRef,
+    setInput: props.setInput,
+  });
+
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     props.setInput(e.target.value);
     setCursor(e.target.selectionStart);
@@ -99,6 +127,32 @@ function ChatPanelImpl(props: Props) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // 1.6 @-补全菜单优先于 slash 菜单（@ 不会出现在 / 菜单中，但 / 菜单逻辑会先执行时可能误判）
+    if (atMenuOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dismissAtMenu();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (atCandidates.length === 0) return;
+        setAtHighlight((i) => (i + 1) % atCandidates.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (atCandidates.length === 0) return;
+        setAtHighlight((i) => (i - 1 + atCandidates.length) % atCandidates.length);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const candidate = atCandidates[atHighlight] ?? atCandidates[0];
+        if (candidate) selectAtCandidate(candidate);
+        return;
+      }
+    }
     if (menuOpen) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -344,6 +398,17 @@ function ChatPanelImpl(props: Props) {
             onHighlightChange={setHighlight}
             onSelect={selectSlashItem}
             onClose={() => dismissMenu()}
+          />
+          <AtMenu
+            open={atMenuOpen}
+            candidates={atCandidates}
+            highlightIndex={Math.min(
+              atHighlight,
+              Math.max(0, atCandidates.length - 1),
+            )}
+            onHighlightChange={setAtHighlight}
+            onSelect={selectAtCandidate}
+            onClose={() => dismissAtMenu()}
           />
           <textarea
             ref={textareaRef}
