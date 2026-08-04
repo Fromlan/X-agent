@@ -11,13 +11,25 @@ import type {
   UiAgentEvent,
 } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
+import { dbgLog, dbgTimer } from "../shared/debug-log";
 
 const flatApi: XAgentApiFlat = {
   // session / workspace
   openProject: (path?: string, mode?: "continue" | "new") =>
     ipcRenderer.invoke(IPC_CHANNELS.openProject, path, mode),
-  prompt: (text: string) => ipcRenderer.invoke(IPC_CHANNELS.prompt, text),
-  abort: () => ipcRenderer.invoke(IPC_CHANNELS.abort),
+  prompt: (text: string) => {
+    dbgLog("preload", "invoke prompt", { len: text?.length, preview: text?.slice(0, 80) });
+    const done = dbgTimer("preload", "prompt roundtrip");
+    return ipcRenderer.invoke(IPC_CHANNELS.prompt, text).then((result) => {
+      done();
+      dbgLog("preload", "prompt result", result);
+      return result;
+    });
+  },
+  abort: () => {
+    dbgLog("preload", "invoke abort");
+    return ipcRenderer.invoke(IPC_CHANNELS.abort);
+  },
   previewRetract: (entryId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.previewRetract, entryId),
   retractToUserMessage: (
