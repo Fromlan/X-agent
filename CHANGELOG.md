@@ -8,7 +8,9 @@
 
 ## Unreleased
 
-空。
+### 修复
+
+- **确认弹窗「第一次点击无效果」**：在工具白名单切换等需要 confirm 的场景下，用户快速连续点击切换按钮（或自动批处理、键盘连按等）会让前一次的 await confirm(...) 永远不 resolve —— pendingRef.current 被新调用覆盖，前一次的 resolve 函数丢失，表现为「要点两次确认才生效」。src/lib/app-confirm.tsx 新 confirm 启动前先把旧的 pending resolve 为 false，避免 Promise 泄露。新增 scripts/test-confirm-provider.ts 锁住合约。
 
 ## 0.3.13
 
@@ -527,3 +529,4 @@
 ## 0.1.2
 
 - 桌面客户端基线：会话、供应商、工具白名单、Godot RPC 控制面（开/重载/运行当前场景与错误收集）、CI / Windows Release
+

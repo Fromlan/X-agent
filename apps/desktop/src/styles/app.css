@@ -1681,11 +1681,13 @@ body.is-resizing-column * {
 }
 
 .confirm-modal .confirm-danger-action {
-  color: var(--text-error);
+  background: var(--accent-red);
+  border-color: var(--accent-red);
+  color: #ffffff;
 }
 
 .confirm-modal .confirm-danger-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+  filter: brightness(1.06);
 }
 
 .retract-confirm-modal {

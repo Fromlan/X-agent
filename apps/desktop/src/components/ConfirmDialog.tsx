@@ -36,12 +36,15 @@ export function ConfirmDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onCancel]);
 
+  // 视觉权重：warn/danger 场景下，confirm（继续/确定）是用户主动选择的风险动作，
+  // 应当更显眼（CTA），cancel 是安全兜底（ghost）。autoFocus 仍留在 cancel，
+  // 这样误按 Enter 会走安全分支；点击则需用户明确选中 confirm。
   const safeDefault = tone === "warn" || tone === "danger";
-  const cancelClass = safeDefault ? "btn btn-cta" : "btn btn-ghost";
+  const cancelClass = "btn btn-ghost";
   const confirmClass = safeDefault
     ? tone === "danger"
-      ? "btn btn-ghost confirm-danger-action"
-      : "btn btn-ghost"
+      ? "btn btn-cta confirm-danger-action"
+      : "btn btn-cta"
     : "btn btn-cta";
 
   return (
