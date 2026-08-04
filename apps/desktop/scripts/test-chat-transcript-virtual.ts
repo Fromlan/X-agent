@@ -77,7 +77,7 @@ function readSrc(rel: string): string {
   );
   assert.match(
     transcript,
-    /displayItems\.length\s*>=\s*\(\s*streaming\s*\?\s*VIRTUALIZE_STREAMING_MIN_ITEMS\s*:\s*VIRTUALIZE_MIN_ITEMS/,
+    /renderItems\.length\s*>=\s*\(\s*streaming\s*\?\s*VIRTUALIZE_STREAMING_MIN_ITEMS\s*:\s*VIRTUALIZE_MIN_ITEMS/,
     "virtualization must be mode-aware (streaming gets a lower bar)",
   );
   assert.match(
@@ -177,7 +177,7 @@ function readSrc(rel: string): string {
   );
   assert.match(
     transcript,
-    /zIndex:\s*transcriptRowZIndex\(idx,\s*displayItems\.length\)/,
+    /zIndex:\s*transcriptRowZIndex\(idx,\s*renderItems\.length\)/,
     "flow rows must receive the same stacking order",
   );
 }

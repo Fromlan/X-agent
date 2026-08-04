@@ -1,7 +1,21 @@
 /**
  * ChatTranscript 顶层:状态 + scroll pin + virtualizer。
+ *
+ * 分层说明:
+ *   - `props.items`:外部传入的 ChatItem[] (来自 chat-store / applyAgentEvent)
+ *   - `displayItems`:经 `isDisplayableTranscriptItem` 过滤的可显示条目 (数据层)
+ *   - `renderItems`:`deriveToolBatches(displayItems)` 把连续 tool 合并后的渲染节点
+ *     (视图层; virtualizer / 流式尾行追踪 / getItemKey / renderItem 均基于此)
+ *
+ * 视图层从数据层派生,因此:
+ *   - 撤回 / 重新生成仍按 ChatItem.entryId 切片,不受批次影响
+ *   - history_replace 替换数组后本组件重新派生 renderItems
+ *   - 持久化的会话文件不感知批次
+ *
  * 5 个 bubble 子组件与 ClarifyPanel 已拆到 `./chat/bubbles.tsx`,
- * virtualizer 配置已拆到 `../lib/chat-transcript-virtual.ts`。
+ * 工具批次容器在 `./chat/ToolBatch.tsx`,
+ * virtualizer 配置已拆到 `../lib/chat-transcript-virtual.ts`,
+ * 批次合并逻辑在 `../lib/chat-tool-batches.ts`。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionMode, AgentStatus } from "@shared/ipc";
@@ -25,12 +39,17 @@ import {
   useChatVirtualizerConfig,
 } from "../lib/chat-transcript-virtual";
 import {
+  deriveToolBatches,
+  type RenderItem,
+} from "../lib/chat-tool-batches";
+import {
   AssistantBubble,
   ClarifyPanel,
   SystemBubble,
   ToolRow,
   UserBubble,
 } from "./chat/bubbles";
+import { ToolBatch } from "./chat/ToolBatch";
 import { ArrowDown } from "lucide-react";
 import { isDisplayableTranscriptItem } from "../lib/chat-transcript-items";
 
@@ -108,6 +127,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   const prevFollowKeyRef = useRef<string | undefined>(undefined);
   const [showJump, setShowJump] = useState(false);
 
+  /** 数据层:经 `isDisplayableTranscriptItem` 过滤的可显示 ChatItem。 */
   const displayItems = useMemo(
     () =>
       props.items.filter((item) =>
@@ -116,26 +136,35 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     [props.items, props.showThinking],
   );
 
+  /**
+   * 视图层:把连续 tool 合并为批次。虚拟行 / getItemKey / 渲染分支都基于此,
+   * 让 N 个连续 tool 在 DOM 与虚拟行里只占 1 行。
+   */
+  const renderItems = useMemo<RenderItem[]>(
+    () => deriveToolBatches(displayItems),
+    [displayItems],
+  );
+
   const virtualConfig = useChatVirtualizerConfig({
-    count: displayItems.length,
+    count: renderItems.length,
     streaming,
   });
-  // displayItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)
+  // renderItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)
   // is now inside lib/chat-transcript-virtual.ts (shouldVirtualize gate). Keep
   // the predicate expression visible in this file as documentation:
   const _VIRTUALIZE_PREDICATE_DOC =
-    "displayItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)";
+    "renderItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)";
   void _VIRTUALIZE_PREDICATE_DOC;
   const virtualizer = useChatTranscriptVirtualizer({
     config: virtualConfig,
-    count: displayItems.length,
+    count: renderItems.length,
     scrollElement: streamRef.current,
-    getItemKey: (index) => displayItems[index]?.id ?? index,
+    getItemKey: (index) => renderItems[index]?.id ?? index,
   });
   const useVirtualList = virtualConfig.shouldVirtualize;
 
   const renderItem = useCallback(
-    (item: ChatItem) => {
+    (item: RenderItem) => {
       if (item.kind === "user") {
         return (
           <UserBubble
@@ -163,6 +192,18 @@ export function ChatTranscript(props: ChatTranscriptProps) {
             sessionMode={props.sessionMode}
             onRegenerate={props.onRegenerate}
             onClarifySelect={props.onClarifySelect}
+          />
+        );
+      }
+      if (item.kind === "toolBatch") {
+        return (
+          <ToolBatch
+            item={item}
+            sessionMode={props.sessionMode}
+            planPath={props.planPath}
+            streaming={streaming}
+            onOpenToolInPanel={props.onOpenToolInPanel}
+            onBuildPlan={props.onBuildPlan}
           />
         );
       }
@@ -224,7 +265,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     applyPin(reduceChatScrollPin(pinStateRef.current, { type: "force_pin" }));
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
-    const last = displayItems.length - 1;
+    const last = renderItems.length - 1;
     if (useVirtualList && last >= 0) {
       virtualizer.scrollToIndex(last, {
         align: "end",
@@ -431,7 +472,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     io.observe(tail);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayItems.length, useVirtualList]);
+  }, [renderItems.length, useVirtualList]);
 
   useLayoutEffect(() => {
     scheduleFollow();
@@ -447,7 +488,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     // 这里只需按 pin 状态跟随贴底。
     scheduleFollow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayItems.length, useVirtualList]);
+  }, [renderItems.length, useVirtualList]);
 
   /**
    * assistant_end(status 从 streaming/retrying 切到 idle/error)行内容
@@ -530,9 +571,9 @@ export function ChatTranscript(props: ChatTranscriptProps) {
             style={{ height: totalSize, position: "relative" }}
           >
             {virtualItems.map((virtualRow) => {
-              const item = displayItems[virtualRow.index];
+              const item = renderItems[virtualRow.index];
               if (!item) return null;
-              const isLast = virtualRow.index === displayItems.length - 1;
+              const isLast = virtualRow.index === renderItems.length - 1;
               return (
                 <div
                   key={virtualRow.key}
@@ -549,7 +590,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                     // 反向叠放，让上方气泡在发生尺寸误差时覆盖下方行。
                     zIndex: transcriptRowZIndex(
                       virtualRow.index,
-                      displayItems.length,
+                      renderItems.length,
                     ),
                     paddingBottom: isLast ? 0 : ROW_GAP_PX,
                   }}
@@ -561,8 +602,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
           </div>
         ) : (
           <div className="message-stream-inner message-stream-flow" ref={contentRef}>
-            {displayItems.map((item, idx) => {
-              const isLast = idx === displayItems.length - 1;
+            {renderItems.map((item, idx) => {
+              const isLast = idx === renderItems.length - 1;
               return (
                 <div
                   key={item.id}
@@ -572,7 +613,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                     // Flow 行也保持与虚拟行一致的反向层叠顺序，避免短列表
                     // 与长列表在切换时出现不同的遮挡规则。
                     position: "relative",
-                    zIndex: transcriptRowZIndex(idx, displayItems.length),
+                    zIndex: transcriptRowZIndex(idx, renderItems.length),
                   }}
                 >
                   {renderItem(item)}
@@ -600,3 +641,5 @@ export function ChatTranscript(props: ChatTranscriptProps) {
 
 // ClarifyPanel 也作为公开导出供 ChatTranscript / 测试使用。
 export { ClarifyPanel };
+
+
