@@ -11,6 +11,12 @@
 ### 改进
 
 - **Godot RPC 自动重连**：X-agent 启动时优先复用上次 endpoint 的 token 与端口，已运行的 Godot 插件通常无需任何操作即可在 ~1s 内握手成功（Godot 插件 0.3.0+ 每秒轮询 endpoint 文件 mtime，变更即跳到正确端口）。就绪清单 `rpcBridge` 状态新增 8s 启动宽限；区分「握手失败 → 更新 RPC 插件」与「未连接 → 启动编辑器」，并透出 `lastHandshakeFailure` 与插件版本号。`stop()` 不再删除 endpoint 文件（崩溃 / `taskkill` 路径行为对齐）。0.2.0 旧插件仍能工作，只是不上报 `addonVersion`。
+- **调试模式**：开发运行默认打开独立 DevTools；打包版可用 `--x-agent-debug` / `--debug-ui` 或 `X_AGENT_DEBUG=1` 开启，并支持 `F12`、`Ctrl+Shift+I` 切换。
+
+### 修复
+
+- **长对话消息显示混乱**：对话一旦超过一屏（达到虚拟列表阈值）后，流式追加、assistant 收尾、中间插入 tool 行等路径都出现过行重叠 / 错位。根因是 `ChatTranscript` 在「行数变化」与「status 切换」两个 `useLayoutEffect` 里调用全量 `virtualizer.measure()`，它会清空 tanstack 的整个 `itemSizeCache`，已挂载行全部退回估算高度，长行之后的下一行仍按 estimate 定位造成重叠。现改为依赖新挂载行 ref 实测 + 内部 ResizeObserver 校正，并新增 `test-chat-virtual-cache` 契约测试锁住「禁止全量重测」。
+- **气泡 / 工具调用被裁剪**：虚拟行的 `overflow: hidden` 会裁掉连续折叠工具条的紧凑负边距与流式内容，操作头也会被相邻的 transform 行盖住。现改为行盒允许可见溢出，不再为气泡预留布局空间；由行本身按消息顺序反向叠放，并在展开 / 悬停时提升到顶层，让气泡按约定覆盖下方内容；`test-chat-transcript-virtual` 锁住该层叠与溢出契约。
 
 ## 0.3.12
 

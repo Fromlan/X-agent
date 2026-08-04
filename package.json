@@ -4,6 +4,7 @@
   "description": "Pi-based Electron agent desktop (Godot RPC)",
   "scripts": {
     "desktop:dev": "npm run dev --prefix apps/desktop",
+    "desktop:debug": "npm run debug --prefix apps/desktop",
     "desktop:build": "npm run build --prefix apps/desktop",
     "desktop:test": "npm test --prefix apps/desktop",
     "desktop:typecheck": "npm run typecheck --prefix apps/desktop",
