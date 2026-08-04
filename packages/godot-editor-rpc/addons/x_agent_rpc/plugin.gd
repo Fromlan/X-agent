@@ -382,6 +382,64 @@ func _import_resources(raw_paths) -> Dictionary:
 	fs.reimport_files(packed)
 	return {"ok": true, "mode": "reimport", "paths": paths}
 
+func _capture_scene_tree(scene_path: String, max_depth: int) -> Dictionary:
+	# 确保场景已打开（仅当需要时打开，避免覆盖当前编辑场景）
+	var open := Array(EditorInterface.get_open_scenes())
+	if scene_path not in open:
+		EditorInterface.open_scene_from_path(scene_path)
+	var root := EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "scene not open or empty"}
+	return {
+		"path": scene_path,
+		"max_depth": max_depth,
+		"tree": _serialize_node(root, max_depth, 0),
+	}
+
+func _serialize_node(node: Node, max_depth: int, depth: int) -> Dictionary:
+	var out := {
+		"name": str(node.name),
+		"type": node.get_class(),
+		"script": _script_path_of(node),
+	}
+	if depth >= max_depth:
+		out["children_truncated"] = node.get_child_count()
+		return out
+	var children: Array = []
+	for c in node.get_children():
+		children.append(_serialize_node(c, max_depth, depth + 1))
+	out["children"] = children
+	return out
+
+func _script_path_of(node: Node) -> String:
+	var script := node.get_script()
+	if script == null:
+		return ""
+	return str(script.resource_path)
+
+func _capture_node_properties(scene_path: String, node_path: String) -> Dictionary:
+	var open := Array(EditorInterface.get_open_scenes())
+	if scene_path not in open:
+		EditorInterface.open_scene_from_path(scene_path)
+	var root := EditorInterface.get_edited_scene_root()
+	if root == null:
+		return {"error": "scene not open or empty"}
+	var target := root.get_node_or_null(NodePath(node_path))
+	if target == null:
+		return {"error": "node not found: %s" % node_path}
+	var props: Array = []
+	var plist := target.get_property_list()
+	for p in plist:
+		var usage: int = int(p.get("usage", 0))
+		# 仅导出脚本变量与持久化属性
+		if (usage & PROPERTY_USAGE_SCRIPT_VARIABLE) != 0 or (usage & PROPERTY_USAGE_STORAGE) != 0:
+			props.append({
+				"name": str(p.name),
+				"type": type_string(int(p.type)),
+				"hint": str(p.get("hint", "")),
+			})
+	return {"path": scene_path, "node_path": node_path, "properties": props}
+
 func _handle_line(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -435,6 +493,22 @@ func _handle_line(raw: String) -> void:
 					EditorInterface.open_scene_from_path(reload_path)
 				EditorInterface.reload_scene_from_path(reload_path)
 				response["result"] = {"reloaded": reload_path}
+
+		"get_scene_tree":
+			var scene_path := str(data.get("path", ""))
+			var max_depth := int(data.get("max_depth", 8))
+			if scene_path == "":
+				response = {"id": id, "ok": false, "error": "path required"}
+			else:
+				response["result"] = _capture_scene_tree(scene_path, max_depth)
+
+		"get_node_properties":
+			var scene_path := str(data.get("path", ""))
+			var node_path := str(data.get("node_path", ""))
+			if scene_path == "" or node_path == "":
+				response = {"id": id, "ok": false, "error": "path and node_path required"}
+			else:
+				response["result"] = _capture_node_properties(scene_path, node_path)
 
 		"run_current_scene":
 			if _edited_scene_path() == "" and EditorInterface.get_edited_scene_root() == null:

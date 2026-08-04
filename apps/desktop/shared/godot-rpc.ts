@@ -45,6 +45,8 @@ export type GodotRpcCall =
   | { method: "get_edited_scene" }
   | { method: "open_scene"; path: string }
   | { method: "reload_scene"; path: string }
+  | { method: "get_scene_tree"; path: string; max_depth?: number }
+  | { method: "get_node_properties"; path: string; node_path: string }
   | { method: "run_current_scene"; wait_ms?: number }
   | { method: "play_main_scene"; wait_ms?: number }
   | { method: "import_resources"; paths?: string[] }
@@ -59,6 +61,8 @@ export const GODOT_RPC_ALLOWED_METHODS = [
   "get_edited_scene",
   "open_scene",
   "reload_scene",
+  "get_scene_tree",
+  "get_node_properties",
   "run_current_scene",
   "play_main_scene",
   "import_resources",
@@ -145,8 +149,9 @@ export type GodotRpcRequestOptions = {
 
 /** Clamp `wait_ms` for play scene methods (default 3000, max 15000). */
 export function clampGodotRunWaitMs(raw: unknown): number {
-  if (typeof raw === "number" && Number.isFinite(raw)) {
-    return Math.max(0, Math.min(GODOT_RPC_MAX_WAIT_MS, Math.floor(raw)));
+  // 负数视为非法 → 回退默认收集窗口（0 保留 = 不等待）。
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+    return Math.min(GODOT_RPC_MAX_WAIT_MS, Math.floor(raw));
   }
   return GODOT_RPC_DEFAULT_WAIT_MS;
 }
