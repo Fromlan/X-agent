@@ -4,6 +4,7 @@ import {
   DefaultResourceLoader,
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
+import { dbgLog, dbgTimer } from "../../shared/debug-log";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   ALL_TOGGLEABLE_TOOLS,
@@ -100,6 +101,9 @@ export class SessionHost {
   private replaceChain: Promise<void> = Promise.resolve();
   private messageSeq = 0;
   private idCache = new WeakMap<object, string>();
+  /** Sampling counters for high-frequency delta events (debug log only). */
+  private textDeltaCount = 0;
+  private thinkingDeltaCount = 0;
   /** Untruncated (capped) tool payloads for right-panel detail view. */
   private toolDetails = new Map<string, ToolDetailRecord>();
   private fileTracker = new TurnFileTracker();
@@ -324,9 +328,33 @@ export class SessionHost {
   }
 
   private emit(event: UiAgentEvent): void {
+    // Sample noisy delta events so we can still tell "no stream at all" from
+    // "stream is happening but the log was filtered" — every 100th delta
+    // gets a line, others are skipped.
+    if (event.type === "text_delta") {
+      this.textDeltaCount += 1;
+      if (this.textDeltaCount === 1 || this.textDeltaCount % 100 === 0) {
+        dbgLog("emit", "-> text_delta", { n: this.textDeltaCount, len: event.delta.length });
+      }
+    } else if (event.type === "thinking_delta") {
+      this.thinkingDeltaCount += 1;
+      if (this.thinkingDeltaCount === 1 || this.thinkingDeltaCount % 100 === 0) {
+        dbgLog("emit", "-> thinking_delta", { n: this.thinkingDeltaCount, len: event.delta.length });
+      }
+    } else {
+      // Reset stream counters when a non-delta event arrives — different turns
+      // shouldn't share the counter.
+      if (event.type === "assistant_end" || event.type === "agent_end") {
+        this.textDeltaCount = 0;
+        this.thinkingDeltaCount = 0;
+      }
+      dbgLog("emit", "->", event.type);
+    }
     const win = this.getWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC_EVENTS.agentEvent, event);
+    } else {
+      dbgLog("emit", "drop (window gone)", event.type);
     }
   }
 
@@ -739,12 +767,23 @@ export class SessionHost {
   async prompt(text: string): Promise<PromptResult> {
     const bundle = this.bundle;
     if (!bundle) {
+      dbgLog("session", "prompt rejected: no bundle");
       return { ok: false, error: "尚未打开项目" };
     }
     const trimmed = text.trim();
     if (!trimmed) {
+      dbgLog("session", "prompt rejected: empty text");
       return { ok: false, error: "消息不能为空" };
     }
+
+    dbgLog("session", "prompt start", {
+      len: trimmed.length,
+      preview: trimmed.slice(0, 80),
+      isStreaming: bundle.session.isStreaming,
+    });
+    const doneShadow = dbgTimer("session", "preparePromptCheckpoint");
+    const donePi = dbgTimer("session", "session.prompt");
+    const doneAll = dbgTimer("session", "total prompt");
 
     try {
       const { session } = bundle;
@@ -767,20 +806,29 @@ export class SessionHost {
       }
 
       if (session.isStreaming) {
+        dbgLog("session", "prompt: steer into active stream");
         await session.prompt(sendText, { streamingBehavior: "steer" });
+        donePi();
       } else {
+        dbgLog("session", "prompt: prepare shadow checkpoint…");
         await this.shadowCheckpoints.preparePromptCheckpoint();
+        doneShadow();
         if (this.bundle !== bundle) {
+          dbgLog("session", "prompt aborted: bundle switched during shadow");
           return { ok: false, error: "会话已切换" };
         }
         await session.prompt(sendText);
+        donePi();
       }
       if (this.bundle !== bundle) {
+        dbgLog("session", "prompt aborted: bundle switched after pi");
         return { ok: false, error: "会话已切换" };
       }
+      doneAll();
       return isExtensionCommand ? { ok: true, silent: true } : { ok: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      dbgLog("session", "prompt threw", message);
       if (this.bundle === bundle) {
         this.setStatus("error", message);
       }
@@ -790,9 +838,22 @@ export class SessionHost {
 
   async abort(): Promise<{ ok: boolean }> {
     const bundle = this.bundle;
-    if (!bundle) return { ok: false };
-    await bundle.session.abort();
-    if (this.bundle !== bundle) return { ok: true };
+    if (!bundle) {
+      dbgLog("session", "abort: no bundle");
+      return { ok: false };
+    }
+    dbgLog("session", "abort start", { isStreaming: bundle.session.isStreaming });
+    const done = dbgTimer("session", "session.abort");
+    try {
+      await bundle.session.abort();
+      done();
+    } catch (err) {
+      dbgLog("session", "abort threw", err instanceof Error ? err.message : String(err));
+    }
+    if (this.bundle !== bundle) {
+      dbgLog("session", "abort: bundle switched");
+      return { ok: true };
+    }
     this.setStatus("idle");
     return { ok: true };
   }

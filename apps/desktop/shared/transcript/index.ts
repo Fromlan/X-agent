@@ -25,3 +25,4 @@ export {
   applyAgentEvent,
 } from "./apply-events";
 export { isDisplayableTranscriptItem } from "./display";
+export { formatErrorBubble } from "./error-format";

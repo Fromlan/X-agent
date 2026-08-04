@@ -18,6 +18,16 @@ import {
   setCompacting,
   setSessionUsage,
 } from "../stores/session-usage-store";
+import { dbgLog } from "@shared/debug-log";
+import { translateError } from "@shared/error-i18n";
+
+/** What UI shows in the "API status" line beneath the chat input. */
+export type ApiPhase = "thinking" | "receiving" | "retrying";
+export type ApiStatus = {
+  phase: ApiPhase;
+  /** Epoch ms when this phase started; null when phase is receiving (stream already flowing). */
+  startedAt: number;
+} | null;
 
 type EventRouterDeps = {
   setStatus: Dispatch<SetStateAction<AgentStatus>>;
@@ -34,6 +44,8 @@ type EventRouterDeps = {
   setPlanPath: Dispatch<SetStateAction<string | null>>;
   setGoal: Dispatch<SetStateAction<GoalInfo | null>>;
   refreshSessions: () => Promise<void>;
+  /** Live API phase for the composer's status line. Ref-captured to keep effect stable. */
+  onApiStatus?: MutableRefObject<(status: ApiStatus) => void>;
 };
 
 /**
@@ -56,13 +68,41 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setPlanPath,
     setGoal,
     refreshSessions,
+    onApiStatus,
   } = deps;
 
   useEffect(() => {
+    // Local helper to push API-phase changes through the ref-captured callback.
+    const push = (status: ApiStatus) => {
+      onApiStatus?.current(status);
+    };
     return window.xAgent.onEvent((event: UiAgentEvent) => {
+      // Skip noisy delta events — they would flood the console during streaming.
+      if (event.type !== "text_delta" && event.type !== "thinking_delta") {
+        dbgLog("chat", "onEvent", event.type);
+      }
+      // --- API-phase tracking ---------------------------------------------
+      // "thinking"  = assistant_start fired, no token yet (slow upstream)
+      // "receiving" = at least one delta has arrived
+      // "retrying"  = session status flipped to retrying
+      // null        = no turn in flight (idle / error)
+      if (event.type === "assistant_start") {
+        push({ phase: "thinking", startedAt: Date.now() });
+      } else if (event.type === "text_delta" || event.type === "thinking_delta") {
+        push({ phase: "receiving", startedAt: 0 });
+      } else if (event.type === "agent_end") {
+        push(null);
+      } else if (event.type === "status") {
+        if (event.status === "retrying") {
+          push({ phase: "retrying", startedAt: Date.now() });
+        } else if (event.status === "idle" || event.status === "error") {
+          push(null);
+        }
+        // streaming: keep current phase (Pi will fire assistant_start soon)
+      }
       if (event.type === "status") {
         setStatus(event.status);
-        if (event.error) setError(event.error);
+        if (event.error) setError(translateError(event.error));
         else if (event.status === "idle" || event.status === "streaming") {
           setError(null);
         }
@@ -140,6 +180,7 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
       setItems((prev) => applyAgentEvent(prev, event));
     });
   }, [
+    onApiStatus,
     refreshSessions,
     sessionIdRef,
     setCwd,

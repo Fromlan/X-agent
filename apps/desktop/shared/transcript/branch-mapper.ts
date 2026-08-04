@@ -2,6 +2,7 @@ import type { HistoryItem } from "../ipc";
 import { TRANSCRIPT_CAPS } from "./caps";
 import { textFromContent, thinkingFromContent } from "./content";
 import { truncateTranscript } from "./truncate";
+import { formatErrorBubble } from "./error-format";
 
 type ContentPart = {
   type?: string;
@@ -19,6 +20,8 @@ export type TranscriptMessage = {
   toolCallId?: string;
   toolName?: string;
   isError?: boolean;
+  /** Upstream failure text (auth error, network drop, context overflow). */
+  errorMessage?: string;
   timestamp?: number | string;
 };
 
@@ -67,18 +70,29 @@ function pushMessages(
     const thinking = thinkingFromContent(content);
     const text = textFromContent(content);
     const assistantId = entryId ?? `hist-asst-${idBase}-${index}`;
+    // An upstream error (auth failure, network drop, context overflow) often
+    // produces an assistant message with empty content but a populated
+    // `errorMessage`. Without this branch, branch-mapper drops it and the
+    // subsequent history_replace silently erases the error bubble the user
+    // briefly saw — making failures look like "no response".
+    const errorText =
+      typeof msg.errorMessage === "string" && msg.errorMessage.length > 0
+        ? msg.errorMessage
+        : "";
+    const hasToolCall =
+      Array.isArray(content) && content.some((p) => p.type === "toolCall");
 
-    if (
-      text ||
-      thinking ||
-      (Array.isArray(content) && content.some((p) => p.type === "toolCall"))
-    ) {
+    if (text || thinking || errorText || hasToolCall) {
       items.push({
         kind: "assistant",
         id: assistantId,
-        text,
+        // Error assistants get the same markdown summary + <details> block
+        // the live event path emits, so an old session restored via
+        // history_replace looks identical to a fresh failure.
+        text: errorText ? formatErrorBubble(errorText) : text,
         thinking,
         done: true,
+        isError: Boolean(errorText) || Boolean(msg.isError),
         ...(entryId ? { entryId } : {}),
         ...(lastUserEntryId ? { userEntryId: lastUserEntryId } : {}),
       });
