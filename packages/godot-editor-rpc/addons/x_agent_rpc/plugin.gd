@@ -5,7 +5,7 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
-const ADDON_VERSION := "0.3.0"
+const ADDON_VERSION := "0.4.1"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
 const CONNECT_TIMEOUT_SEC := 1.2
@@ -18,7 +18,11 @@ const MAX_PLAY_ERRORS := 50
 ## Godot 4 无 inotify 绑定，1s 轮询是跨平台最稳的方案。
 const ENDPOINT_POLL_SEC := 1.0
 ## 断开后再次尝试连入的间隔。
-const RECONNECT_DELAY_SEC := 1.0
+const RECONNECT_DELAY_SEC := 0.5
+## 对同一端口连续重试达到该次数后，推进到下一个候选端口。
+## 避免「桥接关闭期间端口被拒（立即 RST）」时永远只试主端口、
+## 永远遍历不到 fallback 端口（8765–8774）导致桥接重启后无法重连。
+const RECONNECTS_BEFORE_ADVANCE := 4
 
 # --- TCP connection ---
 var _peer: StreamPeerTCP = StreamPeerTCP.new()
@@ -31,6 +35,8 @@ var _auth_token: String = ""
 var _ports_to_try: Array[int] = []
 var _port_try_index: int = 0
 var _connect_started_ms: int = 0
+## 对当前端口的连续失败重试计数，达到 RECONNECTS_BEFORE_ADVANCE 后推进端口。
+var _connect_attempts: int = 0
 
 # --- Endpoint mtime polling ---
 var _endpoint_mtime: int = 0
@@ -90,6 +96,7 @@ func _process(_delta: float) -> void:
 		if elapsed_sec >= CONNECT_TIMEOUT_SEC:
 			_connected = false
 			_buffer = ""
+			_connect_attempts = 0
 			_advance_port()
 		return
 
@@ -101,10 +108,7 @@ func _process(_delta: float) -> void:
 		_reconnect_in -= _delta
 		if _reconnect_in <= 0.0:
 			_reconnect_in = RECONNECT_DELAY_SEC
-			_resolve_endpoint()
-			_build_ports_to_try()
-			_port_try_index = 0
-			_try_connect()
+			_reconnect_tick()
 		return
 
 # =============================================================================
@@ -252,6 +256,7 @@ func _maybe_poll_endpoint(delta: float) -> void:
 		# endpoint 文件被删除或不可读 → 立即重读并回退默认端口。
 		if _endpoint_mtime != 0:
 			_endpoint_mtime = 0
+			_connect_attempts = 0
 			_resolve_endpoint()
 			_build_ports_to_try()
 			_port_try_index = 0
@@ -260,10 +265,34 @@ func _maybe_poll_endpoint(delta: float) -> void:
 	if mtime != _endpoint_mtime:
 		# endpoint 文件被更新 → X-agent 重启或 token 换新。
 		_endpoint_mtime = mtime
+		_connect_attempts = 0
 		_resolve_endpoint()
 		_build_ports_to_try()
 		_port_try_index = 0
 		_try_connect()
+
+## 断线重连调度（由 STATUS_ERROR / STATUS_NONE 分支驱动）：
+## - 每次重连前重读 endpoint，感知 X-agent 重启后的 token / 端口变化，变了立即回到主端口；
+## - 对同一端口连续重试 RECONNECTS_BEFORE_ADVANCE 次后推进到下一个候选端口，
+##   候选耗尽后自动重读 endpoint 并回到主端口——保证「桥接关闭 → 重启」后
+##   插件无需重启编辑器即可在 0.5–2s 内恢复连接。
+func _reconnect_tick() -> void:
+	var prev_primary := _primary_port
+	var prev_token := _auth_token
+	_resolve_endpoint()
+	if _primary_port != prev_primary or _auth_token != prev_token:
+		# endpoint 已更新（如桥接换端口 / token 换新）：重建候选表并回到主端口立即重试。
+		_build_ports_to_try()
+		_port_try_index = 0
+		_connect_attempts = 0
+		_try_connect()
+		return
+	if _connect_attempts >= RECONNECTS_BEFORE_ADVANCE:
+		_connect_attempts = 0
+		_advance_port()
+		return
+	_connect_attempts += 1
+	_try_connect()
 
 func _resolve_endpoint() -> void:
 	_host = DEFAULT_HOST
@@ -279,7 +308,11 @@ func _resolve_endpoint() -> void:
 	if typeof(data) != TYPE_DICTIONARY:
 		return
 	_host = str(data.get("host", DEFAULT_HOST))
-	_primary_port = int(data.get("port", DEFAULT_PORT))
+	var parsed_port := int(data.get("port", DEFAULT_PORT))
+	# 防御损坏 / 被篡改的 endpoint：非法端口回退默认值，避免连到无效端口。
+	if parsed_port < 1 or parsed_port > 65535:
+		parsed_port = DEFAULT_PORT
+	_primary_port = parsed_port
 	_auth_token = str(data.get("token", ""))
 
 func _build_ports_to_try() -> void:

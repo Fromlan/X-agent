@@ -58,6 +58,15 @@ export function GodotSettingsPage({
     };
   }, [open, cwd]);
 
+  // 打开页面期间每 2s 轮询桥接状态：插件断开/重连（含桥接重启后的自动恢复）能实时反映。
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setInterval(() => {
+      void refreshRpc();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [open, refreshRpc]);
+
   useEffect(() => {
     if (!open) setRpcMsg(null);
   }, [open]);
