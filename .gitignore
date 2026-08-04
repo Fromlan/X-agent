@@ -10,5 +10,10 @@ apps/desktop/node_modules.broken*
 apps/desktop/out
 apps/desktop/dist
 apps/desktop/release
+# Playwright E2E 产物
+apps/desktop/**/test-results
+apps/desktop/**/playwright-report
+# Vitest 覆盖率产物
+apps/desktop/coverage
 # Local repro pages and build reports
 .scratch/

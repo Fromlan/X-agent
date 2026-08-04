@@ -21,6 +21,8 @@ let runtime: typeof import("./app-runtime") | null = null;
 
 const DEBUG_ARGUMENTS = new Set(["--x-agent-debug", "--debug-ui"]);
 const DEBUG_ENV_NAME = "X_AGENT_DEBUG";
+/** E2E/并行测试放开单实例锁：置 1 时即使已有实例运行也继续启动。 */
+const ALLOW_MULTI_INSTANCE_ENV = "X_AGENT_ALLOW_MULTI";
 
 /**
  * 判断启动参数是否明确要求打开 X-agent 调试工具。
@@ -280,7 +282,7 @@ async function bootApp(): Promise<void> {
 
 app.whenReady().then(() => {
   const gotLock = app.requestSingleInstanceLock();
-  if (!gotLock) {
+  if (!gotLock && process.env[ALLOW_MULTI_INSTANCE_ENV] !== "1") {
     app.quit();
     return;
   }
