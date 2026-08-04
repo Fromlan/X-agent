@@ -15,4 +15,7 @@ export const PLAN_MODE_CORE_TOOLS = [
 /** Read-only Godot tools allowed in Ask/Plan when already enabled in prefs. */
 export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_editor_info",
+  // 1.2 扩展：场景树 / 节点属性只读工具
+  "godot_get_scene_tree",
+  "godot_get_node_properties",
 ] as const;

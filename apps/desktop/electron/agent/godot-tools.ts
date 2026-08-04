@@ -113,6 +113,30 @@ const pathParams = Type.Object({
   }),
 });
 
+const sceneTreeParams = Type.Object({
+  path: Type.String({
+    description: "Godot scene path to inspect, e.g. res://scenes/main.tscn",
+  }),
+  max_depth: Type.Optional(
+    Type.Number({
+      description:
+        "Maximum depth of the serialized node tree. Default 8, capped to 16 to keep the response bounded.",
+      minimum: 1,
+      maximum: 16,
+    }),
+  ),
+});
+
+const nodePropertiesParams = Type.Object({
+  path: Type.String({
+    description: "Godot scene path that contains the node, e.g. res://scenes/main.tscn",
+  }),
+  node_path: Type.String({
+    description:
+      "NodePath relative to the scene root, e.g. \"Player/Sprite2D\".",
+  }),
+});
+
 const runParams = Type.Object({
   wait_ms: Type.Optional(
     Type.Number({
@@ -298,6 +322,52 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       async execute() {
         return formatResponse(
           await callBridge(bridge, { method: "stop_scene" }),
+        );
+      },
+    }),
+    defineTool({
+      name: "godot_get_scene_tree",
+      label: "Godot scene tree",
+      description:
+        "Read the serialized node tree of a scene (name, type, script path, children). Useful for inspecting structure before editing.",
+      promptSnippet: "godot_get_scene_tree: read scene node tree",
+      promptGuidelines: [
+        "Prefer godot_get_scene_tree over opening the scene in the editor when you only need a structural overview.",
+        "If the tree is huge, lower max_depth (default 8) and inspect the relevant subtree by re-calling with a more specific path.",
+      ],
+      parameters: sceneTreeParams,
+      async execute(_id, params) {
+        const depth = Math.max(
+          1,
+          Math.min(16, Math.floor(params.max_depth ?? 8)),
+        );
+        return formatResponse(
+          await callBridge(bridge, {
+            method: "get_scene_tree",
+            path: params.path,
+            max_depth: depth,
+          }),
+        );
+      },
+    }),
+    defineTool({
+      name: "godot_get_node_properties",
+      label: "Godot node properties",
+      description:
+        "Read exported/script-variable properties of a node inside a scene (name, type, hint). Read-only; does not mutate editor state.",
+      promptSnippet: "godot_get_node_properties: read node property descriptors",
+      promptGuidelines: [
+        "Use godot_get_node_properties when you need to confirm a property name or type before writing to it.",
+        "Pair with godot_get_scene_tree to discover node paths.",
+      ],
+      parameters: nodePropertiesParams,
+      async execute(_id, params) {
+        return formatResponse(
+          await callBridge(bridge, {
+            method: "get_node_properties",
+            path: params.path,
+            node_path: params.node_path,
+          }),
         );
       },
     }),
