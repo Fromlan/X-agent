@@ -5,7 +5,7 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import type { AgentSessionMode } from "@shared/ipc";
 import type { ChatItem } from "../../stores/chat-store";
-import { Brain, Hammer, Pencil, RotateCcw, Undo2 } from "lucide-react";
+import { Brain, Check, Hammer, HelpCircle, Pencil, RotateCcw, Undo2 } from "lucide-react";
 import { MarkdownBody } from "../MarkdownBody";
 import { ToolCard } from "../ToolCard";
 import { UserMessageBody } from "../UserMessageBody";
@@ -136,14 +136,32 @@ export function ClarifyPanel(props: {
   onSubmit: (reply: string) => void;
 }) {
   const [selected, setSelected] = useState<Record<string, string>>({});
-  const allAnswered = props.questions.every((q) => Boolean(selected[q.question]));
+  const answeredCount = props.questions.filter(
+    (q) => Boolean(selected[q.question]),
+  ).length;
+  const allAnswered = answeredCount === props.questions.length;
 
   return (
-    <div className="clarify-panel" role="group" aria-label="澄清选项">
-      {props.questions.map((q) => (
+    <div className="clarify-panel" role="group" aria-label="清澄选项">
+      <div className="clarify-header">
+        <HelpCircle size={14} aria-hidden />
+        <span>请选择以下选项</span>
+        <span
+          className={
+            "clarify-header-progress" +
+            (allAnswered ? " is-complete" : "")
+          }
+        >
+          已选 {answeredCount} / {props.questions.length}
+        </span>
+      </div>
+      {props.questions.map((q, idx) => (
         <div key={q.question} className="clarify-question">
-          <div className="clarify-q">{q.question}</div>
-          <div className="clarify-options">
+          <div className="clarify-q">
+            <span className="clarify-q-num">{idx + 1}</span>
+            <span className="clarify-q-text">{q.question}</span>
+          </div>
+          <div className="clarify-options" role="radiogroup" aria-label={q.question}>
             {q.options.map((opt) => {
               const isSelected = selected[q.question] === opt;
               return (
@@ -151,9 +169,8 @@ export function ClarifyPanel(props: {
                   key={opt}
                   type="button"
                   className={
-                    isSelected
-                      ? "btn btn-secondary btn-sm clarify-option is-selected"
-                      : "btn btn-secondary btn-sm clarify-option"
+                    "clarify-option" +
+                    (isSelected ? " is-selected" : "")
                   }
                   disabled={!props.canAct}
                   aria-pressed={isSelected}
@@ -161,7 +178,10 @@ export function ClarifyPanel(props: {
                     setSelected((prev) => ({ ...prev, [q.question]: opt }))
                   }
                 >
-                  {opt}
+                  <span className="clarify-option-check" aria-hidden>
+                    <Check size={11} strokeWidth={3} />
+                  </span>
+                  <span className="clarify-option-label">{opt}</span>
                 </button>
               );
             })}
@@ -169,9 +189,20 @@ export function ClarifyPanel(props: {
         </div>
       ))}
       <div className="clarify-actions">
+        <span
+          className={
+            "clarify-actions-hint" + (allAnswered ? " is-complete" : "")
+          }
+        >
+          {allAnswered
+            ? "所有问题已选择完成"
+            : "请为每个问题选择一项后再发送"}
+        </span>
         <button
           type="button"
-          className="btn btn-primary btn-sm"
+          className={
+            "btn btn-sm clarify-submit" + (allAnswered ? " is-ready" : "")
+          }
           disabled={!props.canAct || !allAnswered}
           title={
             allAnswered
@@ -192,7 +223,6 @@ export function ClarifyPanel(props: {
     </div>
   );
 }
-
 export const AssistantBubble = memo(function AssistantBubble(
   props: AssistantBubbleProps,
 ) {
