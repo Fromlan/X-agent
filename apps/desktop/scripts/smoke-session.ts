@@ -22,10 +22,8 @@ console.log("agentDir:", agentDir);
 
 const modelRuntime = await ModelRuntime.create({ authPath, modelsPath });
 const available = await modelRuntime.getAvailable();
-const preferred =
-  available.find((m) => m.provider === "deepseek" && m.id === "deepseek-v4-flash") ??
-  available.find((m) => m.provider === "deepseek") ??
-  available[0];
+// 不偏好任何虚构默认模型：直接取第一个可用条目（deepseek-v4-flash 已从默认值移除）。
+const preferred = available[0];
 console.log(
   "models:",
   available.slice(0, 5).map((m) => `${m.provider}/${m.id}`),

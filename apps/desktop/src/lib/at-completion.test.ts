@@ -99,13 +99,18 @@ describe("filterSkillCandidates", () => {
   it("按 name 子串过滤", () => {
     expect(filterSkillCandidates(items, "re").map((i) => i.name)).toEqual([
       "review",
-      "grill",
     ]);
   });
 
   it("按 description 过滤", () => {
     expect(filterSkillCandidates(items, "safety").map((i) => i.name)).toEqual([
       "safe-edit",
+    ]);
+  });
+
+  it("name 或 description 命中即返回", () => {
+    expect(filterSkillCandidates(items, "hard").map((i) => i.name)).toEqual([
+      "grill",
     ]);
   });
 });
