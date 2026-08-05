@@ -4,13 +4,11 @@ import type { PluginsState } from "./usePluginsState";
 
 interface Props {
   state: PluginsState;
-  prefs: ClientPrefs;
   allSkillsEnabled: boolean;
 }
 
 export function PluginSkillToggle({
   state,
-  prefs: _prefs,
   allSkillsEnabled,
 }: Props) {
   const { isSkillTab, filtered, busy, setSkillsEnabled } = state;

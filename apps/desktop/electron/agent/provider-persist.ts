@@ -205,7 +205,6 @@ function toSummary(profile: ProviderProfile): ProviderProfileSummary {
     api: profile.api,
     baseUrl: profile.baseUrl,
     modelCount: profile.models.length,
-    active: profile.enabled,
     enabled: profile.enabled,
     updatedAt: profile.updatedAt,
     apiKeyHint: maskApiKey(profile.apiKey),
@@ -375,8 +374,6 @@ export async function upsertProviderProfile(
   error?: string;
   /** True when the profile was written into Pi auth/models. */
   syncedToPi?: boolean;
-  /** @deprecated Same as syncedToPi (compat for older UI). */
-  syncedActive?: boolean;
 }> {
   const err = validateUpsert(input);
   if (err) return { ok: false, error: err };
@@ -455,7 +452,6 @@ export async function upsertProviderProfile(
     ok: true,
     profile,
     syncedToPi: sync.syncedToPi,
-    syncedActive: sync.syncedToPi,
   };
 }
 

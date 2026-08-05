@@ -40,7 +40,6 @@ export function PluginsPage(props: Props) {
     <div className="plugins-page plugins-page--embedded">
       <PluginsToolbar
         state={state}
-        cwd={cwd}
         allSkillsEnabled={allOn}
         onNewClick={() => {
           state.setCreateScope(cwd ? "project" : "global");

@@ -8,7 +8,7 @@ import {
   writeFileSync,
   existsSync,
 } from "node:fs";
-import { writeJsonAtomic, readJsonAsync, fileExistsAsync } from "./lib/atomic-write";
+import { writeJsonAtomic } from "./lib/atomic-write";
 import { withStoreLock } from "./lib/store-mutex";
 import {
   ClientPrefs,
@@ -129,7 +129,7 @@ export function ensureAgentDir(): string {
 
 /**
  * 同步读 prefs,启动预热与单测兼容入口。
- * 不应出现在主进程 IPC 热路径 —— 热路径用 `getCachedPrefs()` 或 `loadPrefsAsync()`。
+ * 不应出现在主进程 IPC 热路径 —— 热路径用 `getCachedPrefs()`。
  */
 export function loadPrefs(): ClientPrefs {
   ensureAgentDir();
@@ -146,31 +146,6 @@ export function loadPrefs(): ClientPrefs {
     return { ...DEFAULT_PREFS };
   }
   return normalizeLoadedPrefs(raw);
-}
-
-/**
- * 异步读 prefs 并填充 cache。IPC handler 写路径使用。
- */
-export async function loadPrefsAsync(): Promise<ClientPrefs> {
-  ensureAgentDir();
-  const path = prefsPath();
-  // Node 22 + ESM: 不在顶层 require,改用动态 import 不必要 —— 直接走 readJsonAsync
-  try {
-    const raw = await readJsonAsync<RawPrefs>(path, {} as RawPrefs);
-    if (!raw || Object.keys(raw).length === 0) {
-      const defaults = { ...DEFAULT_PREFS };
-      cachedPrefs = defaults;
-      await writeJsonAtomic(path, defaults);
-      return defaults;
-    }
-    const normalized = normalizeLoadedPrefs(raw);
-    cachedPrefs = normalized;
-    return normalized;
-  } catch {
-    const defaults = { ...DEFAULT_PREFS };
-    cachedPrefs = defaults;
-    return defaults;
-  }
 }
 
 /**
@@ -251,7 +226,7 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
   }
 }
 
-export async function savePrefs(prefs: ClientPrefs): Promise<ClientPrefs> {
+async function savePrefs(prefs: ClientPrefs): Promise<ClientPrefs> {
   ensureAgentDir();
   // 串行化所有 prefs 写:避免并发 patchPrefs 读同一 cache 后写覆盖前写。
   // cachedPrefs 同步赋值放在锁内进行,保证 patchPrefs 链路上的读-改-写一致。

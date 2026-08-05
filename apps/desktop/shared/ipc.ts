@@ -17,6 +17,17 @@ export type ThinkingLevel =
   | "xhigh"
   | "max";
 
+/** Thinking levels in UI display order (low → high intensity). */
+export const THINKING_LEVELS: ThinkingLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
 export interface ModelInfo {
   provider: string;
   id: string;
@@ -507,20 +518,6 @@ export interface SecretCodecStatus {
   reason?: SecretCodecReason;
 }
 
-export const SecretCodecStatusSchema = Type.Object(
-  {
-    available: Type.Boolean(),
-    reason: Type.Optional(
-      Type.Union([
-        Type.Literal("no-electron"),
-        Type.Literal("keychain-unavailable"),
-        Type.Literal("encrypt-failed"),
-      ]),
-    ),
-  },
-  { additionalProperties: false },
-);
-
 export interface OpenProjectResult {
   ok: boolean;
   cwd: string;
@@ -902,8 +899,6 @@ export interface ProviderProfileSummary {
   api: ProviderApiKind;
   baseUrl: string;
   modelCount: number;
-  /** @deprecated Use {@link enabled}. Kept for older callers; mirrors enabled. */
-  active: boolean;
   /** Synced into Pi / visible in TopBar model list. */
   enabled: boolean;
   updatedAt: string;
@@ -1061,7 +1056,6 @@ export type SessionApi = {
   compactSession: XAgentApiFlat["compactSession"];
   getToolDetail: XAgentApiFlat["getToolDetail"];
   reloadResources: XAgentApiFlat["reloadResources"];
-  listSessionSkills: XAgentApiFlat["listSessionSkills"];
   listSessionSlashItems: XAgentApiFlat["listSessionSlashItems"];
 };
 
@@ -1115,7 +1109,6 @@ export type ProvidersApi = {
   upsert: XAgentApiFlat["upsertProviderProfile"];
   delete: XAgentApiFlat["deleteProviderProfile"];
   setEnabled: XAgentApiFlat["setProviderProfileEnabled"];
-  activate: XAgentApiFlat["activateProviderProfile"];
   listPresets: XAgentApiFlat["listProviderPresets"];
   importExisting: XAgentApiFlat["importExistingProviderProfiles"];
   fetchModels: XAgentApiFlat["fetchProviderModels"];
@@ -1236,8 +1229,6 @@ export interface XAgentApiFlat {
     error?: string;
   }>;
   listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
-  /** Skills indexed for the current session cwd (godot-* filtered when not a Godot project). */
-  listSessionSkills: () => Promise<SessionSkillInfo[]>;
   /** Skills + prompt templates + extension commands for composer `/` autocomplete. */
   listSessionSlashItems: () => Promise<SessionSlashItem[]>;
   readPlugin: (path: string) => Promise<PluginReadResult>;
@@ -1256,15 +1247,12 @@ export interface XAgentApiFlat {
     error?: string;
     /** Profile was written into Pi auth/models (enabled profiles only). */
     syncedToPi?: boolean;
-    /** @deprecated Same as syncedToPi. */
-    syncedActive?: boolean;
   }>;
   deleteProviderProfile: (id: string) => Promise<{ ok: boolean; error?: string }>;
   setProviderProfileEnabled: (
     id: string,
     enabled: boolean,
   ) => Promise<{ ok: boolean; error?: string; syncedToPi?: boolean }>;
-  activateProviderProfile: (id: string) => Promise<ProviderActivateResult>;
   listProviderPresets: () => Promise<ProviderPreset[]>;
   importExistingProviderProfiles: () => Promise<ProviderImportResult>;
   fetchProviderModels: (input: {
@@ -1302,11 +1290,5 @@ export interface XAgentApi extends XAgentApiFlat {
   plan: PlanApi;
   session: SessionApi;
   prefs: PrefsApi;
-  project: ProjectApi;
-  godot: GodotApi;
-  plugins: PluginsApi;
-  providers: ProvidersApi;
-  packages: PackagesApi;
   updates: UpdatesApi;
-  usage: UsageApi;
 }

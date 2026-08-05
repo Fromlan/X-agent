@@ -13,7 +13,6 @@ import {
   saveStore,
   type ProviderPaths,
 } from "./provider-persist";
-import { writeJsonAtomic as atomicWriteJson } from "./lib/atomic-write";
 import { invalidateAuthCache } from "./auth-check";
 
 export type SyncProfileToPiOptions = {
@@ -222,52 +221,8 @@ export async function activateProviderProfile(
   });
 }
 
-/** @deprecated Use {@link syncProfileToPi}. */
-export const syncActiveProfileToPi = syncProfileToPi;
-
-export async function deactivateProviderProfile(
-  paths: ProviderPaths = defaultProviderPaths(),
-): Promise<void> {
-  const store = await loadStore(paths);
-  store.activeId = null;
-  await saveStore(paths, store);
-}
-
-/** Mark the catalog profile that owns provider/model as activeId (badge cache). */
-export async function markProfileActiveForModel(
-  provider: string,
-  modelId: string,
-  paths: ProviderPaths = defaultProviderPaths(),
-): Promise<void> {
-  const store = await loadStore(paths);
-  const match = store.profiles.find(
-    (p) =>
-      p.providerId === provider &&
-      p.models.some((m) => m.id === modelId),
-  );
-  if (!match) return;
-  if (store.activeId === match.id) return;
-  store.activeId = match.id;
-  await saveStore(paths, store);
-}
-
-/** Whether prefs still point at a model in this profile. */
-export function profileMatchesPrefs(
-  profile: { providerId: string; models: { id: string }[] },
-  prefs: { provider: string | null; model: string | null },
-): boolean {
-  if (!prefs.provider || !prefs.model) return false;
-  return (
-    profile.providerId === prefs.provider &&
-    profile.models.some((m) => m.id === prefs.model)
-  );
-}
-
 /** Seed prefs from first synced profile when user has no model selected yet. */
 export function shouldSeedPrefsOnSync(): boolean {
   const prefs = getCachedPrefs();
   return !prefs.provider || !prefs.model;
 }
-
-// Re-export atomic write for callers that need to write auth/models directly.
-export { atomicWriteJson as writeJsonAtomic };
