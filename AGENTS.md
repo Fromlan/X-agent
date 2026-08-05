@@ -18,7 +18,7 @@
 cd apps/desktop
 npm install
 npm run typecheck        # tsc 两个 tsconfig：tsconfig.node.json + tsconfig.web.json
-npm test                 # 离线断言链：约 56 个 tsx 脚本串行（无需认证，见下）
+npm test                 # 离线断言链：约 57 个 tsx 脚本串行（无需认证，见下）
 npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
 npm run dev              # electron-vite dev（renderer 固定 127.0.0.1:5173，strictPort）
 npm run debug            # 同上但置 X_AGENT_DEBUG=1
