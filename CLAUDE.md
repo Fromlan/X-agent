@@ -48,7 +48,9 @@ npm run release:dist           # 可选：本地 typecheck + test + 打 Windows 
 
 `npm test`（在 `apps/desktop`）串联：
 
-`test-history-mapper`、`test-transcript-golden`、`test-turn-file-tracker`、`test-shadow-git`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-model-fetch`、`test-model-context`、`test-godot-rpc-bridge`、`test-godot-addon-install`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-usage-store`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-user-message-files`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-chat-markdown-streaming`、`test-chat-scroll-throttle`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-slash-items`、`test-prompt-slash-wrap`、`test-extension-ui`、`test-session-event-bridge-stale`、`test-cwd-sandbox`、`test-external-url`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`test-history-mapper`、`test-transcript-golden`、`test-turn-file-tracker`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-bash-liveness`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-provider-last-enabled`、`test-auth-cache-invalidation`、`test-model-fetch`、`test-model-context`、`test-godot-addon-install`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-debug-log`、`test-error-i18n`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-user-message-files`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-chat-markdown-streaming`、`test-chat-scroll-throttle`、`test-chat-virtual-cache`、`test-debug-mode`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-tool-batches`、`test-confirm-provider`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-slash-items`、`test-prompt-slash-wrap`、`test-extension-ui`、`test-session-event-bridge-stale`、`test-external-url`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+
+> 0.4.0 起 cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints 的覆盖已收敛到 Vitest（`*.test.ts`），不再双写离线脚本。
 
 冒烟（需本机认证）：
 
@@ -83,7 +85,7 @@ Electron 三进程边界：
 2. `DefaultResourceLoader` 以项目 `cwd` 加载 skills / extensions 等；`skillsOverride` 排除 `~/.agents/skills`。
 3. `createAgentSession`：`tools` 注册 `ALL_TOGGLEABLE_TOOLS`，`setActiveToolsByName(prefs.tools)`；`customTools` 含 Godot RPC + Godot docs。
 4. Pi 事件转为 `UiAgentEvent`，经 `agent:event` 推到 renderer。
-5. Renderer 用 [`chat-store.ts`](apps/desktop/src/stores/chat-store.ts) `applyAgentEvent` 归并；恢复时 `history.ts` 映射为同一 `HistoryItem` 结构。
+5. Renderer 用 [`chat-store.ts`](apps/desktop/src/stores/chat-store.ts) `applyAgentEvent` 归并；恢复时 `shared/transcript` 的 branch mapper 映射为同一 `HistoryItem` 结构。
 6. 用量经 `usage_update` / `usage-store`；右栏可 `compactSession` → `session.compact()`。
 7. `session_info` / status / prefs（如 `lastSessionPath`）写入顶栏与偏好。
 
