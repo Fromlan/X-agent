@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+### 功能
+
+- **Godot 工具扩展（1.2 全量）**：新增 7 个编辑器工具（Godot 插件 0.5.0）——`godot_get/set_project_setting`（读写 project.godot 配置）、`godot_lint_scripts`（GDScript 静态检查，带行号）、`godot_find_unused_resources`（未使用资源扫描）、`godot_export_project`（headless 子进程出包，不阻塞编辑器）、`godot_get_debugger_state` / `godot_set_breakpoint`（调试器状态与断点，会话启动自动重放）。只读工具进入 Ask / Plan 模式白名单，写型工具计入撤回告警。
+
 （占位：下个版本的变更说明）
 
 ## 0.3.14

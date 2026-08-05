@@ -23,6 +23,10 @@ const MUTATING_GODOT_TOOLS = new Set<string>([
   "godot_run_main_scene",
   "godot_import_resources",
   "godot_stop_scene",
+  // 1.2 扩展：会改动编辑器 / 项目状态的工具
+  "godot_set_breakpoint",
+  "godot_export_project",
+  "godot_set_project_setting",
 ]);
 
 export type SegmentScan = {

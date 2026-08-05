@@ -31,7 +31,7 @@
 
 | Phase | 周期 | 主题 | 关键交付物 | 状态 |
 |---|---|---|---|---|
-| **Phase 1** | M1-M2（4-6 周） | 工程质量 + Godot 深化 + 跨平台 | Vitest + Playwright E2E；7 个 Godot 新工具；macOS/Linux CI 与打包；i18n 基础 | 待启动 |
+| **Phase 1** | M1-M2（4-6 周） | 工程质量 + Godot 深化 + 跨平台 | Vitest + Playwright E2E；7 个 Godot 新工具；macOS/Linux CI 与打包；i18n 基础 | 进行中（1.1/1.2/1.5/1.6 已完成；剩 1.3/1.4/1.7） |
 | **Phase 2** | M2-M4（4-6 周） | 用户体验打磨 | 会话导出 / 导入；@-补全；开发者诊断页；Plan / Skill 模板；Crash 报告；A11y 自动化 | 待启动 |
 | **Phase 3** | M4-M8（8-12 周） | 差异化能力 | 插件可视化市场；主题编辑器；快捷键中心；Web fallback；多项目工作区；会话时间线；CI 增强；Telemetry | 待启动 |
 | **Phase 4** | 每个 Phase 末 | 验证与发版 | 综合回归 + 文档同步 + CHANGELOG 整理 | 持续 |
@@ -80,34 +80,39 @@ flowchart LR
 - **目标**：把 10 个工具扩到 17 个，覆盖「场景内省 + 调试器 + 资源治理 + 导出 + 配置读写」五大缺口。
 - **工作量**：8 人天
 - **前置依赖**：`packages/godot-editor-rpc` 同步更新到 addon 0.4.0
-- **状态**：🔨 进行中（2026-08，已完成 2/7 只读工具）
+- **状态**：✅ 已完成（2026-08）
 - **完成度与最终交付**：
   - ✅ `godot_get_scene_tree(path, max_depth?)` — 场景树序列化（name / type / script），`max_depth` 钳制 [1,16]，默认 8
   - ✅ `godot_get_node_properties(path, node_path)` — 仅导出 `SCRIPT_VARIABLE` / `STORAGE` usage 属性
-  - addon 升 0.4.0（`plugin.cfg` + addon `CHANGELOG.md`）；`clampGodotRunWaitMs` 负数回退默认值
-  - 测试：`shared/godot-rpc.test.ts` + `electron/agent/godot-tools.test.ts`（mock bridge 锁协议契约）
-  - 剩余 5 项：调试器 ×2 / 资源治理 ×1 / 导出 ×1 / 配置读写 ×1 组 / lint ×1
+  - ✅ `godot_get_project_setting(key)` / `godot_set_project_setting(key, value)` — ProjectSettings 读写 + `save()` 落盘 project.godot
+  - ✅ `godot_lint_scripts(paths)` — 进程内 `GDScript.reload()` 快速判错 + 失败文件 `--check-only` 子进程补行号（含 1.5 交付物）
+  - ✅ `godot_find_unused_resources(root?)` — `res://` 路径 + `uid://` 双引用图扫描；`class_name` 脚本与 `addons/` 排除出候选
+  - ✅ `godot_export_project(preset, output_dir, debug?)` — 异步子进程 `--headless --export-release`，未知 preset 返回可用列表
+  - ✅ `godot_get_debugger_state()` / `godot_set_breakpoint(file, line, condition?, remove?)` — `EditorDebuggerSession.set_breakpoint()`（4.x 公开 API，spike 通过）+ 会话启动自动重放；Godot 4 断点无 condition 支持
+  - addon 升 0.5.0（`plugin.cfg` + addon `CHANGELOG.md`）；修复 `_script_path_of` Variant 推断（4.4+ 警告当错误）
+  - 测试：`shared/godot-rpc.test.ts`（白名单 + 超时档位）+ `electron/agent/godot-tools.test.ts`（mock bridge 锁协议契约）；**真实 Godot 4.5.1 端到端验证**（headless 编辑器 + 真 TCP 桥）：settings 读写回读、lint 行号 4/4/5、unused 命中/排除、断点应用/移除、导出子进程链路全部通过
 - **交付物**：
 
 | 新工具 | 类型 | 落点 |
 |---|---|---|
 | `godot_get_scene_tree(path)` | 只读 | `plugin.gd` 用 `EditorInterface.get_edited_scene_root()` 序列化 |
 | `godot_get_node_properties(path, node_path)` | 只读 | 同上 + `get_property_list()` |
-| `godot_set_breakpoint(file, line, condition?)` / `godot_get_debugger_state` | 调试器 | addon 用 `EngineDebugger` |
-| `godot_find_unused_resources(root)` | 资源治理 | addon 扫描 `.tscn` / `.gd` 引用图 |
-| `godot_export_project(preset, output_dir)` | 构建导出 | addon 用 `EditorExportPlatform` |
-| `godot_lint_scripts(paths)` | 静态检查 | addon 调 `GDScript.new().parse()` |
-| `godot_get_project_setting(key)` / `set_project_setting` | 配置读写 | addon 用 `ProjectSettings` |
+| `godot_set_breakpoint(file, line, condition?)` / `godot_get_debugger_state` | 调试器 | `EditorDebuggerSession.set_breakpoint()`（4.x 公开 API）+ 会话状态聚合 |
+| `godot_find_unused_resources(root)` | 资源治理 | 文本引用图扫描（res:// + uid://），`class_name`/`addons` 排除 |
+| `godot_export_project(preset, output_dir)` | 构建导出 | 异步子进程 `--headless --export-release`（不阻塞编辑器主线程） |
+| `godot_lint_scripts(paths)` | 静态检查 | 进程内 reload + `--check-only` 子进程取行号 |
+| `godot_get_project_setting(key)` / `set_project_setting` | 配置读写 | `ProjectSettings` + `save()` |
 
-  - `shared/mode-tools.ts`：把 `godot_get_*` 加入 `PLAN_MODE_OPTIONAL_READONLY_TOOLS`
+  - `shared/mode-tools.ts`：只读 5 个（get_scene_tree / get_node_properties / get_debugger_state / find_unused_resources / get_project_setting / lint_scripts）加入 `PLAN_MODE_OPTIONAL_READONLY_TOOLS`
   - `electron/agent/godot-tools.ts`：新增 7 个 `defineTool`；每个配 `promptGuidelines`
-  - `shared/godot-rpc.ts`：注册新方法到 `GodotRpcCall` union
-  - `packages/godot-editor-rpc/CHANGELOG.md` 升到 0.4.0
+  - `shared/godot-rpc.ts`：注册新方法到 `GodotRpcCall` union + `GODOT_RPC_ALLOWED_METHODS`；`export_project` 5 分钟超时档、`find_unused_resources`/`lint_scripts` 4x 档
+  - `electron/agent/turn-file-tracker.ts`：`set_project_setting` / `export_project` / `set_breakpoint` 计入 `MUTATING_GODOT_TOOLS`（撤回告警）
+  - `packages/godot-editor-rpc/CHANGELOG.md` 升到 0.5.0
 - **验收**：
-  - 每个新工具有 `tests/test-godot-tools.ts` 断言（mock bridge）
-  - addon 协议字段向后兼容旧版 0.3.0 插件（缺字段时降级）
-  - `godot_get_scene_tree` 在真实工程上跑出节点结构 JSON
-- **风险**：调试器 API 在 Godot 4.7 与 4.4 之间差异；需在 addon 里 try/catch + 失败返回明确错误。
+  - 每个新工具有 vitest 断言（mock bridge）✅
+  - addon 协议字段向后兼容旧版 0.3.0 插件（缺字段时降级）✅
+  - 真实工程 E2E：settings / lint / unused / debugger / breakpoint / export 全链路通过 ✅
+- **风险**：~~调试器 API 在 Godot 4.7 与 4.4 之间差异~~ → spike 结论：`EditorDebuggerSession.set_breakpoint` 为公开 API（4.x 全系），无需降级。
 
 ### 1.3 macOS / Linux 三平台 CI 与打包  `P0`
 
@@ -150,8 +155,13 @@ flowchart LR
 - **目标**：用 Godot 自身的 `GDScript.new().parse()` 做轻量 lint，挂在 `godot_lint_scripts` 工具上。
 - **工作量**：与 1.2 合并
 - **前置依赖**：1.2
+- **状态**：✅ 已完成（2026-08，随 1.2 交付）
+- **完成度与最终交付**：
+  - `godot_lint_scripts(paths)` 返回 `{files: [{path, ok, issues: [{line, column, message, severity}]}]}`
+  - 实现说明：Godot 4 无公开 parse error 细节 API（`Script.reload()` 只给错误码，且 4.4+ 错误码有重排），采用双层方案——进程内 `GDScript.reload()` 快速判错，失败文件走 `--check-only` 子进程取行号（`SCRIPT ERROR` 行 + 下一行 `at: ... (path:N)` 配对解析）；子进程不可用时 `error_string` 兜底
+  - 真实验证：故意写错 `.gd`（类型错误 + 未声明标识符）返回行号 4/4/5
 - **交付物**：addon 端 `lint_scripts(paths)` 返回 `{ file: { line, column, message, severity }[] }`
-- **验收**：故意写一个语法错的 `.gd`，调用工具返回行号 + 错误信息。
+- **验收**：故意写一个语法错的 `.gd`，调用工具返回行号 + 错误信息。✅
 
 ### 1.6 @-补全基础  `P1`
 
@@ -408,7 +418,7 @@ flowchart LR
 | E2E 用例数 | 0 | ≥ 5（契约） | ≥ 15 | ≥ 30 |
 | 三平台 CI 绿 | 仅 Windows | Windows + macOS + Linux | 同左 | 同左 |
 | UI 文案 i18n 覆盖率 | 0% | 顶层 5 组件 100% | ≥ 80% | ≥ 95% |
-| Godot 工具数 | 10 | 17 | 17 + linter | 17 + linter |
+| Godot 工具数 | 10 | 19（含 1.2 全部 7 个 + lint） | 19 + 外部 linter | 19 + 外部 linter |
 | Crash 报告接入 | 无 | 无 | 已接入 | 已接入 + 性能 |
 | 用户活跃会话数 / 月（基线） | — | 取基线 | 提升 ≥ 10% | 提升 ≥ 30% |
 | 首次响应延迟 P50 | — | 取基线 | 持平或更优 | 持平或更优 |
