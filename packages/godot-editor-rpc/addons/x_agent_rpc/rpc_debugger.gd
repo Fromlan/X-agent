@@ -6,35 +6,57 @@ extends EditorDebuggerPlugin
 
 var _append: Callable = Callable()
 var _hooked_debuggers: Dictionary = {} # ObjectID -> true
+## 1.2：已见过的调试会话（session_id -> EditorDebuggerSession），供断点/状态查询。
+var _sessions_by_id: Dictionary = {}
+## 1.2：会话断点命中次数累计。
+var _break_count: int = 0
+## 1.2：插件侧回调，返回待重放的断点列表（会话启动时应用）。
+var _apply_pending: Callable = Callable()
 
-func configure(append_cb: Callable) -> void:
+func configure(append_cb: Callable, apply_pending_cb: Callable = Callable()) -> void:
 	_append = append_cb
+	_apply_pending = apply_pending_cb
 
 func _setup_session(session_id: int) -> void:
 	var session := get_session(session_id)
 	if session == null:
 		return
+	_sessions_by_id[session_id] = session
 	if not session.started.is_connected(_on_session_started):
 		session.started.connect(_on_session_started.bind(session_id))
 	if not session.stopped.is_connected(_on_session_stopped):
 		session.stopped.connect(_on_session_stopped.bind(session_id))
 	if not session.breaked.is_connected(_on_session_breaked):
 		session.breaked.connect(_on_session_breaked.bind(session_id))
+	if session.has_signal("continued") and not session.continued.is_connected(_on_session_continued):
+		session.continued.connect(_on_session_continued.bind(session_id))
 	_try_hook_script_debuggers()
 
-func _on_session_started(_session_id: int) -> void:
+func _on_session_started(session_id: int) -> void:
 	_try_hook_script_debuggers()
+	# 1.2：把会话启动前设置的断点重放到新会话
+	if _apply_pending.is_valid():
+		var session = _sessions_by_id.get(session_id)
+		if session != null:
+			for entry in _apply_pending.call():
+				if typeof(entry) != TYPE_DICTIONARY:
+					continue
+				session.set_breakpoint(str(entry.get("file", "")), int(entry.get("line", 0)), true)
 
 func _on_session_stopped(_session_id: int) -> void:
 	pass
 
 func _on_session_breaked(can_debug: bool, _session_id: int) -> void:
+	_break_count += 1
 	if not _append.is_valid():
 		return
 	if can_debug:
 		_append.call("warning", "Debugger break (can_debug=true)")
 	else:
 		_append.call("error", "Debugger break (non-debuggable, often parse/script error)")
+
+func _on_session_continued(_session_id: int) -> void:
+	pass
 
 func _try_hook_script_debuggers() -> void:
 	var base := EditorInterface.get_base_control()
@@ -126,3 +148,33 @@ func _on_debugger_breaked(really_did: bool, can_debug: bool, reason: String, _ha
 		msg = "Debugger break (can_debug=%s)" % str(can_debug)
 	var severity := "error" if not can_debug else "warning"
 	_append.call(severity, msg)
+
+# =============================================================================
+# 1.2：断点应用 / 状态快照
+# =============================================================================
+
+## 对所有已注册会话应用/移除断点；返回实际生效的会话数。
+func apply_breakpoint(path: String, line: int, enabled: bool) -> int:
+	var applied := 0
+	for sid in _sessions_by_id:
+		var session: EditorDebuggerSession = _sessions_by_id[sid]
+		if session == null or not session.has_method("set_breakpoint"):
+			continue
+		session.set_breakpoint(path, line, enabled)
+		applied += 1
+	return applied
+
+## 聚合当前调试器状态：每个会话的 active / breaked / debuggable + 断点命中数。
+func snapshot() -> Dictionary:
+	var sessions: Array = []
+	for sid in _sessions_by_id:
+		var session: EditorDebuggerSession = _sessions_by_id[sid]
+		if session == null:
+			continue
+		sessions.append({
+			"id": sid,
+			"active": session.is_active() if session.has_method("is_active") else true,
+			"breaked": session.is_breaked() if session.has_method("is_breaked") else false,
+			"debuggable": session.is_debuggable() if session.has_method("is_debuggable") else true,
+		})
+	return {"sessions": sessions, "breakCount": _break_count}

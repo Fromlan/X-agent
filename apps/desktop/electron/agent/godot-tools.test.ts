@@ -135,3 +135,167 @@ describe("createGodotTools —— 1.2 新增工具", () => {
     expect(props?.description?.length ?? 0).toBeGreaterThan(10);
   });
 });
+
+describe("createGodotTools —— 1.2 剩余 7 个工具", () => {
+  let ctx: ReturnType<typeof makeMockBridge>;
+  let tools: ReturnType<typeof createGodotTools>;
+  type ToolExec = (params: Record<string, unknown>) => Promise<unknown>;
+  let byName: Map<string, ToolExec>;
+
+  beforeEach(() => {
+    ctx = makeMockBridge();
+    tools = createGodotTools(ctx.bridge);
+    byName = new Map(
+      tools.map((t) => [
+        t.name,
+        (params: Record<string, unknown>) =>
+          t.execute(
+            "call-id",
+            params as never,
+            undefined as never,
+            undefined as never,
+            undefined as never,
+          ),
+      ]),
+    );
+  });
+
+  it("7 个新工具全部注册", () => {
+    for (const n of [
+      "godot_get_project_setting",
+      "godot_set_project_setting",
+      "godot_lint_scripts",
+      "godot_find_unused_resources",
+      "godot_export_project",
+      "godot_get_debugger_state",
+      "godot_set_breakpoint",
+    ]) {
+      expect(byName.has(n)).toBe(true);
+    }
+  });
+
+  it("godot_get_project_setting 转发 key", async () => {
+    ctx.setResult({ exists: true, key: "application/config/name", value: "Game" });
+    await byName.get("godot_get_project_setting")!({
+      key: "application/config/name",
+    });
+    expect(ctx.captured[0].method).toBe("get_project_setting");
+    expect(ctx.captured[0].params.key).toBe("application/config/name");
+  });
+
+  it("godot_set_project_setting 转发 key 与 value", async () => {
+    ctx.setResult({ saved: true, key: "x" });
+    await byName.get("godot_set_project_setting")!({
+      key: "display/window/size/viewport_width",
+      value: 1280,
+    });
+    expect(ctx.captured[0].method).toBe("set_project_setting");
+    expect(ctx.captured[0].params.key).toBe("display/window/size/viewport_width");
+    expect(ctx.captured[0].params.value).toBe(1280);
+  });
+
+  it("godot_lint_scripts 转发 paths 并格式化失败详情", async () => {
+    ctx.setResult({
+      files: [
+        { path: "res://ok.gd", ok: true, issues: [] },
+        {
+          path: "res://bad.gd",
+          ok: false,
+          issues: [
+            { line: 4, column: 0, message: "Parse Error: x", severity: "error" },
+          ],
+        },
+      ],
+    });
+    const res = await byName.get("godot_lint_scripts")!({
+      paths: ["res://ok.gd", "res://bad.gd"],
+    });
+    expect(ctx.captured[0].method).toBe("lint_scripts");
+    expect(ctx.captured[0].params.paths).toEqual([
+      "res://ok.gd",
+      "res://bad.gd",
+    ]);
+    const text = String(res.content[0].text);
+    expect(text).toContain("OK  res://ok.gd");
+    expect(text).toContain("res://bad.gd:4");
+    expect((res.details as { hasError: boolean }).hasError).toBe(true);
+  });
+
+  it("godot_lint_scripts 全部通过时 hasError=false", async () => {
+    ctx.setResult({ files: [{ path: "res://ok.gd", ok: true, issues: [] }] });
+    const res = await byName.get("godot_lint_scripts")!({ paths: ["res://ok.gd"] });
+    expect((res.details as { hasError: boolean }).hasError).toBe(false);
+  });
+
+  it("godot_find_unused_resources 默认 root=res://，可指定子目录", async () => {
+    ctx.setResult({ unused: [{ path: "res://o.tscn", kind: "scene" }] });
+    await byName.get("godot_find_unused_resources")!({});
+    expect(ctx.captured[0].method).toBe("find_unused_resources");
+    expect(ctx.captured[0].params.root).toBe("res://");
+    await byName.get("godot_find_unused_resources")!({ root: "res://scenes" });
+    expect(ctx.captured[1].params.root).toBe("res://scenes");
+  });
+
+  it("godot_export_project 转发 preset/output_dir/debug", async () => {
+    ctx.setResult({
+      ok: true,
+      timedOut: false,
+      outputPath: "D:/out/game.exe",
+      errors: [],
+    });
+    const res = await byName.get("godot_export_project")!({
+      preset: "Windows Desktop",
+      output_dir: "D:/out/game.exe",
+      debug: true,
+    });
+    expect(ctx.captured[0].method).toBe("export_project");
+    expect(ctx.captured[0].params.preset).toBe("Windows Desktop");
+    expect(ctx.captured[0].params.output_dir).toBe("D:/out/game.exe");
+    expect(ctx.captured[0].params.debug).toBe(true);
+    expect(String(res.content[0].text)).toContain("Export succeeded");
+    expect((res.details as { hasError: boolean }).hasError).toBe(false);
+  });
+
+  it("godot_export_project 失败时文本含错误摘要且 hasError=true", async () => {
+    ctx.setResult({
+      ok: false,
+      timedOut: false,
+      outputPath: "D:/out/game.exe",
+      errors: ["ERROR: missing template"],
+    });
+    const res = await byName.get("godot_export_project")!({
+      preset: "Windows Desktop",
+      output_dir: "D:/out/game.exe",
+    });
+    const text = String(res.content[0].text);
+    expect(text).toContain("Export failed");
+    expect(text).toContain("missing template");
+    expect((res.details as { hasError: boolean }).hasError).toBe(true);
+  });
+
+  it("godot_get_debugger_state 无参调用", async () => {
+    ctx.setResult({ playing: false, sessions: [], breakCount: 0 });
+    await byName.get("godot_get_debugger_state")!({});
+    expect(ctx.captured[0].method).toBe("get_debugger_state");
+    expect(ctx.captured[0].params.method).toBe("get_debugger_state");
+  });
+
+  it("godot_set_breakpoint 转发 file/line/remove 并钳制 line>=1", async () => {
+    ctx.setResult({ ok: true, appliedSessions: 0 });
+    await byName.get("godot_set_breakpoint")!({
+      file: "res://player.gd",
+      line: 12,
+      remove: true,
+    });
+    expect(ctx.captured[0].method).toBe("set_breakpoint");
+    expect(ctx.captured[0].params.file).toBe("res://player.gd");
+    expect(ctx.captured[0].params.line).toBe(12);
+    expect(ctx.captured[0].params.remove).toBe(true);
+    await byName.get("godot_set_breakpoint")!({
+      file: "res://player.gd",
+      line: 0,
+    });
+    expect(ctx.captured[1].params.line).toBe(1);
+    expect(ctx.captured[1].params.remove).toBe(false);
+  });
+});

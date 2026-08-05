@@ -40,6 +40,20 @@ describe("GODOT_RPC 常量", () => {
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("get_scene_tree");
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("get_node_properties");
   });
+
+  it("1.2 剩余方法全部进入白名单（调试器/资源/导出/配置/lint）", () => {
+    for (const m of [
+      "get_debugger_state",
+      "set_breakpoint",
+      "find_unused_resources",
+      "export_project",
+      "get_project_setting",
+      "set_project_setting",
+      "lint_scripts",
+    ]) {
+      expect(GODOT_RPC_ALLOWED_METHODS).toContain(m);
+    }
+  });
 });
 
 describe("clampGodotRunWaitMs", () => {
@@ -80,12 +94,43 @@ describe("godotRpcTimeoutMs", () => {
     };
     expect(godotRpcTimeoutMs(call)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
   });
+
+  it("export_project 使用 5 分钟超时档", () => {
+    const call: GodotRpcCall = {
+      method: "export_project",
+      preset: "Windows Desktop",
+      output_dir: "C:/out",
+    };
+    expect(godotRpcTimeoutMs(call)).toBe(5 * 60_000);
+  });
+
+  it("find_unused_resources / lint_scripts 使用 4 倍基础超时档", () => {
+    const unused: GodotRpcCall = { method: "find_unused_resources" };
+    expect(godotRpcTimeoutMs(unused)).toBe(GODOT_RPC_BASE_TIMEOUT_MS * 4);
+    const lint: GodotRpcCall = { method: "lint_scripts", paths: ["res://a.gd"] };
+    expect(godotRpcTimeoutMs(lint)).toBe(GODOT_RPC_BASE_TIMEOUT_MS * 4);
+  });
+
+  it("配置读写 / 调试器 / 断点走基础超时", () => {
+    const get: GodotRpcCall = { method: "get_project_setting", key: "x" };
+    expect(godotRpcTimeoutMs(get)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
+    const set: GodotRpcCall = {
+      method: "set_project_setting",
+      key: "x",
+      value: 1,
+    };
+    expect(godotRpcTimeoutMs(set)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
+    const dbg: GodotRpcCall = { method: "get_debugger_state" };
+    expect(godotRpcTimeoutMs(dbg)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
+  });
 });
 
 describe("isAllowedGodotRpcMethod", () => {
   it("合法方法返回 true", () => {
     expect(isAllowedGodotRpcMethod("ping")).toBe(true);
     expect(isAllowedGodotRpcMethod("get_scene_tree")).toBe(true);
+    expect(isAllowedGodotRpcMethod("export_project")).toBe(true);
+    expect(isAllowedGodotRpcMethod("lint_scripts")).toBe(true);
   });
 
   it("非法方法返回 false", () => {

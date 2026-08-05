@@ -1,5 +1,24 @@
 # X-agent RPC addon changelog
 
+## 0.5.0
+
+### 新增 RPC 方法（1.2 工具扩展，共 7 个）
+
+- `get_project_setting(key)` / `set_project_setting(key, value)` — 读写 ProjectSettings 并保存到 project.godot
+- `lint_scripts(paths)` — GDScript 静态检查：进程内 `GDScript.reload()` 快速判错，失败文件用 `--check-only` 子进程补全 `{file, line, message}`；4.4+ 的 reload 错误码有重排，不依赖具体数值
+- `find_unused_resources(root?)` — 扫描 res:// 目录，按 `res://` 路径 + `uid://` 引用图找出未被引用的场景 / 脚本 / 资源；`class_name` 脚本与 `addons/` 下文件不计入候选
+- `export_project(preset, output_dir, debug?)` — 异步子进程 `--headless --export-release/--export-debug`（`OS.create_process` + 日志轮询），不阻塞编辑器主线程；未知 preset 返回可用列表
+- `get_debugger_state()` — 调试器状态聚合：play 状态、会话列表（active / breaked / debuggable）、断点命中数、待重放断点数、play error 缓冲
+- `set_breakpoint(file, line, condition?, remove?)` — 经 `EditorDebuggerSession.set_breakpoint()` 生效；会话启动时自动重放未应用断点；Godot 4 断点不支持条件（`condition` 接受但忽略）
+
+### 修复
+
+- `_script_path_of` 的 Variant 推断警告（4.4+ 默认「警告当错误」时无法加载插件）
+
+### 协议版本
+
+- plugin.cfg version 升到 0.5.0
+
 ## 0.4.1
 
 ### 修复：断开后无法自动重连
