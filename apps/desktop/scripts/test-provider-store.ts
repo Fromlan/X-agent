@@ -46,6 +46,17 @@ try {
     listProviderPresets().some((p) => p.id === "openrouter"),
     "openrouter preset",
   );
+  const goPreset = listProviderPresets().find((p) => p.id === "opencode-go");
+  assert(goPreset !== undefined, "opencode-go preset");
+  assert(goPreset!.api === "openai-completions", "opencode-go uses openai-completions");
+  assert(
+    goPreset!.baseUrl === "https://opencode.ai/zen/go/v1",
+    "opencode-go baseUrl",
+  );
+  assert(
+    goPreset!.models.some((m) => m.id === "deepseek-v4-flash"),
+    "opencode-go includes deepseek-v4-flash",
+  );
 
   // —— 预设命名空间隔离：deepseek 与 deepseek-anthropic 必须有不同 providerId ——
   const dsPresets = listProviderPresets().filter(
