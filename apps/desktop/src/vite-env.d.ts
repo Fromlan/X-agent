@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { XAgentApi } from "../shared/ipc";
 
 declare global {

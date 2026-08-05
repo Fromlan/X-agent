@@ -57,21 +57,21 @@ try {
     "utf8",
   );
 
-  await runtime.reloadConfig();
+  await runtime.refresh();
   const afterConfigOnly = await runtime.getAvailable();
   assert(
     !afterConfigOnly.some(
       (m) => m.provider === "test-relay" && m.id === "model-a",
     ),
-    "reloadConfig alone must not expose test-relay (auth cache stale)",
+    "refresh alone must not expose test-relay (auth cache stale)",
   );
 
   reloadAuthStorageCache(runtime);
-  await runtime.reloadConfig();
+  await runtime.refresh();
   const available = await runtime.getAvailable();
   assert(
     available.some((m) => m.provider === "test-relay" && m.id === "model-a"),
-    "auth.reload + reloadConfig should expose models",
+    "auth.reload + refresh should expose models",
   );
 
   console.log("test-model-runtime-reload: ok");
