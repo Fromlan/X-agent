@@ -18,8 +18,8 @@
 cd apps/desktop
 npm install
 npm run typecheck        # tsc 两个 tsconfig：tsconfig.node.json + tsconfig.web.json
-npm test                 # 离线断言链：约 60 个 tsx 脚本串行（无需认证，见下）
-npm run test:unit        # vitest（仅 node 环境；覆盖率门槛见 vitest.config.ts）
+npm test                 # 离线断言链：约 56 个 tsx 脚本串行（无需认证，见下）
+npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
 npm run dev              # electron-vite dev（renderer 固定 127.0.0.1:5173，strictPort）
 npm run debug            # 同上但置 X_AGENT_DEBUG=1
 npm run dist             # electron-builder --win（NSIS + portable）
@@ -32,14 +32,14 @@ npm run dist             # electron-builder --win（NSIS + portable）
 ## 测试：两种范式，别搞混
 
 - `apps/desktop/scripts/test-*.ts` = 离线断言脚本，由 `npm test` **串行串联**（`&&`）。命名为 `test-*.ts` 的不属于 vitest。
-- `*.test.ts`（`electron/**`、`shared/**`）= vitest 单测（`npm run test:unit`），CI 有覆盖率门槛。
+- `*.test.ts`（`electron/**`、`shared/**`、`src/**`）= vitest 单测（`npm run test:unit`），CI 有覆盖率门槛。
 - 跑单个离线脚本：`npx tsx scripts/test-xxx.ts`；**renderer 相关脚本必须加 `--tsconfig tsconfig.web.json`**（如 `test-chat-*`、`test-plan-todos`、`test-skill-slash` 等，脚本名含 `web.json` 标志的不逐一列举——看 `package.json` 的 `test` 脚本为准）。
-- 改 Godot 相关代码跑 `test-godot-rpc-bridge` / `test-godot-addon-install`；改模式/沙箱跑 `test-plan-mode-tools` / `test-plan-mode-guard` / `test-bash-readonly` / `test-cwd-sandbox`；`npm test` 结尾还会跑 `packages/godot-pi/scripts/check-skills.mjs` 校验技能目录。
+- 改 Godot 相关代码跑 `test-godot-addon-install`（bridge 协议已被 `electron/agent/godot-rpc-bridge.test.ts` 的 vitest 独占覆盖）；改模式/沙箱跑 `test-plan-mode-tools` / `test-plan-mode-guard` / `test-bash-readonly`（沙箱边界由 `cwd-sandbox.test.ts` / `project-fs.test.ts` 覆盖）；`npm test` 结尾还会跑 `packages/godot-pi/scripts/check-skills.mjs` 校验技能目录。
 
 ## 架构约束（改代码前必读）
 
 - 三进程边界：Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索**全在主进程**；renderer 只能经 `window.xAgent.*` 调用，**禁止直接访问 Node API**（`contextIsolation` 开、`nodeIntegration` 关）。
-- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 名注册表）+ `shared/ipc.ts`（类型）+ `electron/ipc/register-*-ipc.ts`（handler，按 8 个分面挂：workspace/turn/plan/session/session-config/provider/godot/update）+ `electron/preload.ts`（bridge）。新代码优先走分面，扁平方法仅作兼容。
+- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 名注册表）+ `shared/ipc.ts`（类型）+ `electron/ipc/register-*-ipc.ts`（handler，按模块挂：session / session-config / provider / godot / update，其余在 `app-runtime.ts` 的 `registerIpc()`）+ `electron/preload.ts`（bridge）。`window.xAgent` 实际暴露 6 个分面对象（workspace/turn/plan/session/prefs/updates）+ flat 方法；新代码优先走分面，扁平方法仅作兼容。
 - 上下文组装由 Pi SDK（`@earendil-works/pi-coding-agent`）完成，**不要手写 system prompt**。
 - 别名：renderer 用 `@/` → `src`、`@shared/` → `shared`；Node 侧仅 `@shared/`。`main.ts` 是薄入口，重逻辑动态 import `app-runtime`。
 

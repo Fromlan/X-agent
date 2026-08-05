@@ -6,13 +6,25 @@
 
 升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，`prepare-release` 会把上一线全部小版本（`0.2.0`…`0.2.x`）汇总写入本章节；GitHub Release 正文使用该章节（已含汇总则不再重复附加）。补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭自动附加。
 
-## Unreleased
+## 0.4.0
 
 ### 功能
 
 - **Godot 工具扩展（1.2 全量）**：新增 7 个编辑器工具（Godot 插件 0.5.0）——`godot_get/set_project_setting`（读写 project.godot 配置）、`godot_lint_scripts`（GDScript 静态检查，带行号）、`godot_find_unused_resources`（未使用资源扫描）、`godot_export_project`（headless 子进程出包，不阻塞编辑器）、`godot_get_debugger_state` / `godot_set_breakpoint`（调试器状态与断点，会话启动自动重放）。只读工具进入 Ask / Plan 模式白名单，写型工具计入撤回告警。
 
-（占位：下个版本的变更说明）
+### 修复
+
+- **@-补全空白路径误判**：`looksLikePathCandidate` 正则未锚定，`"foo bar"` 等含空白片段被误判为路径候选（该测试曾因未纳入 vitest 而从未运行，0.4.0 激活后暴露）。
+- **会话重命名过期提交**：编辑会话名后 120ms 内点击其他会话，会提交过期编辑；现焦点落在会话列表内时跳过提交（onResume 负责切换）。
+- **Godot 面板轮询闭包陈旧**：`GodotTab` 轮询依赖缺失导致闭包引用旧 refresh；已 useCallback 化并补全依赖。
+- **渲染期写 ref**：`App.tsx` 在渲染函数体内写入 `apiStatusRef`，并发渲染下可能中断；改为 effect 同步。
+
+### 改进
+
+- **依赖全量升级**：Electron 35 → 43、Vite 6 → 7、Vitest 2 → 4、TypeScript 5.9 → 7.0（移除 `baseUrl`，paths 相对化）、electron-vite 3 → 5、`@earendil-works/pi-coding-agent` 0.80 → 0.83（`ModelRuntime.reloadConfig` 迁移到 `refresh()`）；Playwright E2E 在 Electron 43 下通过。
+- **死代码清理（0.4.0 梳理）**：删除 7 个无引用文件（`history.ts` / `transcript-mapper.ts` / `SkillSlashMenu` / `skill-slash` / 3 个 barrel index）、约 15 个无消费者导出（`loadPrefsAsync` / `getAllowedPluginRoots` / `syncActiveProfileToPi` 等）、2 条无人调用的 IPC 链路（`activateProviderProfile` / `listSessionSkills`）、preload 6 个 renderer 零使用分面、`syncedActive` 等过期字段。
+- **测试体系收敛**：退役 4 组双重覆盖的离线脚本（cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints），由 Vitest 独占；vitest 纳入 `src/**` 并激活 `at-completion` 测试；补 `project-fs` / `mode-tools` / `mode-prompt` 覆盖（覆盖率 60% 门槛 → 实际 82%+）；删除重复的「重置教程环境.bat」。
+- **重复实现收敛**：`THINKING_LEVELS` / `applyTheme` 收敛到单点（`@shared/ipc` / `src/lib/theme.ts`）；`WRITE_PLAN_TOOL` 统一 import 自 `shared/mode-tools.ts`。
 
 ## 0.3.14
 
