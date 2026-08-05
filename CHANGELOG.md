@@ -26,6 +26,10 @@
 - **测试体系收敛**：退役 4 组双重覆盖的离线脚本（cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints），由 Vitest 独占；vitest 纳入 `src/**` 并激活 `at-completion` 测试；补 `project-fs` / `mode-tools` / `mode-prompt` 覆盖（覆盖率 60% 门槛 → 实际 82%+）；删除重复的「重置教程环境.bat」。
 - **重复实现收敛**：`THINKING_LEVELS` / `applyTheme` 收敛到单点（`@shared/ipc` / `src/lib/theme.ts`）；`WRITE_PLAN_TOOL` 统一 import 自 `shared/mode-tools.ts`。
 
+## Unreleased
+
+（占位：下个版本的变更说明）
+
 ## 0.3.14
 
 ### 功能

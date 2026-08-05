@@ -11,7 +11,7 @@
 | **会话自动标题** | 首轮结束后确保会话有标题（模型摘要或本地截断） | `session-title.ts`（`ensureSessionTitle`） |
 | **项目侧栏身份** | 按项目 key 分组 / 隐藏 / 显示名 / 删除后回退会话 | `shared/project-path.ts`、`group-sessions.ts`、`useWorkspaceSession.ts` |
 | **Cwd 路径沙箱** | 解析项目内相对路径，拒绝逃出 cwd | `electron/agent/cwd-sandbox.ts` |
-| **工作区 / 回合门面** | 跨进程粗操作面：`workspace` / `turn` / `plan` / `session` / `prefs` / … 分面（扁平方法仍保留兼容；新代码优先分面） | `shared/ipc.ts`、`preload.ts`；IPC 注册按分面拆为 8 个 `register-*-ipc.ts`（`workspace` / `turn` / `plan` / `session` / `session-config` / `provider` / `godot` / `update`）|
+| **工作区 / 回合门面** | 跨进程粗操作面：`workspace` / `turn` / `plan` / `session` / `prefs` / `updates` 6 个分面（扁平方法仍保留兼容；新代码优先分面） | `shared/ipc.ts`、`preload.ts`；IPC handler 按模块拆为 8 个 `register-*-ipc.ts`（`workspace` / `turn` / `plan` / `session` / `session-config` / `provider` / `godot` / `update`）|
 | **工作区生命周期** | open / resume / dispose / createSession 编排 | `session-lifecycle.ts`；`SessionHost` 组合壳转发 |
 | **计划会话** | 右栏计划 CRUD、脏保存、执行计划、自动打开 Plan 页 | `usePlanSession.ts`、`PlanTab.tsx` |
 | **应用更新 UX** | 打包版检查 / 下载 / 安装 / 横幅 dismiss | `useAppUpdate.ts`；主进程 `auto-updater.ts` + `update-feed.ts`；IPC `register-update-ipc.ts` |

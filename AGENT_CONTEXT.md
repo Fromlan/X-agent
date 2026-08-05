@@ -260,7 +260,7 @@ DeepSeek 等供应商对**完全一致的请求前缀**计为 cache hit（Pi 记
 | [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts) | write/edit 字节基线与还原 |
 | [`context-breakdown.ts`](apps/desktop/electron/agent/context-breakdown.ts) | 右栏上下文组成拆解 |
 | [`usage-store.ts`](apps/desktop/electron/agent/usage-store.ts) | 本地按日 / 按模型用量 |
-| [`history.ts`](apps/desktop/electron/agent/history.ts) | Pi branch entries → UI（含 entryId；非 LLM 组装） |
+| [`shared/transcript/`](apps/desktop/shared/transcript/) | Pi branch entries → UI（`branch-mapper` 等；含 entryId；非 LLM 组装） |
 | [`plugin-host.ts`](apps/desktop/electron/agent/plugin-host.ts) | 插件 CRUD → Pi 目录 |
 | [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts) | `pi install` / uninstall |
 | [`godot-tools.ts`](apps/desktop/electron/agent/godot-tools.ts) | Godot 编辑器 customTools |
