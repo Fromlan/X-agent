@@ -14,7 +14,7 @@
 
 - 不是通用多语言 IDE 替代品；Godot 不是"一个插件"，是**核心工作面**。
 - 运行时复用 Pi 的认证与模型（`~/.pi/agent/auth.json`、`models.json`），会话与 Pi CLI **隔离**（写到 `~/.pi/agent/x-agent/sessions/`）。
-- 当前版本见 `apps/desktop/package.json`（如 `0.3.12`）；版本号以该文件为权威源。
+- 当前版本见 `apps/desktop/package.json`（如 `0.4.0`）；版本号以该文件为权威源。
 
 ## 二、目录速览
 
@@ -35,9 +35,9 @@
 
 ## 三、技术栈与版本下限
 
-- **Electron** ^35 + **electron-vite** ^3 + **electron-builder** ^26（NSIS + portable 双产物）
-- **React** 19 + **TypeScript** ^5.8 + **Vite** ^6；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
-- **@earendil-works/pi-coding-agent** ^0.80（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `AGENT_CONTEXT.md`）
+- **Electron** ^43 + **electron-vite** ^5 + **electron-builder** ^26（NSIS + portable 双产物）
+- **React** 19 + **TypeScript** ^7.0 + **Vite** ^7；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
+- **@earendil-works/pi-coding-agent** ^0.83（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `AGENT_CONTEXT.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
 - **Node.js 22+**（开发时需要；运行时 Electron 自带）
 - Windows + Godot 4.x 为当前发布平台；macOS / Linux 不在 CI 矩阵内
@@ -57,7 +57,7 @@ npm install
 npm run desktop:dev            # Electron 开发（electron-vite dev）
 npm run desktop:build          # 仅打包 out/
 npm run desktop:typecheck      # tsc -p tsconfig.node.json && tsc -p tsconfig.web.json
-npm run desktop:test           # 离线断言脚本（约 60 个 tsx 脚本串联，见 apps/desktop/package.json:scripts.test）
+npm run desktop:test           # 离线断言脚本（约 57 个 tsx 脚本串联，见 apps/desktop/package.json:scripts.test）
 npm run desktop:smoke          # 真实模型冒烟（需本机认证）
 npm run desktop:dist           # electron-builder --win --publish never（NSIS + portable）
 npm run desktop:reset-tutorial # 重置教程环境（Windows 脚本）
@@ -78,7 +78,7 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\\path\\to\\pr
 三进程模型，**不要越界**：
 
 - **`electron/main.ts`** — 持有 `SessionHost` / `GodotRpcBridge` / `AppAutoUpdater`。Pi SDK、文件系统、会话、模型、供应商、插件、用量、文档检索**全部在主进程**。
-- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关。**新增 IPC 能力必须同步改** `apps/desktop/shared/ipc.ts` + main handler + preload（一般按"分面"在 8 个 `register-*-ipc.ts` 里挂）。
+- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关。**新增 IPC 能力必须同步改** `apps/desktop/shared/ipc.ts` + main handler + preload（handler 一般按"分面"在 8 个 `register-*-ipc.ts` 里挂；preload 实际暴露 6 个分面对象 `workspace` / `turn` / `plan` / `session` / `prefs` / `updates` + flat 方法）。
 - **`src/...`** — 纯 React renderer；通过 `window.xAgent.*` 调用主进程；**禁止**直接访问 Node API。
 
 `apps/desktop/shared/` 是 main / renderer 共享类型与逻辑（`ipc.ts` 工具名、`mode-tools.ts` 模式白名单、`transcript/` 流式映射）。
