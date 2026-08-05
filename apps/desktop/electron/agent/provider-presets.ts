@@ -243,6 +243,33 @@ function rawProviderPresets(): ProviderPreset[] {
       websiteUrl: "https://openrouter.ai",
     },
     {
+      id: "opencode-go",
+      name: "OpenCode Go",
+      providerId: "opencode-go",
+      // 主流开源模型（Grok / GLM / Kimi / DeepSeek / MiMo / Hy3）走 OpenAI 兼容端点。
+      // MiniMax / Qwen 系列走 Anthropic 端点：api=anthropic-messages, baseUrl=https://opencode.ai/zen/go；
+      // GPT-5.6 Luna 走 Responses：api=openai-responses, baseUrl=https://opencode.ai/zen/go。
+      api: "openai-completions",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      models: [
+        { id: "grok-4.5", name: "Grok 4.5" },
+        { id: "glm-5.2", name: "GLM-5.2" },
+        { id: "glm-5.1", name: "GLM-5.1" },
+        { id: "kimi-k3", name: "Kimi K3" },
+        { id: "kimi-k2.7-code", name: "Kimi K2.7 Code" },
+        { id: "kimi-k2.6", name: "Kimi K2.6" },
+        { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+        { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+        { id: "mimo-v2.5", name: "MiMo-V2.5" },
+        { id: "mimo-v2.5-pro", name: "MiMo-V2.5-Pro" },
+        { id: "hy3", name: "Hy3" },
+      ],
+      notes:
+        "OpenCode Go 订阅（opencode.ai/auth 领取 API Key，首月 $5 后 $10/月，含用量限额）。OpenAI 兼容端点为 /zen/go/v1/chat/completions；需 MiniMax / Qwen 模型时把 api 改为 anthropic-messages、baseUrl 改为 https://opencode.ai/zen/go；需 GPT-5.6 Luna 时改 api=openai-responses、同 baseUrl。模型列表见 https://opencode.ai/docs/zh-cn/go/",
+      category: "aggregator",
+      websiteUrl: "https://opencode.ai",
+    },
+    {
       id: "aihubmix",
       name: "AiHubMix",
       providerId: "aihubmix",
