@@ -5,7 +5,7 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
-const ADDON_VERSION := "0.4.1"
+const ADDON_VERSION := "0.5.0"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
 const CONNECT_TIMEOUT_SEC := 1.2
@@ -14,6 +14,14 @@ const FALLBACK_PORT_END_INCLUSIVE := 8774
 const DEFAULT_RUN_WAIT_MS := 3000
 const MAX_RUN_WAIT_MS := 15000
 const MAX_PLAY_ERRORS := 50
+## 1.2：lint 失败文件走 --check-only 子进程取行号的超时（含 Godot 冷启动）。
+const LINT_CHECK_ONLY_TIMEOUT_MS := 30_000
+## 1.2：export_project 子进程总超时（大项目出包可能数分钟）。
+const EXPORT_TIMEOUT_MS := 300_000
+## 1.2：find_unused_resources 视为文本并扫描引用的扩展名（其余按二进制跳过）。
+const SCAN_TEXT_EXTENSIONS := ["tscn", "tres", "res", "gd", "gdshader", "cfg", "json", "txt", "md", "godot", "svg", "css", "glsl"]
+## 1.2：未使用资源扫描的候选扩展名（场景 / 脚本 / 资源）。
+const RESOURCE_EXTENSIONS := ["tscn", "tres", "res", "gd", "gdshader"]
 ## 每秒检查一次 endpoint 文件 mtime；变更或消失时立即重解析并重连。
 ## Godot 4 无 inotify 绑定，1s 轮询是跨平台最稳的方案。
 const ENDPOINT_POLL_SEC := 1.0
@@ -47,6 +55,12 @@ var _debugger: EditorDebuggerPlugin
 var _play_errors: Array = [] # [{ severity, message, time_ms }, ...]
 var _pending_run: Dictionary = {} # { id, wait_ms, start_ms, was_playing }
 
+# --- 1.2: export / breakpoints ---
+## 进行中的导出子进程（{ id, pid, log_path, out_path, start_ms, timeout_ms }）。
+var _pending_export: Dictionary = {}
+## 已设置的编辑器断点（path → { line, condition }）；会话启动时自动重放。
+var _breakpoints: Dictionary = {}
+
 # =============================================================================
 # Lifecycle
 # =============================================================================
@@ -70,6 +84,7 @@ func _exit_tree() -> void:
 
 func _process(_delta: float) -> void:
 	_tick_pending_run()
+	_tick_pending_export()
 	_maybe_poll_endpoint(_delta)
 	# Do not poll STATUS_NONE — Godot errors with "_sock.is_null() || !_sock->is_open()".
 	var status := _peer.get_status()
@@ -125,7 +140,7 @@ func _setup_debugger() -> void:
 		push_warning("X-agent RPC: failed to instantiate rpc_debugger.gd")
 		return
 	if _debugger.has_method("configure"):
-		_debugger.configure(Callable(self, "append_play_error"))
+		_debugger.configure(Callable(self, "append_play_error"), Callable(self, "get_pending_breakpoints"))
 	add_debugger_plugin(_debugger)
 
 func _teardown_debugger() -> void:
@@ -445,7 +460,7 @@ func _serialize_node(node: Node, max_depth: int, depth: int) -> Dictionary:
 	return out
 
 func _script_path_of(node: Node) -> String:
-	var script := node.get_script()
+	var script: Script = node.get_script()
 	if script == null:
 		return ""
 	return str(script.resource_path)
@@ -472,6 +487,295 @@ func _capture_node_properties(scene_path: String, node_path: String) -> Dictiona
 				"hint": str(p.get("hint", "")),
 			})
 	return {"path": scene_path, "node_path": node_path, "properties": props}
+
+# =============================================================================
+# 1.2 扩展：项目配置读写 / GDScript lint / 资源治理 / 导出 / 调试器
+# =============================================================================
+
+func _read_text_file(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	return file.get_as_text()
+
+func _get_project_setting(key: String) -> Dictionary:
+	if not ProjectSettings.has_setting(key):
+		return {"exists": false, "key": key}
+	return {"exists": true, "key": key, "value": ProjectSettings.get_setting(key)}
+
+func _set_project_setting(key: String, value) -> Dictionary:
+	ProjectSettings.set_setting(key, value)
+	var err := ProjectSettings.save()
+	if err != OK:
+		return {"saved": false, "key": key, "error": "ProjectSettings.save failed: %s" % error_string(err)}
+	return {"saved": true, "key": key}
+
+## Godot 4 无公开的 parse error 细节 API（Script.reload 只给错误码），
+## 失败文件用 --check-only 子进程补全行号；子进程不可用则退回错误码文案。
+func _lint_scripts(paths: Array) -> Dictionary:
+	var files: Array = []
+	for raw in paths:
+		var path := str(raw).strip_edges()
+		if path == "" or not path.ends_with(".gd"):
+			continue
+		if not FileAccess.file_exists(path):
+			files.append({"path": path, "ok": false, "issues": [{"line": 0, "column": 0, "message": "file not found", "severity": "error"}]})
+			continue
+		files.append(_lint_script(path))
+	return {"files": files}
+
+func _lint_script(path: String) -> Dictionary:
+	var script: GDScript = GDScript.new()
+	script.source_code = _read_text_file(path)
+	var err := script.reload()
+	# 编辑器上下文里无 resource_path 的新脚本 can_instantiate() 恒为 false，
+	# 因此只以 reload() 的错误码判定；细节交给 _check_only_details 补全。
+	if err == OK:
+		return {"path": path, "ok": true, "issues": []}
+	var issues: Array = []
+	# reload() 的错误码在 4.4+ 之间有重排，不可依赖具体数值 → 一律用子进程补细节
+	var detail := _check_only_details(path)
+	if detail.is_empty():
+		issues.append({"line": 0, "column": 0, "message": error_string(int(err)), "severity": "error"})
+	else:
+		issues = detail
+	return {"path": path, "ok": false, "issues": issues}
+
+func _check_only_details(path: String) -> Array:
+	var exe := OS.get_executable_path()
+	if exe == "":
+		return []
+	var output := []
+	var exit_code := OS.execute(exe, ["--headless", "--path", ProjectSettings.globalize_path("res://"), "--check-only", "-s", path], output, true, LINT_CHECK_ONLY_TIMEOUT_MS)
+	if exit_code == 0 and output.is_empty():
+		return []
+	var issues: Array = []
+	# 输出形如 "SCRIPT ERROR: Parse Error: <msg>\n   at: ... (res://foo.gd:4)"；
+	# Windows 上 stdout/stderr 会合并成单个大块，需要逐行拆分。
+	var kind_re := RegEx.new()
+	kind_re.compile("^SCRIPT ERROR: (Parse Error|Compile Error|Warning)")
+	var line_re := RegEx.new()
+	# res:// 路径本身含冒号，前缀字符类不能排除 ':'
+	line_re.compile("\\(([^()]*):(\\d+)\\)")
+	var lines: Array = []
+	for raw in output:
+		lines.append_array(str(raw).split("\n"))
+	for i in lines.size():
+		var s := str(lines[i]).strip_edges()
+		var kind_match := kind_re.search(s)
+		if kind_match == null:
+			continue
+		var message := s.substr("SCRIPT ERROR: ".length(), 300)
+		var line := 0
+		# 位置信息在下一行 "   at: GDScript::reload (res://foo.gd:N)"
+		if i + 1 < lines.size():
+			var m := line_re.search(str(lines[i + 1]))
+			if m != null and m.get_group_count() >= 2:
+				line = int(m.get_string(2))
+		var severity := "warning" if kind_match.get_string(1) == "Warning" else "error"
+		issues.append({"line": line, "column": 0, "message": message, "severity": severity})
+	return issues
+
+func _collect_files(root: String) -> Array[String]:
+	var out: Array[String] = []
+	var dir := DirAccess.open(root)
+	if dir == null:
+		return out
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while name != "":
+		if name == "." or name == "..":
+			name = dir.get_next()
+			continue
+		# 编辑器缓存目录不计入资源治理
+		if name == ".godot":
+			name = dir.get_next()
+			continue
+		var full := root.path_join(name)
+		if dir.current_is_dir():
+			out.append_array(_collect_files(full))
+		else:
+			out.append(full)
+		name = dir.get_next()
+	dir.list_dir_end()
+	return out
+
+func _find_unused_resources(root: String) -> Dictionary:
+	var scan_root := root if root != "" else "res://"
+	var files := _collect_files(scan_root)
+	var referenced := {}
+	var candidates: Array[String] = []
+	var res_re := RegEx.new()
+	res_re.compile("res://[\\w.\\-/]+")
+	var uid_re := RegEx.new()
+	uid_re.compile("uid://[\\w]+")
+	var class_name_re := RegEx.new()
+	class_name_re.compile("^\\s*class_name\\s+[A-Za-z_][A-Za-z0-9_]*")
+	for path in files:
+		var ext := path.get_extension().to_lower()
+		var is_candidate := ext in RESOURCE_EXTENSIONS
+		if not is_candidate and not (ext in SCAN_TEXT_EXTENSIONS):
+			continue
+		var text := _read_text_file(path)
+		if text == "":
+			continue
+		# 二进制资源（.res 可能以二进制形式保存）跳过
+		if text.contains(String.chr(0)):
+			continue
+		if is_candidate:
+			# addons/ 下的插件文件互为引用（如 plugin.cfg → plugin.gd 无 res:// 前缀），
+			# 不计入候选，避免误报「未使用」；仍参与引用扫描。
+			if not ("/addons/" in path):
+				candidates.append(path)
+			if ext == "gd" and class_name_re.search(text) != null:
+				# class_name 脚本可通过全局类名被间接引用，无法静态追踪 → 视为已引用
+				referenced[path] = true
+		for m in res_re.search_all(text):
+			var ref := m.get_string()
+			if ref != "res://":
+				referenced[ref] = true
+		for m in uid_re.search_all(text):
+			var uid_path: String = ResourceUID.uid_to_path(m.get_string())
+			if uid_path != "":
+				referenced[uid_path] = true
+	var unused: Array = []
+	for c in candidates:
+		if not referenced.has(c):
+			var kind := "script"
+			if c.ends_with(".tscn"):
+				kind = "scene"
+			elif c.ends_with(".tres") or c.ends_with(".res"):
+				kind = "resource"
+			unused.append({"path": c, "kind": kind})
+	return {"root": scan_root, "scannedFiles": files.size(), "candidates": candidates.size(), "unused": unused}
+
+func _list_export_presets() -> Array[String]:
+	var presets: Array[String] = []
+	var path := ProjectSettings.globalize_path("res://export_presets.cfg")
+	if not FileAccess.file_exists(path):
+		return presets
+	for line in _read_text_file(path).split("\n"):
+		var s := line.strip_edges()
+		if s.begins_with("name="):
+			presets.append(s.substr(5).strip_edges().trim_prefix("\"").trim_suffix("\""))
+	return presets
+
+## 启动导出子进程（异步，响应由 _tick_pending_export 发送）。
+## 返回 true 表示已接管（含直接同步发错误响应的情况）。
+func _start_export(id: String, preset: String, output_dir: String, debug: bool) -> bool:
+	var presets := _list_export_presets()
+	if not presets.has(preset):
+		_send({"id": id, "ok": false, "error": "unknown export preset: %s (available: %s)" % [preset, ", ".join(presets)]})
+		return true
+	var exe := OS.get_executable_path()
+	if exe == "":
+		_send({"id": id, "ok": false, "error": "cannot locate the running Godot executable"})
+		return true
+	var project_dir := ProjectSettings.globalize_path("res://")
+	var out_path := output_dir
+	if out_path.begins_with("res://"):
+		out_path = ProjectSettings.globalize_path(out_path)
+	elif not out_path.is_absolute_path():
+		out_path = project_dir.path_join(out_path)
+	if out_path.ends_with("/") or out_path == "":
+		out_path = out_path.trim_suffix("/")
+		var exe_name := str(ProjectSettings.get_setting("application/config/name", "game")).replace(" ", "_")
+		out_path = out_path.path_join("%s.exe" % exe_name)
+	DirAccess.make_dir_recursive_absolute(out_path.get_base_dir())
+	var log_path := OS.get_cache_dir().path_join("x-agent-export-%s.log" % id)
+	var flag := "--export-debug" if debug else "--export-release"
+	var args := PackedStringArray(["--headless", "--path", project_dir, flag, preset, out_path, "--log-file", log_path])
+	var pid := OS.create_process(exe, args)
+	if pid <= 0:
+		return false
+	_pending_export = {"id": id, "pid": pid, "log_path": log_path, "out_path": out_path, "start_ms": Time.get_ticks_msec(), "timeout_ms": EXPORT_TIMEOUT_MS}
+	return true
+
+func _tick_pending_export() -> void:
+	if _pending_export.is_empty():
+		return
+	var pid: int = int(_pending_export.get("pid", 0))
+	var id := str(_pending_export.get("id", ""))
+	var start_ms: int = int(_pending_export.get("start_ms", Time.get_ticks_msec()))
+	var timeout_ms: int = int(_pending_export.get("timeout_ms", EXPORT_TIMEOUT_MS))
+	var elapsed := Time.get_ticks_msec() - start_ms
+	var running := OS.is_process_running(pid)
+	var done := false
+	var timed_out := false
+	if not running:
+		done = true
+	elif elapsed >= timeout_ms:
+		timed_out = true
+		OS.kill(pid)
+		done = true
+	if not done:
+		return
+	var log := _read_text_file(str(_pending_export.get("log_path", "")))
+	var out_path := str(_pending_export.get("out_path", ""))
+	_pending_export = {}
+	var errors: Array[String] = []
+	for line in log.split("\n"):
+		var s := line.strip_edges()
+		if s.begins_with("ERROR") or s.begins_with("SCRIPT ERROR"):
+			errors.append(s)
+	var success := (not timed_out) and errors.is_empty() and FileAccess.file_exists(out_path)
+	_send({
+		"id": id,
+		"ok": true,
+		"result": {
+			"ok": success,
+			"timedOut": timed_out,
+			"outputPath": out_path,
+			"errors": errors.slice(0, 20),
+			"logTail": log.substr(max(0, log.length() - 2000)),
+		},
+	})
+
+func _debugger_state() -> Dictionary:
+	var sessions: Array = []
+	var break_count := 0
+	if _debugger != null and _debugger.has_method("snapshot"):
+		var snap: Dictionary = _debugger.snapshot()
+		sessions = snap.get("sessions", [])
+		break_count = int(snap.get("breakCount", 0))
+	return {
+		"playing": EditorInterface.is_playing_scene(),
+		"playingScene": EditorInterface.get_playing_scene(),
+		"sessions": sessions,
+		"breakCount": break_count,
+		"pendingBreakpoints": _breakpoints.size(),
+		"errors": get_play_errors_snapshot(),
+	}
+
+func _set_breakpoint(file: String, line: int, condition: String, enabled: bool) -> Dictionary:
+	if not file.begins_with("res://"):
+		if FileAccess.file_exists(file):
+			file = ProjectSettings.localize_path(file)
+	if not FileAccess.file_exists(file):
+		return {"ok": false, "error": "file not found: %s" % file}
+	if enabled:
+		_breakpoints[file] = {"line": line, "condition": condition}
+	else:
+		_breakpoints.erase(file)
+	var applied := 0
+	if _debugger != null and _debugger.has_method("apply_breakpoint"):
+		applied = _debugger.apply_breakpoint(file, line, enabled)
+	return {
+		"ok": true,
+		"file": file,
+		"line": line,
+		"enabled": enabled,
+		"appliedSessions": applied,
+		# Godot 4 断点 API 不支持条件表达式，仅在提示语中说明
+		"conditionIgnored": enabled and condition != "",
+	}
+
+## 供 rpc_debugger.gd 在会话启动时重放未应用的断点。
+func get_pending_breakpoints() -> Array:
+	var out: Array = []
+	for file in _breakpoints:
+		out.append({"file": file, "line": int(_breakpoints[file]["line"])})
+	return out
 
 func _handle_line(raw: String) -> void:
 	var data = JSON.parse_string(raw)
@@ -542,6 +846,52 @@ func _handle_line(raw: String) -> void:
 				response = {"id": id, "ok": false, "error": "path and node_path required"}
 			else:
 				response["result"] = _capture_node_properties(scene_path, node_path)
+
+		"get_project_setting":
+			var cfg_key := str(data.get("key", ""))
+			if cfg_key == "":
+				response = {"id": id, "ok": false, "error": "key required"}
+			else:
+				response["result"] = _get_project_setting(cfg_key)
+
+		"set_project_setting":
+			var set_key := str(data.get("key", ""))
+			if set_key == "":
+				response = {"id": id, "ok": false, "error": "key required"}
+			else:
+				response["result"] = _set_project_setting(set_key, data.get("value"))
+
+		"lint_scripts":
+			var lint_paths = data.get("paths", [])
+			if typeof(lint_paths) != TYPE_ARRAY or lint_paths.is_empty():
+				response = {"id": id, "ok": false, "error": "paths (non-empty array) required"}
+			else:
+				response["result"] = _lint_scripts(lint_paths)
+
+		"find_unused_resources":
+			response["result"] = _find_unused_resources(str(data.get("root", "res://")))
+
+		"export_project":
+			var preset := str(data.get("preset", ""))
+			var out_dir := str(data.get("output_dir", ""))
+			if preset == "" or out_dir == "":
+				response = {"id": id, "ok": false, "error": "preset and output_dir required"}
+			elif not _pending_export.is_empty():
+				response = {"id": id, "ok": false, "error": "export already in progress"}
+			elif not _start_export(id, preset, out_dir, bool(data.get("debug", false))):
+				response = {"id": id, "ok": false, "error": "failed to start export process"}
+			return # async — response sent from _tick_pending_export
+
+		"get_debugger_state":
+			response["result"] = _debugger_state()
+
+		"set_breakpoint":
+			var bp_file := str(data.get("file", ""))
+			var bp_line := int(data.get("line", 0))
+			if bp_file == "" or bp_line < 1:
+				response = {"id": id, "ok": false, "error": "file and line (>=1) required"}
+			else:
+				response["result"] = _set_breakpoint(bp_file, bp_line, str(data.get("condition", "")), not bool(data.get("remove", false)))
 
 		"run_current_scene":
 			if _edited_scene_path() == "" and EditorInterface.get_edited_scene_root() == null:

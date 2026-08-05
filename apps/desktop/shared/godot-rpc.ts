@@ -22,6 +22,12 @@ export const GODOT_RPC_MAX_WAIT_MS = 15000;
 export const GODOT_RPC_BASE_TIMEOUT_MS = 8000;
 
 /**
+ * 项目导出的最长等待时间。
+ * `export_project` 走 Godot 子进程 `--headless --export-release`，大项目出包可达数分钟。
+ */
+export const GODOT_RPC_EXPORT_TIMEOUT_MS = 5 * 60_000;
+
+/**
  * 桥接启动后的重连宽限期。
  * 期间就绪清单不提示「未连接」，留给已在运行的 Godot 插件完成重连。
  */
@@ -51,7 +57,15 @@ export type GodotRpcCall =
   | { method: "play_main_scene"; wait_ms?: number }
   | { method: "import_resources"; paths?: string[] }
   | { method: "get_play_errors"; clear?: boolean }
-  | { method: "stop_scene" };
+  | { method: "stop_scene" }
+  // 1.2 扩展：调试器 / 资源治理 / 导出 / 配置读写 / lint
+  | { method: "get_debugger_state" }
+  | { method: "set_breakpoint"; file: string; line: number; condition?: string; remove?: boolean }
+  | { method: "find_unused_resources"; root?: string }
+  | { method: "export_project"; preset: string; output_dir: string; debug?: boolean }
+  | { method: "get_project_setting"; key: string }
+  | { method: "set_project_setting"; key: string; value: unknown }
+  | { method: "lint_scripts"; paths: string[] };
 
 /** Methods the renderer / tools may invoke over Godot RPC. */
 export const GODOT_RPC_ALLOWED_METHODS = [
@@ -68,6 +82,14 @@ export const GODOT_RPC_ALLOWED_METHODS = [
   "import_resources",
   "get_play_errors",
   "stop_scene",
+  // 1.2 扩展：调试器 / 资源治理 / 导出 / 配置读写 / lint
+  "get_debugger_state",
+  "set_breakpoint",
+  "find_unused_resources",
+  "export_project",
+  "get_project_setting",
+  "set_project_setting",
+  "lint_scripts",
 ] as const;
 
 export type GodotRpcMethodName = (typeof GODOT_RPC_ALLOWED_METHODS)[number];
@@ -167,8 +189,16 @@ export function godotRpcTimeoutMs(call: GodotRpcCall): number {
       "wait_ms" in call ? clampGodotRunWaitMs(call.wait_ms) : GODOT_RPC_DEFAULT_WAIT_MS;
     return wait + GODOT_RPC_BASE_TIMEOUT_MS;
   }
-  // Resource import / filesystem scan can be slow on large projects.
-  if (call.method === "import_resources") {
+  // 项目导出走 Godot 子进程出包，最慢档（5 分钟）。
+  if (call.method === "export_project") {
+    return GODOT_RPC_EXPORT_TIMEOUT_MS;
+  }
+  // 资源导入 / 全项目扫描 / 批量脚本解析可能较慢。
+  if (
+    call.method === "import_resources" ||
+    call.method === "find_unused_resources" ||
+    call.method === "lint_scripts"
+  ) {
     return GODOT_RPC_BASE_TIMEOUT_MS * 4;
   }
   return GODOT_RPC_BASE_TIMEOUT_MS;

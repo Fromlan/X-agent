@@ -200,6 +200,14 @@ export const GODOT_TOOLS = [
   // 1.2 扩展：场景内省（只读）
   "godot_get_scene_tree",
   "godot_get_node_properties",
+  // 1.2 扩展：调试器 / 资源治理 / 导出 / 配置读写 / lint
+  "godot_get_debugger_state",
+  "godot_set_breakpoint",
+  "godot_find_unused_resources",
+  "godot_export_project",
+  "godot_get_project_setting",
+  "godot_set_project_setting",
+  "godot_lint_scripts",
 ] as const;
 
 export type GodotToolName = (typeof GODOT_TOOLS)[number];
