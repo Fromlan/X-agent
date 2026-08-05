@@ -11,10 +11,9 @@
     "types": [
       "node"
     ],
-    "baseUrl": ".",
     "paths": {
       "@shared/*": [
-        "shared/*"
+        "./shared/*"
       ]
     }
   },
