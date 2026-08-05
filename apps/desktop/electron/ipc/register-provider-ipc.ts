@@ -1,5 +1,4 @@
 import type { IpcMain } from "electron";
-import { activateProviderAndApply } from "../agent/provider-activate";
 import {
   deleteProviderProfile,
   getProviderProfile,
@@ -47,12 +46,6 @@ export function registerProviderIpc(
       }
       return result;
     },
-  );
-  // Compat: enable + sync + apply session model.
-  ipcMain.handle(IPC_CHANNELS.activateProviderProfile, async (_e, id: string) =>
-    activateProviderAndApply(id, (provider, model) =>
-      sessionHost.applyActivatedProvider(provider, model),
-    ),
   );
   ipcMain.handle(IPC_CHANNELS.listProviderPresets, async () => listProviderPresets());
   ipcMain.handle(IPC_CHANNELS.importExistingProviderProfiles, async () =>

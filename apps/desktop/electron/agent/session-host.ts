@@ -608,54 +608,6 @@ export class SessionHost {
   }
 
   /**
-   * After provider profile activation: reload credentials/models and optionally switch session model.
-   */
-  async applyActivatedProvider(
-    provider: string,
-    modelId: string,
-  ): Promise<{ ok: boolean; error?: string }> {
-    try {
-      await this.reloadRuntime();
-      if (this.bundle) {
-        const runtime = await this.ensureRuntime();
-        const model = runtime.getModel(provider, modelId);
-        if (model) {
-          await this.bundle.session.setModel(model);
-          this.emit({
-            type: "session_info",
-            sessionId: this.bundle.session.sessionId,
-            cwd: this.bundle.cwd,
-            model: modelFromSession(this.bundle.session),
-            thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
-            sessionPath: this.bundle.sessionPath,
-          });
-        } else {
-          // 重载成功但运行时没找到模型:明确告诉用户,避免"已启用"假象。
-          const current = modelFromSession(this.bundle.session);
-          this.emitReplaceableNotice(
-            "model",
-            `已激活档案,但会话模型仍为 ${current?.id ?? "未设置"}（未找到 ${provider}/${modelId}）`,
-            "warn",
-          );
-        }
-      }
-      this.emitReplaceableNotice(
-        "model",
-        `已启用供应商 ${provider} / ${modelId}`,
-      );
-      return { ok: true };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      this.emitReplaceableNotice(
-        "model",
-        `启用供应商失败：${error}`,
-        "error",
-      );
-      return { ok: false, error };
-    }
-  }
-
-  /**
    * Status-style notices that should not stack in the transcript.
    * Same replaceKey replaces the previous bubble (mode / model / tools / …).
    */

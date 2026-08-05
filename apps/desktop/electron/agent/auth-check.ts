@@ -71,8 +71,3 @@ export async function checkAuth(): Promise<AuthStatus> {
 export function invalidateAuthCache(): void {
   cachedAuth = null;
 }
-
-/** @deprecated Use {@link invalidateAuthCache}. Kept for test compatibility. */
-export function resetAuthCacheForTests(): void {
-  cachedAuth = null;
-}

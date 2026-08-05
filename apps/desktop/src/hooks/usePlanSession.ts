@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlanFileLocation } from "@shared/ipc";
+import { WRITE_PLAN_TOOL } from "@shared/mode-tools";
 import { setRightPanelTab } from "../stores/right-panel-store";
-
-const WRITE_PLAN_TOOL = "write_plan";
 
 export function isWritePlanTool(name: string): boolean {
   return name === WRITE_PLAN_TOOL;
@@ -35,21 +34,6 @@ export function usePlanSession({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
-
-  const load = useCallback(async (_path: string) => {
-    setLoading(true);
-    setError(null);
-    const res = await window.xAgent.plan.getContent();
-    setLoading(false);
-    if (!res.ok || res.markdown == null || !res.path) {
-      setError(res.error ?? "无法读取计划");
-      return;
-    }
-    setMarkdown(res.markdown);
-    setLoadedPath(res.path);
-    setLocation(res.location ?? null);
-    setDirty(false);
-  }, []);
 
   useEffect(() => {
     if (!planPath) {
@@ -174,7 +158,6 @@ export function usePlanSession({
     saving,
     error,
     hint,
-    load,
     save,
     saveToWorkspace,
     clear,

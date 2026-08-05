@@ -370,7 +370,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         return;
       }
       setMessage(
-        result.syncedToPi || result.syncedActive
+        result.syncedToPi
           ? `已保存：${result.profile.name}（已启用，模型在顶栏）`
           : `已保存：${result.profile.name}`,
       );
@@ -388,10 +388,6 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     setError(null);
     setMessage(null);
     try {
-      if (typeof window.xAgent.setProviderProfileEnabled !== "function") {
-        setError("当前版本缺少启用开关接口，请完全退出并重启应用");
-        return;
-      }
       const result = await window.xAgent.setProviderProfileEnabled(
         profile.id,
         enabled,

@@ -1,9 +1,4 @@
 import {
-  applySkillSlashInsert,
-  detectSkillSlash,
-  filterSkillsByQuery,
-} from "../src/lib/skill-slash";
-import {
   applySlashItemInsert,
   detectSlashFragment,
   filterSlashItemsByQuery,
@@ -17,57 +12,61 @@ function assert(cond: boolean, msg: string): void {
 
 // detect — start of input
 {
-  const m = detectSkillSlash("/", 1);
+  const m = detectSlashFragment("/", 1);
   assert(m !== null && m.query === "" && m.start === 0, "bare slash");
 }
 
 {
-  const m = detectSkillSlash("/x-gr", 5);
+  const m = detectSlashFragment("/x-gr", 5);
   assert(m !== null && m.query === "x-gr" && m.start === 0, "query after slash");
 }
 
 {
-  const m = detectSkillSlash("hello /skill", 12);
+  const m = detectSlashFragment("hello /skill", 12);
   assert(m !== null && m.query === "skill" && m.start === 6, "after space");
 }
 
 {
-  const m = detectSkillSlash("hello/skill", 11);
+  const m = detectSlashFragment("hello/skill", 11);
   assert(m === null, "no slash without boundary");
 }
 
 {
-  const m = detectSkillSlash("/x-grill more", 13);
+  const m = detectSlashFragment("/x-grill more", 13);
   assert(m === null, "space ends slash fragment at cursor end");
 }
 
 {
-  const m = detectSkillSlash("/x-grill more", 8);
+  const m = detectSlashFragment("/x-grill more", 8);
   assert(m !== null && m.query === "x-grill", "cursor mid-fragment after /x-grill");
 }
 
-// filter
+// filter (skills as slash items)
 {
-  const skills = [
-    { name: "x-grill", description: "Interview the user" },
-    { name: "godot-docs-4-7", description: "Godot docs distilled reference" },
+  const skills: SessionSlashItem[] = [
+    { name: "x-grill", description: "Interview the user", source: "skill" },
+    { name: "godot-docs-4-7", description: "Godot docs distilled reference", source: "skill" },
   ];
-  assert(filterSkillsByQuery(skills, "").length === 2, "empty query");
+  assert(filterSlashItemsByQuery(skills, "").length === 2, "empty query");
   assert(
-    filterSkillsByQuery(skills, "grill")[0]?.name === "x-grill",
+    filterSlashItemsByQuery(skills, "grill")[0]?.name === "x-grill",
     "filter name",
   );
   assert(
-    filterSkillsByQuery(skills, "docs")[0]?.name === "godot-docs-4-7",
+    filterSlashItemsByQuery(skills, "docs")[0]?.name === "godot-docs-4-7",
     "filter description",
   );
-  assert(filterSkillsByQuery(skills, "zzz").length === 0, "no match");
+  assert(filterSlashItemsByQuery(skills, "zzz").length === 0, "no match");
 }
 
 // insert
 {
-  const match = detectSkillSlash("/x", 2)!;
-  const out = applySkillSlashInsert("/x", match, "x-grill");
+  const match = detectSlashFragment("/x", 2)!;
+  const out = applySlashItemInsert("/x", match, {
+    name: "x-grill",
+    description: "",
+    source: "skill",
+  });
   assert(out.value === "/skill:x-grill ", "insert replaces fragment");
   assert(out.cursor === "/skill:x-grill ".length, "cursor after token");
 }
@@ -75,9 +74,13 @@ function assert(cond: boolean, msg: string): void {
 {
   const value = "please /x then";
   // cursor right after /x (index 9)
-  const match = detectSkillSlash(value, 9)!;
+  const match = detectSlashFragment(value, 9)!;
   assert(match.query === "x", "partial in middle");
-  const out = applySkillSlashInsert(value, match, "x-tdd");
+  const out = applySlashItemInsert(value, match, {
+    name: "x-tdd",
+    description: "",
+    source: "skill",
+  });
   assert(out.value === "please /skill:x-tdd  then", "preserves suffix");
 }
 

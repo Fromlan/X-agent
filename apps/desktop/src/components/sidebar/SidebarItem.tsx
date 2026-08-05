@@ -1,4 +1,5 @@
 import {
+  type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
@@ -23,7 +24,7 @@ interface Props {
   onResume: (path: string) => void;
   onContextMenu: (e: ReactMouseEvent) => void;
   onEditKeyDown: (e: ReactKeyboardEvent<HTMLInputElement>) => void;
-  onBlur: () => void;
+  onBlur: (e: ReactFocusEvent<HTMLInputElement>) => void;
 }
 
 export function SidebarItem({

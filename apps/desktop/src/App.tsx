@@ -14,7 +14,6 @@ import type {
   AuthStatus,
   BashCheckResult,
   ClientPrefs,
-  ColorMode,
   GitCheckResult,
   GoalInfo,
   ModelInfo,
@@ -22,10 +21,9 @@ import type {
   PrefsRecoveryNotice,
   SecretCodecStatus,
   SessionInfo,
-  ThemeId,
   ThinkingLevel,
 } from "@shared/ipc";
-import { GODOT_TOOLS, isRestorableGoalStatus } from "@shared/ipc";
+import { GODOT_TOOLS, THINKING_LEVELS, isRestorableGoalStatus } from "@shared/ipc";
 import { dbgLog, dbgTimer } from "@shared/debug-log";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
@@ -84,20 +82,7 @@ import {
   getSessionUsageStoreVersion,
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
-
-const THINKING_LEVELS: ThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
-function applyTheme(themeId: ThemeId, colorMode: ColorMode): void {
-  document.body.dataset.theme = `${themeId}-${colorMode}`;
-}
+import { applyTheme } from "./lib/theme";
 
 export default function App() {
   const confirm = useConfirm();
@@ -131,7 +116,10 @@ export default function App() {
   // Ref-captured callback so the router effect stays stable; plain state for render.
   const apiStatusRef = useRef<(status: ApiStatus) => void>(() => undefined);
   const [apiStatus, setApiStatus] = useState<ApiStatus>(null);
-  apiStatusRef.current = (next) => setApiStatus(next);
+  // 渲染期写 ref 在并发渲染下可能中断；改为 effect 同步 setter。
+  useEffect(() => {
+    apiStatusRef.current = setApiStatus;
+  });
   // Tick once a second so the "已等待 Ns" counter re-renders while waiting.
   const [, setApiTick] = useState(0);
   useEffect(() => {

@@ -4,6 +4,7 @@ import { SettingsNotice, useAutoClearNotice } from "../SettingsNotice";
 import {
   THEME_IDS,
   THEME_LABELS,
+  THINKING_LEVELS,
   type BashCheckResult,
   type BashLivenessResult,
   type ClientPrefs,
@@ -18,16 +19,6 @@ import {
   NODE_JS_DOWNLOAD_URL,
 } from "@shared/runtime-deps";
 import { useAppUpdate } from "../../hooks/useAppUpdate";
-
-const THINKING_LEVELS: ThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
 
 type Props = {
   open: boolean;
