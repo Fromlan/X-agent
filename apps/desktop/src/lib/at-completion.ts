@@ -24,7 +24,7 @@ export type AtMatch = {
   query: string;
 };
 
-const PATH_TAIL = /[A-Za-z0-9_./\\-]*/;
+const PATH_TAIL = /^[A-Za-z0-9_./\\-]+$/;
 
 /**
  * 探测光标前是否处于 @ 补全状态。
@@ -158,6 +158,6 @@ export function atCategoryLabel(category: AtCategory): string {
 
 /** 检测一个输入片段是否「看起来像」path 候选（用于渐进展示） */
 export function looksLikePathCandidate(fragment: string): boolean {
-  // 不含空白、不含冒号（非 URL）、允许字母数字与 ./-\_
-  return PATH_TAIL.test(fragment) && !/:\/\//.test(fragment);
+  // 全串仅由允许字符组成（无空白 / 无冒号 URL），且非空。
+  return PATH_TAIL.test(fragment) && !fragment.includes("://");
 }
