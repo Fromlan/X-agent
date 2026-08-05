@@ -597,7 +597,8 @@ export class SessionHost {
     if (this.modelRuntime) {
       try {
         reloadAuthStorageCache(this.modelRuntime);
-        await this.modelRuntime.reloadConfig();
+        // SDK 0.83: reloadConfig 已移除，refresh() 为正式替代（重读 models.json + 重建快照）。
+        await this.modelRuntime.refresh();
         return;
       } catch {
         // fall through to recreate
