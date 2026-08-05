@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GodotRpcStatusDto } from "@shared/ipc";
 import type { ChatItem } from "../../stores/chat-store";
 import { selectToolInPanel } from "../../stores/right-panel-store";
@@ -24,7 +24,7 @@ export function GodotTab({ active, items }: Props) {
   const [pingOut, setPingOut] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       const s = await window.xAgent.godotRpcStatus();
       setStatus(s);
@@ -32,14 +32,14 @@ export function GodotTab({ active, items }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!active) return;
     void refresh();
     const id = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(id);
-  }, [active]);
+  }, [active, refresh]);
 
   const lastGodotTool = useMemo(() => {
     const tools = items.filter(

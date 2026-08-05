@@ -5,8 +5,6 @@ import {
 } from "node:path";
 import { resolveInsideCwd } from "./cwd-sandbox";
 
-export { resolveInsideCwd } from "./cwd-sandbox";
-
 const IGNORED_DIR_NAMES = new Set([
   "node_modules",
   ".git",

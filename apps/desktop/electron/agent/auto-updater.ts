@@ -13,8 +13,6 @@ import {
   type GithubFeed,
 } from "./update-feed";
 
-export { feedMessage, githubReleasesUrl } from "./update-feed";
-
 /** Delay before first silent check after packaged app ready. */
 const STARTUP_CHECK_DELAY_MS = 8_000;
 

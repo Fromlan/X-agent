@@ -4,18 +4,16 @@ import type { PluginsState } from "./usePluginsState";
 
 interface Props {
   state: PluginsState;
-  cwd: string | null;
   allSkillsEnabled: boolean;
   onNewClick: () => void;
 }
 
 export function PluginsToolbar({
   state,
-  cwd: _cwd,
   allSkillsEnabled,
   onNewClick,
 }: Props) {
-  const { busy, refresh, isPackageTab, prefs } = state;
+  const { busy, refresh, isPackageTab } = state;
   return (
     <header className="plugins-toolbar">
       <div className="plugins-title">
@@ -24,7 +22,6 @@ export function PluginsToolbar({
       <div className="plugins-toolbar-right">
         <PluginSkillToggle
           state={state}
-          prefs={prefs}
           allSkillsEnabled={allSkillsEnabled}
         />
         <button

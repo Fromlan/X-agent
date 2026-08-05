@@ -18,10 +18,7 @@ export { listProviderPresets } from "./provider-presets";
 
 export {
   activateProviderProfile,
-  deactivateProviderProfile,
-  markProfileActiveForModel,
   pruneProviderIdFromPi,
-  syncActiveProfileToPi,
   syncProfileToPi,
 } from "./provider-pi-sync";
 

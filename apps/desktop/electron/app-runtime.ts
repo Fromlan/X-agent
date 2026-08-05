@@ -200,9 +200,6 @@ function registerIpc(
   ipcMain.handle(IPC_CHANNELS.listPlugins, async (_e, cwd?: string | null) =>
     listPlugins(cwd ?? cwdOf()),
   );
-  ipcMain.handle(IPC_CHANNELS.listSessionSkills, async () =>
-    host.listSessionSkills(),
-  );
   ipcMain.handle(IPC_CHANNELS.listSessionSlashItems, async () =>
     host.listSessionSlashItems(),
   );

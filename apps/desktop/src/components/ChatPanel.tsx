@@ -21,7 +21,10 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useSlashMenu } from "../hooks/useSlashMenu";
-import { useAtCompletion } from "../hooks/useAtCompletion";
+import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
+
+/** @-补全 path 候选暂未接入 file-tree IPC；空数组常量化避免每次渲染新建引用。 */
+const EMPTY_PATH_CANDIDATES: AtPathCandidate[] = [];
 
 interface Props {
   items: ChatItem[];
@@ -118,7 +121,7 @@ function ChatPanelImpl(props: Props) {
     input: props.input,
     cursor,
     disabled: composerLocked,
-    pathCandidates: [],
+    pathCandidates: EMPTY_PATH_CANDIDATES,
     skillCandidates: atSkillCandidates,
     textareaRef,
     setInput: props.setInput,

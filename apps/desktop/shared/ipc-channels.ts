@@ -40,7 +40,7 @@ export const IPC_CHANNELS = {
   compactSession: "compactSession",
   reloadResources: "reloadResources",
 
-  // prefs / environment checks (see electron/main.ts)
+  // prefs / environment checks (see electron/app-runtime.ts)
   getPrefs: "getPrefs",
   setPrefs: "setPrefs",
   checkBash: "checkBash",
@@ -52,7 +52,7 @@ export const IPC_CHANNELS = {
   checkPiCli: "checkPiCli",
   installPiCli: "installPiCli",
 
-  // project filesystem sandbox (see electron/main.ts)
+  // project filesystem sandbox (see electron/app-runtime.ts)
   listProjectDir: "listProjectDir",
   readProjectFile: "readProjectFile",
   revealInFolder: "revealInFolder",
@@ -69,11 +69,8 @@ export const IPC_CHANNELS = {
   installGodotRpcAddon: "installGodotRpcAddon",
   pickGodotScene: "pickGodotScene",
 
-  // Godot official docs cache (see electron/ipc/register-godot-ipc.ts)
-
-  // plugins (prompt / skill / extension / theme) (see electron/main.ts)
+  // plugins (prompt / skill / extension / theme) (see electron/app-runtime.ts)
   listPlugins: "listPlugins",
-  listSessionSkills: "listSessionSkills",
   listSessionSlashItems: "listSessionSlashItems",
   readPlugin: "readPlugin",
   writePlugin: "writePlugin",
@@ -87,18 +84,17 @@ export const IPC_CHANNELS = {
   upsertProviderProfile: "upsertProviderProfile",
   deleteProviderProfile: "deleteProviderProfile",
   setProviderProfileEnabled: "setProviderProfileEnabled",
-  activateProviderProfile: "activateProviderProfile",
   listProviderPresets: "listProviderPresets",
   importExistingProviderProfiles: "importExistingProviderProfiles",
   fetchProviderModels: "fetchProviderModels",
 
-  // Pi packages (see electron/main.ts)
+  // Pi packages (see electron/app-runtime.ts)
   listInstalledPackages: "listInstalledPackages",
   installPackage: "installPackage",
   uninstallPackage: "uninstallPackage",
   installGodotPiPackage: "installGodotPiPackage",
 
-  // misc / app-level (see electron/main.ts)
+  // misc / app-level (see electron/app-runtime.ts)
   openPiLogin: "openPiLogin",
   openExternalUrl: "openExternalUrl",
   getUpdateStatus: "getUpdateStatus",

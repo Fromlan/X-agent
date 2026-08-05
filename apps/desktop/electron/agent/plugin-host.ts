@@ -99,11 +99,6 @@ export function getWritablePluginRoots(cwd?: string | null): string[] {
   return roots.map((r) => resolve(r));
 }
 
-/** @deprecated Prefer getWritablePluginRoots / getReadablePluginRoots */
-export function getAllowedPluginRoots(cwd?: string | null): string[] {
-  return getWritablePluginRoots(cwd);
-}
-
 export function getReadablePluginRoots(cwd?: string | null): string[] {
   return [...getWritablePluginRoots(cwd), ...getInstalledPackageRoots().map((r) => resolve(r))];
 }
@@ -672,12 +667,4 @@ export function revealPlugin(
   }
   const reveal = existsSync(abs) ? abs : guard;
   return { ok: true, path: reveal };
-}
-
-/** Exported for tests: resolve content file for a plugin path */
-export function resolvePluginContentPath(targetPath: string): string | null {
-  const abs = resolve(targetPath);
-  const kind = detectKind(abs);
-  if (!kind) return null;
-  return contentPathFor(abs, kind);
 }

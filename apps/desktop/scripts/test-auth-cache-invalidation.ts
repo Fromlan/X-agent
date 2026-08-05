@@ -22,7 +22,6 @@ import {
 import {
   checkAuth,
   invalidateAuthCache,
-  resetAuthCacheForTests,
 } from "../electron/agent/auth-check";
 import { setAgentDirOverrideForTests } from "../electron/agent/prefs";
 
@@ -79,12 +78,10 @@ void (async () => {
     "checkAuth after upsert must re-read disk and reflect new auth.json",
   );
 
-  // —— 3. 旧别名 resetAuthCacheForTests 仍能清缓存(向后兼容) ——
-  resetAuthCacheForTests();
-  // 模拟"下一次填充会被新值覆盖",但这里不重写 auth.json,只验证清空生效。
-  // 因为模块缓存已 null,checkAuth 会重读盘,仍然返回 ok:true。
+  // —— 3. 显式 invalidate 后缓存清空,checkAuth 重读盘 ——
+  invalidateAuthCache();
   const reRead = await checkAuth();
-  assert.equal(reRead.ok, true, "resetAuthCacheForTests still invalidates");
+  assert.equal(reRead.ok, true, "invalidateAuthCache forces re-read");
 
   // —— 4. setProviderProfileEnabled 触发的 sync 也必须失效缓存 ——
   // 先把缓存填充为 ok:false 再验证。

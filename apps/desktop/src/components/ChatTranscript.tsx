@@ -150,11 +150,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     streaming,
   });
   // renderItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)
-  // is now inside lib/chat-transcript-virtual.ts (shouldVirtualize gate). Keep
-  // the predicate expression visible in this file as documentation:
-  const _VIRTUALIZE_PREDICATE_DOC =
-    "renderItems.length >= (streaming ? VIRTUALIZE_STREAMING_MIN_ITEMS : VIRTUALIZE_MIN_ITEMS)";
-  void _VIRTUALIZE_PREDICATE_DOC;
+  // is inside lib/chat-transcript-virtual.ts (shouldVirtualize gate).
   const virtualizer = useChatTranscriptVirtualizer({
     config: virtualConfig,
     count: renderItems.length,

@@ -116,7 +116,6 @@ const flatApi: XAgentApiFlat = {
     ipcRenderer.invoke(IPC_CHANNELS.installGodotRpcAddon),
   pickGodotScene: () => ipcRenderer.invoke(IPC_CHANNELS.pickGodotScene),
   listPlugins: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.listPlugins, cwd),
-  listSessionSkills: () => ipcRenderer.invoke(IPC_CHANNELS.listSessionSkills),
   listSessionSlashItems: () =>
     ipcRenderer.invoke(IPC_CHANNELS.listSessionSlashItems),
   readPlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.readPlugin, path),
@@ -134,8 +133,6 @@ const flatApi: XAgentApiFlat = {
   deleteProviderProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.deleteProviderProfile, id),
   setProviderProfileEnabled: (id, enabled) =>
     ipcRenderer.invoke(IPC_CHANNELS.setProviderProfileEnabled, id, enabled),
-  activateProviderProfile: (id) =>
-    ipcRenderer.invoke(IPC_CHANNELS.activateProviderProfile, id),
   listProviderPresets: () => ipcRenderer.invoke(IPC_CHANNELS.listProviderPresets),
   importExistingProviderProfiles: () =>
     ipcRenderer.invoke(IPC_CHANNELS.importExistingProviderProfiles),
@@ -221,7 +218,6 @@ const api: XAgentApi = {
     compactSession: flatApi.compactSession,
     getToolDetail: flatApi.getToolDetail,
     reloadResources: flatApi.reloadResources,
-    listSessionSkills: flatApi.listSessionSkills,
     listSessionSlashItems: flatApi.listSessionSlashItems,
   },
   prefs: {
@@ -238,58 +234,12 @@ const api: XAgentApi = {
     checkPiCli: flatApi.checkPiCli,
     installPiCli: flatApi.installPiCli,
   },
-  project: {
-    listDir: flatApi.listProjectDir,
-    readFile: flatApi.readProjectFile,
-    revealInFolder: flatApi.revealInFolder,
-  },
-  godot: {
-    rpcStatus: flatApi.godotRpcStatus,
-    rpcStart: flatApi.godotRpcStart,
-    rpcStop: flatApi.godotRpcStop,
-    rpcPing: flatApi.godotRpcPing,
-    rpcRequest: flatApi.godotRpcRequest,
-    rpcSetActiveClient: flatApi.godotRpcSetActiveClient,
-    pickEditor: flatApi.pickGodotEditor,
-    launchEditor: flatApi.launchGodotEditor,
-    installRpcAddon: flatApi.installGodotRpcAddon,
-    pickScene: flatApi.pickGodotScene,
-  },
-  plugins: {
-    list: flatApi.listPlugins,
-    read: flatApi.readPlugin,
-    write: flatApi.writePlugin,
-    create: flatApi.createPlugin,
-    delete: flatApi.deletePlugin,
-    reveal: flatApi.revealPlugin,
-  },
-  providers: {
-    list: flatApi.listProviderProfiles,
-    get: flatApi.getProviderProfile,
-    upsert: flatApi.upsertProviderProfile,
-    delete: flatApi.deleteProviderProfile,
-    setEnabled: flatApi.setProviderProfileEnabled,
-    activate: flatApi.activateProviderProfile,
-    listPresets: flatApi.listProviderPresets,
-    importExisting: flatApi.importExistingProviderProfiles,
-    fetchModels: flatApi.fetchProviderModels,
-  },
-  packages: {
-    list: flatApi.listInstalledPackages,
-    install: flatApi.installPackage,
-    uninstall: flatApi.uninstallPackage,
-    installGodotPi: flatApi.installGodotPiPackage,
-  },
   updates: {
     getStatus: flatApi.getUpdateStatus,
     check: flatApi.checkForUpdates,
     download: flatApi.downloadUpdate,
     install: flatApi.installUpdate,
     onStatus: flatApi.onUpdateStatus,
-  },
-  usage: {
-    getSummary: flatApi.getUsageSummary,
-    clearSummary: flatApi.clearUsageSummary,
   },
 };
 

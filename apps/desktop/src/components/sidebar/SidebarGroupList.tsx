@@ -1,7 +1,6 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { SessionInfo } from "@shared/ipc";
 import { SidebarItem } from "./SidebarItem";
-import { StatusIcon } from "../StatusIcon";
 import type { SidebarState } from "./useSidebarState";
 
 interface Props {
@@ -115,7 +114,11 @@ export function SidebarGroupList({
                       onResume={onResume}
                       onContextMenu={(e) => openSessionMenu(s, e)}
                       onEditKeyDown={(e) => onEditKeyDown(e, s.path)}
-                      onBlur={() => {
+                      onBlur={(e) => {
+                        // 焦点移到列表内（如点击其他会话项）会触发 onResume 切换，
+                        // 此处跳过提交避免 120ms 后提交过期编辑；焦点离开列表才提交。
+                        const t = e.relatedTarget as HTMLElement | null;
+                        if (t && t.closest(".session-list")) return;
                         window.setTimeout(() => {
                           if (editingPath === s.path && !renaming) {
                             void commitEdit(s.path);
@@ -133,6 +136,3 @@ export function SidebarGroupList({
     </ul>
   );
 }
-
-// Re-export StatusIcon for useSidebarState consumers that need it.
-export { StatusIcon };

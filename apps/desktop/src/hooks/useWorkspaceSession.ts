@@ -21,15 +21,12 @@ import type {
 } from "@shared/ipc";
 import type { RetractConfirmMode } from "../components/RetractConfirmModal";
 import { normalizeProjectKey } from "../lib/group-sessions";
+import { applyTheme } from "../lib/theme";
 import { createEmptyState, type ChatItem } from "../stores/chat-store";
 import {
   clearSessionUsage,
   setSessionUsage,
 } from "../stores/session-usage-store";
-
-function applyTheme(themeId: ClientPrefs["themeId"], colorMode: ClientPrefs["colorMode"]): void {
-  document.body.dataset.theme = `${themeId}-${colorMode}`;
-}
 
 type RetractConfirmState = {
   mode: RetractConfirmMode;
@@ -505,6 +502,5 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     closeWorkspace,
     hideProject,
     renameSession,
-    syncFromHost,
   };
 }
