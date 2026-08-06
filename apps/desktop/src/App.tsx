@@ -92,6 +92,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [prefs, setPrefs] = useState<ClientPrefs | null>(null);
   const [bash, setBash] = useState<BashCheckResult | null>(null);
   const [git, setGit] = useState<GitCheckResult | null>(null);
@@ -188,7 +189,9 @@ export default function App() {
   const refreshSessions = useCallback(async () => {
     const list = await window.xAgent.workspace.listSessions();
     setSessions(list);
+    setSessionsLoaded(true);
   }, []);
+  const sessionsLoading = !sessionsLoaded;
 
   const refreshModels = useCallback(async () => {
     const list = await window.xAgent.session.listModels();
@@ -1049,6 +1052,7 @@ export default function App() {
           agentStatus={status}
           busy={busy}
           compacting={compacting}
+          sessionsLoading={sessionsLoading}
           onResume={resumeSession}
           onDelete={deleteSession}
           onDeleteProjectSessions={deleteProjectSessions}
