@@ -901,17 +901,9 @@ export default function App() {
       <TopBar
         cwd={cwd}
         status={status}
-        models={models}
-        currentModelKey={currentModelKey}
-        thinkingLevel={prefs?.thinkingLevel ?? "high"}
-        thinkingLevels={THINKING_LEVELS}
-        showThinking={prefs?.showThinking ?? true}
         theme={prefs?.colorMode ?? "dark"}
         onOpenProject={openProject}
         onNewSession={newSession}
-        onModelChange={onModelChange}
-        onThinkingChange={onThinkingChange}
-        onToggleThinking={toggleThinking}
         onToggleTheme={toggleTheme}
         onToggleRightPanel={toggleRightPanel}
         onOpenSettings={openSettings}
@@ -1122,6 +1114,13 @@ export default function App() {
           onResumeGoal={onResumeGoal}
           onCycleSessionMode={onCycleSessionMode}
           onClarifySelect={onClarifySelect}
+          models={models}
+          currentModelKey={currentModelKey}
+          thinkingLevel={prefs?.thinkingLevel ?? "high"}
+          thinkingLevels={THINKING_LEVELS}
+          onModelChange={onModelChange}
+          onThinkingChange={onThinkingChange}
+          onToggleThinking={toggleThinking}
         />
         {prefs?.rightPanelOpen && (
           <RightPanel

@@ -21,6 +21,10 @@
 
 - **新增 Vitest 覆盖**：`lib/store.test.ts`（20 并发 mutate 无丢更新回归）、`restore-source.test.ts`（调度优先级 / 降级 / 警告合并 6 用例）、`register-ipc.test.ts`（通道注册表一致性 + 注册器转发）；离线测试链新增 `test-chat-unpin-input.ts`。
 
+### 改进
+
+- **底部工具条重构**：将「模型 / Thinking / 展示思考」三组设置从 TopBar 移到 ChatPanel 底部工具条，与既有的 4 个会话模式 pill（智能体 / 调研 / 计划 / 目标）合并为单行布局；删除原有的 `.composer-mode-bar` 独立行与 `.composer-hint` 提示文案，模式 pill 拆除外层圆角容器改为独立 pill。响应式断点重写：≤1280px 隐藏字段标签、≤900px 模式行独占一行、≤700px 模式 pill 文字隐藏仅图标，统一由 `.composer-actions` 的 `margin-left: auto` 把发送按钮锚到工具条右侧，避免窄屏时「发送」单独换行落到第三行。
+
 ## 0.4.0
 
 ### 功能
