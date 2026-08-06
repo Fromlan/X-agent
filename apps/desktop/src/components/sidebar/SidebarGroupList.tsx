@@ -8,6 +8,8 @@ interface Props {
   activeSessionId: string | null;
   agentStatus: import("@shared/ipc").AgentStatus;
   locked: boolean;
+  /** True while `listSessions` is in flight; renders skeleton rows. */
+  loading?: boolean;
   onResume: (path: string) => void;
 }
 
@@ -23,6 +25,7 @@ export function SidebarGroupList({
   activeSessionId,
   agentStatus,
   locked,
+  loading = false,
   onResume,
 }: Props) {
   const {
@@ -47,7 +50,16 @@ export function SidebarGroupList({
   if (groups.length === 0) {
     return (
       <ul className="session-list" ref={listRef}>
-        <li className="session-empty">暂无会话记录</li>
+        {loading ? (
+          <li className="session-skeleton" aria-busy="true" aria-label="加载会话列表">
+            <span className="session-skeleton-row" aria-hidden />
+            <span className="session-skeleton-row is-short" aria-hidden />
+            <span className="session-skeleton-row" aria-hidden />
+            <span className="session-skeleton-row is-short" aria-hidden />
+          </li>
+        ) : (
+          <li className="session-empty">暂无会话记录</li>
+        )}
       </ul>
     );
   }

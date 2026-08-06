@@ -1,5 +1,13 @@
 import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
-import { PanelRightClose } from "lucide-react";
+import {
+  BarChart3,
+  Box,
+  ClipboardList,
+  FolderTree,
+  PanelRightClose,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import type { ChatItem } from "../stores/chat-store";
 import type { SessionUsageSnapshot } from "@shared/ipc";
 import {
@@ -17,12 +25,12 @@ import { GodotTab } from "./right-panel/GodotTab";
 import { ContextTab } from "./right-panel/ContextTab";
 import { PlanTab } from "./right-panel/PlanTab";
 
-const TABS: { id: RightPanelTab; label: string }[] = [
-  { id: "context", label: "上下文" },
-  { id: "plan", label: "计划" },
-  { id: "tools", label: "工具" },
-  { id: "files", label: "文件" },
-  { id: "godot", label: "Godot" },
+const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
+  { id: "context", label: "上下文", icon: BarChart3 },
+  { id: "plan", label: "计划", icon: ClipboardList },
+  { id: "tools", label: "工具", icon: Wrench },
+  { id: "files", label: "文件", icon: FolderTree },
+  { id: "godot", label: "Godot", icon: Box },
 ];
 
 interface Props {
@@ -105,19 +113,23 @@ export function RightPanel({
         </button>
       </div>
       <nav className="rp-tabs" aria-label="面板页签">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`rp-tab${state.tab === t.id ? " active" : ""}`}
-            onClick={() => setRightPanelTab(t.id)}
-          >
-            {t.label}
-            {t.id === "plan" && planPath ? (
-              <span className="rp-tab-dot" aria-hidden />
-            ) : null}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={`rp-tab${state.tab === t.id ? " active" : ""}`}
+              onClick={() => setRightPanelTab(t.id)}
+            >
+              <Icon size={13} aria-hidden strokeWidth={2} />
+              <span className="rp-tab-label">{t.label}</span>
+              {t.id === "plan" && planPath ? (
+                <span className="rp-tab-dot" aria-hidden />
+              ) : null}
+            </button>
+          );
+        })}
       </nav>
       <div className="right-panel-body has-tabs">
         {state.tab === "context" && (

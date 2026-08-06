@@ -19,6 +19,8 @@ interface Props {
   busy: boolean;
   /** True while context compaction is in progress. */
   compacting?: boolean;
+  /** True while `listSessions` is in flight; surfaces skeleton in the list. */
+  sessionsLoading?: boolean;
   onResume: (path: string) => void;
   onDelete: (path: string) => void;
   onDeleteProjectSessions: (cwd: string) => void;
@@ -38,6 +40,7 @@ function SidebarImpl({
   agentStatus,
   busy,
   compacting = false,
+  sessionsLoading = false,
   onResume,
   onDelete,
   onDeleteProjectSessions,
@@ -83,6 +86,7 @@ function SidebarImpl({
         activeSessionId={activeSessionId}
         agentStatus={agentStatus}
         locked={locked}
+        loading={sessionsLoading}
         onResume={onResume}
       />
       <SidebarItemMenu state={state} busy={busy} locked={locked} renaming={false} />
