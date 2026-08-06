@@ -36,7 +36,7 @@ export function useAutoCompact(options: {
     if (firedForSession.current === sessionId) return;
 
     firedForSession.current = sessionId;
-    void window.xAgent.compactSession().then((result) => {
+    void window.xAgent.session.compactSession().then((result) => {
       if (!result.ok) {
         // Allow retry on next usage tick after a brief cooldown via reset below.
         firedForSession.current = null;

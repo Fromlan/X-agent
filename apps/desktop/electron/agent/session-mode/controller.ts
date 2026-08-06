@@ -55,7 +55,6 @@ export type SessionModeHost = {
   } | null;
   getResourceLoader(): DefaultResourceLoader | null;
   getBaseAppendPrompt(): string[];
-  setBaseAppendPrompt(base: string[]): void;
   emit(event: UiAgentEvent): void;
   emitReplaceableNotice(
     replaceKey:

@@ -144,11 +144,9 @@ export class SessionHost {
       setBundle: (bundle) => {
         this.bundle = bundle;
       },
-      getResourceLoader: () => this.resourceLoader,
       setResourceLoader: (loader) => {
         this.resourceLoader = loader;
       },
-      getBaseAppendPrompt: () => this.baseAppendPrompt,
       setBaseAppendPrompt: (base) => {
         this.baseAppendPrompt = base;
       },
@@ -188,7 +186,6 @@ export class SessionHost {
       getBundle: () => this.getBundle(),
       getResourceLoader: () => this.getResourceLoader(),
       getBaseAppendPrompt: () => this.getBaseAppendPrompt(),
-      setBaseAppendPrompt: (base) => this.setBaseAppendPrompt(base),
       emit: (event) => this.emit(event),
       emitReplaceableNotice: (replaceKey, text, level) =>
         this.emitReplaceableNotice(replaceKey, text, level),

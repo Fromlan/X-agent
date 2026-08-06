@@ -95,7 +95,7 @@ export function ContextTab({
   const onCompact = async () => {
     setError(null);
     setHint(null);
-    const result = await window.xAgent.compactSession();
+    const result = await window.xAgent.session.compactSession();
     if (!result.ok) {
       setError(result.error ?? "压缩失败");
       return;

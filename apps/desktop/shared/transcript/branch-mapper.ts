@@ -165,32 +165,6 @@ function finalizePendingTools(
 }
 
 /**
- * Convert Pi AgentSession.messages into UI history items.
- * Prefer {@link branchEntriesToHistory} when session entry ids are available.
- */
-export function messagesToHistory(messages: readonly unknown[]): HistoryItem[] {
-  const items: HistoryItem[] = [];
-  const pendingTools = new Map<string, number>();
-  let lastUserEntryId: string | null = null;
-
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i] as TranscriptMessage;
-    const next = pushMessages(
-      items,
-      pendingTools,
-      msg,
-      i,
-      undefined,
-      lastUserEntryId,
-    );
-    if (next !== undefined) lastUserEntryId = next ?? null;
-  }
-
-  finalizePendingTools(items, pendingTools);
-  return items;
-}
-
-/**
  * Map the active session branch (root → leaf) to UI history, attaching Pi entry ids.
  */
 export function branchEntriesToHistory(

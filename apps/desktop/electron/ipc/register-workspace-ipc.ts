@@ -1,26 +1,32 @@
 import type { IpcMain } from "electron";
 import type { SessionHost } from "../agent/session-host";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import { handle } from "./register-ipc";
 
 /** Workspace / session lifecycle IPC — thin forwards to SessionHost. */
 export function registerWorkspaceIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.newSession, async () => sessionHost.newSession());
-  ipcMain.handle(IPC_CHANNELS.listSessions, async () => sessionHost.listSessions());
-  ipcMain.handle(IPC_CHANNELS.resumeSession, async (_e, sessionPath: string) =>
+  handle(ipcMain, IPC_CHANNELS.newSession, async () => sessionHost.newSession());
+  handle(ipcMain, IPC_CHANNELS.listSessions, async () => sessionHost.listSessions());
+  handle(ipcMain, IPC_CHANNELS.resumeSession, async (_e, sessionPath: string) =>
     sessionHost.resumeSession(sessionPath),
   );
-  ipcMain.handle(IPC_CHANNELS.deleteSession, async (_e, sessionPath: string) =>
+  handle(ipcMain, IPC_CHANNELS.deleteSession, async (_e, sessionPath: string) =>
     sessionHost.deleteSession(sessionPath),
   );
-  ipcMain.handle(IPC_CHANNELS.deleteProjectSessions, async (_e, projectCwd: string) =>
-    sessionHost.deleteProjectSessions(projectCwd),
+  handle(
+    ipcMain,
+    IPC_CHANNELS.deleteProjectSessions,
+    async (_e, projectCwd: string) => sessionHost.deleteProjectSessions(projectCwd),
   );
-  ipcMain.handle(IPC_CHANNELS.closeWorkspace, async () => sessionHost.closeWorkspace());
-  ipcMain.handle(IPC_CHANNELS.renameSession, async (_e, sessionPath: string, name: string) =>
-    sessionHost.renameSession(sessionPath, name),
+  handle(ipcMain, IPC_CHANNELS.closeWorkspace, async () => sessionHost.closeWorkspace());
+  handle(
+    ipcMain,
+    IPC_CHANNELS.renameSession,
+    async (_e, sessionPath: string, name: string) =>
+      sessionHost.renameSession(sessionPath, name),
   );
-  ipcMain.handle(IPC_CHANNELS.getStatus, async () => sessionHost.getStatus());
+  handle(ipcMain, IPC_CHANNELS.getStatus, async () => sessionHost.getStatus());
 }

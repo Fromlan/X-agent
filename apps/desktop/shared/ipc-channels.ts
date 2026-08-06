@@ -4,7 +4,7 @@
  * Keep this in sync when adding/removing/renaming an IPC channel.
  */
 export const IPC_CHANNELS = {
-  // session / workspace (see electron/ipc/register-session-ipc.ts)
+  // session / workspace (see electron/ipc/register-workspace-ipc.ts + app-runtime.ts)
   openProject: "openProject",
   prompt: "prompt",
   abort: "abort",
@@ -112,6 +112,9 @@ export const IPC_CHANNELS = {
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
+
+/** Key names of IPC_CHANNELS — used as the single source of truth for channel identity. */
+export type IpcChannelKey = keyof typeof IPC_CHANNELS;
 
 /** Main → renderer push event channel names (`webContents.send` / `ipcRenderer.on`). */
 export const IPC_EVENTS = {
