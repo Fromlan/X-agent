@@ -1,6 +1,5 @@
 import {
   branchEntriesToHistory,
-  messagesToHistory,
   extractMessageText,
   textFromContent,
 } from "../shared/transcript/index.ts";
@@ -33,14 +32,6 @@ const sample = [
     timestamp: 4,
   },
 ];
-
-const items = messagesToHistory(sample);
-console.log(JSON.stringify(items, null, 2));
-if (items.length !== 4) throw new Error(`expected 4 items, got ${items.length}`);
-if (items[0].kind !== "user" || items[0].text !== "你好") throw new Error("user");
-if (items[1].kind !== "assistant" || !items[1].text.includes("你好")) throw new Error("asst");
-if (items[2].kind !== "tool" || items[2].toolName !== "ls" || !items[2].done) throw new Error("tool");
-if (items[3].kind !== "assistant") throw new Error("asst2");
 
 const branchItems = branchEntriesToHistory([
   {

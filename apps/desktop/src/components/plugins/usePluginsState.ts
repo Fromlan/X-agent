@@ -175,7 +175,7 @@ export function usePluginsState(opts: {
     setWarnings(result.warnings ?? []);
     setMessage("已保存");
     await refresh();
-    await window.xAgent.reloadResources();
+    await window.xAgent.session.reloadResources();
   }, [content, refresh, selectedPath]);
 
   const create = useCallback(async () => {
@@ -198,7 +198,7 @@ export function usePluginsState(opts: {
     setMessage(`已创建 ${result.item.name}`);
     await refresh();
     await openItem(result.item);
-    await window.xAgent.reloadResources();
+    await window.xAgent.session.reloadResources();
   }, [createName, createScope, cwd, isPackageTab, kind, openItem, refresh]);
 
   const remove = useCallback(async () => {
@@ -220,7 +220,7 @@ export function usePluginsState(opts: {
     setMessage("已删除");
     setSelectedPath(null);
     await refresh();
-    await window.xAgent.reloadResources();
+    await window.xAgent.session.reloadResources();
   }, [confirm, refresh, selected]);
 
   const installPkg = useCallback(
@@ -257,7 +257,7 @@ export function usePluginsState(opts: {
       );
       setPackageSource("");
       await refresh();
-      await window.xAgent.reloadResources();
+      await window.xAgent.session.reloadResources();
     },
     [refresh],
   );
@@ -293,7 +293,7 @@ export function usePluginsState(opts: {
       `已安装 X-agent 原生技能包：${result.package?.name ?? ""}${counts ? `（${counts}，可在「技能 / 提示词 / 扩展」页签查看）` : ""}`,
     );
     await refresh();
-    await window.xAgent.reloadResources();
+    await window.xAgent.session.reloadResources();
   }, [refresh]);
 
   const uninstallPkg = useCallback(

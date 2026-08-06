@@ -15,6 +15,7 @@ import {
   isAllowedGodotRpcMethod,
 } from "../../shared/godot-rpc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import { handle } from "./register-ipc";
 
 /** Godot RPC bridge + editor launch IPC. */
 export function registerGodotIpc(
@@ -22,8 +23,8 @@ export function registerGodotIpc(
   sessionHost: SessionHost,
   godotRpc: GodotRpcBridge,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.godotRpcStatus, async () => godotRpc.getStatus());
-  ipcMain.handle(IPC_CHANNELS.godotRpcStart, async () => {
+  handle(ipcMain, IPC_CHANNELS.godotRpcStatus, async () => godotRpc.getStatus());
+  handle(ipcMain, IPC_CHANNELS.godotRpcStart, async () => {
     try {
       return await godotRpc.start();
     } catch (err) {
@@ -37,16 +38,16 @@ export function registerGodotIpc(
       };
     }
   });
-  ipcMain.handle(IPC_CHANNELS.godotRpcStop, async () => {
+  handle(ipcMain, IPC_CHANNELS.godotRpcStop, async () => {
     await godotRpc.stop();
     return { ok: true };
   });
-  ipcMain.handle(IPC_CHANNELS.godotRpcPing, async () => {
+  handle(ipcMain, IPC_CHANNELS.godotRpcPing, async () => {
     const res = await godotRpc.request({ id: randomUUID(), method: "ping" });
     if (!res.ok) return { ok: false, error: res.error };
     return { ok: true, result: res.result };
   });
-  ipcMain.handle(
+  handle(ipcMain, 
     IPC_CHANNELS.godotRpcRequest,
     async (
       _e,
@@ -65,12 +66,12 @@ export function registerGodotIpc(
       return { ok: true, result: res.result };
     },
   );
-  ipcMain.handle(IPC_CHANNELS.godotRpcSetActiveClient, async (_e, clientId: string | null) => ({
+  handle(ipcMain, IPC_CHANNELS.godotRpcSetActiveClient, async (_e, clientId: string | null) => ({
     ok: godotRpc.setActiveClient(clientId),
     status: godotRpc.getStatus(),
   }));
 
-  ipcMain.handle(IPC_CHANNELS.pickGodotEditor, async () => {
+  handle(ipcMain, IPC_CHANNELS.pickGodotEditor, async () => {
     const prefs = getCachedPrefs();
     const result = await dialog.showOpenDialog({
       title: "选择 Godot 引擎可执行文件",
@@ -95,7 +96,7 @@ export function registerGodotIpc(
     return { ok: true, path };
   });
 
-  ipcMain.handle(IPC_CHANNELS.launchGodotEditor, async () => {
+  handle(ipcMain, IPC_CHANNELS.launchGodotEditor, async () => {
     const prefs = getCachedPrefs();
     const editor = prefs.godotEditorPath;
     if (!editor) {
@@ -148,7 +149,7 @@ export function registerGodotIpc(
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.installGodotRpcAddon, async () => {
+  handle(ipcMain, IPC_CHANNELS.installGodotRpcAddon, async () => {
     const prefs = getCachedPrefs();
     const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
     if (!project) {
@@ -157,7 +158,7 @@ export function registerGodotIpc(
     return installGodotRpcAddon(project);
   });
 
-  ipcMain.handle(IPC_CHANNELS.pickGodotScene, async () => {
+  handle(ipcMain, IPC_CHANNELS.pickGodotScene, async () => {
     const prefs = getCachedPrefs();
     const project =
       sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;

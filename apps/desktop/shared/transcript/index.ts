@@ -9,10 +9,7 @@ export {
   extractMessageText,
 } from "./content";
 export type { TranscriptContentPart } from "./content";
-export {
-  messagesToHistory,
-  branchEntriesToHistory,
-} from "./branch-mapper";
+export { branchEntriesToHistory } from "./branch-mapper";
 export type { TranscriptMessage, BranchMessageEntry } from "./branch-mapper";
 export {
   type ChatItem,

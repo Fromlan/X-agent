@@ -17,7 +17,6 @@ export {
 export { listProviderPresets } from "./provider-presets";
 
 export {
-  activateProviderProfile,
   pruneProviderIdFromPi,
   syncProfileToPi,
 } from "./provider-pi-sync";

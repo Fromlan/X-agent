@@ -6,6 +6,21 @@
 
 升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，`prepare-release` 会把上一线全部小版本（`0.2.0`…`0.2.x`）汇总写入本章节；GitHub Release 正文使用该章节（已含汇总则不再重复附加）。补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭自动附加。
 
+## Unreleased
+
+### 变更
+
+- **架构 · IPC 单一事实源**：`shared/ipc.ts` 新增 `IpcInvokeMap`——87 个 invoke 通道的权威签名（channel 名 → 参数 → 返回），preload 转发与主进程 handler 注册都由它派生，`XAgentApiFlat` 从 90 个手工签名收敛为 `Omit<FlatInvokeApi, DeletedFlatKey> & 3 特例`；preload 约 176 行手工转发改为循环生成（`makeInvokeApi`）；主进程侧新增类型锚定的 `handle()` 注册器，6 个 `register-*-ipc.ts` 全部接入。「新增/改名 IPC 必须同步四处」的人肉约定由编译期断言接管（通道键 ↔ 映射键全覆盖、删除名单合法性），漏同步从运行期静默失败变为编译期报错。
+- **架构 · 门面收尾与死代码清理**：删除 7 个从未接线的分面类型（`ProjectApi` / `GodotApi` / `PluginsApi` / `ProvidersApi` / `PackagesApi` / `UsageApi`）；`window.xAgent` 扁平面按 `DELETED_FLAT_KEYS` 收窄 36 个零消费者方法（`openProject` / `prompt` / `setModel` 等全部迁到分面），renderer 侧 4 处调用方迁移到 `session` 分面；删除 `messagesToHistory`（无生产消费者）、`provider-activate.ts` 兼容壳与 `activateProviderProfile`（IPC 通道已下线，测试改走生产路径 `setProviderProfileEnabled`）、`register-session-ipc.ts` 纯组合器。
+- **架构 · 撤回还原接缝**：`ShadowCheckpointTracker`（git 检查点）与 `TurnFileTracker`（write/edit 基线）两个真实还原适配器之间建立共享接口 `RestoreSource`（preview / restore / kind），编排器经 `CompositeRestoreSource` 调度（优先级、失败降级、警告合并、bash/Godot 不可还原增强统一收敛）——新增还原源不再改编排器。
+- **架构 · 存储事务化**：新增深模块 `Store<T>`（`lib/store.ts`），`mutate(fn)` 把「读-改-写 + 原子写 + 缓存」整体放进锁内；prefs / usage / provider 三处存储迁移，修复并发 patch 丢更新残留（此前锁只包写、读在锁外）；Pi 侧 `auth.json` / `models.json` 由裸写改为原子写 + per-path 锁。
+- **架构 · 转录贴底输入判定加深**：ChatTranscript 内 7 组原生事件监听里的「输入 → 取消贴底」判定（滚轮向上 / PageUp/Home/ArrowUp / touch 上滑 8px）抽为纯函数模块 `src/lib/chat-unpin-input.ts`（复用 `chat-scroll-pin` 几何谓词，不复制），行为测试 `test-chat-unpin-input` 接入 `npm test` 链。
+- **架构 · 会话宿主接口瘦身**：按消费方真实使用统计裁剪 3 个零消费 host 接口项（`getResourceLoader` / `getBaseAppendPrompt` / `setBaseAppendPrompt`），假想接缝宽度 51 → 48。
+
+### 测试
+
+- **新增 Vitest 覆盖**：`lib/store.test.ts`（20 并发 mutate 无丢更新回归）、`restore-source.test.ts`（调度优先级 / 降级 / 警告合并 6 用例）、`register-ipc.test.ts`（通道注册表一致性 + 注册器转发）；离线测试链新增 `test-chat-unpin-input.ts`。
+
 ## 0.4.0
 
 ### 功能

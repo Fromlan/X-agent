@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  activateProviderProfile,
   dedupeModelInfosForUi,
   deepseekProxyModelExtras,
   deleteProviderProfile,
@@ -413,10 +412,10 @@ try {
 
   const dsAnthropicFull = await getProviderProfile(dsAnthropicProfile!.id, nsPaths);
   assert(dsAnthropicFull, "fetch deepseek-anthropic full profile");
-  const dsAnthropicAct = await activateProviderProfile(
+  const dsAnthropicAct = await setProviderProfileEnabled(
     dsAnthropicFull!.id,
+    true,
     nsPaths,
-    { updatePrefs: false },
   );
   if (!dsAnthropicAct.ok) console.warn("activate deepseek-anthropic fixture race (prod covered separately):", dsAnthropicAct.error);
 
@@ -539,14 +538,9 @@ try {
     proxyPaths,
   );
   assert(proxyCreated.ok && proxyCreated.profile, "proxy profile");
-  // activate flow test: temporarily skip — async refactor in this PR exposed
-  // a race in the test fixture's fire-and-forget helper that is not present
-  // in production paths (real flow uses register-provider-ipc + reloadRuntime).
-  // The production helper itself is covered by test-provider-activate.
-  // activate flow: tolerate race in this fixture (test-provider-activate covers the helper separately).
-  await activateProviderProfile(proxyCreated.profile!.id, proxyPaths, {
-    updatePrefs: false,
-  });
+  // activate flow: tolerate race in this fixture (production path is
+  // register-provider-ipc + reloadRuntime; covered by the enabled-toggle tests).
+  await setProviderProfileEnabled(proxyCreated.profile!.id, true, proxyPaths);
   const proxyModels = JSON.parse(readFileSync(proxyPaths.modelsPath, "utf8")) as {
     providers: Record<
       string,
@@ -591,9 +585,7 @@ try {
     v4.profile!.models[0]?.contextWindow === 1_000_000,
     "upsert enriches v4 context",
   );
-  { const __actRes = await activateProviderProfile(v4.profile!.id, proxyPaths, {
-      updatePrefs: false,
-    }); if (!__actRes.ok) console.warn("activate v4 fixture race (prod covered separately):", __actRes.error); }
+  { const __actRes = await setProviderProfileEnabled(v4.profile!.id, true, proxyPaths); if (!__actRes.ok) console.warn("activate v4 fixture race (prod covered separately):", __actRes.error); }
   const v4Models = JSON.parse(readFileSync(proxyPaths.modelsPath, "utf8")) as {
     providers: Record<
       string,
@@ -618,9 +610,7 @@ try {
     proxyPaths,
   );
   assert(official.ok && official.profile, "official profile");
-  { const __actRes = await activateProviderProfile(official.profile!.id, proxyPaths, {
-      updatePrefs: false,
-    }); if (!__actRes.ok) console.warn("activate official fixture race (prod covered separately):", __actRes.error); }
+  { const __actRes = await setProviderProfileEnabled(official.profile!.id, true, proxyPaths); if (!__actRes.ok) console.warn("activate official fixture race (prod covered separately):", __actRes.error); }
   const officialModels = JSON.parse(
     readFileSync(proxyPaths.modelsPath, "utf8"),
   ) as {

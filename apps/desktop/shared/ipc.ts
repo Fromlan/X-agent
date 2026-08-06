@@ -5,6 +5,8 @@ import type {
   GodotRpcBridgeStatus,
   GodotRpcCall,
 } from "./godot-rpc";
+import type { IpcChannelKey } from "./ipc-channels";
+export type { IpcChannelKey } from "./ipc-channels";
 
 export type AgentStatus = "idle" | "streaming" | "retrying" | "error";
 
@@ -1008,154 +1010,87 @@ export interface PrefsRecoveryNotice {
 
 export type OpenProjectMode = "continue" | "new";
 
-/** Coarse workspace / session lifecycle facade (flat methods remain on XAgentApi). */
+/** Coarse workspace / session lifecycle facade (facade methods stay on window.xAgent). */
 export type WorkspaceApi = {
-  open: XAgentApiFlat["openProject"];
-  close: XAgentApiFlat["closeWorkspace"];
-  newSession: XAgentApiFlat["newSession"];
-  resume: XAgentApiFlat["resumeSession"];
-  listSessions: XAgentApiFlat["listSessions"];
-  deleteSession: XAgentApiFlat["deleteSession"];
-  deleteProjectSessions: XAgentApiFlat["deleteProjectSessions"];
-  renameSession: XAgentApiFlat["renameSession"];
-  getStatus: XAgentApiFlat["getStatus"];
+  open: IpcInvokeMap["openProject"];
+  close: IpcInvokeMap["closeWorkspace"];
+  newSession: IpcInvokeMap["newSession"];
+  resume: IpcInvokeMap["resumeSession"];
+  listSessions: IpcInvokeMap["listSessions"];
+  deleteSession: IpcInvokeMap["deleteSession"];
+  deleteProjectSessions: IpcInvokeMap["deleteProjectSessions"];
+  renameSession: IpcInvokeMap["renameSession"];
+  getStatus: IpcInvokeMap["getStatus"];
 };
 
-/** Coarse turn / composer facade (flat methods remain on XAgentApi). */
+/** Coarse turn / composer facade (facade methods stay on window.xAgent). */
 export type TurnApi = {
-  prompt: XAgentApiFlat["prompt"];
-  abort: XAgentApiFlat["abort"];
-  previewRetract: XAgentApiFlat["previewRetract"];
-  retract: XAgentApiFlat["retractToUserMessage"];
-  editAndResend: XAgentApiFlat["editAndResend"];
-  regenerate: XAgentApiFlat["regenerateFromUser"];
+  prompt: IpcInvokeMap["prompt"];
+  abort: IpcInvokeMap["abort"];
+  previewRetract: IpcInvokeMap["previewRetract"];
+  retract: IpcInvokeMap["retractToUserMessage"];
+  editAndResend: IpcInvokeMap["editAndResend"];
+  regenerate: IpcInvokeMap["regenerateFromUser"];
 };
 
-/** Coarse plan / goal mode facade (flat methods remain on XAgentApi). */
+/** Coarse plan / goal mode facade (facade methods stay on window.xAgent). */
 export type PlanApi = {
-  setMode: XAgentApiFlat["setSessionMode"];
-  getMode: XAgentApiFlat["getSessionMode"];
-  build: XAgentApiFlat["buildPlan"];
-  getContent: XAgentApiFlat["getPlanContent"];
-  saveContent: XAgentApiFlat["savePlanContent"];
-  saveToWorkspace: XAgentApiFlat["savePlanToWorkspace"];
-  clear: XAgentApiFlat["clearPlan"];
-  setGoal: XAgentApiFlat["setGoal"];
-  pauseGoal: XAgentApiFlat["pauseGoal"];
-  resumeGoal: XAgentApiFlat["resumeGoal"];
-  clearGoal: XAgentApiFlat["clearGoal"];
-  getGoal: XAgentApiFlat["getGoal"];
+  setMode: IpcInvokeMap["setSessionMode"];
+  getMode: IpcInvokeMap["getSessionMode"];
+  build: IpcInvokeMap["buildPlan"];
+  getContent: IpcInvokeMap["getPlanContent"];
+  saveContent: IpcInvokeMap["savePlanContent"];
+  saveToWorkspace: IpcInvokeMap["savePlanToWorkspace"];
+  clear: IpcInvokeMap["clearPlan"];
+  setGoal: IpcInvokeMap["setGoal"];
+  pauseGoal: IpcInvokeMap["pauseGoal"];
+  resumeGoal: IpcInvokeMap["resumeGoal"];
+  clearGoal: IpcInvokeMap["clearGoal"];
+  getGoal: IpcInvokeMap["getGoal"];
 };
 
-/** Active session tuning / context (flat methods remain). Prefer over flat in new code. */
+/** Active session tuning / context facade. Prefer over flat in new code. */
 export type SessionApi = {
-  setModel: XAgentApiFlat["setModel"];
-  setThinkingLevel: XAgentApiFlat["setThinkingLevel"];
-  listModels: XAgentApiFlat["listModels"];
-  getSessionUsage: XAgentApiFlat["getSessionUsage"];
-  compactSession: XAgentApiFlat["compactSession"];
-  getToolDetail: XAgentApiFlat["getToolDetail"];
-  reloadResources: XAgentApiFlat["reloadResources"];
-  listSessionSlashItems: XAgentApiFlat["listSessionSlashItems"];
+  setModel: IpcInvokeMap["setModel"];
+  setThinkingLevel: IpcInvokeMap["setThinkingLevel"];
+  listModels: IpcInvokeMap["listModels"];
+  getSessionUsage: IpcInvokeMap["getSessionUsage"];
+  compactSession: IpcInvokeMap["compactSession"];
+  getToolDetail: IpcInvokeMap["getToolDetail"];
+  reloadResources: IpcInvokeMap["reloadResources"];
+  listSessionSlashItems: IpcInvokeMap["listSessionSlashItems"];
 };
 
 /** Client prefs + runtime dependency checks. */
 export type PrefsApi = {
-  get: XAgentApiFlat["getPrefs"];
-  set: XAgentApiFlat["setPrefs"];
-  getRecoveryNotice: XAgentApiFlat["getPrefsRecoveryNotice"];
-  getSecretCodecStatus: XAgentApiFlat["getSecretCodecStatus"];
-  checkBash: XAgentApiFlat["checkBash"];
-  checkBashLiveness: XAgentApiFlat["checkBashLiveness"];
-  applyBashShellPath: XAgentApiFlat["applyBashShellPath"];
-  pickBashShell: XAgentApiFlat["pickBashShell"];
-  checkGit: XAgentApiFlat["checkGit"];
-  checkAuth: XAgentApiFlat["checkAuth"];
-  checkPiCli: XAgentApiFlat["checkPiCli"];
-  installPiCli: XAgentApiFlat["installPiCli"];
+  get: IpcInvokeMap["getPrefs"];
+  set: IpcInvokeMap["setPrefs"];
+  getRecoveryNotice: IpcInvokeMap["getPrefsRecoveryNotice"];
+  getSecretCodecStatus: IpcInvokeMap["getSecretCodecStatus"];
+  checkBash: IpcInvokeMap["checkBash"];
+  checkBashLiveness: IpcInvokeMap["checkBashLiveness"];
+  applyBashShellPath: IpcInvokeMap["applyBashShellPath"];
+  pickBashShell: IpcInvokeMap["pickBashShell"];
+  checkGit: IpcInvokeMap["checkGit"];
+  checkAuth: IpcInvokeMap["checkAuth"];
+  checkPiCli: IpcInvokeMap["checkPiCli"];
+  installPiCli: IpcInvokeMap["installPiCli"];
 };
 
-export type ProjectApi = {
-  listDir: XAgentApiFlat["listProjectDir"];
-  readFile: XAgentApiFlat["readProjectFile"];
-  revealInFolder: XAgentApiFlat["revealInFolder"];
-};
-
-export type GodotApi = {
-  rpcStatus: XAgentApiFlat["godotRpcStatus"];
-  rpcStart: XAgentApiFlat["godotRpcStart"];
-  rpcStop: XAgentApiFlat["godotRpcStop"];
-  rpcPing: XAgentApiFlat["godotRpcPing"];
-  rpcRequest: XAgentApiFlat["godotRpcRequest"];
-  rpcSetActiveClient: XAgentApiFlat["godotRpcSetActiveClient"];
-  pickEditor: XAgentApiFlat["pickGodotEditor"];
-  launchEditor: XAgentApiFlat["launchGodotEditor"];
-  installRpcAddon: XAgentApiFlat["installGodotRpcAddon"];
-  pickScene: XAgentApiFlat["pickGodotScene"];
-};
-
-export type PluginsApi = {
-  list: XAgentApiFlat["listPlugins"];
-  read: XAgentApiFlat["readPlugin"];
-  write: XAgentApiFlat["writePlugin"];
-  create: XAgentApiFlat["createPlugin"];
-  delete: XAgentApiFlat["deletePlugin"];
-  reveal: XAgentApiFlat["revealPlugin"];
-};
-
-export type ProvidersApi = {
-  list: XAgentApiFlat["listProviderProfiles"];
-  get: XAgentApiFlat["getProviderProfile"];
-  upsert: XAgentApiFlat["upsertProviderProfile"];
-  delete: XAgentApiFlat["deleteProviderProfile"];
-  setEnabled: XAgentApiFlat["setProviderProfileEnabled"];
-  listPresets: XAgentApiFlat["listProviderPresets"];
-  importExisting: XAgentApiFlat["importExistingProviderProfiles"];
-  fetchModels: XAgentApiFlat["fetchProviderModels"];
-};
-
-export type PackagesApi = {
-  list: XAgentApiFlat["listInstalledPackages"];
-  install: XAgentApiFlat["installPackage"];
-  uninstall: XAgentApiFlat["uninstallPackage"];
-  installGodotPi: XAgentApiFlat["installGodotPiPackage"];
-};
-
-export type UpdatesApi = {
-  getStatus: XAgentApiFlat["getUpdateStatus"];
-  check: XAgentApiFlat["checkForUpdates"];
-  download: XAgentApiFlat["downloadUpdate"];
-  install: XAgentApiFlat["installUpdate"];
-  onStatus: XAgentApiFlat["onUpdateStatus"];
-};
-
-export type UsageApi = {
-  getSummary: XAgentApiFlat["getUsageSummary"];
-  clearSummary: XAgentApiFlat["clearUsageSummary"];
-};
-
-/** Flat IPC surface (legacy; prefer workspace / turn / plan facades). */
-export interface XAgentApiFlat {
-  openProject: (
-    path?: string,
-    mode?: OpenProjectMode,
-  ) => Promise<OpenProjectResult>;
+/**
+ * Authoritative invoke-channel signatures: every key is one `ipcRenderer.invoke`
+ * channel (key name == channel name, enforced at compile time against
+ * IPC_CHANNELS). Preload forwarding and main-process handlers are both typed
+ * against this map, so a channel signature lives in exactly one place.
+ */
+export type IpcInvokeMap = {
+  openProject: (path?: string, mode?: OpenProjectMode) => Promise<OpenProjectResult>;
   prompt: (text: string) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
   previewRetract: (entryId: string) => Promise<RetractPreview>;
-  retractToUserMessage: (
-    entryId: string,
-    options?: RetractOptions,
-  ) => Promise<RetractResult>;
-  editAndResend: (
-    entryId: string,
-    text: string,
-    options?: RetractOptions,
-  ) => Promise<RetractResult>;
-  regenerateFromUser: (
-    entryId: string,
-    options?: RetractOptions,
-  ) => Promise<RetractResult>;
+  retractToUserMessage: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
+  editAndResend: (entryId: string, text: string, options?: RetractOptions) => Promise<RetractResult>;
+  regenerateFromUser: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
   newSession: () => Promise<OpenProjectResult>;
   setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
   setThinkingLevel: (level: ThinkingLevel) => Promise<{ ok: boolean }>;
@@ -1185,6 +1120,11 @@ export interface XAgentApiFlat {
     sessionPath: string,
     name: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+  getStatus: () => Promise<HostStatus>;
+  getToolDetail: (toolCallId: string) => Promise<ToolDetailDto | null>;
+  getSessionUsage: () => Promise<SessionUsageSnapshot | null>;
+  compactSession: (customInstructions?: string) => Promise<CompactSessionResult>;
+  reloadResources: () => Promise<{ ok: boolean; reloaded: boolean; error?: string }>;
   getPrefs: () => Promise<ClientPrefs>;
   setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
   /** Returns and clears the startup prefs-recovery notice, if any. */
@@ -1198,8 +1138,6 @@ export interface XAgentApiFlat {
   checkAuth: () => Promise<AuthStatus>;
   checkPiCli: () => Promise<PiCliStatus>;
   installPiCli: () => Promise<PiCliStatus>;
-  getStatus: () => Promise<HostStatus>;
-  getToolDetail: (toolCallId: string) => Promise<ToolDetailDto | null>;
   listProjectDir: (relPath?: string) => Promise<ListProjectDirResult>;
   readProjectFile: (relPath: string) => Promise<ReadProjectFileResult>;
   revealInFolder: (relPath: string) => Promise<{ ok: boolean; error?: string }>;
@@ -1236,7 +1174,6 @@ export interface XAgentApiFlat {
   createPlugin: (input: PluginCreateInput) => Promise<PluginMutateResult>;
   deletePlugin: (path: string) => Promise<{ ok: boolean; error?: string }>;
   revealPlugin: (path: string) => Promise<{ ok: boolean; error?: string }>;
-  reloadResources: () => Promise<{ ok: boolean; reloaded: boolean; error?: string }>;
   listProviderProfiles: () => Promise<ProviderProfileSummary[]>;
   getProviderProfile: (id: string) => Promise<ProviderProfile | null>;
   upsertProviderProfile: (
@@ -1272,17 +1209,88 @@ export interface XAgentApiFlat {
   checkForUpdates: () => Promise<AppUpdateStatus>;
   downloadUpdate: () => Promise<AppUpdateStatus>;
   installUpdate: () => Promise<{ ok: boolean; error?: string }>;
-  getSessionUsage: () => Promise<SessionUsageSnapshot | null>;
-  compactSession: (customInstructions?: string) => Promise<CompactSessionResult>;
   getUsageSummary: (options?: {
     days?: number;
   }) => Promise<UsageSummary>;
   clearUsageSummary: () => Promise<{ ok: boolean; error?: string }>;
   /** Signal main process that renderer boot finished — closes splash and shows the main window. */
+  appReady: () => Promise<{ ok: boolean }>;
+};
+
+/**
+ * Flat channel methods removed from `window.xAgent` — their functionality lives
+ * on the workspace / turn / plan / session / prefs facades. Removing an entry
+ * here is safe only if the renderer has no direct callers left (facades are
+ * typed against IpcInvokeMap, not XAgentApiFlat).
+ */
+export const DELETED_FLAT_KEYS = [
+  "openProject",
+  "prompt",
+  "abort",
+  "getStatus",
+  "newSession",
+  "setModel",
+  "setSessionMode",
+  "getSessionMode",
+  "buildPlan",
+  "getPlanContent",
+  "savePlanContent",
+  "savePlanToWorkspace",
+  "clearPlan",
+  "setGoal",
+  "pauseGoal",
+  "resumeGoal",
+  "clearGoal",
+  "getGoal",
+  "listModels",
+  "listSessions",
+  "resumeSession",
+  "deleteSession",
+  "deleteProjectSessions",
+  "closeWorkspace",
+  "renameSession",
+  "previewRetract",
+  "retractToUserMessage",
+  "editAndResend",
+  "regenerateFromUser",
+  "getSessionUsage",
+  "getPrefsRecoveryNotice",
+  "getSecretCodecStatus",
+  "compactSession",
+  "getToolDetail",
+  "reloadResources",
+  "listSessionSlashItems",
+] as const;
+
+export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
+
+/** Every invoke channel keyed by channel name — the generated preload surface. */
+export type FlatInvokeApi = { [K in IpcChannelKey]: IpcInvokeMap[K] };
+
+/** Flat IPC surface exposed directly on `window.xAgent` (legacy; prefer facades). */
+export type XAgentApiFlat = Omit<FlatInvokeApi, DeletedFlatKey> & {
   notifyAppReady: () => Promise<{ ok: boolean }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
-}
+};
+
+/** Compile-time gate: IpcInvokeMap keys must exactly cover IPC_CHANNELS keys. */
+declare const _assertInvokeMapCoverage: Exclude<
+  IpcChannelKey,
+  keyof IpcInvokeMap
+> extends never
+  ? Exclude<keyof IpcInvokeMap, IpcChannelKey> extends never
+    ? true
+    : never
+  : never;
+
+/** Compile-time gate: DELETED_FLAT_KEYS entries must be real channel keys. */
+declare const _assertDeletedKeysValid: Exclude<
+  DeletedFlatKey,
+  IpcChannelKey
+> extends never
+  ? true
+  : never;
 
 export interface XAgentApi extends XAgentApiFlat {
   workspace: WorkspaceApi;
@@ -1292,3 +1300,12 @@ export interface XAgentApi extends XAgentApiFlat {
   prefs: PrefsApi;
   updates: UpdatesApi;
 }
+
+/** Update UX facade. */
+export type UpdatesApi = {
+  getStatus: IpcInvokeMap["getUpdateStatus"];
+  check: IpcInvokeMap["checkForUpdates"];
+  download: IpcInvokeMap["downloadUpdate"];
+  install: IpcInvokeMap["installUpdate"];
+  onStatus: XAgentApiFlat["onUpdateStatus"];
+};

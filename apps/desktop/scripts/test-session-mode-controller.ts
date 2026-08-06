@@ -59,7 +59,6 @@ function createHarness(opts?: {
     getBundle: () => bundle,
     getResourceLoader: () => null,
     getBaseAppendPrompt: () => [],
-    setBaseAppendPrompt: () => {},
     emit: (e) => {
       events.push(e);
     },

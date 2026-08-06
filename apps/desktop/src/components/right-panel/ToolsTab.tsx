@@ -99,7 +99,7 @@ export function ToolsTab({
     setDetailTruncated(false);
     setDetailError(null);
 
-    void window.xAgent.getToolDetail(selected.id).then((detail) => {
+    void window.xAgent.session.getToolDetail(selected.id).then((detail) => {
       if (cancelled || !detail) return;
       setDetailArgs(formatMaybeJson(detail.args));
       setDetailResult(formatMaybeJson(detail.result));

@@ -19,7 +19,7 @@ test("打开项目后可在 Plan / Agent 间切换会话模式", async () => {
     await expect(main.locator('[data-mode="plan"]')).toBeDisabled();
 
     await main.evaluate(async (cwd) => {
-      const res = await window.xAgent.openProject(cwd, "new");
+      const res = await window.xAgent.workspace.open(cwd, "new");
       if (!res.ok) throw new Error(res.error ?? "openProject failed");
     }, tmp);
 
@@ -46,7 +46,7 @@ test("打开项目后可在 Plan / Agent 间切换会话模式", async () => {
       "false",
     );
   } finally {
-    await main.evaluate(() => window.xAgent.closeWorkspace()).catch(() => {});
+    await main.evaluate(() => window.xAgent.workspace.close()).catch(() => {});
     await app.close();
     rmSync(tmp, { recursive: true, force: true });
   }

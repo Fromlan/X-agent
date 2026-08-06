@@ -23,14 +23,17 @@ import type { ChatItem } from "../stores/chat-store";
 import {
   initialChatScrollPinState,
   isNearBottom,
-  isScrollUnpinKey,
   isScrollable,
   isVerticalScrollbarPointer,
-  isWheelUnpinDelta,
   reduceChatScrollPin,
   shouldFollow,
   type ChatScrollPinState,
 } from "../lib/chat-scroll-pin";
+import {
+  isUnpinKeyEvent,
+  isUnpinPointerEvent,
+  isUnpinTouchGesture,
+} from "../lib/chat-unpin-input";
 import {
   ROW_GAP_PX,
   VIRTUALIZE_MIN_ITEMS,
@@ -350,7 +353,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (isWheelUnpinDelta(e.deltaY)) {
+      if (isUnpinPointerEvent(e)) {
         unpinFromUser();
       }
     };
@@ -385,7 +388,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     const onTouchMove = (e: TouchEvent) => {
       const y = e.touches[0]?.clientY;
       if (y == null || touchLastY == null) return;
-      if (y - touchLastY > 8) {
+      if (isUnpinTouchGesture(y - touchLastY)) {
         unpinFromUser();
         touchLastY = y;
       } else if (y < touchLastY) {
@@ -397,7 +400,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isScrollUnpinKey(e.key)) {
+      if (isUnpinKeyEvent(e.key)) {
         unpinFromUser();
       }
     };

@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
 import type {
   TokenUsage,
   TurnUsage,
@@ -8,8 +7,7 @@ import type {
   UsageSummary,
 } from "../../shared/ipc";
 import { ensureAgentDir, getAgentDirPath } from "./prefs";
-import { readJsonAsync, writeJsonAtomic } from "./lib/atomic-write";
-import { withStoreLock } from "./lib/store-mutex";
+import { createStore, type Store } from "./lib/store";
 
 export interface UsageStoreFile {
   version: 1;
@@ -27,12 +25,25 @@ const EMPTY_TOKENS: TokenUsage = {
 /** Test override for store file path. */
 let usagePathOverride: string | null = null;
 
-/** 模块级 cache —— 由 withStoreLock 串行化所有写。 */
-let storeCache: UsageStoreFile | null = null;
+/** 模块级 store —— 读-改-写整体在 per-path 锁内,并发 turn 不丢累加。 */
+const usageStore: Store<UsageStoreFile> = createStore<UsageStoreFile>({
+  // 惰性路径:测试经 setUsageStorePathForTests 切换后缓存自动失效。
+  filePath: () => usagePath(),
+  defaults: { version: 1, days: {} },
+  decode: decodeUsageStore,
+});
+
+/** 校验并解码盘上 usage JSON;形状不符 / 损坏时回退空 store(与旧 loadStore 一致)。 */
+function decodeUsageStore(raw: unknown): UsageStoreFile {
+  const r = raw as Partial<UsageStoreFile> | null;
+  if (!r || r.version !== 1 || typeof r.days !== "object" || !r.days) {
+    return { version: 1, days: {} };
+  }
+  return { version: 1, days: r.days };
+}
 
 export function setUsageStorePathForTests(path: string | null): void {
   usagePathOverride = path;
-  storeCache = null;
 }
 
 function usagePath(): string {
@@ -75,51 +86,22 @@ export function localDateKey(d = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 同步读 usage(供 IPC 启动/单测)。 */
+/** 同步读 usage(供 IPC 启动/单测);缓存为空时同步读盘兜底。 */
 export function loadUsageStore(): UsageStoreFile {
-  if (storeCache) return storeCache;
   if (!usagePathOverride) ensureAgentDir();
-  const path = usagePath();
-  let raw: Partial<UsageStoreFile>;
-  try {
-    raw = JSON.parse(readFileSync(path, "utf8")) as Partial<UsageStoreFile>;
-  } catch {
-    const empty: UsageStoreFile = { version: 1, days: {} };
-    storeCache = empty;
-    return empty;
-  }
-  if (!raw || raw.version !== 1 || typeof raw.days !== "object" || !raw.days) {
-    const empty: UsageStoreFile = { version: 1, days: {} };
-    storeCache = empty;
-    return empty;
-  }
-  const loaded: UsageStoreFile = { version: 1, days: raw.days };
-  storeCache = loaded;
-  return loaded;
+  return usageStore.read();
 }
 
 /** 异步读 usage 并填 cache。 */
 export async function loadUsageStoreAsync(): Promise<UsageStoreFile> {
-  if (storeCache) return storeCache;
   if (!usagePathOverride) ensureAgentDir();
-  const path = usagePath();
-  const raw = await readJsonAsync<Partial<UsageStoreFile>>(path, {});
-  if (!raw || raw.version !== 1 || typeof raw.days !== "object" || !raw.days) {
-    const empty: UsageStoreFile = { version: 1, days: {} };
-    storeCache = empty;
-    return empty;
-  }
-  const loaded: UsageStoreFile = { version: 1, days: raw.days };
-  storeCache = loaded;
-  return loaded;
+  return usageStore.reload();
 }
 
-/** 异步原子写入 usage。串行到 withStoreLock 保证不丢并发 turn。 */
+/** 异步原子写入 usage。锁内整体替换,与 recordTurnUsage 互斥不丢并发 turn。 */
 export async function saveUsageStore(store: UsageStoreFile): Promise<void> {
   if (!usagePathOverride) ensureAgentDir();
-  storeCache = store;
-  const path = usagePath();
-  await withStoreLock(path, () => writeJsonAtomic(path, store));
+  await usageStore.write(store);
 }
 
 export function modelUsageKey(provider: string, modelId: string): string {
@@ -128,28 +110,29 @@ export function modelUsageKey(provider: string, modelId: string): string {
 
 /**
  * Record one successful assistant turn into the local daily aggregate (async).
- * 并发安全:由 writeQueue 串行化 read-modify-write。
+ * 并发安全:整个读-改-写循环在 Store 锁内,每个 turn 都基于最新落盘值累加。
  */
 export async function recordTurnUsage(
   modelKey: string,
   usage: TurnUsage,
   dateKey: string = localDateKey(),
 ): Promise<UsageStoreFile> {
-  const store = await loadUsageStoreAsync();
-  const day = store.days[dateKey] ?? emptyBucket();
-  day.tokens = addTokens(day.tokens, usage.tokens);
-  day.cost += usage.cost.total;
-  day.turns += 1;
+  if (!usagePathOverride) ensureAgentDir();
+  return usageStore.mutate((store) => {
+    const day = store.days[dateKey] ?? emptyBucket();
+    day.tokens = addTokens(day.tokens, usage.tokens);
+    day.cost += usage.cost.total;
+    day.turns += 1;
 
-  const model = day.byModel[modelKey] ?? emptyModelBucket();
-  model.tokens = addTokens(model.tokens, usage.tokens);
-  model.cost += usage.cost.total;
-  model.turns += 1;
-  day.byModel[modelKey] = model;
+    const model = day.byModel[modelKey] ?? emptyModelBucket();
+    model.tokens = addTokens(model.tokens, usage.tokens);
+    model.cost += usage.cost.total;
+    model.turns += 1;
+    day.byModel[modelKey] = model;
 
-  store.days[dateKey] = day;
-  await saveUsageStore(store);
-  return store;
+    store.days[dateKey] = day;
+    return store;
+  });
 }
 
 function sumBuckets(buckets: UsageModelBucket[]): UsageModelBucket {
@@ -212,7 +195,7 @@ export async function getUsageSummary(options?: {
 
 export async function clearUsageSummary(): Promise<{ ok: boolean; error?: string }> {
   try {
-    await saveUsageStore({ version: 1, days: {} });
+    await usageStore.mutate(() => ({ version: 1, days: {} }));
     return { ok: true };
   } catch (err) {
     return {

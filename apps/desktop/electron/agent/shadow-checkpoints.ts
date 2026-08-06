@@ -5,6 +5,13 @@
 import type { FileRestoreReport, RetractPreview } from "../../shared/ipc";
 import { ShadowGit, type ShadowRestoreResult } from "./shadow-git";
 import { isGitAvailable } from "./git-exec";
+import type {
+  RestoreAttempt,
+  RestorePreview,
+  RestoreSegmentScan,
+  RestoreSessionManager,
+  RestoreSource,
+} from "./restore-source";
 
 export const SHADOW_CHECKPOINT_CUSTOM_TYPE = "x-agent-shadow-checkpoints";
 
@@ -17,19 +24,7 @@ export type ShadowCheckpointPersistPayload = {
   turns: Record<string, TurnCheckpoint>;
 };
 
-type SessionManagerLike = {
-  getBranch: (fromId?: string) => Array<{
-    type: string;
-    id: string;
-    message?: { role?: string; content?: unknown };
-  }>;
-  getEntries: () => Array<{
-    type: string;
-    customType?: string;
-    data?: unknown;
-  }>;
-  appendCustomEntry: (customType: string, data?: unknown) => string;
-};
+type SessionManagerLike = RestoreSessionManager;
 
 function toReport(r: ShadowRestoreResult): FileRestoreReport {
   return {
@@ -46,7 +41,10 @@ function toReport(r: ShadowRestoreResult): FileRestoreReport {
   };
 }
 
-export class ShadowCheckpointTracker {
+export class ShadowCheckpointTracker implements RestoreSource {
+  readonly kind = "shadow" as const;
+  readonly label = "Shadow 检查点";
+  readonly fallbackWarning = "Shadow 检查点还原失败，已降级为 write/edit 基线。";
   private shadow: ShadowGit | null = null;
   private turns = new Map<string, TurnCheckpoint>();
   private dirty = false;
@@ -332,5 +330,23 @@ export class ShadowCheckpointTracker {
     this.dirty = true;
     this.persistDirty(sm);
     return { used: "shadow", report: toReport(result) };
+  }
+
+  /** RestoreSource seam: preview — same logic as previewRestore. */
+  async preview(
+    sm: RestoreSessionManager,
+    targetUserEntryId: string,
+    scan: RestoreSegmentScan,
+  ): Promise<RestorePreview> {
+    return this.previewRestore(sm, targetUserEntryId, scan);
+  }
+
+  /** RestoreSource seam: restore — same logic as restoreToUserTurn. */
+  async restore(
+    sm: RestoreSessionManager,
+    targetUserEntryId: string,
+    scan: RestoreSegmentScan,
+  ): Promise<RestoreAttempt> {
+    return this.restoreToUserTurn(sm, targetUserEntryId, scan.userEntryIds);
   }
 }

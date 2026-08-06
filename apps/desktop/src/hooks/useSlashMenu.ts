@@ -60,7 +60,7 @@ export function useSlashMenu(opts: UseSlashMenuOpts): UseSlashMenuResult {
     let cancelled = false;
     void (async () => {
       try {
-        const list = await window.xAgent.listSessionSlashItems();
+        const list = await window.xAgent.session.listSessionSlashItems();
         if (!cancelled) {
           setSlashItems(list);
           setSlashItemsLoaded(true);

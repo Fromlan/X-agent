@@ -12,6 +12,7 @@ import type {
 import { extractMessageText } from "../../shared/transcript";
 import type { TurnFileTracker } from "./turn-file-tracker";
 import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
+import { CompositeRestoreSource } from "./restore-source";
 
 export type RetractSessionBundle = {
   session: AgentSession;
@@ -84,40 +85,32 @@ export class RetractOrchestrator {
     }
     const sm = h.getBundle()!.session.sessionManager;
     const scan = h.fileTracker.scanSegmentSince(sm, resolved.entryId);
-    const shadowPreview = await h.shadowCheckpoints.previewRestore(
-      sm,
-      resolved.entryId,
-      scan,
-    );
+    const sources = new CompositeRestoreSource([h.shadowCheckpoints, h.fileTracker]);
+    const preview = await sources.preview(sm, resolved.entryId, scan);
 
-    if (shadowPreview.mode === "shadow") {
+    if (preview.mode === "shadow") {
       return {
         ok: true,
         editorText: resolved.editorText,
-        restorablePaths: shadowPreview.restorablePaths,
+        restorablePaths: preview.restorablePaths,
         unrestorablePaths: [],
-        hasBash: shadowPreview.hasBash,
-        hasGodot: shadowPreview.hasGodot,
-        warnings: shadowPreview.warnings,
+        hasBash: preview.hasBash,
+        hasGodot: preview.hasGodot,
+        warnings: preview.warnings,
         restoreMode: "shadow",
         shadowAvailable: true,
       };
     }
 
-    const baseline = h.fileTracker.previewRestore(sm, resolved.entryId);
-    const warnings = [
-      ...shadowPreview.warnings,
-      ...baseline.warnings.filter((w) => !shadowPreview.warnings.includes(w)),
-    ];
     return {
       ok: true,
       editorText: resolved.editorText,
-      restorablePaths: baseline.restorablePaths,
-      unrestorablePaths: baseline.unrestorablePaths,
-      hasBash: baseline.hasBash,
-      hasGodot: baseline.hasGodot,
-      warnings,
-      restoreMode: "baseline",
+      restorablePaths: preview.restorablePaths,
+      unrestorablePaths: preview.unrestorablePaths,
+      hasBash: preview.hasBash,
+      hasGodot: preview.hasGodot,
+      warnings: preview.warnings,
+      restoreMode: preview.mode === "none" ? "none" : "baseline",
       shadowAvailable: h.shadowCheckpoints.enabledShadow,
     };
   }
@@ -162,48 +155,9 @@ export class RetractOrchestrator {
 
       let restoreReport: RetractResult["restoreReport"];
       if (undoFiles) {
-        const shadow = await h.shadowCheckpoints.restoreToUserTurn(
-          sm,
-          resolved.entryId,
-          pendingScan.userEntryIds,
-        );
-        if (shadow.used === "shadow" && shadow.report) {
-          restoreReport = shadow.report;
-          if (pendingScan.hasGodot) {
-            restoreReport.skipped.push({ reason: "godot" });
-            restoreReport.warnings.push(
-              "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
-            );
-          }
-          if (pendingScan.hasBash) {
-            restoreReport.warnings.push(
-              "该段包含 bash：cwd 内文件已尽量由 Shadow 还原；cwd 外副作用无法还原。",
-            );
-          }
-        } else {
-          restoreReport = h.fileTracker.restorePaths(
-            pendingScan.mutationPaths,
-            pendingScan.userEntryIds,
-          );
-          if (shadow.report?.warnings.length) {
-            restoreReport.warnings.push(
-              "Shadow 检查点还原失败，已降级为 write/edit 基线。",
-              ...shadow.report.warnings,
-            );
-          }
-          if (pendingScan.hasBash) {
-            restoreReport.skipped.push({ reason: "bash_unknown" });
-            restoreReport.warnings.push(
-              "该段包含 bash，命令副作用无法保证还原。",
-            );
-          }
-          if (pendingScan.hasGodot) {
-            restoreReport.skipped.push({ reason: "godot" });
-            restoreReport.warnings.push(
-              "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
-            );
-          }
-        }
+        const sources = new CompositeRestoreSource([h.shadowCheckpoints, h.fileTracker]);
+        const attempt = await sources.restore(sm, resolved.entryId, pendingScan);
+        restoreReport = attempt.report;
         h.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);
         h.fileTracker.persistDirty(sm);
       }

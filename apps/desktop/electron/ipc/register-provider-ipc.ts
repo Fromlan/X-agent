@@ -12,32 +12,38 @@ import { fetchProviderModels } from "../agent/model-fetch";
 import type { SessionHost } from "../agent/session-host";
 import type { ProviderUpsertInput } from "../../shared/ipc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import { handle } from "./register-ipc";
 
 /** Provider / model catalog IPC. */
 export function registerProviderIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.listProviderProfiles, async () => listProviderProfiles());
-  ipcMain.handle(IPC_CHANNELS.getProviderProfile, async (_e, id: string) =>
+  handle(ipcMain, IPC_CHANNELS.listProviderProfiles, async () => listProviderProfiles());
+  handle(ipcMain, IPC_CHANNELS.getProviderProfile, async (_e, id: string) =>
     getProviderProfile(id),
   );
-  ipcMain.handle(IPC_CHANNELS.upsertProviderProfile, async (_e, input: ProviderUpsertInput) => {
-    const result = await upsertProviderProfile(input);
-    // Enabled sync or disabled prune both change TopBar catalog.
-    if (result.ok) {
-      await sessionHost.reloadRuntime({ hard: true });
-    }
-    return result;
-  });
-  ipcMain.handle(IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) => {
+  handle(
+    ipcMain,
+    IPC_CHANNELS.upsertProviderProfile,
+    async (_e, input: ProviderUpsertInput) => {
+      const result = await upsertProviderProfile(input);
+      // Enabled sync or disabled prune both change TopBar catalog.
+      if (result.ok) {
+        await sessionHost.reloadRuntime({ hard: true });
+      }
+      return result;
+    },
+  );
+  handle(ipcMain, IPC_CHANNELS.deleteProviderProfile, async (_e, id: string) => {
     const result = await deleteProviderProfile(id);
     if (result.ok) {
       await sessionHost.reloadRuntime({ hard: true });
     }
     return result;
   });
-  ipcMain.handle(
+  handle(
+    ipcMain,
     IPC_CHANNELS.setProviderProfileEnabled,
     async (_e, id: string, enabled: boolean) => {
       const result = await setProviderProfileEnabled(id, enabled);
@@ -47,11 +53,12 @@ export function registerProviderIpc(
       return result;
     },
   );
-  ipcMain.handle(IPC_CHANNELS.listProviderPresets, async () => listProviderPresets());
-  ipcMain.handle(IPC_CHANNELS.importExistingProviderProfiles, async () =>
+  handle(ipcMain, IPC_CHANNELS.listProviderPresets, async () => listProviderPresets());
+  handle(ipcMain, IPC_CHANNELS.importExistingProviderProfiles, async () =>
     importExistingProviderProfiles(),
   );
-  ipcMain.handle(
+  handle(
+    ipcMain,
     IPC_CHANNELS.fetchProviderModels,
     async (_e, input: { baseUrl: string; apiKey: string }) =>
       fetchProviderModels(input),
