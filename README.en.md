@@ -61,7 +61,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 ## Usage
 
 1. Open the app → **Open project** to your Godot project root (resumes the latest session by default)
-2. Pick model & Thinking; switch **Agent / Plan / Goal** as needed; send prompts
+2. Pick model & Thinking from the toolbar below the input; switch **Agent / Plan / Goal** as needed; send prompts
 3. For the Godot control plane:
    - Enable Godot editor / docs tools under **Settings → Tools**
    - **Settings → Godot → Editor**: install/enable the **X-agent RPC** addon and keep the bridge connected
