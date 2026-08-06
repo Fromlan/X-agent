@@ -38,27 +38,37 @@ function makeHost(overrides?: {
     hasGodot: false,
   };
   const fileTracker = {
+    kind: "baseline" as const,
+    label: "write/edit 基线",
+    fallbackWarning: "write/edit 基线还原失败。",
     scanSegmentSince: vi.fn(() => scanSegment),
-    previewRestore: vi.fn(() => ({
+    preview: vi.fn(async () => ({
+      mode: "baseline" as const,
       restorablePaths: ["a.txt"],
       unrestorablePaths: [],
       hasBash: false,
       hasGodot: false,
       warnings: [],
     })),
-    restorePaths: vi.fn(() => ({
-      restored: ["a.txt"],
-      deleted: [],
-      skipped: [],
-      warnings: [],
+    restore: vi.fn(async () => ({
+      used: "baseline" as const,
+      report: {
+        restored: ["a.txt"],
+        deleted: [],
+        skipped: [],
+        warnings: [],
+      },
     })),
     dropBaselinesForTurns: vi.fn(),
     persistDirty: vi.fn(),
     setActiveUserEntryId: vi.fn(),
   };
   const shadowCheckpoints = {
+    kind: "shadow" as const,
+    label: "Shadow 检查点",
+    fallbackWarning: "Shadow 检查点还原失败，已降级为 write/edit 基线。",
     enabledShadow: false,
-    previewRestore: vi.fn(async () => ({
+    preview: vi.fn(async () => ({
       mode: "baseline" as const,
       restorablePaths: [],
       unrestorablePaths: [],
@@ -66,7 +76,7 @@ function makeHost(overrides?: {
       hasGodot: false,
       warnings: [],
     })),
-    restoreToUserTurn: vi.fn(async () => ({
+    restore: vi.fn(async () => ({
       used: (overrides?.shadowRestore ?? "none") as "shadow" | "none",
       report: {
         restored: ["a.txt"],
@@ -204,9 +214,8 @@ describe("RetractOrchestrator.preview", () => {
   it("Shadow 可用时走 shadow preview", async () => {
     const ctx = makeHost();
     ctx.shadowCheckpoints.enabledShadow = true;
-    ctx.shadowCheckpoints.previewRestore.mockResolvedValue({
+    ctx.shadowCheckpoints.preview.mockResolvedValue({
       mode: "shadow",
-      shadowSha: "abc123",
       restorablePaths: ["a.txt", "b.txt"],
       unrestorablePaths: [],
       hasBash: true,
@@ -227,8 +236,8 @@ describe("RetractOrchestrator.preview", () => {
     const res = await orch.preview("u1");
     expect(res.ok).toBe(true);
     expect(res.restoreMode).toBe("baseline");
-    expect(ctx.shadowCheckpoints.previewRestore).toHaveBeenCalled();
-    expect(ctx.fileTracker.previewRestore).toHaveBeenCalled();
+    expect(ctx.shadowCheckpoints.preview).toHaveBeenCalled();
+    expect(ctx.fileTracker.preview).toHaveBeenCalled();
   });
 });
 
@@ -261,8 +270,8 @@ describe("RetractOrchestrator.retract", () => {
     const orch = makeOrchestrator(ctx.host);
     const res = await orch.retract("u1");
     expect(res.ok).toBe(true);
-    expect(ctx.shadowCheckpoints.restoreToUserTurn).toHaveBeenCalled();
-    expect(ctx.fileTracker.restorePaths).not.toHaveBeenCalled();
+    expect(ctx.shadowCheckpoints.restore).toHaveBeenCalled();
+    expect(ctx.fileTracker.restore).not.toHaveBeenCalled();
     expect(res.restoreReport?.restored).toContain("a.txt");
   });
 
@@ -271,8 +280,8 @@ describe("RetractOrchestrator.retract", () => {
     const orch = makeOrchestrator(ctx.host);
     const res = await orch.retract("u1", { undoFiles: false });
     expect(res.ok).toBe(true);
-    expect(ctx.shadowCheckpoints.restoreToUserTurn).not.toHaveBeenCalled();
-    expect(ctx.fileTracker.restorePaths).not.toHaveBeenCalled();
+    expect(ctx.shadowCheckpoints.restore).not.toHaveBeenCalled();
+    expect(ctx.fileTracker.restore).not.toHaveBeenCalled();
   });
 
   it("成功路径触发历史替换与状态清理", async () => {

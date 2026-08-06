@@ -1,6 +1,7 @@
-import { writeFile } from "node:fs/promises";
 import type { ProviderActivateResult } from "../../shared/ipc";
 import { getCachedPrefs, patchPrefs } from "./prefs";
+import { writeJsonAtomic } from "./lib/atomic-write";
+import { withStoreLock } from "./lib/store-mutex";
 import {
   modelEntryForPiModelsJson,
   pruneStaleProviderKeys,
@@ -51,38 +52,46 @@ export async function syncProfileToPi(
   ensureParent(paths.authPath);
   ensureParent(paths.modelsPath);
 
-  const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
-  // Drop DeepSeek vs deepseek style shadows only — never remove a different
-  // providerId (e.g. deepseek vs deepseek-anthropic must coexist).
-  pruneStaleProviderKeys(auth, profile.providerId);
-  auth[profile.providerId] = {
-    type: "api_key",
-    key: profile.apiKey,
-  };
-  await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
+  // auth.json 读-改-写在 per-path 锁内原子落盘:跨档案并发激活不再互踩丢 key。
+  const auth = await withStoreLock(paths.authPath, async () => {
+    const a = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
+    // Drop DeepSeek vs deepseek style shadows only — never remove a different
+    // providerId (e.g. deepseek vs deepseek-anthropic must coexist).
+    pruneStaleProviderKeys(a, profile.providerId);
+    a[profile.providerId] = {
+      type: "api_key",
+      key: profile.apiKey,
+    };
+    await writeJsonAtomic(paths.authPath, a);
+    return a;
+  });
   invalidateAuthCache();
 
-  const modelsFile = await readJsonFile<{
-    providers?: Record<string, unknown>;
-  }>(paths.modelsPath, { providers: {} });
-  if (!modelsFile.providers || typeof modelsFile.providers !== "object") {
-    modelsFile.providers = {};
-  }
-  pruneStaleProviderKeys(modelsFile.providers, profile.providerId);
-  // Full replace of this provider's model list (edit must drop removed ids).
-  modelsFile.providers[profile.providerId] = {
-    baseUrl: profile.baseUrl,
-    api: profile.api,
-    models: profile.models.map((m) =>
-      modelEntryForPiModelsJson(
-        m,
-        profile.api,
-        profile.providerId,
-        profile.baseUrl,
+  // models.json 读-改-写同理,与 auth 各用各的锁(锁内无其他带锁调用,不死锁)。
+  const modelsFile = await withStoreLock(paths.modelsPath, async () => {
+    const m = await readJsonFile<{
+      providers?: Record<string, unknown>;
+    }>(paths.modelsPath, { providers: {} });
+    if (!m.providers || typeof m.providers !== "object") {
+      m.providers = {};
+    }
+    pruneStaleProviderKeys(m.providers, profile.providerId);
+    // Full replace of this provider's model list (edit must drop removed ids).
+    m.providers[profile.providerId] = {
+      baseUrl: profile.baseUrl,
+      api: profile.api,
+      models: profile.models.map((entry) =>
+        modelEntryForPiModelsJson(
+          entry,
+          profile.api,
+          profile.providerId,
+          profile.baseUrl,
+        ),
       ),
-    ),
-  };
-  await writeFile(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
+    };
+    await writeJsonAtomic(paths.modelsPath, m);
+    return m;
+  });
 
   if (setActiveId) {
     store.activeId = profile.id;
@@ -135,10 +144,6 @@ export async function pruneProviderIdFromPi(
   ensureParent(paths.authPath);
   ensureParent(paths.modelsPath);
 
-  const modelsFile = await readJsonFile<{
-    providers?: Record<string, { baseUrl?: string }>;
-  }>(paths.modelsPath, { providers: {} });
-
   const dropKeys = (obj: Record<string, unknown>): boolean => {
     let changed = false;
     for (const key of Object.keys(obj)) {
@@ -169,55 +174,39 @@ export async function pruneProviderIdFromPi(
     return changed;
   };
 
-  const auth = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
-  if (dropKeys(auth)) {
-    await writeFile(paths.authPath, JSON.stringify(auth, null, 2), "utf8");
+  // auth.json 锁内读-改-写;prune 是幂等删除,锁保证并发 prune 的读基于最新值。
+  const authChanged = await withStoreLock(paths.authPath, async () => {
+    const a = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
+    const changed = dropKeys(a);
+    if (changed) {
+      await writeJsonAtomic(paths.authPath, a);
+    }
+    return changed;
+  });
+  if (authChanged) {
     invalidateAuthCache();
   }
 
-  let modelsChanged = false;
-  if (modelsFile.providers && dropKeys(modelsFile.providers)) {
-    modelsChanged = true;
-  }
-  // baseUrl 兜底:大小写匹配可能漏掉历史档案的拼写漂移(同 baseUrl 但 Pi key
-  // 与档案 providerId 不一致)。只要档案带 baseUrl,始终按 baseUrl 扫一遍
-  // 剩余 Pi key —— 同 baseUrl 的视为"指向同一供应商",一并清掉。
-  if (ownBaseUrl && modelsFile.providers) {
-    if (dropByBaseUrl(modelsFile.providers, ownBaseUrl, modelsFile.providers)) {
-      modelsChanged = true;
+  // models.json 锁内读-改-写,含 baseUrl 家族兜底清理。
+  await withStoreLock(paths.modelsPath, async () => {
+    const m = await readJsonFile<{
+      providers?: Record<string, { baseUrl?: string }>;
+    }>(paths.modelsPath, { providers: {} });
+    let changed = false;
+    if (m.providers && dropKeys(m.providers)) {
+      changed = true;
     }
-  }
-  if (modelsChanged) {
-    await writeFile(
-      paths.modelsPath,
-      JSON.stringify(modelsFile, null, 2),
-      "utf8",
-    );
-  }
-}
-
-/**
- * Compat: ensure enabled + sync + optionally force prefs to primary model.
- */
-export async function activateProviderProfile(
-  id: string,
-  paths: ProviderPaths = defaultProviderPaths(),
-  options?: { updatePrefs?: boolean },
-): Promise<ProviderActivateResult> {
-  const store = await loadStore(paths);
-  const idx = store.profiles.findIndex((p) => p.id === id);
-  if (idx < 0) return { ok: false, error: "档案不存在" };
-  if (!store.profiles[idx]!.enabled) {
-    store.profiles[idx] = {
-      ...store.profiles[idx]!,
-      enabled: true,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveStore(paths, store);
-  }
-  return syncProfileToPi(id, paths, {
-    updatePrefs: options?.updatePrefs !== false,
-    setActiveId: true,
+    // baseUrl 兜底:大小写匹配可能漏掉历史档案的拼写漂移(同 baseUrl 但 Pi key
+    // 与档案 providerId 不一致)。只要档案带 baseUrl,始终按 baseUrl 扫一遍
+    // 剩余 Pi key —— 同 baseUrl 的视为"指向同一供应商",一并清掉。
+    if (ownBaseUrl && m.providers) {
+      if (dropByBaseUrl(m.providers, ownBaseUrl, m.providers)) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      await writeJsonAtomic(paths.modelsPath, m);
+    }
   });
 }
 

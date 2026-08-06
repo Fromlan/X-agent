@@ -1,159 +1,54 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { DELETED_FLAT_KEYS } from "../shared/ipc";
 import type {
-  AgentSessionMode,
   AppUpdateStatus,
+  DeletedFlatKey,
+  FlatInvokeApi,
+  IpcChannelKey,
+  IpcInvokeMap,
+  UiAgentEvent,
   XAgentApi,
   XAgentApiFlat,
-  ClientPrefs,
-  PluginCreateInput,
-  ProviderUpsertInput,
-  ThinkingLevel,
-  UiAgentEvent,
 } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 import { dbgLog, dbgTimer } from "../shared/debug-log";
 
+/**
+ * Builds the invoke surface for every channel from the single source of truth
+ * (IPC_CHANNELS + IpcInvokeMap). The generated methods are plain
+ * `(...args) => ipcRenderer.invoke(channel, ...args)` forwards; key name ==
+ * channel name is guaranteed by the compile-time coverage gate in shared/ipc.ts.
+ */
+function makeInvokeApi(): FlatInvokeApi {
+  const api = {} as FlatInvokeApi;
+  // Index assignment through the mapped type is conservative (intersection);
+  // write via a record whose value type does not depend on the key.
+  const writer = api as Record<IpcChannelKey, IpcInvokeMap[IpcChannelKey]>;
+  for (const key of Object.keys(IPC_CHANNELS)) {
+    const channelKey = key as IpcChannelKey;
+    const invoke: IpcInvokeMap[IpcChannelKey] = ((...args: unknown[]) =>
+      ipcRenderer.invoke(channelKey, ...args)) as IpcInvokeMap[IpcChannelKey];
+    writer[channelKey] = invoke;
+  }
+  return api;
+}
+
+const api = makeInvokeApi();
+
+// Channel-keyed methods that keep custom logging on the renderer side.
+api.prompt = ((text: string) => {
+  dbgLog("preload", "invoke prompt", { len: text?.length, preview: text?.slice(0, 80) });
+  const done = dbgTimer("preload", "prompt roundtrip");
+  return ipcRenderer.invoke(IPC_CHANNELS.prompt, text).then((result) => {
+    done();
+    dbgLog("preload", "prompt result", result);
+    return result;
+  });
+}) as IpcInvokeMap["prompt"];
+
+/** Flat surface: generated invoke methods minus the facade-covered ones. */
 const flatApi: XAgentApiFlat = {
-  // session / workspace
-  openProject: (path?: string, mode?: "continue" | "new") =>
-    ipcRenderer.invoke(IPC_CHANNELS.openProject, path, mode),
-  prompt: (text: string) => {
-    dbgLog("preload", "invoke prompt", { len: text?.length, preview: text?.slice(0, 80) });
-    const done = dbgTimer("preload", "prompt roundtrip");
-    return ipcRenderer.invoke(IPC_CHANNELS.prompt, text).then((result) => {
-      done();
-      dbgLog("preload", "prompt result", result);
-      return result;
-    });
-  },
-  abort: () => {
-    dbgLog("preload", "invoke abort");
-    return ipcRenderer.invoke(IPC_CHANNELS.abort);
-  },
-  previewRetract: (entryId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.previewRetract, entryId),
-  retractToUserMessage: (
-    entryId: string,
-    options?: { undoFiles?: boolean },
-  ) => ipcRenderer.invoke(IPC_CHANNELS.retractToUserMessage, entryId, options),
-  editAndResend: (
-    entryId: string,
-    text: string,
-    options?: { undoFiles?: boolean },
-  ) => ipcRenderer.invoke(IPC_CHANNELS.editAndResend, entryId, text, options),
-  regenerateFromUser: (
-    entryId: string,
-    options?: { undoFiles?: boolean },
-  ) => ipcRenderer.invoke(IPC_CHANNELS.regenerateFromUser, entryId, options),
-  newSession: () => ipcRenderer.invoke(IPC_CHANNELS.newSession),
-  setModel: (provider: string, id: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.setModel, provider, id),
-  setThinkingLevel: (level: ThinkingLevel) =>
-    ipcRenderer.invoke(IPC_CHANNELS.setThinkingLevel, level),
-  setSessionMode: (mode: AgentSessionMode) =>
-    ipcRenderer.invoke(IPC_CHANNELS.setSessionMode, mode),
-  getSessionMode: () => ipcRenderer.invoke(IPC_CHANNELS.getSessionMode),
-  buildPlan: () => ipcRenderer.invoke(IPC_CHANNELS.buildPlan),
-  getPlanContent: () => ipcRenderer.invoke(IPC_CHANNELS.getPlanContent),
-  savePlanContent: (markdown: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.savePlanContent, markdown),
-  savePlanToWorkspace: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.savePlanToWorkspace),
-  clearPlan: () => ipcRenderer.invoke(IPC_CHANNELS.clearPlan),
-  setGoal: (condition: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.setGoal, condition),
-  pauseGoal: () => ipcRenderer.invoke(IPC_CHANNELS.pauseGoal),
-  resumeGoal: () => ipcRenderer.invoke(IPC_CHANNELS.resumeGoal),
-  clearGoal: () => ipcRenderer.invoke(IPC_CHANNELS.clearGoal),
-  getGoal: () => ipcRenderer.invoke(IPC_CHANNELS.getGoal),
-  listModels: () => ipcRenderer.invoke(IPC_CHANNELS.listModels),
-  listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.listSessions),
-  resumeSession: (sessionPath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.resumeSession, sessionPath),
-  deleteSession: (sessionPath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.deleteSession, sessionPath),
-  deleteProjectSessions: (projectCwd: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.deleteProjectSessions, projectCwd),
-  closeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.closeWorkspace),
-  renameSession: (sessionPath: string, name: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.renameSession, sessionPath, name),
-  getPrefs: () => ipcRenderer.invoke(IPC_CHANNELS.getPrefs),
-  setPrefs: (patch: Partial<ClientPrefs>) => ipcRenderer.invoke(IPC_CHANNELS.setPrefs, patch),
-  getPrefsRecoveryNotice: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.getPrefsRecoveryNotice),
-  getSecretCodecStatus: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.getSecretCodecStatus),
-  checkBash: () => ipcRenderer.invoke(IPC_CHANNELS.checkBash),
-  checkBashLiveness: () => ipcRenderer.invoke(IPC_CHANNELS.checkBashLiveness),
-  applyBashShellPath: (shellPath?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.applyBashShellPath, shellPath),
-  pickBashShell: () => ipcRenderer.invoke(IPC_CHANNELS.pickBashShell),
-  checkGit: () => ipcRenderer.invoke(IPC_CHANNELS.checkGit),
-  checkAuth: () => ipcRenderer.invoke(IPC_CHANNELS.checkAuth),
-  checkPiCli: () => ipcRenderer.invoke(IPC_CHANNELS.checkPiCli),
-  installPiCli: () => ipcRenderer.invoke(IPC_CHANNELS.installPiCli),
-  getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getStatus),
-  getToolDetail: (toolCallId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.getToolDetail, toolCallId),
-  listProjectDir: (relPath?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.listProjectDir, relPath),
-  readProjectFile: (relPath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.readProjectFile, relPath),
-  revealInFolder: (relPath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, relPath),
-  // godot
-  godotRpcStatus: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcStatus),
-  godotRpcStart: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcStart),
-  godotRpcStop: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcStop),
-  godotRpcPing: () => ipcRenderer.invoke(IPC_CHANNELS.godotRpcPing),
-  godotRpcRequest: (call, options) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotRpcRequest, call, options),
-  godotRpcSetActiveClient: (clientId) =>
-    ipcRenderer.invoke(IPC_CHANNELS.godotRpcSetActiveClient, clientId),
-  pickGodotEditor: () => ipcRenderer.invoke(IPC_CHANNELS.pickGodotEditor),
-  launchGodotEditor: () => ipcRenderer.invoke(IPC_CHANNELS.launchGodotEditor),
-  installGodotRpcAddon: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.installGodotRpcAddon),
-  pickGodotScene: () => ipcRenderer.invoke(IPC_CHANNELS.pickGodotScene),
-  listPlugins: (cwd) => ipcRenderer.invoke(IPC_CHANNELS.listPlugins, cwd),
-  listSessionSlashItems: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.listSessionSlashItems),
-  readPlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.readPlugin, path),
-  writePlugin: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.writePlugin, path, content),
-  createPlugin: (input: PluginCreateInput) =>
-    ipcRenderer.invoke(IPC_CHANNELS.createPlugin, input),
-  deletePlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.deletePlugin, path),
-  revealPlugin: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealPlugin, path),
-  reloadResources: () => ipcRenderer.invoke(IPC_CHANNELS.reloadResources),
-  // providers
-  listProviderProfiles: () => ipcRenderer.invoke(IPC_CHANNELS.listProviderProfiles),
-  getProviderProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.getProviderProfile, id),
-  upsertProviderProfile: (input: ProviderUpsertInput) =>
-    ipcRenderer.invoke(IPC_CHANNELS.upsertProviderProfile, input),
-  deleteProviderProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.deleteProviderProfile, id),
-  setProviderProfileEnabled: (id, enabled) =>
-    ipcRenderer.invoke(IPC_CHANNELS.setProviderProfileEnabled, id, enabled),
-  listProviderPresets: () => ipcRenderer.invoke(IPC_CHANNELS.listProviderPresets),
-  importExistingProviderProfiles: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.importExistingProviderProfiles),
-  fetchProviderModels: (input) => ipcRenderer.invoke(IPC_CHANNELS.fetchProviderModels, input),
-  listInstalledPackages: () => ipcRenderer.invoke(IPC_CHANNELS.listInstalledPackages),
-  installPackage: (source: string) => ipcRenderer.invoke(IPC_CHANNELS.installPackage, source),
-  uninstallPackage: (source: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.uninstallPackage, source),
-  installGodotPiPackage: () => ipcRenderer.invoke(IPC_CHANNELS.installGodotPiPackage),
-  openPiLogin: () => ipcRenderer.invoke(IPC_CHANNELS.openPiLogin),
-  openExternalUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternalUrl, url),
-  getUpdateStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getUpdateStatus),
-  checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates),
-  downloadUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.downloadUpdate),
-  installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.installUpdate),
-  getSessionUsage: () => ipcRenderer.invoke(IPC_CHANNELS.getSessionUsage),
-  compactSession: (customInstructions?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.compactSession, customInstructions),
-  getUsageSummary: (options?: { days?: number }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.getUsageSummary, options),
-  clearUsageSummary: () => ipcRenderer.invoke(IPC_CHANNELS.clearUsageSummary),
+  ...pickInvokeApi(api),
   notifyAppReady: () => ipcRenderer.invoke(IPC_CHANNELS.appReady),
   onEvent: (handler: (event: UiAgentEvent) => void) => {
     const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
@@ -175,72 +70,84 @@ const flatApi: XAgentApiFlat = {
   },
 };
 
-const api: XAgentApi = {
+function pickInvokeApi(source: FlatInvokeApi): Omit<FlatInvokeApi, DeletedFlatKey> {
+  const kept = {} as FlatInvokeApi;
+  const writer = kept as Record<keyof FlatInvokeApi, IpcInvokeMap[IpcChannelKey]>;
+  const deleted = DELETED_FLAT_KEYS as readonly string[];
+  for (const key of Object.keys(source)) {
+    if (!deleted.includes(key)) {
+      writer[key as keyof FlatInvokeApi] = source[key as keyof FlatInvokeApi];
+    }
+  }
+  return kept as Omit<FlatInvokeApi, DeletedFlatKey>;
+}
+
+const exposed: XAgentApi = {
   ...flatApi,
   workspace: {
-    open: flatApi.openProject,
-    close: flatApi.closeWorkspace,
-    newSession: flatApi.newSession,
-    resume: flatApi.resumeSession,
-    listSessions: flatApi.listSessions,
-    deleteSession: flatApi.deleteSession,
-    deleteProjectSessions: flatApi.deleteProjectSessions,
-    renameSession: flatApi.renameSession,
-    getStatus: flatApi.getStatus,
+    open: api.openProject,
+    close: api.closeWorkspace,
+    newSession: api.newSession,
+    resume: api.resumeSession,
+    listSessions: api.listSessions,
+    deleteSession: api.deleteSession,
+    deleteProjectSessions: api.deleteProjectSessions,
+    renameSession: api.renameSession,
+    getStatus: api.getStatus,
   },
   turn: {
-    prompt: flatApi.prompt,
-    abort: flatApi.abort,
-    previewRetract: flatApi.previewRetract,
-    retract: flatApi.retractToUserMessage,
-    editAndResend: flatApi.editAndResend,
-    regenerate: flatApi.regenerateFromUser,
+    prompt: api.prompt,
+    abort: api.abort,
+    previewRetract: api.previewRetract,
+    retract: api.retractToUserMessage,
+    editAndResend: api.editAndResend,
+    regenerate: api.regenerateFromUser,
   },
   plan: {
-    setMode: flatApi.setSessionMode,
-    getMode: flatApi.getSessionMode,
-    build: flatApi.buildPlan,
-    getContent: flatApi.getPlanContent,
-    saveContent: flatApi.savePlanContent,
-    saveToWorkspace: flatApi.savePlanToWorkspace,
-    clear: flatApi.clearPlan,
-    setGoal: flatApi.setGoal,
-    pauseGoal: flatApi.pauseGoal,
-    resumeGoal: flatApi.resumeGoal,
-    clearGoal: flatApi.clearGoal,
-    getGoal: flatApi.getGoal,
+    setMode: api.setSessionMode,
+    getMode: api.getSessionMode,
+    build: api.buildPlan,
+    getContent: api.getPlanContent,
+    saveContent: api.savePlanContent,
+    saveToWorkspace: api.savePlanToWorkspace,
+    clear: api.clearPlan,
+    setGoal: api.setGoal,
+    pauseGoal: api.pauseGoal,
+    resumeGoal: api.resumeGoal,
+    clearGoal: api.clearGoal,
+    getGoal: api.getGoal,
   },
   session: {
-    setModel: flatApi.setModel,
-    setThinkingLevel: flatApi.setThinkingLevel,
-    listModels: flatApi.listModels,
-    getSessionUsage: flatApi.getSessionUsage,
-    compactSession: flatApi.compactSession,
-    getToolDetail: flatApi.getToolDetail,
-    reloadResources: flatApi.reloadResources,
-    listSessionSlashItems: flatApi.listSessionSlashItems,
+    setModel: api.setModel,
+    setThinkingLevel: api.setThinkingLevel,
+    listModels: api.listModels,
+    getSessionUsage: api.getSessionUsage,
+    compactSession: api.compactSession,
+    getToolDetail: api.getToolDetail,
+    reloadResources: api.reloadResources,
+    listSessionSlashItems: api.listSessionSlashItems,
   },
   prefs: {
-    get: flatApi.getPrefs,
-    set: flatApi.setPrefs,
-    getRecoveryNotice: flatApi.getPrefsRecoveryNotice,
-    getSecretCodecStatus: flatApi.getSecretCodecStatus,
-    checkBash: flatApi.checkBash,
-    checkBashLiveness: flatApi.checkBashLiveness,
-    applyBashShellPath: flatApi.applyBashShellPath,
-    pickBashShell: flatApi.pickBashShell,
-    checkGit: flatApi.checkGit,
-    checkAuth: flatApi.checkAuth,
-    checkPiCli: flatApi.checkPiCli,
-    installPiCli: flatApi.installPiCli,
+    get: api.getPrefs,
+    set: api.setPrefs,
+    getRecoveryNotice: api.getPrefsRecoveryNotice,
+    getSecretCodecStatus: api.getSecretCodecStatus,
+    checkBash: api.checkBash,
+    checkBashLiveness: api.checkBashLiveness,
+    applyBashShellPath: api.applyBashShellPath,
+    pickBashShell: api.pickBashShell,
+    checkGit: api.checkGit,
+    checkAuth: api.checkAuth,
+    checkPiCli: api.checkPiCli,
+    installPiCli: api.installPiCli,
   },
   updates: {
-    getStatus: flatApi.getUpdateStatus,
-    check: flatApi.checkForUpdates,
-    download: flatApi.downloadUpdate,
-    install: flatApi.installUpdate,
+    getStatus: api.getUpdateStatus,
+    check: api.checkForUpdates,
+    download: api.downloadUpdate,
+    install: api.installUpdate,
     onStatus: flatApi.onUpdateStatus,
   },
-};
+} as XAgentApi;
 
-contextBridge.exposeInMainWorld("xAgent", api);
+contextBridge.exposeInMainWorld("xAgent", exposed);

@@ -20,6 +20,11 @@ import {
   fileExistsAsync,
 } from "./lib/atomic-write";
 import { withStoreLock } from "./lib/store-mutex";
+import {
+  createStore,
+  StoreMutationAborted,
+  type Store,
+} from "./lib/store";
 import * as providerPiSync from "./provider-pi-sync";
 import { importExistingProviderProfiles } from "./provider-import";
 
@@ -55,6 +60,51 @@ export function defaultProviderPaths(): ProviderPaths {
 
 function emptyStore(): ProviderStoreFile {
   return { version: 1, activeId: null, profiles: [] };
+}
+
+/** Per-storePath Store 实例缓存(测试/多目录会传自定义 paths)。 */
+const storeInstances = new Map<string, Store<ProviderStoreFile>>();
+
+/**
+ * 取(或建)绑定 storePath 的 Store。锁 key = storePath,与 saveStore /
+ * loadStore 共用同一把 per-path 锁,upsert / setEnabled / delete 不再丢更新。
+ */
+function providerStore(paths: ProviderPaths): Store<ProviderStoreFile> {
+  let store = storeInstances.get(paths.storePath);
+  if (!store) {
+    store = createStore<ProviderStoreFile>({
+      filePath: paths.storePath,
+      defaults: emptyStore(),
+      decode: decodeProviderStore,
+      encode: encodeProviderStore,
+    });
+    storeInstances.set(paths.storePath, store);
+  }
+  return store;
+}
+
+/** 解码盘上 JSON:apiKey 从加密形态解回明文(与旧 loadStore 行为一致)。 */
+function decodeProviderStore(raw: unknown): ProviderStoreFile {
+  const r = raw as Partial<ProviderStoreFile> | null;
+  const profiles = (Array.isArray(r?.profiles) ? r.profiles : []).map((p) =>
+    normalizeProfile(p as Partial<ProviderProfile>),
+  );
+  return {
+    version: 1,
+    activeId: r?.activeId ?? null,
+    profiles,
+  };
+}
+
+/** 编码落盘 JSON:apiKey 加密后再写(保持盘上形状不变)。 */
+function encodeProviderStore(store: ProviderStoreFile): ProviderStoreFile {
+  return {
+    ...store,
+    profiles: store.profiles.map((p) => ({
+      ...p,
+      apiKey: encryptSecret(p.apiKey),
+    })),
+  };
 }
 
 export async function readJsonFile<T>(
@@ -138,18 +188,7 @@ export async function loadStore(
   paths: ProviderPaths,
 ): Promise<ProviderStoreFile> {
   ensureParent(paths.storePath);
-  const raw = await readJsonFile<Partial<ProviderStoreFile>>(
-    paths.storePath,
-    emptyStore(),
-  );
-  const profiles = (Array.isArray(raw.profiles) ? raw.profiles : []).map((p) =>
-    normalizeProfile(p as Partial<ProviderProfile>),
-  );
-  return {
-    version: 1,
-    activeId: raw.activeId ?? null,
-    profiles,
-  };
+  return providerStore(paths).reload();
 }
 
 export async function saveStore(
@@ -378,7 +417,6 @@ export async function upsertProviderProfile(
   const err = validateUpsert(input);
   if (err) return { ok: false, error: err };
 
-  const store = await loadStore(paths);
   const now = new Date().toISOString();
   const models = input.models
     .map((m) => {
@@ -394,63 +432,83 @@ export async function upsertProviderProfile(
     })
     .filter((m): m is ProviderModelEntry => !!m);
 
-  let profile: ProviderProfile;
-  let previousProviderId: string | null = null;
+  // 结果经对象容器传出(闭包内赋值不会被 TS 窄化误判为 never)。
+  const outcome: {
+    profile: ProviderProfile | null;
+    previousProviderId: string | null;
+  } = { profile: null, previousProviderId: null };
 
-  if (input.id) {
-    const idx = store.profiles.findIndex((p) => p.id === input.id);
-    if (idx < 0) return { ok: false, error: "档案不存在" };
-    const prev = store.profiles[idx]!;
-    previousProviderId = prev.providerId;
-    const nextEnabled =
-      input.enabled !== undefined ? input.enabled !== false : prev.enabled;
-    // 编辑路径下也不允许把唯一启用档案改成 disabled。
-    if (
-      prev.enabled &&
-      !nextEnabled &&
-      !hasOtherEnabledProfile(store.profiles, prev.id, nextEnabled)
-    ) {
-      return { ok: false, error: PROVIDER_LAST_ENABLED_ERROR };
+  ensureParent(paths.storePath);
+  try {
+    // 锁内读-改-写:并发 upsert / setEnabled / delete 各自基于最新落盘值,
+    // 不再出现"锁外读同一 base,后写覆盖前写"的丢更新。
+    await providerStore(paths).mutate((store) => {
+      if (input.id) {
+        const idx = store.profiles.findIndex((p) => p.id === input.id);
+        if (idx < 0) throw new StoreMutationAborted("档案不存在");
+        const prev = store.profiles[idx]!;
+        outcome.previousProviderId = prev.providerId;
+        const nextEnabled =
+          input.enabled !== undefined ? input.enabled !== false : prev.enabled;
+        // 编辑路径下也不允许把唯一启用档案改成 disabled。
+        if (
+          prev.enabled &&
+          !nextEnabled &&
+          !hasOtherEnabledProfile(store.profiles, prev.id, nextEnabled)
+        ) {
+          throw new StoreMutationAborted(PROVIDER_LAST_ENABLED_ERROR);
+        }
+        outcome.profile = {
+          ...prev,
+          name: input.name.trim(),
+          providerId: input.providerId.trim(),
+          api: input.api,
+          baseUrl: input.baseUrl.trim().replace(/\/$/, ""),
+          apiKey: input.apiKey.trim(),
+          models,
+          notes: input.notes?.trim() || undefined,
+          updatedAt: now,
+          enabled: nextEnabled,
+        };
+        store.profiles[idx] = outcome.profile;
+      } else {
+        outcome.profile = {
+          id: randomUUID(),
+          name: input.name.trim(),
+          providerId: input.providerId.trim(),
+          api: input.api,
+          baseUrl: input.baseUrl.trim().replace(/\/$/, ""),
+          apiKey: input.apiKey.trim(),
+          models,
+          notes: input.notes?.trim() || undefined,
+          updatedAt: now,
+          enabled: input.enabled !== false,
+        };
+        store.profiles.push(outcome.profile);
+      }
+      return store;
+    });
+  } catch (caught) {
+    // 校验类中止(不写盘) vs 真实 I/O 错误(照常冒泡,与旧行为一致)。
+    if (caught instanceof StoreMutationAborted) {
+      return { ok: false, error: caught.message };
     }
-    profile = {
-      ...prev,
-      name: input.name.trim(),
-      providerId: input.providerId.trim(),
-      api: input.api,
-      baseUrl: input.baseUrl.trim().replace(/\/$/, ""),
-      apiKey: input.apiKey.trim(),
-      models,
-      notes: input.notes?.trim() || undefined,
-      updatedAt: now,
-      enabled: nextEnabled,
-    };
-    store.profiles[idx] = profile;
-  } else {
-    profile = {
-      id: randomUUID(),
-      name: input.name.trim(),
-      providerId: input.providerId.trim(),
-      api: input.api,
-      baseUrl: input.baseUrl.trim().replace(/\/$/, ""),
-      apiKey: input.apiKey.trim(),
-      models,
-      notes: input.notes?.trim() || undefined,
-      updatedAt: now,
-      enabled: input.enabled !== false,
-    };
-    store.profiles.push(profile);
+    throw caught;
   }
+  if (!outcome.profile) return { ok: false, error: "档案不存在" };
 
-  await saveStore(paths, store);
-
-  const sync = await applyPiSyncForProfile(profile, paths, previousProviderId);
+  const sync = await applyPiSyncForProfile(
+    outcome.profile,
+    paths,
+    outcome.previousProviderId,
+  );
   if (!sync.ok) {
     return { ok: false, error: sync.error };
   }
 
   return {
     ok: true,
-    profile,
+    profile: outcome.profile,
     syncedToPi: sync.syncedToPi,
   };
 }
@@ -460,28 +518,40 @@ export async function setProviderProfileEnabled(
   enabled: boolean,
   paths: ProviderPaths = defaultProviderPaths(),
 ): Promise<{ ok: boolean; error?: string; syncedToPi?: boolean }> {
-  const store = await loadStore(paths);
-  const idx = store.profiles.findIndex((p) => p.id === id);
-  if (idx < 0) return { ok: false, error: "档案不存在" };
-  const prev = store.profiles[idx]!;
-  const nextEnabled = enabled !== false;
-  // 关掉当前档案后是否还有其它启用档案;没有则拒绝。
-  if (
-    prev.enabled &&
-    !nextEnabled &&
-    !hasOtherEnabledProfile(store.profiles, id, nextEnabled)
-  ) {
-    return { ok: false, error: PROVIDER_LAST_ENABLED_ERROR };
-  }
-  const profile = {
-    ...prev,
-    enabled: nextEnabled,
-    updatedAt: new Date().toISOString(),
-  };
-  store.profiles[idx] = profile;
-  await saveStore(paths, store);
+  const outcome: { profile: ProviderProfile | null } = { profile: null };
 
-  const sync = await applyPiSyncForProfile(profile, paths, null);
+  ensureParent(paths.storePath);
+  try {
+    await providerStore(paths).mutate((store) => {
+      const idx = store.profiles.findIndex((p) => p.id === id);
+      if (idx < 0) throw new StoreMutationAborted("档案不存在");
+      const prev = store.profiles[idx]!;
+      const nextEnabled = enabled !== false;
+      // 关掉当前档案后是否还有其它启用档案;没有则拒绝。
+      if (
+        prev.enabled &&
+        !nextEnabled &&
+        !hasOtherEnabledProfile(store.profiles, id, nextEnabled)
+      ) {
+        throw new StoreMutationAborted(PROVIDER_LAST_ENABLED_ERROR);
+      }
+      outcome.profile = {
+        ...prev,
+        enabled: nextEnabled,
+        updatedAt: new Date().toISOString(),
+      };
+      store.profiles[idx] = outcome.profile;
+      return store;
+    });
+  } catch (caught) {
+    if (caught instanceof StoreMutationAborted) {
+      return { ok: false, error: caught.message };
+    }
+    throw caught;
+  }
+  if (!outcome.profile) return { ok: false, error: "档案不存在" };
+
+  const sync = await applyPiSyncForProfile(outcome.profile, paths, null);
   if (!sync.ok) {
     return { ok: false, error: sync.error };
   }
@@ -492,22 +562,35 @@ export async function deleteProviderProfile(
   id: string,
   paths: ProviderPaths = defaultProviderPaths(),
 ): Promise<{ ok: boolean; error?: string; prunedProviderId?: string }> {
-  const store = await loadStore(paths);
-  const idx = store.profiles.findIndex((p) => p.id === id);
-  if (idx < 0) return { ok: false, error: "档案不存在" };
-  const removed = store.profiles[idx]!;
-  // 删除最后一个启用档案后,启用集合为空:拒绝。
-  if (removed.enabled && !hasOtherEnabledProfilePure(store.profiles, id)) {
-    return { ok: false, error: PROVIDER_LAST_ENABLED_ERROR };
+  const outcome: { profile: ProviderProfile | null } = { profile: null };
+
+  ensureParent(paths.storePath);
+  try {
+    await providerStore(paths).mutate((store) => {
+      const idx = store.profiles.findIndex((p) => p.id === id);
+      if (idx < 0) throw new StoreMutationAborted("档案不存在");
+      const target = store.profiles[idx]!;
+      // 删除最后一个启用档案后,启用集合为空:拒绝。
+      if (target.enabled && !hasOtherEnabledProfilePure(store.profiles, id)) {
+        throw new StoreMutationAborted(PROVIDER_LAST_ENABLED_ERROR);
+      }
+      store.profiles.splice(idx, 1);
+      if (store.activeId === id) {
+        store.activeId = null;
+      }
+      outcome.profile = target;
+      return store;
+    });
+  } catch (caught) {
+    if (caught instanceof StoreMutationAborted) {
+      return { ok: false, error: caught.message };
+    }
+    throw caught;
   }
-  store.profiles.splice(idx, 1);
-  if (store.activeId === id) {
-    store.activeId = null;
-  }
-  await saveStore(paths, store);
+  if (!outcome.profile) return { ok: false, error: "档案不存在" };
 
   const { pruneProviderIdFromPi } = providerPiSync;
-  await pruneProviderIdFromPi(removed.providerId, paths);
+  await pruneProviderIdFromPi(outcome.profile.providerId, paths);
 
-  return { ok: true, prunedProviderId: removed.providerId };
+  return { ok: true, prunedProviderId: outcome.profile.providerId };
 }

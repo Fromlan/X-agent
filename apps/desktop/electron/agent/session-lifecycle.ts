@@ -65,9 +65,7 @@ export type SessionBundle = {
 export type SessionLifecycleAccess = {
   getBundle(): SessionBundle | null;
   setBundle(bundle: SessionBundle | null): void;
-  getResourceLoader(): DefaultResourceLoader | null;
   setResourceLoader(loader: DefaultResourceLoader | null): void;
-  getBaseAppendPrompt(): string[];
   setBaseAppendPrompt(base: string[]): void;
   setLastTurnUsage(u: TurnUsage | undefined): void;
   clearCompactionState(): void;

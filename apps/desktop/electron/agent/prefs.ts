@@ -8,8 +8,7 @@ import {
   writeFileSync,
   existsSync,
 } from "node:fs";
-import { writeJsonAtomic } from "./lib/atomic-write";
-import { withStoreLock } from "./lib/store-mutex";
+import { createStore, type Store } from "./lib/store";
 import {
   ClientPrefs,
   DEFAULT_PREFS,
@@ -35,9 +34,19 @@ export function setAgentDirOverrideForTests(dir: string | null): void {
 /**
  * 启动期同步预热的 prefs cache (filled by `loadPrefsWithRecovery` during boot)。
  * 业务热路径 IPC handler 全部走 `getCachedPrefs()` 同步读 cache,避免 IPC 延迟;
- * `savePrefs` / `patchPrefs` 改 async 后写入也会同步更新 cache。
+ * `patchPrefs` 走 Store.mutate,写入后同步更新 cache。
  */
-let cachedPrefs: ClientPrefs | null = null;
+const store: Store<ClientPrefs> = createStore<ClientPrefs>({
+  // 惰性路径:测试经 setAgentDirOverrideForTests 切换目录后自动失效缓存。
+  filePath: () => prefsPath(),
+  defaults: { ...DEFAULT_PREFS },
+  decode: (raw) => normalizeLoadedPrefs(raw as RawPrefs),
+  onWriteError: (_err, value) => {
+    // Windows 偶发 EPERM(目标文件被后台进程持锁);fallback 到同步写以保证
+    // IPC handler 仍能完成。atomic write 已通过路径覆盖保护,我们接受这一退化。
+    writeFileSync(prefsPath(), JSON.stringify(value, null, 2), "utf8");
+  },
+});
 
 function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
   const {
@@ -139,24 +148,26 @@ export function loadPrefs(): ClientPrefs {
     if (!existsSync(path)) {
       const defaults = { ...DEFAULT_PREFS };
       writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
+      store.prime(defaults);
       return defaults;
     }
     raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
   } catch {
-    return { ...DEFAULT_PREFS };
+    const defaults = { ...DEFAULT_PREFS };
+    store.prime(defaults);
+    return defaults;
   }
-  return normalizeLoadedPrefs(raw);
+  const normalized = normalizeLoadedPrefs(raw);
+  store.prime(normalized);
+  return normalized;
 }
 
 /**
  * 同步读 cache(供业务主路径复用)。
- * cache 未填充(理论不会发生,bootRuntime 已预热)时同步 `loadPrefs()` 兜底。
+ * cache 未填充(理论不会发生,bootRuntime 已预热)时同步读盘兜底。
  */
 export function getCachedPrefs(): ClientPrefs {
-  if (cachedPrefs) return cachedPrefs;
-  const loaded = loadPrefs();
-  cachedPrefs = loaded;
-  return loaded;
+  return store.read();
 }
 
 export type PrefsRecoveryNotice = {
@@ -185,13 +196,13 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
   if (!existsSync(path)) {
     const defaults = { ...DEFAULT_PREFS };
     writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
-    cachedPrefs = defaults;
+    store.prime(defaults);
     return { ok: true, prefs: defaults, recovered: null };
   }
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as RawPrefs;
     const normalized = normalizeLoadedPrefs(raw);
-    cachedPrefs = normalized;
+    store.prime(normalized);
     return {
       ok: true,
       prefs: normalized,
@@ -217,7 +228,7 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
       );
     }
     const defaults = { ...DEFAULT_PREFS };
-    cachedPrefs = defaults;
+    store.prime(defaults);
     return {
       ok: false,
       prefs: defaults,
@@ -226,51 +237,37 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
   }
 }
 
-async function savePrefs(prefs: ClientPrefs): Promise<ClientPrefs> {
-  ensureAgentDir();
-  // 串行化所有 prefs 写:避免并发 patchPrefs 读同一 cache 后写覆盖前写。
-  // cachedPrefs 同步赋值放在锁内进行,保证 patchPrefs 链路上的读-改-写一致。
-  const path = prefsPath();
-  await withStoreLock(path, async () => {
-    cachedPrefs = prefs;
-    try {
-      await writeJsonAtomic(path, prefs);
-    } catch {
-      // Windows 偶发 EPERM(目标文件被后台进程持锁);fallback 到同步写以保证
-      // IPC handler 仍能完成。atomic write 已通过路径覆盖保护,我们接受这一退化。
-      writeFileSync(path, JSON.stringify(prefs, null, 2), "utf8");
-    }
-  });
-  return prefs;
-}
-
 export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPrefs> {
-  const current = cachedPrefs ?? getCachedPrefs();
-  const next = { ...current, ...patch };
-  if (typeof patch.autoCompactPercent === "number") {
-    next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
-      ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))
-      : DEFAULT_PREFS.autoCompactPercent;
-  }
-  if (typeof patch.goalMaxTurns === "number") {
-    next.goalMaxTurns = Number.isFinite(patch.goalMaxTurns)
-      ? Math.min(200, Math.max(1, Math.floor(patch.goalMaxTurns)))
-      : DEFAULT_PREFS.goalMaxTurns;
-  }
-  if (typeof patch.goalMaxTokens === "number") {
-    next.goalMaxTokens = Number.isFinite(patch.goalMaxTokens)
-      ? Math.min(10_000_000, Math.max(10_000, Math.floor(patch.goalMaxTokens)))
-      : DEFAULT_PREFS.goalMaxTokens;
-  }
-  if (patch.disabledSkills !== undefined) {
-    next.disabledSkills = Array.isArray(patch.disabledSkills)
-      ? patch.disabledSkills
-          .filter((k): k is string => typeof k === "string")
-          .map((k) => k.trim())
-          .filter((k) => k.length > 0)
-      : [];
-  }
-  return savePrefs(next);
+  ensureAgentDir();
+  // 整个读-改-写循环在 per-path 锁内(Store.mutate):并发 patch 不会读到同一
+  // 旧 base 后互相覆盖;clamp / 归一化随 fn 在锁内计算,结果同步写盘并刷新 cache。
+  return store.mutate((prev) => {
+    const next = { ...prev, ...patch };
+    if (typeof patch.autoCompactPercent === "number") {
+      next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
+        ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))
+        : DEFAULT_PREFS.autoCompactPercent;
+    }
+    if (typeof patch.goalMaxTurns === "number") {
+      next.goalMaxTurns = Number.isFinite(patch.goalMaxTurns)
+        ? Math.min(200, Math.max(1, Math.floor(patch.goalMaxTurns)))
+        : DEFAULT_PREFS.goalMaxTurns;
+    }
+    if (typeof patch.goalMaxTokens === "number") {
+      next.goalMaxTokens = Number.isFinite(patch.goalMaxTokens)
+        ? Math.min(10_000_000, Math.max(10_000, Math.floor(patch.goalMaxTokens)))
+        : DEFAULT_PREFS.goalMaxTokens;
+    }
+    if (patch.disabledSkills !== undefined) {
+      next.disabledSkills = Array.isArray(patch.disabledSkills)
+        ? patch.disabledSkills
+            .filter((k): k is string => typeof k === "string")
+            .map((k) => k.trim())
+            .filter((k) => k.length > 0)
+        : [];
+    }
+    return next;
+  });
 }
 
 export function getAgentDirPath(): string {

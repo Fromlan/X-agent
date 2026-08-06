@@ -10,6 +10,13 @@ import {
 import { dirname } from "node:path";
 import type { FileRestoreReport, FileRestoreSkipReason } from "../../shared/ipc";
 import { resolveInsideCwd } from "./cwd-sandbox";
+import type {
+  RestoreAttempt,
+  RestorePreview,
+  RestoreSegmentScan,
+  RestoreSessionManager,
+  RestoreSource,
+} from "./restore-source";
 
 export const FILE_BASELINE_CUSTOM_TYPE = "x-agent-file-baselines";
 export const MAX_BASELINE_BYTES = 2 * 1024 * 1024;
@@ -69,9 +76,7 @@ type SessionManagerLike = {
   getEntries: () => SessionEntryLike[];
   getEntry: (id: string) => SessionEntryLike | undefined;
   appendCustomEntry: (customType: string, data?: unknown) => string;
-};
-
-/**
+};/**
  * 工具入参键集合，按使用频率排序。
  * - `path` / `file_path` / `filePath` / `file`：通用文件路径
  * - `notebook_path`：Jupyter 风格
@@ -135,7 +140,10 @@ function toolCallsFromAssistantContent(
 /**
  * Tracks pre-mutation file bytes per user-turn so retract can restore them.
  */
-export class TurnFileTracker {
+export class TurnFileTracker implements RestoreSource {
+  readonly kind = "baseline" as const;
+  readonly label = "write/edit 基线";
+  readonly fallbackWarning = "write/edit 基线还原失败。";
   private cwd = "";
   /** userEntryId → rel → baseline。第一条 capture 胜出。symlink 单独存 target。 */
   private turnBaselines = new Map<string, Map<string, BaselineEntry>>();
@@ -420,6 +428,28 @@ export class TurnFileTracker {
     }
 
     return { restored, deleted, skipped, warnings };
+  }
+
+  /** RestoreSource seam: preview — baseline always answers with its own scan. */
+  async preview(
+    sm: RestoreSessionManager,
+    targetUserEntryId: string,
+    _scan: RestoreSegmentScan,
+  ): Promise<RestorePreview> {
+    const p = this.previewRestore(sm, targetUserEntryId);
+    return { mode: "baseline", ...p };
+  }
+
+  /** RestoreSource seam: restore — replays baselines recorded before mutations. */
+  async restore(
+    sm: RestoreSessionManager,
+    _targetUserEntryId: string,
+    scan: RestoreSegmentScan,
+  ): Promise<RestoreAttempt> {
+    return {
+      used: "baseline",
+      report: this.restorePaths(scan.mutationPaths, scan.userEntryIds),
+    };
   }
 
   /**
