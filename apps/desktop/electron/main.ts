@@ -210,8 +210,8 @@ function createMain(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
-    minWidth: 800,
-    minHeight: 560,
+    minWidth: 1188,
+    minHeight: 800,
     title: "X-agent",
     backgroundColor: BG,
     show: false,
@@ -224,6 +224,10 @@ function createMain(): void {
       devTools: true,
     },
   });
+
+  // Explicit hard floor — guards against Win11 Snap Layout / DPI bypass
+  // of the constructor `minWidth/minHeight` hint.
+  mainWindow.setMinimumSize(1188, 800);
 
   installDebugShortcuts(mainWindow);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

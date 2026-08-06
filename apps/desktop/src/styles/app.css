@@ -4,6 +4,19 @@
 @import "@fontsource/jetbrains-mono/500.css";
 @import "./themes.css";
 
+/* Global reduced-motion safety net: any infinite animation not explicitly
+ * handled by a local block (bubble-actions, api-status-line, etc.) gets
+ * killed here. Keep this block at the top so it can override selectors
+ * lower in the file via source order. */
+@media (prefers-reduced-motion: reduce) {
+  .status-icon-dot,
+  .api-status-line .api-status-dot,
+  .stream-cursor::after,
+  .icon-spin {
+    animation: none !important;
+  }
+}
+
 :root {
   color-scheme: dark;
 
@@ -739,12 +752,18 @@ input:not([type]):-webkit-autofill {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+/* Non-color channel: error uses a rounded-square so it's distinguishable
+ * from idle (circle) / streaming (pulsing circle) / starting (diamond)
+ * for colorblind users. */
 .status-icon-dot.status-error {
   background: var(--accent-red);
+  border-radius: 2px;
 }
 
 .status-icon-dot.status-starting {
   background: var(--accent-yellow);
+  border-radius: 2px;
+  transform: rotate(45deg);
 }
 
 @keyframes pulse {
@@ -1005,6 +1024,39 @@ body.is-resizing-column * {
   color: var(--text-muted);
   font-size: 12px;
   text-align: center;
+}
+
+/* Skeleton placeholders rendered while `listSessions` is in flight.
+ * Uses a soft shimmer; honors prefers-reduced-motion (see top of file). */
+.session-skeleton {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-skeleton-row {
+  height: 28px;
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+    90deg,
+    var(--bg-input) 0%,
+    var(--bg-list-hover) 50%,
+    var(--bg-input) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s linear infinite;
+}
+
+.session-skeleton-row.is-short {
+  width: 60%;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .session-card {
@@ -1522,7 +1574,8 @@ body.is-resizing-column * {
   line-height: 1.6;
   word-break: break-word;
   overflow-wrap: anywhere;
-  max-width: min(82%, 100%);
+  /* Cap reading width on wide screens: 82% of narrow viewports, hard 760px ceiling. */
+  max-width: min(82%, 760px);
   border: 1px solid var(--border-primary);
   position: relative;
   z-index: 2;
@@ -1854,7 +1907,7 @@ body.is-resizing-column * {
   background: var(--bubble-user);
   color: var(--text-primary);
   width: max-content;
-  max-width: 82%;
+  max-width: min(82%, 560px);
 }
 
 .bubble-user:has(.bubble-edit) {
@@ -2627,6 +2680,8 @@ body.is-resizing-column * {
 
 .composer textarea {
   width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
   resize: none;
   min-height: 52px;
   max-height: 220px;
@@ -2639,6 +2694,8 @@ body.is-resizing-column * {
   font-size: 14px;
   line-height: 1.5;
   field-sizing: content;
+  box-sizing: border-box;
+  display: block;
 }
 
 .composer textarea:hover:not(:disabled):not(:read-only),
@@ -4413,6 +4470,9 @@ body.is-resizing-column * {
 }
 
 .rp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
@@ -4421,6 +4481,15 @@ body.is-resizing-column * {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+}
+
+.rp-tab svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.rp-tab.active svg {
+  opacity: 1;
 }
 
 .rp-tab:hover {
