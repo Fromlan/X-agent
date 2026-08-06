@@ -2471,35 +2471,17 @@ body.is-resizing-column * {
   min-width: 0;
 }
 
-.composer-mode-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-  min-width: 0;
-}
-
-.composer-mode-pills {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  max-width: 100%;
-  padding: 3px;
-  border: 1px solid color-mix(in srgb, var(--border-primary) 82%, var(--text-muted));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--bg-input) 88%, var(--bg-app));
-}
-
+/* 模式 pill —— 拆掉原 `.composer-mode-pills` 外框,4 个独立 pill;
+   尺寸略缩(原外框 padding:3px + 内 pill 6px)以保证底栏高度不增。 */
 .composer-mode-pill {
   --mode-color: var(--text-secondary);
   appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 6px 10px;
+  gap: 5px;
+  min-height: 28px;
+  padding: 5px 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -2564,13 +2546,6 @@ body.is-resizing-column * {
 .composer-mode-pill:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.composer-mode-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
 }
 
 .goal-banner {
@@ -2683,19 +2658,29 @@ body.is-resizing-column * {
 .composer-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   min-width: 0;
 }
 
-.composer-hint {
-  flex: 1 1 auto;
+/* 底栏左侧:模式 4 个独立 pill + 可选「执行计划」 */
+.composer-mode-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex-shrink: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: var(--text-dim);
+}
+
+/* 底栏中段:模型 + Thinking SelectMenu + 展示思考按钮 —— 紧贴模式组 */
+.composer-model-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 /* Live API status line above the textarea. Mirrors `.status-icon-dot` tones. */
@@ -2739,6 +2724,8 @@ body.is-resizing-column * {
   justify-content: flex-end;
   gap: 6px;
   flex-shrink: 0;
+  /* 把发送组推到模式 + 模型组之后,避免窄屏时单独换行落到底部 */
+  margin-left: auto;
 }
 
 .composer-send.btn-cta:disabled {
@@ -5582,11 +5569,26 @@ body.is-resizing-column * {
   color: var(--text-primary);
 }
 
+/* ≤1280px —— 隐藏模型/Thinking/展示思考 文字标签,让底部工具条更紧凑。
+   同时把模型 SelectMenu 触发器宽度上限收紧到 180px。 */
+@media (max-width: 1280px) {
+  .composer-toolbar .field-label,
+  .thinking-toggle-label {
+    display: none;
+  }
+
+  .select-menu-pill .select-menu-trigger {
+    width: clamp(80px, 16vw, 180px);
+  }
+
+  .select-menu-pill.select-menu-compact .select-menu-trigger {
+    width: clamp(64px, 9vw, 100px);
+  }
+}
+
 @media (max-width: 1100px) {
   .topbar .btn-label,
-  .topbar .field-label,
-  .topbar .status-label,
-  .thinking-toggle-label {
+  .topbar .status-label {
     display: none;
   }
 
@@ -5598,15 +5600,13 @@ body.is-resizing-column * {
     width: clamp(88px, 22vw, 160px);
   }
 
-  .select-menu-pill .select-menu-trigger {
-    width: clamp(88px, 22vw, 160px);
-  }
-
   .cwd {
     max-width: 200px;
   }
 }
 
+/* ≤900px —— 模式行强制独占一行,模型 + 发送组共用第二行。
+   发送按钮的 `margin-left: auto` 仍负责把它推到右侧。 */
 @media (max-width: 900px) {
   .message-stream {
     padding: 12px 12px 36px;
@@ -5624,12 +5624,39 @@ body.is-resizing-column * {
     padding: 10px 12px 12px;
   }
 
-  .composer-hint {
-    display: none;
+  .composer-mode-row {
+    flex-basis: 100%;
+    margin-bottom: 2px;
+  }
+
+  .composer-actions {
+    margin-left: auto;
   }
 
   .plugins-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ≤700px —— 模式 pill 文字隐藏,只保留图标,腾出横向空间给模型/发送。 */
+@media (max-width: 700px) {
+  .composer-mode-pill-text {
+    display: none;
+  }
+
+  .composer-mode-pill {
+    padding-left: 8px;
+    padding-right: 8px;
+    gap: 0;
+  }
+
+  /* 进一步压缩 SelectMenu 触发器,确保模型行能放下发送按钮 */
+  .select-menu-pill .select-menu-trigger {
+    width: clamp(72px, 18vw, 150px);
+  }
+
+  .select-menu-pill.select-menu-compact .select-menu-trigger {
+    width: clamp(60px, 10vw, 92px);
   }
 }
 

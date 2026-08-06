@@ -1,6 +1,5 @@
 import { memo } from "react";
 import {
-  Brain,
   Download,
   FolderOpen,
   MessageSquarePlus,
@@ -13,20 +12,12 @@ import type {
   AgentStatus,
   AppUpdateStatus,
   ColorMode,
-  ModelInfo,
-  ThinkingLevel,
 } from "@shared/ipc";
 import { StatusIcon } from "./StatusIcon";
-import { SelectMenu } from "./SelectMenu";
 
 interface Props {
   cwd: string | null;
   status: AgentStatus;
-  models: ModelInfo[];
-  currentModelKey: string;
-  thinkingLevel: ThinkingLevel;
-  thinkingLevels: ThinkingLevel[];
-  showThinking: boolean;
   theme: ColorMode;
   busy: boolean;
   rightPanelOpen: boolean;
@@ -35,9 +26,6 @@ interface Props {
   updateActionBusy?: boolean;
   onOpenProject: () => void;
   onNewSession: () => void;
-  onModelChange: (value: string) => void;
-  onThinkingChange: (level: ThinkingLevel) => void;
-  onToggleThinking: () => void;
   onToggleTheme: () => void;
   onToggleRightPanel: () => void;
   onOpenSettings: () => void;
@@ -52,23 +40,7 @@ function statusLabel(status: AgentStatus): string {
   return "空闲";
 }
 
-function capitalizeLabel(text: string): string {
-  if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 function TopBarImpl(props: Props) {
-  const modelOptions =
-    props.models.length === 0
-      ? [{ value: "", label: "无可用模型", disabled: true }]
-      : props.models.map((m) => {
-          const key = `${m.provider}/${m.id}`;
-          return {
-            value: key,
-            label: m.name?.trim() || m.id,
-          };
-        });
-
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -104,51 +76,6 @@ function TopBarImpl(props: Props) {
       </div>
 
       <div className="topbar-right">
-        <div className="field" title="模型">
-          <span className="field-label">模型</span>
-          <SelectMenu
-            variant="pill"
-            className="select-menu-centered"
-            value={props.currentModelKey}
-            options={modelOptions}
-            onChange={props.onModelChange}
-            disabled={!props.cwd || props.models.length === 0 || props.busy}
-            aria-label="模型"
-            placeholder="选择模型"
-          />
-        </div>
-
-        <div className="field" title="Thinking">
-          <span className="field-label">Thinking</span>
-          <SelectMenu
-            variant="pill"
-            className="select-menu-compact select-menu-centered"
-            value={props.thinkingLevel}
-            options={props.thinkingLevels.map((level) => ({
-              value: level,
-              label: capitalizeLabel(level),
-            }))}
-            onChange={(v) => props.onThinkingChange(v as ThinkingLevel)}
-            disabled={!props.cwd || props.busy}
-            aria-label="Thinking"
-          />
-        </div>
-
-        <button
-          type="button"
-          className={`thinking-toggle${props.showThinking ? " is-on" : ""}`}
-          onClick={props.onToggleThinking}
-          title={props.showThinking ? "关闭展示思考" : "开启展示思考"}
-          aria-pressed={props.showThinking}
-          aria-label="切换展示思考"
-        >
-          <Brain size={14} strokeWidth={2} />
-          <span className="thinking-toggle-label">展示思考</span>
-          <span className="thinking-toggle-state" aria-hidden="true">
-            {props.showThinking ? "开" : "关"}
-          </span>
-        </button>
-
         <button
           type="button"
           className="btn btn-ghost btn-sm"
