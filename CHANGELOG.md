@@ -8,7 +8,9 @@
 
 ## Unreleased
 
-（占位：下个版本的变更说明）
+### 功能
+
+- **Godot 工具扩展（1.3 全量 — 8 个只读内省工具）**：Agent 工具集新增 8 个只读类 Godot 工具，默认归 GODOT_TOOLS 开关、需用户手动启用，类型跨度从项目结构到导出预检：`godot_list_project_files`（按 `type` / 子串 `pattern` 过滤 `res://` 文件树，`limit` 默认 500、上限 5000，带 `cursor` 分页）、`godot_resolve_uid`（`res://` ↔ `uid://` 双向查，要求二选一）、`godot_wait_for_import_done`（轮询 EditorFileSystem 完成指定路径的 import，默认等待 30s、上限 60s）、`godot_list_global_classes`（`ProjectSettings.get_global_class_list()` 透出）、`godot_find_class_name_conflicts`（扫 `.gd` 顶部 `class_name` 声明找出重复名，默认排除 `addons/`）、`godot_inspect_script`（反射 GDScript 的 signals / methods / properties / constants 与 `base_script`、`instance_base_type`）、`godot_list_export_presets`（行级解析 `export_presets.cfg` 的 `[preset.N]` 段）、`godot_check_export_templates`（列 `{OS.get_config_dir()}/exported/templates/<version>/` 下 `*.tpz` 文件并报告 installed 状态）。设置页「项目内省（只读 1.3）」区块同步加 5 个直接 RPC 调试按钮（列出文件 / 全局类名 / 导出预设 / 模板状态 / 反射脚本）。Godot 插件 `plugin.cfg` / `plugin.gd` 版本号沿用 0.5.0 不变，等下次发版再统一升线。
 
 ## 0.4.1
 
