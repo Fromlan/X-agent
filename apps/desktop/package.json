@@ -15,6 +15,7 @@
     "prebuild": "tsx scripts/inject-splash-version.ts",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "pretest": "tsx scripts/inject-splash-version.ts",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:coverage": "vitest run --coverage",
