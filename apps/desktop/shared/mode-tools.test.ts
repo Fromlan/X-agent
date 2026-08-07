@@ -8,6 +8,7 @@ import {
   READONLY_CORE_TOOLS,
   PLAN_MODE_CORE_TOOLS,
   PLAN_MODE_OPTIONAL_READONLY_TOOLS,
+  PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS,
 } from "./mode-tools";
 
 describe("mode-tools allowlists", () => {
@@ -51,5 +52,20 @@ describe("mode-tools allowlists", () => {
         "godot_lint_scripts",
       ]),
     );
+  });
+
+  it("扩展只读工具放行 godot_detect_project 且与 prefs 开关互斥", () => {
+    // godot_detect_project 由 godot-pi Package 注册,不进 prefs 开关,
+    // 因此放在独立的 READONLY_EXTENSION_TOOLS 列表中,无需 prefs.has 过滤。
+    expect(PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS).toContain(
+      "godot_detect_project",
+    );
+    expect(PLAN_MODE_OPTIONAL_READONLY_TOOLS).not.toContain(
+      "godot_detect_project",
+    );
+    for (const t of PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS) {
+      // 与 Godot RPC 写型工具前缀可能撞,确保不会有写型工具混入。
+      expect(["godot_detect_project"]).toContain(t);
+    }
   });
 });

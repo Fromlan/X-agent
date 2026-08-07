@@ -23,3 +23,12 @@ export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_get_project_setting",
   "godot_lint_scripts",
 ] as const;
+
+/**
+ * 只读 Pi 扩展工具 —— 不走 prefs 开关、由 godot-pi Package 注册到 Pi 扩展运行时，
+ * 只要该 Package 装入就常驻。Plan / Ask 模式默认放行（纯读取，不改任何文件），
+ * 不与 PLAN_MODE_OPTIONAL_READONLY_TOOLS 混在一起：后者要求用户在设置中勾选才放行。
+ */
+export const PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS = [
+  "godot_detect_project",
+] as const;
