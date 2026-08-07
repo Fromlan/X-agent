@@ -2666,19 +2666,19 @@ body.is-resizing-column * {
   transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
 }
 
-.composer-shell[data-mode="agent"] {
+.composer-shell[data-session-mode="agent"] {
   --mode-color: var(--accent-blue);
 }
 
-.composer-shell[data-mode="ask"] {
+.composer-shell[data-session-mode="ask"] {
   --mode-color: var(--ctx-messages);
 }
 
-.composer-shell[data-mode="plan"] {
+.composer-shell[data-session-mode="plan"] {
   --mode-color: var(--ctx-skills);
 }
 
-.composer-shell[data-mode="goal"] {
+.composer-shell[data-session-mode="goal"] {
   --mode-color: var(--accent-yellow);
 }
 
