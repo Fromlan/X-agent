@@ -20,6 +20,16 @@ const LINT_CHECK_ONLY_TIMEOUT_MS := 30_000
 const EXPORT_TIMEOUT_MS := 300_000
 ## 1.2：find_unused_resources 视为文本并扫描引用的扩展名（其余按二进制跳过）。
 const SCAN_TEXT_EXTENSIONS := ["tscn", "tres", "res", "gd", "gdshader", "cfg", "json", "txt", "md", "godot", "svg", "css", "glsl"]
+
+
+## 1.3：list_project_files / wait_for_import_done 上限与默认值。
+const LIST_FILES_DEFAULT_LIMIT := 500
+const LIST_FILES_MAX_LIMIT := 5000
+const WAIT_DEFAULT_TIMEOUT_MS := 30_000
+const WAIT_MAX_TIMEOUT_MS := 60_000
+
+
+
 ## 1.2：未使用资源扫描的候选扩展名（场景 / 脚本 / 资源）。
 const RESOURCE_EXTENSIONS := ["tscn", "tres", "res", "gd", "gdshader"]
 ## 每秒检查一次 endpoint 文件 mtime；变更或消失时立即重解析并重连。
@@ -777,6 +787,233 @@ func get_pending_breakpoints() -> Array:
 		out.append({"file": file, "line": int(_breakpoints[file]["line"])})
 	return out
 
+# =============================================================================
+# 1.3：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检 helpers
+# =============================================================================
+
+## 把 res://xxx 规范化（缺省 → res://，末尾不带 /）。
+func _normalize_res_path(p: String, fallback: String) -> String:
+	var s := p.strip_edges()
+	if s == "":
+		return fallback
+	if not s.begins_with("res://"):
+		s = "res://" + s
+	if s.length() > 6 and s.ends_with("/"):
+		s = s.substr(0, s.length() - 1)
+	return s
+
+## 把 Godot 内部 type 字符串映射为我们对外的 kind。
+func _classify_file_kind(type_name: String, path: String) -> String:
+	var ext := path.get_extension().to_lower()
+	match type_name:
+		"PackedScene":
+			return "scene"
+		"GDScript", "CSharpScript":
+			return "script"
+		"Shader", "ShaderInclude":
+			return "shader"
+		"Texture2D", "Texture3D", "TextureLayered", "CompressedTexture2D", "ImageTexture":
+			return "texture"
+		"AudioStream", "AudioStreamMP3", "AudioStreamOGGVorbis", "AudioStreamWAV", "AudioStreamRandomizer":
+			return "audio"
+		_:
+			if ext in ["tscn", "scn"]:
+				return "scene"
+			if ext in ["gd", "cs"]:
+				return "script"
+			if ext in ["gdshader", "shader", "gdshaderinc"]:
+				return "shader"
+			if ext in ["tres", "res"]:
+				return "resource"
+			if ext in ["png", "jpg", "jpeg", "webp", "svg", "bmp", "tga", "ktx"]:
+				return "texture"
+			if ext in ["wav", "ogg", "mp3", "flac", "opus"]:
+				return "audio"
+			return "other"
+
+## 把 BFS 走到的文件按 type/pattern 过滤并截断到 limit。cursor 为空 → 从 root 起跳。
+func _list_project_files(root: String, type_filter: String, pattern: String, limit: int, cursor: String) -> Dictionary:
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs == null:
+		return {"root": root, "total": 0, "files": [], "nextCursor": null, "truncated": false}
+	var start_path := cursor if cursor != "" else root
+	var start_dir := fs.get_filesystem_path(start_path)
+	if start_dir == null:
+		start_dir = fs.get_filesystem_path(root)
+		if start_dir == null:
+			return {"root": root, "total": 0, "files": [], "nextCursor": null, "truncated": false}
+	var total := 0
+	var files: Array = []
+	var pattern_lower := pattern.to_lower()
+	var type_lower := type_filter.to_lower()
+	var queue: Array = [start_dir]
+	var truncated := false
+	var next_cursor := ""
+	while not queue.is_empty():
+		var dir: EditorFileSystemDirectory = queue.pop_front()
+		var subdir_count := dir.get_subdir_count()
+		for i in range(subdir_count):
+			queue.append(dir.get_subdir(i))
+		var file_count := dir.get_file_count()
+		for i in range(file_count):
+			total += 1
+			var file_path := dir.get_file_path(i)
+			var file_type := dir.get_file_type(i)
+			var kind := _classify_file_kind(file_type, file_path)
+			if type_lower != "" and type_lower != kind:
+				continue
+			if pattern_lower != "" and not file_path.to_lower().contains(pattern_lower):
+				continue
+			if files.size() >= limit:
+				truncated = true
+				next_cursor = dir.get_path()
+				break
+			var uid_str := ""
+			if dir.has_method("get_file_uid"):
+				var u := dir.get_file_uid(i)
+				if u != 0 and ResourceUID.has_id(u):
+					uid_str = ResourceUID.id_to_text(u)
+			files.append({"path": file_path, "type": kind, "uid": uid_str})
+		if truncated:
+			break
+	return {
+		"root": root,
+		"total": total,
+		"files": files,
+		"nextCursor": next_cursor if next_cursor != "" else null,
+		"truncated": truncated,
+	}
+
+## 把方法/属性/信号 / 常量列表归一成 {name,type} 数组。
+func _gd_member_array(arr: Array) -> Array:
+	var out: Array = []
+	for m in arr:
+		if typeof(m) != TYPE_DICTIONARY:
+			continue
+		var t := int(m.get("type", TYPE_NIL))
+		var type_name := ""
+		if t == TYPE_OBJECT:
+			var hint_string := str(m.get("hint_string", ""))
+			var class_name_h := str(m.get("class_name", ""))
+			type_name = hint_string if hint_string != "" else (class_name_h if class_name_h != "" else "Object")
+		else:
+			type_name = type_string(t)
+		out.append({"name": str(m.get("name", "")), "type": type_name})
+	return out
+
+## 解析 GDScript 资源 → {signals,methods,properties,constants,base?,extends?}。
+func _inspect_script(path: String) -> Dictionary:
+	if not ResourceLoader.exists(path):
+		return {"path": path, "error": "script not loadable: " + path}
+	var res = ResourceLoader.load(path)
+	if res == null or not (res is GDScript):
+		return {"path": path, "error": "not a GDScript"}
+	var script: GDScript = res
+	var inspect := {
+		"path": path,
+		"signals": _gd_member_array(script.get_signal_list()),
+		"methods": _gd_member_array(script.get_script_method_list()),
+		"properties": _gd_member_array(script.get_script_property_list()),
+		"constants": [],
+	}
+	var base = script.get_base_script()
+	if base != null and base is Resource:
+		inspect["base"] = base.resource_path
+	var consts = script.get_constants()
+	if typeof(consts) == TYPE_DICTIONARY and not consts.is_empty():
+		var arr: Array = []
+		for k in consts.keys():
+			arr.append({"name": str(k), "type": type_string(typeof(consts[k]))})
+		inspect["constants"] = arr
+	if script.get_instance_base_type() != "":
+		inspect["extends"] = script.get_instance_base_type()
+	return inspect
+
+## 在已打开的 .gd 文件里挑 `class_name X` 顶级声明。
+func _scan_class_name_in_gd(path: String, declared: Dictionary) -> void:
+	if not FileAccess.file_exists(ProjectSettings.globalize_path(path)):
+		return
+	var f := FileAccess.open(ProjectSettings.globalize_path(path), FileAccess.READ)
+	if f == null:
+		return
+	var content := f.get_as_text()
+	f.close()
+	var rx := RegEx.new()
+	rx.compile("(?m)^class_name\\s+([A-Za-z_][A-Za-z0-9_]*)")
+	for m in rx.search_all(content):
+		var name := m.get_string(1)
+		if name == "":
+			continue
+		if not declared.has(name):
+			declared[name] = []
+		if not declared[name].has(path):
+			declared[name].append(path)
+
+## 评估 export_presets.cfg：返回 [{index, name, platform}, ...]。文件不存在时返回 missing=true。
+func _enumerate_export_presets() -> Dictionary:
+	var cfg_path := "res://export_presets.cfg"
+	if not FileAccess.file_exists(cfg_path):
+		return {"presets": [], "count": 0, "missing": true}
+	var f := FileAccess.open(cfg_path, FileAccess.READ)
+	if f == null:
+		return {"presets": [], "count": 0, "error": "failed to read export_presets.cfg"}
+	var content := f.get_as_text()
+	f.close()
+	var presets: Array = []
+	var current: Dictionary = {}
+	var in_preset := false
+	for raw in content.split("\n"):
+		var line := raw.strip_edges()
+		if line.begins_with("[preset.") and line.ends_with("]"):
+			if in_preset and current.has("index") and current.has("name"):
+				presets.append(current)
+			current = {}
+			var idx_str := line.substr("[preset.".length(), line.length() - "[preset.".length() - 1)
+			current["index"] = int(idx_str)
+			in_preset = true
+			continue
+		if in_preset and line.begins_with("name="):
+			current["name"] = line.substr(5).strip_edges().trim_prefix("\"").trim_suffix("\"")
+		elif in_preset and line.begins_with("platform="):
+			current["platform"] = line.substr(9).strip_edges().trim_prefix("\"").trim_suffix("\"")
+		elif in_preset and line.begins_with("[") and line.ends_with("]"):
+			if current.has("index") and current.has("name"):
+				presets.append(current)
+			in_preset = false
+	if in_preset and current.has("index") and current.has("name"):
+		presets.append(current)
+	presets.sort_custom(func(a, b): return a["index"] < b["index"])
+	return {"presets": presets, "count": presets.size()}
+
+## 检查当前编辑器版本对应的 export templates 是否安装。
+func _check_export_templates() -> Dictionary:
+	var version_str := ""
+	var v = Engine.get_version_info()
+	if typeof(v) == TYPE_DICTIONARY:
+		version_str = str(v.get("string", ""))
+	var config_dir := OS.get_config_dir()
+	var tpl_dir := config_dir.path_join("exported/templates").path_join(version_str)
+	var installed := false
+	var found: Array = []
+	if DirAccess.dir_exists_absolute(tpl_dir):
+		var d := DirAccess.open(tpl_dir)
+		if d != null:
+			d.list_dir_begin()
+			var name := d.get_next()
+			while name != "":
+				if name.ends_with(".tpz"):
+					installed = true
+					found.append(name.get_basename())
+				name = d.get_next()
+			d.list_dir_end()
+	return {
+		"installed": installed,
+		"version": version_str,
+		"templateDir": tpl_dir,
+		"templateFiles": found,
+		"missingPlatforms": [],
+	}
+
 func _handle_line(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -926,6 +1163,151 @@ func _handle_line(raw: String) -> void:
 		"stop_scene":
 			EditorInterface.stop_playing_scene()
 			response["result"] = {"stopped": true}
+
+		# === 1.3: 只读文件内省 / UID / 类名 / 脚本反射 / 导出预检 ===
+
+		"list_project_files":
+			var lpf_root := _normalize_res_path(str(data.get("root", "res://")), "res://")
+			var lpf_type := str(data.get("type", ""))
+			var lpf_pattern := str(data.get("pattern", ""))
+			var lpf_limit := int(data.get("limit", LIST_FILES_DEFAULT_LIMIT))
+			lpf_limit = clamp(lpf_limit, 1, LIST_FILES_MAX_LIMIT)
+			var lpf_cursor := str(data.get("cursor", ""))
+			response["result"] = _list_project_files(lpf_root, lpf_type, lpf_pattern, lpf_limit, lpf_cursor)
+
+		"resolve_uid":
+			var r_uid := str(data.get("uid", ""))
+			var r_path := str(data.get("path", ""))
+			if (r_uid == "" and r_path == "") or (r_uid != "" and r_path != ""):
+				response = {"id": id, "ok": false, "error": "provide exactly one of 'uid' or 'path'"}
+			elif r_uid != "":
+				var numeric_id := ResourceUID.text_to_id(r_uid)
+				var resolved_path := ""
+				var exists := false
+				if numeric_id != -1 and ResourceUID.has_id(numeric_id):
+					exists = true
+					resolved_path = ResourceUID.get_id_path(numeric_id)
+				response["result"] = {"uid": r_uid, "path": resolved_path, "exists": exists}
+			else:
+				var numeric_id2 := -1
+				if ResourceLoader.has_method("get_resource_uid"):
+					numeric_id2 = ResourceLoader.get_resource_uid(r_path)
+				var resolved_uid := ""
+				if numeric_id2 != -1:
+					resolved_uid = ResourceUID.id_to_text(numeric_id2)
+				var r_exists := numeric_id2 != -1 and (ResourceLoader.exists(r_path) or FileAccess.file_exists(ProjectSettings.globalize_path(r_path)))
+				response["result"] = {"uid": resolved_uid, "path": r_path, "exists": r_exists}
+
+		"wait_for_import_done":
+			var w_paths = data.get("paths", [])
+			if typeof(w_paths) != TYPE_ARRAY or w_paths.is_empty():
+				response = {"id": id, "ok": false, "error": "paths (non-empty array) required"}
+			else:
+				var w_timeout := int(data.get("timeout_ms", WAIT_DEFAULT_TIMEOUT_MS))
+				w_timeout = clamp(w_timeout, 0, WAIT_MAX_TIMEOUT_MS)
+				var fs := EditorInterface.get_resource_filesystem()
+				if fs == null:
+					response = {"id": id, "ok": false, "error": "EditorFileSystem not available"}
+				else:
+					var start_ms := Time.get_ticks_msec()
+					var done := false
+					while not done and (Time.get_ticks_msec() - start_ms) < w_timeout:
+						done = not fs.is_scanning()
+						if not done:
+							OS.delay_msec(100)
+					var elapsed := Time.get_ticks_msec() - start_ms
+					var remaining: Array = []
+					for p in w_paths:
+						var pp := str(p)
+						var ext := pp.get_extension().to_lower()
+						if ext in ["png", "jpg", "jpeg", "webp", "svg", "bmp", "tga", "wav", "ogg", "mp3", "flac", "ttf"]:
+							var sidecar := ProjectSettings.globalize_path(pp) + ".import"
+							if not FileAccess.file_exists(sidecar):
+								remaining.append(pp)
+					response["result"] = {
+						"ok": remaining.is_empty(),
+						"remaining": remaining,
+						"elapsedMs": elapsed,
+					}
+
+		"list_global_classes":
+			var classes := ProjectSettings.get_global_class_list()
+			var out: Array = []
+			for c in classes:
+				if typeof(c) != TYPE_DICTIONARY:
+					continue
+				out.append({
+					"class": str(c.get("class", "")),
+					"language": str(c.get("language", "")),
+					"path": str(c.get("path", "")),
+					"icon": str(c.get("icon", "")),
+				})
+			response["result"] = {"classes": out, "count": out.size()}
+
+		"find_class_name_conflicts":
+			var include_addons := bool(data.get("include_addons", false))
+			var declared: Dictionary = {}
+			var reg := ProjectSettings.get_global_class_list()
+			for c in reg:
+				if typeof(c) != TYPE_DICTIONARY:
+					continue
+				var cn := str(c.get("class", ""))
+				var pp := str(c.get("path", ""))
+				if cn == "" or pp == "":
+					continue
+				if not declared.has(cn):
+					declared[cn] = []
+				if not declared[cn].has(pp):
+					declared[cn].append(pp)
+			var fs2 := EditorInterface.get_resource_filesystem()
+			if fs2 != null:
+				var queue: Array = []
+				var root_dir := fs2.get_filesystem_path("res://")
+				if root_dir != null:
+					queue.append(root_dir)
+				while not queue.is_empty():
+					var d = queue.pop_front()
+					if d == null:
+						continue
+					for i in range(d.get_subdir_count()):
+						var sub = d.get_subdir(i)
+						if sub == null:
+							continue
+						var sp := sub.get_path()
+						if not include_addons and (sp.begins_with("res://addons/") or sp == "res://addons"):
+							continue
+						queue.append(sub)
+					var d_path := d.get_path()
+					var skip_dir := (not include_addons) and (d_path.begins_with("res://addons/") or d_path == "res://addons")
+					if skip_dir:
+						continue
+					for i in range(d.get_file_count()):
+						var fp := d.get_file_path(i)
+						if not fp.ends_with(".gd"):
+							continue
+						if not include_addons and fp.begins_with("res://addons/"):
+							continue
+						_scan_class_name_in_gd(fp, declared)
+			var conflicts: Array = []
+			for cn in declared.keys():
+				var paths: Array = declared[cn]
+				if paths.size() > 1:
+					conflicts.append({"name": str(cn), "paths": paths})
+			conflicts.sort_custom(func(a, b): return a["name"] < b["name"])
+			response["result"] = {"conflicts": conflicts, "count": conflicts.size()}
+
+		"inspect_script":
+			var i_path := str(data.get("path", ""))
+			if i_path == "":
+				response = {"id": id, "ok": false, "error": "path required"}
+			else:
+				response["result"] = _inspect_script(i_path)
+
+		"list_export_presets":
+			response["result"] = _enumerate_export_presets()
+
+		"check_export_templates":
+			response["result"] = _check_export_templates()
 
 		_:
 			response = {"id": id, "ok": false, "error": "unknown method: %s" % method}
