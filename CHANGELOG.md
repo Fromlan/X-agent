@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+（占位：下个版本的变更说明）
+
+## 0.4.1
+
 ### 变更
 
 - **架构 · IPC 单一事实源**：`shared/ipc.ts` 新增 `IpcInvokeMap`——87 个 invoke 通道的权威签名（channel 名 → 参数 → 返回），preload 转发与主进程 handler 注册都由它派生，`XAgentApiFlat` 从 90 个手工签名收敛为 `Omit<FlatInvokeApi, DeletedFlatKey> & 3 特例`；preload 约 176 行手工转发改为循环生成（`makeInvokeApi`）；主进程侧新增类型锚定的 `handle()` 注册器，6 个 `register-*-ipc.ts` 全部接入。「新增/改名 IPC 必须同步四处」的人肉约定由编译期断言接管（通道键 ↔ 映射键全覆盖、删除名单合法性），漏同步从运行期静默失败变为编译期报错。

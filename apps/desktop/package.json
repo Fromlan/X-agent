@@ -1,6 +1,6 @@
 {
   "name": "x-agent-desktop",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Pi Agent desktop client (X-agent)",
   "main": "./out/main/index.js",
   "type": "module",
