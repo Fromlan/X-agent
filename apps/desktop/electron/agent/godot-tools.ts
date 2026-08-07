@@ -8,7 +8,9 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import type { GodotRpcCall, GodotRpcResponse } from "../../shared/godot-rpc";
 import {
+  clampGodotListLimit,
   clampGodotRunWaitMs,
+  clampGodotWaitMs,
   godotRpcTimeoutMs,
 } from "../../shared/godot-rpc";
 
@@ -673,6 +675,398 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
             remove: Boolean(params.remove),
           }),
         );
+      },
+    }),
+
+    // === 1.3: 只读文件内省 / UID / 类名 / 脚本反射 / 导出预检 ===
+
+    defineTool({
+      name: "godot_list_project_files",
+      label: "Godot list project files",
+      description:
+        "Enumerate files under a res:// directory via the EditorFileSystem. Returns paths with kind (scene/script/resource/...) and optional uid. Read-only; paged by cursor.",
+      promptSnippet: "godot_list_project_files: enumerate res:// files",
+      promptGuidelines: [
+        "Prefer this before walking the project tree with bash/shell tools — it understands res:// paths and uid:// links.",
+        "Use type/pattern to narrow first; only widen or request the next page when you actually need more.",
+      ],
+      parameters: Type.Object({
+        root: Type.Optional(
+          Type.String({
+            description:
+              "res:// directory to start from. Default 'res://'. Subdirectories must end with '/'.",
+          }),
+        ),
+        type: Type.Optional(
+          Type.String({
+            description:
+              "Filter by kind: scene|script|shader|resource|texture|audio|other. Empty = no filter.",
+          }),
+        ),
+        pattern: Type.Optional(
+          Type.String({
+            description:
+              "Simple substring filter on the path (case-insensitive). Empty = no filter.",
+          }),
+        ),
+        limit: Type.Optional(
+          Type.Number({
+            description: "Max files in this page (1..5000). Default 500.",
+            minimum: 1,
+            maximum: 5000,
+          }),
+        ),
+        cursor: Type.Optional(
+          Type.String({
+            description:
+              "res:// subdirectory to resume from (use nextCursor from the previous response).",
+          }),
+        ),
+      }),
+      async execute(_id, params) {
+        const limit = clampGodotListLimit(params.limit);
+        const res = await callBridge(bridge, {
+          method: "list_project_files",
+          root: typeof params.root === "string" && params.root ? params.root : "res://",
+          type: typeof params.type === "string" ? params.type : "",
+          pattern: typeof params.pattern === "string" ? params.pattern : "",
+          limit,
+          cursor: typeof params.cursor === "string" ? params.cursor : "",
+        });
+        if (!res.ok) {
+          return textResult(`Godot RPC error: ${res.error}`, {
+            ok: false,
+            error: res.error,
+          });
+        }
+        const r = res.result as {
+          root?: string;
+          total?: number;
+          files?: Array<{ path: string; type?: string; uid?: string }>;
+          nextCursor?: string | null;
+          truncated?: boolean;
+        };
+        const files = Array.isArray(r.files) ? r.files : [];
+        const lines: string[] = [];
+        lines.push(
+          `list_project_files under ${String(r.root ?? "res://")}: total=${String(r.total ?? files.length)}, returned=${files.length}`,
+        );
+        for (const f of files) {
+          const uid = f.uid ? ` [${f.uid}]` : "";
+          lines.push(`  ${String(f.type ?? "other")}\t${f.path}${uid}`);
+        }
+        if (r.nextCursor) {
+          lines.push(`nextCursor=${r.nextCursor}`);
+        }
+        if (r.truncated) {
+          lines.push("(result truncated by limit)");
+        }
+        return textResult(lines.join("\n"), {
+          ok: true,
+          result: res.result,
+          hasError: false,
+        });
+      },
+    }),
+
+    defineTool({
+      name: "godot_resolve_uid",
+      label: "Godot resolve uid",
+      description:
+        "Resolve between res:// path and uid:// identifier using Godot 4.4+ ResourceUID. Pass exactly one of uid or path.",
+      promptSnippet: "godot_resolve_uid: res:// ↔ uid://",
+      parameters: Type.Object({
+        uid: Type.Optional(
+          Type.String({
+            description:
+              "uid:// identifier, e.g. 'uid://b3p8f2vqx4k1y'. Provide this OR path, not both.",
+          }),
+        ),
+        path: Type.Optional(
+          Type.String({
+            description:
+              "res:// path, e.g. 'res://player.gd'. Provide this OR uid, not both.",
+          }),
+        ),
+      }),
+      async execute(_id, params) {
+        const uid = typeof params.uid === "string" ? params.uid : "";
+        const path = typeof params.path === "string" ? params.path : "";
+        if (!uid && !path) {
+          return textResult(
+            "Provide either 'uid' or 'path' (exactly one).",
+            { ok: false, error: "missing input" },
+          );
+        }
+        if (uid && path) {
+          return textResult(
+            "Pass only one of 'uid' or 'path', not both.",
+            { ok: false, error: "ambiguous input" },
+          );
+        }
+        const res = await callBridge(bridge, {
+          method: "resolve_uid",
+          uid,
+          path,
+        });
+        if (!res.ok) {
+          return textResult(`Godot RPC error: ${res.error}`, {
+            ok: false,
+            error: res.error,
+          });
+        }
+        const r = res.result as {
+          uid?: string;
+          path?: string;
+          exists?: boolean;
+        };
+        return textResult(
+          `exists=${Boolean(r.exists)} uid=${String(r.uid ?? "")} path=${String(r.path ?? "")}`,
+          { ok: true, result: res.result, hasError: !r.exists },
+        );
+      },
+    }),
+
+    defineTool({
+      name: "godot_wait_for_import_done",
+      label: "Godot wait for import done",
+      description:
+        "Block until Godot finishes reimporting the given res:// paths (or the editor scan completes). Returns which paths remain pending after the timeout.",
+      promptSnippet:
+        "godot_wait_for_import_done: wait for EditorFileSystem import",
+      promptGuidelines: [
+        "After writing or replacing textures/audio/importable assets, call this with those paths before reloading scenes that reference them.",
+        "If remaining is non-empty, the import is still running; either retry with a longer timeout_ms or godot_import_resources to force a reimport.",
+      ],
+      parameters: Type.Object({
+        paths: Type.Array(Type.String(), {
+          description:
+            "res:// paths to wait for, e.g. ['res://textures/hero.png'].",
+        }),
+        timeout_ms: Type.Optional(
+          Type.Number({
+            description:
+              "How long to wait (ms). Default 30000, max 60000. Set 0 to return immediately.",
+            minimum: 0,
+            maximum: 60000,
+          }),
+        ),
+      }),
+      async execute(_id, params) {
+        const timeoutMs = clampGodotWaitMs(params.timeout_ms);
+        const paths = Array.isArray(params.paths) ? params.paths : [];
+        if (paths.length === 0) {
+          return textResult("paths must not be empty.", {
+            ok: false,
+            error: "missing paths",
+          });
+        }
+        const res = await callBridge(bridge, {
+          method: "wait_for_import_done",
+          paths,
+          timeout_ms: timeoutMs,
+        });
+        if (!res.ok) {
+          return textResult(`Godot RPC error: ${res.error}`, {
+            ok: false,
+            error: res.error,
+          });
+        }
+        const r = res.result as {
+          ok?: boolean;
+          remaining?: string[];
+          elapsedMs?: number;
+        };
+        const remaining = Array.isArray(r.remaining) ? r.remaining : [];
+        const text = remaining.length === 0
+          ? `Import complete after ${String(r.elapsedMs ?? "?")}ms.`
+          : `Import still pending for ${remaining.length} path(s) after ${String(r.elapsedMs ?? "?")}ms:\n  ${remaining.join("\n  ")}`;
+        return textResult(text, {
+          ok: true,
+          result: res.result,
+          hasError: !r.ok || remaining.length > 0,
+        });
+      },
+    }),
+
+    defineTool({
+      name: "godot_list_global_classes",
+      label: "Godot list global classes",
+      description:
+        "List every project class_name registered in ProjectSettings (class, language, path, icon). Read-only.",
+      promptSnippet:
+        "godot_list_global_classes: enumerate registered class_name",
+      parameters: emptyParams,
+      async execute() {
+        return formatResponse(
+          await callBridge(bridge, { method: "list_global_classes" }),
+        );
+      },
+    }),
+
+    defineTool({
+      name: "godot_find_class_name_conflicts",
+      label: "Godot find class name conflicts",
+      description:
+        "Scan res:// .gd scripts (optionally including addons) for class_name declarations that duplicate a registered global class or collide between scripts. Read-only.",
+      promptSnippet:
+        "godot_find_class_name_conflicts: detect duplicate class_name",
+      promptGuidelines: [
+        "Useful when a script fails to load with a 'class name already taken' error or when merging branches that register conflicting names.",
+      ],
+      parameters: Type.Object({
+        include_addons: Type.Optional(
+          Type.Boolean({
+            description:
+              "If true, also scan res://addons. Default false (addons rarely define project classes).",
+          }),
+        ),
+      }),
+      async execute(_id, params) {
+        return formatResponse(
+          await callBridge(bridge, {
+            method: "find_class_name_conflicts",
+            include_addons: Boolean(params.include_addons),
+          }),
+        );
+      },
+    }),
+
+    defineTool({
+      name: "godot_inspect_script",
+      label: "Godot inspect script",
+      description:
+        "Reflect a GDScript (.gd) resource: base class, signals, methods, properties, constants. Read-only; loads the script via ResourceLoader without instantiating it.",
+      promptSnippet: "godot_inspect_script: reflect a GDScript's API surface",
+      promptGuidelines: [
+        "When you need to know which methods/properties/signals a script exposes without reading the .gd source.",
+        "Prefer reading the .gd source directly when you need comments / control flow.",
+      ],
+      parameters: Type.Object({
+        path: Type.String({
+          description:
+            "res:// path to a .gd script, e.g. 'res://player.gd'.",
+        }),
+      }),
+      async execute(_id, params) {
+        const path = typeof params.path === "string" ? params.path.trim() : "";
+        if (!path) {
+          return textResult("path is required.", {
+            ok: false,
+            error: "missing path",
+          });
+        }
+        const res = await callBridge(bridge, {
+          method: "inspect_script",
+          path,
+        });
+        if (!res.ok) {
+          return textResult(`Godot RPC error: ${res.error}`, {
+            ok: false,
+            error: res.error,
+          });
+        }
+        const r = res.result as {
+          path?: string;
+          base?: string;
+          extends?: string;
+          signals?: Array<{ name?: string; type?: string }>;
+          methods?: Array<{ name?: string; type?: string }>;
+          properties?: Array<{ name?: string; type?: string }>;
+          constants?: Array<{ name?: string; type?: string }>;
+          error?: string;
+        };
+        if (r.error) {
+          return textResult(`inspect_script: ${r.error}`, {
+            ok: true,
+            result: res.result,
+            hasError: true,
+          });
+        }
+        const block = (label: string, items: Array<{ name?: string; type?: string }> | undefined) => {
+          if (!items || items.length === 0) return `${label}: (none)`;
+          return `${label} (${items.length}):\n` +
+            items
+              .slice(0, 80)
+              .map((m) => `  ${String(m.name ?? "?")}${m.type ? `: ${m.type}` : ""}`)
+              .join("\n") +
+            (items.length > 80 ? `\n  ... +${items.length - 80} more` : "");
+        };
+        const text = [
+          `inspect_script: ${String(r.path ?? path)}`,
+          r.base ? `base=${r.base}` : "",
+          r.extends ? `extends=${r.extends}` : "",
+          block("signals", r.signals),
+          block("properties", r.properties),
+          block("methods", r.methods),
+          block("constants", r.constants),
+        ]
+          .filter(Boolean)
+          .join("\n");
+        return textResult(text, {
+          ok: true,
+          result: res.result,
+          hasError: false,
+        });
+      },
+    }),
+
+    defineTool({
+      name: "godot_list_export_presets",
+      label: "Godot list export presets",
+      description:
+        "List every export preset declared in res://export_presets.cfg (name, platform, index). Read-only; no Godot subprocess started.",
+      promptSnippet:
+        "godot_list_export_presets: enumerate export_presets.cfg",
+      promptGuidelines: [
+        "Call before godot_export_project to confirm the exact preset name + index the editor expects.",
+        "Pairs with godot_check_export_templates to preflight a build.",
+      ],
+      parameters: emptyParams,
+      async execute() {
+        return formatResponse(
+          await callBridge(bridge, { method: "list_export_presets" }),
+        );
+      },
+    }),
+
+    defineTool({
+      name: "godot_check_export_templates",
+      label: "Godot check export templates",
+      description:
+        "Check whether the Godot export templates for the current editor version are installed locally; report missing platforms. Read-only.",
+      promptSnippet:
+        "godot_check_export_templates: preflight template installation",
+      promptGuidelines: [
+        "Run before godot_export_project — missing templates fail the export with hard-to-interpret errors.",
+        "If missing platforms is non-empty, prompt the user to install templates via Editor → Manage Export Templates.",
+      ],
+      parameters: emptyParams,
+      async execute() {
+        const res = await callBridge(bridge, {
+          method: "check_export_templates",
+        });
+        if (!res.ok) {
+          return textResult(`Godot RPC error: ${res.error}`, {
+            ok: false,
+            error: res.error,
+          });
+        }
+        const r = res.result as {
+          installed?: boolean;
+          version?: string;
+          templateVersion?: string;
+          missingPlatforms?: string[];
+        };
+        const missing = Array.isArray(r.missingPlatforms) ? r.missingPlatforms : [];
+        const text = r.installed
+          ? `Templates installed: editor=${String(r.version ?? "?")}, template=${String(r.templateVersion ?? r.version ?? "?")}.`
+          : `Templates NOT installed for editor ${String(r.version ?? "?")}. Missing platforms: ${missing.length === 0 ? "(unknown)" : missing.join(", ")}.`;
+        return textResult(text, {
+          ok: true,
+          result: res.result,
+          hasError: !r.installed,
+        });
       },
     }),
   ];
