@@ -719,7 +719,7 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
         cursor: Type.Optional(
           Type.String({
             description:
-              "res:// subdirectory to resume from (use nextCursor from the previous response).",
+              "Resume token from the previous response (pass back nextCursor verbatim). Starts a fresh page when omitted.",
           }),
         ),
       }),
@@ -833,7 +833,7 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       description:
         "Block until Godot finishes reimporting the given res:// paths (or the editor scan completes). Returns which paths remain pending after the timeout.",
       promptSnippet:
-        "godot_wait_for_import_done: wait for EditorFileSystem import",
+        "godot_wait_for_import_done: wait for EditorFileSystem to finish importing",
       promptGuidelines: [
         "After writing or replacing textures/audio/importable assets, call this with those paths before reloading scenes that reference them.",
         "If remaining is non-empty, the import is still running; either retry with a longer timeout_ms or godot_import_resources to force a reimport.",
@@ -854,7 +854,20 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       }),
       async execute(_id, params) {
         const timeoutMs = clampGodotWaitMs(params.timeout_ms);
-        const paths = Array.isArray(params.paths) ? params.paths : [];
+        const rawPaths = Array.isArray(params.paths) ? params.paths : [];
+        const paths: string[] = [];
+        for (const raw of rawPaths) {
+          const p = typeof raw === "string" ? raw.trim() : "";
+          if (!p) continue;
+          // 绝对路径（Windows 盘符 / POSIX / UNC）无法映射到 .import sidecar，拒绝。
+          if (p.startsWith("/") || p.startsWith("\\") || /^[a-zA-Z]:/.test(p)) {
+            return textResult(`path must be res:// relative: ${raw}`, {
+              ok: false,
+              error: "invalid path",
+            });
+          }
+          paths.push(p.startsWith("res://") ? p : `res://${p}`);
+        }
         if (paths.length === 0) {
           return textResult("paths must not be empty.", {
             ok: false,

@@ -5,7 +5,7 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
-const ADDON_VERSION := "0.5.0"
+const ADDON_VERSION := "0.6.0"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
 const CONNECT_TIMEOUT_SEC := 1.2
@@ -27,6 +27,17 @@ const LIST_FILES_DEFAULT_LIMIT := 500
 const LIST_FILES_MAX_LIMIT := 5000
 const WAIT_DEFAULT_TIMEOUT_MS := 30_000
 const WAIT_MAX_TIMEOUT_MS := 60_000
+
+## 1.3：check_export_templates 已知的模板平台 → 模板目录中对应文件名。
+## 任一文件存在即视为该平台已安装；missingPlatforms 枚举全缺的平台。
+const TEMPLATE_PLATFORM_FILES := {
+	"windows": ["windows_debug_x86_64.exe", "windows_release_x86_64.exe", "windows_debug_arm64.exe", "windows_release_arm64.exe"],
+	"linux": ["linux_debug.x86_64", "linux_release.x86_64", "linux_debug_arm64", "linux_release_arm64"],
+	"macos": ["macos_debug.zip", "macos_release.zip"],
+	"web": ["web_debug.zip", "web_release.zip"],
+	"android": ["android_debug.apk", "android_release.apk"],
+	"ios": ["ios_debug.zip", "ios_release.zip"],
+}
 
 
 
@@ -831,24 +842,31 @@ func _classify_file_kind(type_name: String, path: String) -> String:
 				return "audio"
 			return "other"
 
-## 把 BFS 走到的文件按 type/pattern 过滤并截断到 limit。cursor 为空 → 从 root 起跳。
+## BFS 走到的文件按 type/pattern 过滤并分页返回。
+## cursor 格式 "#N"（N = 上一页已返回的匹配数，从 0 起）；旧格式纯 res:// 目录兼容（从该目录起、不跳过）。
+## total 恒为整棵子树中匹配文件总数（不随翻页变化）；分页恢复时跳过前 N 个匹配文件，避免重复页。
 func _list_project_files(root: String, type_filter: String, pattern: String, limit: int, cursor: String) -> Dictionary:
 	var fs := EditorInterface.get_resource_filesystem()
 	if fs == null:
 		return {"root": root, "total": 0, "files": [], "nextCursor": null, "truncated": false}
-	var start_path := cursor if cursor != "" else root
-	var start_dir := fs.get_filesystem_path(start_path)
+	var skip_count := 0
+	var start_dir := fs.get_filesystem_path(root)
+	if cursor != "":
+		var parts := cursor.split("#")
+		if parts.size() >= 2 and parts[1].is_valid_int():
+			skip_count = maxi(int(parts[1]), 0)
+		elif parts[0] != "":
+			start_dir = fs.get_filesystem_path(parts[0])
 	if start_dir == null:
 		start_dir = fs.get_filesystem_path(root)
 		if start_dir == null:
 			return {"root": root, "total": 0, "files": [], "nextCursor": null, "truncated": false}
-	var total := 0
+	var matched := 0
 	var files: Array = []
 	var pattern_lower := pattern.to_lower()
 	var type_lower := type_filter.to_lower()
 	var queue: Array = [start_dir]
 	var truncated := false
-	var next_cursor := ""
 	while not queue.is_empty():
 		var dir: EditorFileSystemDirectory = queue.pop_front()
 		var subdir_count := dir.get_subdir_count()
@@ -856,7 +874,6 @@ func _list_project_files(root: String, type_filter: String, pattern: String, lim
 			queue.append(dir.get_subdir(i))
 		var file_count := dir.get_file_count()
 		for i in range(file_count):
-			total += 1
 			var file_path := dir.get_file_path(i)
 			var file_type := dir.get_file_type(i)
 			var kind := _classify_file_kind(file_type, file_path)
@@ -864,21 +881,24 @@ func _list_project_files(root: String, type_filter: String, pattern: String, lim
 				continue
 			if pattern_lower != "" and not file_path.to_lower().contains(pattern_lower):
 				continue
+			matched += 1
+			if matched <= skip_count:
+				continue
 			if files.size() >= limit:
 				truncated = true
-				next_cursor = dir.get_path()
-				break
+				continue
 			var uid_str := ""
-			if dir.has_method("get_file_uid"):
-				var u := dir.get_file_uid(i)
-				if u != 0 and ResourceUID.has_id(u):
+			if ResourceLoader.has_method("get_resource_uid"):
+				var u: int = ResourceLoader.get_resource_uid(file_path)
+				if u != -1 and ResourceUID.has_id(u):
 					uid_str = ResourceUID.id_to_text(u)
 			files.append({"path": file_path, "type": kind, "uid": uid_str})
-		if truncated:
-			break
+	var next_cursor := ""
+	if truncated:
+		next_cursor = "#%d" % (skip_count + limit)
 	return {
 		"root": root,
-		"total": total,
+		"total": matched,
 		"files": files,
 		"nextCursor": next_cursor if next_cursor != "" else null,
 		"truncated": truncated,
@@ -985,33 +1005,45 @@ func _enumerate_export_presets() -> Dictionary:
 	presets.sort_custom(func(a, b): return a["index"] < b["index"])
 	return {"presets": presets, "count": presets.size()}
 
-## 检查当前编辑器版本对应的 export templates 是否安装。
+## 检查当前编辑器版本对应的 export templates 是否安装，并枚举缺失平台。
+## 模板目录是 {config_dir}/export_templates/{version}/（与 Godot ExportTemplateManager 一致）。
 func _check_export_templates() -> Dictionary:
 	var version_str := ""
 	var v = Engine.get_version_info()
 	if typeof(v) == TYPE_DICTIONARY:
 		version_str = str(v.get("string", ""))
 	var config_dir := OS.get_config_dir()
-	var tpl_dir := config_dir.path_join("exported/templates").path_join(version_str)
-	var installed := false
-	var found: Array = []
+	var tpl_dir := config_dir.path_join("export_templates").path_join(version_str)
+	var on_disk: Array = []
 	if DirAccess.dir_exists_absolute(tpl_dir):
 		var d := DirAccess.open(tpl_dir)
 		if d != null:
 			d.list_dir_begin()
 			var name := d.get_next()
 			while name != "":
-				if name.ends_with(".tpz"):
-					installed = true
-					found.append(name.get_basename())
+				if name != "." and name != ".." and not d.current_is_dir():
+					on_disk.append(name)
 				name = d.get_next()
 			d.list_dir_end()
+	var missing: Array = []
+	var installed := false
+	for platform in TEMPLATE_PLATFORM_FILES.keys():
+		var any := false
+		for tf in TEMPLATE_PLATFORM_FILES[platform]:
+			if on_disk.has(tf):
+				any = true
+				break
+		if any:
+			installed = true
+		else:
+			missing.append(platform)
+	missing.sort()
 	return {
 		"installed": installed,
 		"version": version_str,
 		"templateDir": tpl_dir,
-		"templateFiles": found,
-		"missingPlatforms": [],
+		"templateFiles": on_disk,
+		"missingPlatforms": missing,
 	}
 
 func _handle_line(raw: String) -> void:
@@ -1218,7 +1250,9 @@ func _handle_line(raw: String) -> void:
 					var elapsed := Time.get_ticks_msec() - start_ms
 					var remaining: Array = []
 					for p in w_paths:
-						var pp := str(p)
+						var pp := str(p).strip_edges()
+						if not pp.begins_with("res://"):
+							pp = "res://" + pp
 						var ext := pp.get_extension().to_lower()
 						if ext in ["png", "jpg", "jpeg", "webp", "svg", "bmp", "tga", "wav", "ogg", "mp3", "flac", "ttf"]:
 							var sidecar := ProjectSettings.globalize_path(pp) + ".import"
@@ -1261,16 +1295,16 @@ func _handle_line(raw: String) -> void:
 					declared[cn].append(pp)
 			var fs2 := EditorInterface.get_resource_filesystem()
 			if fs2 != null:
-				var queue: Array = []
+				var queue: Array[EditorFileSystemDirectory] = []
 				var root_dir := fs2.get_filesystem_path("res://")
 				if root_dir != null:
 					queue.append(root_dir)
 				while not queue.is_empty():
-					var d = queue.pop_front()
+					var d: EditorFileSystemDirectory = queue.pop_front()
 					if d == null:
 						continue
 					for i in range(d.get_subdir_count()):
-						var sub = d.get_subdir(i)
+						var sub: EditorFileSystemDirectory = d.get_subdir(i)
 						if sub == null:
 							continue
 						var sp := sub.get_path()
