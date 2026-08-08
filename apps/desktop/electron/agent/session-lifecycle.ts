@@ -34,6 +34,7 @@ import {
 } from "./extension-ui";
 import {
   clearGoalJournal,
+  clearPlanJournal,
   computeAskModeTools,
   computePlanModeTools,
   createWritePlanTools,
@@ -289,6 +290,9 @@ export class SessionLifecycle {
     this.a().sessionMode.emitSessionMode();
     this.a().sessionMode.emitGoal();
     this.a().sessionMode.restoreGoalFromJournal();
+    // Restore the plan reference so the right panel shows the plan again
+    // after restarting the app (plan files persist on disk).
+    this.a().sessionMode.restorePlanFromJournal();
 
     const sessionPath = this.sessionFileOf(session);
     if (session.model) {
@@ -444,6 +448,7 @@ export class SessionLifecycle {
 
       unlinkSync(sessionPath);
       clearGoalJournal(sessionPath);
+      clearPlanJournal(sessionPath);
 
       const prefs = getCachedPrefs();
       if (prefs.lastSessionPath === sessionPath) {
@@ -520,6 +525,7 @@ export class SessionLifecycle {
         if (!existsSync(sessionPath)) continue;
         unlinkSync(sessionPath);
         clearGoalJournal(sessionPath);
+        clearPlanJournal(sessionPath);
         deleted += 1;
         if (prefs.lastSessionPath === sessionPath) {
           clearLastSession = true;

@@ -1,7 +1,8 @@
 import { CheckSquare, FolderInput, Hammer, Loader2, Save, Square, X } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { usePlanSession, planFileLabel } from "../../hooks/usePlanSession";
 import { parsePlanTodos, togglePlanTodo } from "../../lib/plan-todos";
+import { MarkdownBody } from "../MarkdownBody";
 
 interface Props {
   planPath: string | null;
@@ -34,6 +35,7 @@ export function PlanTab({
   } = usePlanSession({ planPath, busy, onBuildPlan, onPlanPathChange });
 
   const todos = useMemo(() => parsePlanTodos(markdown), [markdown]);
+  const [viewMode, setViewMode] = useState<"render" | "source">("render");
 
   if (!planPath) {
     return (
@@ -54,6 +56,17 @@ export function PlanTab({
           {location === "workspace" ? "项目" : "本机"}
           {dirty ? " · 未保存" : ""}
         </span>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm rp-plan-view-toggle"
+          onClick={() =>
+            setViewMode((m) => (m === "render" ? "source" : "render"))
+          }
+          title={viewMode === "render" ? "切换为源码编辑" : "切换为渲染预览"}
+          aria-pressed={viewMode === "source"}
+        >
+          {viewMode === "render" ? "源码" : "渲染"}
+        </button>
       </div>
       {todos.length > 0 && (
         <ul className="rp-plan-todos" aria-label="计划步骤">
@@ -92,6 +105,10 @@ export function PlanTab({
         <div className="rp-plan-loading">
           <Loader2 size={14} className="icon-spin" />
           加载中…
+        </div>
+      ) : viewMode === "render" ? (
+        <div className="rp-plan-preview" aria-label="计划渲染预览">
+          <MarkdownBody content={markdown} />
         </div>
       ) : (
         <textarea

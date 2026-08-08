@@ -10,7 +10,20 @@
 
 ### 功能
 
-- **Godot 工具扩展（1.3 全量 — 8 个只读内省工具）**：Agent 工具集新增 8 个只读类 Godot 工具，默认归 GODOT_TOOLS 开关、需用户手动启用，类型跨度从项目结构到导出预检：`godot_list_project_files`（按 `type` / 子串 `pattern` 过滤 `res://` 文件树，`limit` 默认 500、上限 5000，带 `cursor` 分页）、`godot_resolve_uid`（`res://` ↔ `uid://` 双向查，要求二选一）、`godot_wait_for_import_done`（轮询 EditorFileSystem 完成指定路径的 import，默认等待 30s、上限 60s）、`godot_list_global_classes`（`ProjectSettings.get_global_class_list()` 透出）、`godot_find_class_name_conflicts`（扫 `.gd` 顶部 `class_name` 声明找出重复名，默认排除 `addons/`）、`godot_inspect_script`（反射 GDScript 的 signals / methods / properties / constants 与 `base_script`、`instance_base_type`）、`godot_list_export_presets`（行级解析 `export_presets.cfg` 的 `[preset.N]` 段）、`godot_check_export_templates`（列 `{OS.get_config_dir()}/exported/templates/<version>/` 下 `*.tpz` 文件并报告 installed 状态）。设置页「项目内省（只读 1.3）」区块同步加 5 个直接 RPC 调试按钮（列出文件 / 全局类名 / 导出预设 / 模板状态 / 反射脚本）。Godot 插件 `plugin.cfg` / `plugin.gd` 版本号沿用 0.5.0 不变，等下次发版再统一升线。
+- **Plan 右栏支持 Markdown 渲染预览**：右侧面板 Plan tab 新增「渲染 / 源码」切换（默认渲染预览），复用聊天区的 Markdown 渲染（标题 / 列表 / 代码块 / GFM 表格，http(s) 链接经系统浏览器打开）；todo 勾选区在两种模式下都可用。源码编辑与「保存 / 保存到项目 / 执行计划 / 清除引用」行为不变。
+- **计划引用跨重启持久化**：计划文件本身一直在磁盘（`~/.pi/agent/x-agent/plans/` 或 `<cwd>/.pi/plans/`），但会话内的计划引用（planPath）此前仅存内存，重启后丢失。现按会话持久化到 `~/.pi/agent/x-agent/plan-refs/`：重启后打开历史会话自动恢复右栏计划，可直接继续「执行计划」；删除会话时引用一并清理；文件被删或路径越界（home / workspace 之外）时自动丢弃，不残留报错。
+- **Godot 工具扩展（1.3 全量 — 8 个只读内省工具）**：Agent 工具集新增 8 个只读类 Godot 工具，默认归 GODOT_TOOLS 开关、需用户手动启用，类型跨度从项目结构到导出预检：`godot_list_project_files`（按 `type` / 子串 `pattern` 过滤 `res://` 文件树，`limit` 默认 500、上限 5000，带 `cursor` 分页）、`godot_resolve_uid`（`res://` ↔ `uid://` 双向查，要求二选一）、`godot_wait_for_import_done`（轮询 EditorFileSystem 完成指定路径的 import，默认等待 30s、上限 60s）、`godot_list_global_classes`（`ProjectSettings.get_global_class_list()` 透出）、`godot_find_class_name_conflicts`（扫 `.gd` 顶部 `class_name` 声明找出重复名，默认排除 `addons/`）、`godot_inspect_script`（反射 GDScript 的 signals / methods / properties / constants 与 `base_script`、`instance_base_type`）、`godot_list_export_presets`（行级解析 `export_presets.cfg` 的 `[preset.N]` 段）、`godot_check_export_templates`（列 `{OS.get_config_dir()}/export_templates/<version>/` 下模板文件并报告 installed 状态与缺失平台）。设置页「项目内省（只读 1.3）」区块同步加 5 个直接 RPC 调试按钮（列出文件 / 全局类名 / 导出预设 / 模板状态 / 反射脚本）。Godot 插件 `plugin.cfg` / `plugin.gd` 版本号升到 0.6.0。
+
+### 修复
+
+- **Plan 澄清（<clarify>）多问题解析**：多行 clarify 块内连续 Q1/Q2/Q3 各自带选项时，旧解析把全部选项并到第一个问题（选项串组）。现按 Q 行分组，每个问题只收自己名下的选项；同时支持无 `- ` 前缀的 `A:` / `A：` 选项行，并统一剥掉 `选项 X:` / `X:` 前缀。
+- **全屏时输入框文本从屏幕中间开始**：输入框 `max-width: 760px` + 水平居中，窄窗下无感，全屏宽窗下光标与输入文本从屏幕中间开始。改为左对齐，与消息气泡左缘一致。
+- **Godot 工具有效性修正（4 项）**：
+  - `godot_list_project_files` cursor 分页重写：旧实现每页从目录起点重新收集文件，目录文件数超 `limit` 时下一页与上一页完全相同（翻页死循环），且 `total` 重复计数。新实现 cursor 为 `"#N"`（N = 已返回匹配数），插件全量遍历统计 `total`（过滤 type/pattern 后的匹配总数，不随翻页变化）、按 N 跳过已返回项；旧格式纯路径 cursor 保持兼容。
+  - `godot_wait_for_import_done` 入参校验：相对路径自动补 `res://` 前缀，绝对路径（盘符 / POSIX / UNC）直接报错，插件侧同步 strip + 前缀防御，避免 `.import` sidecar 检查失效。
+  - `godot_check_export_templates` 模板目录路径修正：`exported/templates` → Godot 实际使用的 `export_templates`（旧路径恒查不到 → installed 永远为 false）；`missingPlatforms` 由恒空改为按已知平台（windows / linux / macos / web / android / ios）枚举全缺平台。
+  - `plugin.gd` 5 处 GDScript 解析错误修复（`var :=` 对无类型返回值推断失败）：`EditorFileSystemDirectory.get_file_uid`（4.7 不存在）改走 `ResourceLoader.get_resource_uid`；`find_class_name_conflicts` 的 BFS 队列补 `Array[EditorFileSystemDirectory]` 元素类型。
+- **electron-vite `vite:esm-shim` 注入破坏主进程构建**：插件用朴素正则定位 chunk 最后一个 import 语句，`godot_wait_for_import_done` 的 `promptSnippet` 以 `import"` 结尾时误判并把 CommonJS shim 插进字符串字面量中间（esbuild 报 Unterminated string literal，`npm run dev` / `build` 直接失败）。通过改写 promptSnippet 文案规避误匹配。
 
 ## 0.4.1
 
