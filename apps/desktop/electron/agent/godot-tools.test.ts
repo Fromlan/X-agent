@@ -467,6 +467,29 @@ describe("createGodotTools —— 1.3 只读内省 / UID / 类名 / 脚本反射
     expect((res.details as { ok: boolean }).ok).toBe(false);
   });
 
+  it("godot_wait_for_import_done 规范化相对路径并拒绝绝对路径", async () => {
+    ctx.setResult({ ok: true, remaining: [], elapsedMs: 10 });
+    await byName.get("godot_wait_for_import_done")!({
+      paths: ["  textures/hero.png ", "res://a.wav"],
+    });
+    expect(ctx.captured[0].params.paths).toEqual([
+      "res://textures/hero.png",
+      "res://a.wav",
+    ]);
+
+    const abs = await byName.get("godot_wait_for_import_done")!({
+      paths: ["D:/x/hero.png"],
+    });
+    expect(ctx.captured).toHaveLength(1);
+    expect((abs.details as { ok: boolean }).ok).toBe(false);
+
+    const slash = await byName.get("godot_wait_for_import_done")!({
+      paths: ["/tmp/hero.png"],
+    });
+    expect(ctx.captured).toHaveLength(1);
+    expect((slash.details as { ok: boolean }).ok).toBe(false);
+  });
+
   it("godot_wait_for_import_done 成功 / remaining 非空文本与 hasError", async () => {
     ctx.setResult({
       ok: true,

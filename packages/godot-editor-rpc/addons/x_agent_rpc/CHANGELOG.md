@@ -1,6 +1,14 @@
 # X-agent RPC addon changelog
 
-## Unreleased
+## 0.6.0
+
+### 修复
+
+- `list_project_files` cursor 分页重写：`nextCursor` 由 res:// 目录改为 `"#N"`（N = 已返回匹配数），恢复时跳过前 N 个匹配文件，避免目录文件数超 `limit` 时翻页返回重复页；`total` 改为整棵子树中匹配（过滤 type/pattern 后）总数，不随翻页变化。旧格式纯路径 cursor 兼容（从该目录起、不跳过）。
+- `check_export_templates` 模板目录路径修正：`exported/templates` → `export_templates`（与 Godot ExportTemplateManager 一致，旧路径恒查不到 → installed 永远 false）；`missingPlatforms` 按已知平台（windows / linux / macos / web / android / ios）枚举全缺平台，`installed` 基于实际模板文件存在性。
+- `wait_for_import_done` 路径防御：入参 strip + 自动补 `res://` 前缀（绝对路径由桌面端拒绝），避免 `.import` sidecar 检查失效。
+- `_list_project_files` / `find_class_name_conflicts` 5 处 `var :=` 类型推断错误修复（`EditorFileSystemDirectory.get_file_uid` 在 4.7 不存在，改走 `ResourceLoader.get_resource_uid`；BFS 队列补元素类型）。
+- `plugin.cfg` version 升到 0.6.0。
 
 ### 新增 RPC 方法（1.3 扩展，共 8 个 — 只读文件内省 / UID / 类名 / 脚本反射 / 导出预检）
 
@@ -11,12 +19,12 @@
 - `find_class_name_conflicts(include_addons?)` — 在上述注册表基础上再 `.gd` 文本扫顶级 `class_name X` 声明，聚合 `paths.size() > 1` 的冲突名。默认跳过 `addons/`。
 - `inspect_script(path)` — `ResourceLoader.load` 后反射 `GDScript.get_signal_list` / `get_script_method_list` / `get_script_property_list` / `get_constants()`；顺手读 `base_script.resource_path` + `instance_base_type`。
 - `list_export_presets()` — 行级解析 `res://export_presets.cfg` 的 `[preset.N]` 段，返回 `[{index, name, platform}, …]`；文件缺失时 `{presets:[], missing:true}`。
-- `check_export_templates()` — 列 `{OS.get_config_dir()}/exported/templates/<EngineVersion>/` 下所有 `*.tpz` 文件名；返回 `installed`、`version`、`templateDir`、`templateFiles`。
+- `check_export_templates()` — 列 `{OS.get_config_dir()}/export_templates/<EngineVersion>/` 下的模板文件；返回 `installed`、`version`、`templateDir`、`templateFiles`、`missingPlatforms`。
 
 ### 兼容性
 
 - 桌面端 `GODOT_RPC_ALLOWED_METHODS` 增量加入上述 8 个 method 名；旧桌面端调新方法按既有约定返回 `unknown method`。
-- 与 0.5.0 / 0.4.x 完全向后兼容；插件版本号（`plugin.cfg` `version` 与 `plugin.gd` `ADDON_VERSION`）未变化，下一次发布时再统一升线。
+- 与 0.5.0 / 0.4.x 完全向后兼容；`nextCursor` 新格式仅在本次起由本插件生成，旧桌面端仍能透传。
 
 ## 0.5.0
 
