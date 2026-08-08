@@ -14,11 +14,19 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
+      // E5: sandbox 模式下 preload 只允许 require('electron') 等受限 API：
+      // 关闭 electron-vite 默认 externalizeDeps（内联 typebox / shared 常量），
+      // 仅 external electron，并输出 CJS 单文件（sandbox 不支持 ESM preload）。
+      externalizeDeps: false,
       rollupOptions: {
         input: {
           index: resolve("electron/preload.ts"),
+        },
+        external: ["electron"],
+        output: {
+          format: "cjs",
+          entryFileNames: "[name].cjs",
         },
       },
     },

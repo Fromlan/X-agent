@@ -1,15 +1,83 @@
 /**
  * Ask/Plan hard gate: block non-allowlisted tools via Pi tool_call extension.
  * Bash is allowlisted but commands must pass the read-only classifier + cwd check.
+ * read/grep/find/ls are allowlisted but their `path` argument must stay inside
+ * the project cwd (Pi tools resolve `~`, absolute paths and `file://` freely).
  */
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionMode } from "../../../shared/ipc";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveInsideCwd } from "../cwd-sandbox";
 import {
   bashCommandEscapesCwd,
   cwdEscapeBashBlockReason,
   isReadonlyBashCommand,
   readonlyBashBlockReason,
 } from "./bash-readonly";
+
+/** Tool name → its path argument (path-carrying allowlisted read tools). */
+const PATH_TOOL_ARG: Record<string, string> = {
+  read: "path",
+  grep: "path",
+  find: "path",
+  ls: "path",
+  // godot-pi 扩展：只读探测任意目录的 project.godot，同样限制在项目 cwd 内。
+  godot_detect_project: "path",
+};
+
+/**
+ * Normalize a Pi tool path the same way Pi's `resolvePath` does
+ * (`~` / `~/`, `@` prefix, `file://`), so the cwd sandbox sees the real target.
+ */
+function normalizeToolPath(raw: string): string {
+  let p = raw.trim();
+  if (p.startsWith("@")) p = p.slice(1);
+  if (p === "~") return homedir();
+  if (
+    p.startsWith("~/") ||
+    (process.platform === "win32" && p.startsWith("~\\"))
+  ) {
+    return join(homedir(), p.slice(2));
+  }
+  if (/^file:\/\//.test(p)) {
+    try {
+      return fileURLToPath(p);
+    } catch {
+      // win32 下 `file:///etc/passwd` 等非法 file URL 无法转路径 → 必然拦截
+      // （NUL 会让 resolveInsideCwd 判为非法路径）。
+      return "\0";
+    }
+  }
+  return p;
+}
+
+/** Block a path-carrying read tool call that escapes the project cwd. */
+function blockEscapingPathToolCall(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  cwd: string,
+): { block: boolean; reason?: string } {
+  const argName = PATH_TOOL_ARG[toolName];
+  const raw = toolInput[argName];
+  if (raw === undefined) return { block: false }; // default = cwd itself
+  if (typeof raw !== "string" || raw.includes("\0")) {
+    return {
+      block: true,
+      reason: `${toolName} 的路径参数不合法。`,
+    };
+  }
+  const normalized = normalizeToolPath(raw);
+  const res = resolveInsideCwd(cwd, normalized);
+  if (!res.ok) {
+    return {
+      block: true,
+      reason: `调研/Plan 模式禁止读取项目目录外路径（${toolName} ${raw.slice(0, 80)}）。`,
+    };
+  }
+  return { block: false };
+}
 
 export function shouldBlockReadonlyModeToolCall(
   mode: AgentSessionMode,
@@ -42,6 +110,13 @@ export function shouldBlockReadonlyModeToolCall(
       return { block: true, reason: cwdEscapeBashBlockReason(command) };
     }
     return { block: false };
+  }
+
+  // 路径类只读工具（read/grep/find/ls）：参数必须落在项目 cwd 内
+  // （Pi 工具会展开 ~ / 绝对路径 / file://，不受 cwd 约束）。
+  if (PATH_TOOL_ARG[toolName] && cwd) {
+    const pathCheck = blockEscapingPathToolCall(toolName, toolInput ?? {}, cwd);
+    if (pathCheck.block) return pathCheck;
   }
 
   if (allowedTools.includes(toolName)) return { block: false };

@@ -11,7 +11,7 @@ import {
   ensureParent,
   loadStore,
   readJsonFile,
-  saveStore,
+  saveStoreUnlocked,
   type ProviderPaths,
 } from "./provider-persist";
 import { invalidateAuthCache } from "./auth-check";
@@ -94,8 +94,13 @@ export async function syncProfileToPi(
   });
 
   if (setActiveId) {
-    store.activeId = profile.id;
-    await saveStore(paths, store);
+    // B5: 在 storePath 锁内重读最新 store 再更新 activeId，避免用函数开头
+    // 的陈旧快照全量回写覆盖并发 upsert / delete / setEnabled 的改动。
+    await withStoreLock(paths.storePath, async () => {
+      const fresh = await loadStore(paths);
+      fresh.activeId = profile.id;
+      await saveStoreUnlocked(paths, fresh);
+    });
   }
 
   if (updatePrefs) {

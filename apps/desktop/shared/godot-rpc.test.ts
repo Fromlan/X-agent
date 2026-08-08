@@ -11,12 +11,15 @@ import {
   GODOT_RPC_DEFAULT_WAIT_MS,
   GODOT_RPC_MAX_WAIT_MS,
   GODOT_RPC_BASE_TIMEOUT_MS,
+  GODOT_RPC_EXPORT_GRACE_MS,
   GODOT_RPC_GRACE_PERIOD_MS,
   GODOT_WAIT_DEFAULT_TIMEOUT_MS,
   GODOT_WAIT_MAX_TIMEOUT_MS,
+  GODOT_RPC_METHOD_TOOL,
   clampGodotListLimit,
   clampGodotRunWaitMs,
   clampGodotWaitMs,
+  godotRpcMethodTool,
   godotRpcTimeoutMs,
   isAllowedGodotRpcMethod,
   type GodotRpcCall,
@@ -166,13 +169,15 @@ describe("godotRpcTimeoutMs", () => {
     expect(godotRpcTimeoutMs(call)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
   });
 
-  it("export_project 使用 5 分钟超时档", () => {
+  it("export_project 使用 5 分钟超时档 + 启动余量（C4：保证插件先收尾）", () => {
     const call: GodotRpcCall = {
       method: "export_project",
       preset: "Windows Desktop",
       output_dir: "C:/out",
     };
-    expect(godotRpcTimeoutMs(call)).toBe(5 * 60_000);
+    expect(godotRpcTimeoutMs(call)).toBe(
+      5 * 60_000 + GODOT_RPC_EXPORT_GRACE_MS,
+    );
   });
 
   it("find_unused_resources / lint_scripts 使用 4 倍基础超时档", () => {
@@ -250,5 +255,28 @@ describe("isAllowedGodotRpcMethod", () => {
     expect(isAllowedGodotRpcMethod(null)).toBe(false);
     expect(isAllowedGodotRpcMethod(undefined)).toBe(false);
     expect(isAllowedGodotRpcMethod({})).toBe(false);
+  });
+});
+
+describe("GODOT_RPC_METHOD_TOOL 工具开关映射", () => {
+  it("每个白名单方法都有映射（null 仅限 ping）", () => {
+    for (const method of GODOT_RPC_ALLOWED_METHODS) {
+      expect(GODOT_RPC_METHOD_TOOL).toHaveProperty(method);
+    }
+    expect(godotRpcMethodTool("ping")).toBeNull();
+  });
+
+  it("写型方法必须受工具开关门控", () => {
+    expect(godotRpcMethodTool("open_scene")).toBe("godot_open_scene");
+    expect(godotRpcMethodTool("run_current_scene")).toBe("godot_run_scene");
+    expect(godotRpcMethodTool("set_project_setting")).toBe(
+      "godot_set_project_setting",
+    );
+    expect(godotRpcMethodTool("export_project")).toBe("godot_export_project");
+    expect(godotRpcMethodTool("set_breakpoint")).toBe("godot_set_breakpoint");
+  });
+
+  it("未知方法返回 null（调用方先经 isAllowedGodotRpcMethod）", () => {
+    expect(godotRpcMethodTool("rm_rf")).toBeNull();
   });
 });

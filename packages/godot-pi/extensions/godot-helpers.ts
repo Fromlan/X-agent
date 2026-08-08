@@ -10,7 +10,12 @@ import {
 } from "./godot-project-detect";
 
 const RPC_METHODS =
-  "ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, run_current_scene, play_main_scene, import_resources, get_play_errors, stop_scene";
+  "ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, " +
+  "get_scene_tree, get_node_properties, run_current_scene, play_main_scene, import_resources, " +
+  "get_play_errors, stop_scene, get_debugger_state, set_breakpoint, find_unused_resources, " +
+  "export_project, get_project_setting, set_project_setting, lint_scripts, " +
+  "list_project_files, resolve_uid, wait_for_import_done, list_global_classes, " +
+  "find_class_name_conflicts, inspect_script, list_export_presets, check_export_templates";
 
 export default function godotHelpersExtension(pi: ExtensionAPI): void {
   pi.registerCommand("godot-rpc-status", {

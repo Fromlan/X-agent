@@ -1,5 +1,31 @@
 # X-agent RPC addon changelog
 
+## 0.6.2
+
+### 修复
+
+- `get_scene_tree` / `get_node_properties` 不再用 `open_scene_from_path` 打开目标场景（此前会把该场景顶成当前编辑 tab）；改为复用当前编辑中的同名场景或 `load + instantiate` 副本，load 失败时返回错误而非上一场景的树。
+- `export_project` 的 `output_dir` 目录判定支持反斜杠结尾与已存在目录（此前只认 `/` 结尾；`D:/builds` 会被当成文件名）。
+- 节点树序列化加 5000 节点预算：巨型场景响应带 `truncated` 标志，不再撑爆模型上下文。
+- `plugin.cfg` version 升到 0.6.2。
+
+### 兼容性
+
+- 协议与方法签名不变；旧桌面端完全兼容。
+
+## 0.6.1
+
+### 修复：主线程阻塞（编辑器冻结）
+
+- `lint_scripts`：失败文件的 `--check-only` 子进程改在 **子线程** 中执行（`Thread` + 协程逐帧轮询），不再于编辑器主线程同步 `OS.execute`（此前 N 个失败文件 = N × 最长 30s 冻结编辑器）。
+- `wait_for_import_done`：忙等循环 `OS.delay_msec(100)` 改为协程 `await process_frame` 逐帧轮询，等待期间编辑器保持响应（此前最长 60s 无响应）。
+- `_exit_tree` 等待残留 lint 线程收尾，避免插件卸载时线程仍运行。
+- `plugin.cfg` version 升到 0.6.1。
+
+### 兼容性
+
+- 协议与方法签名不变；旧桌面端完全兼容。
+
 ## 0.6.0
 
 ### 修复

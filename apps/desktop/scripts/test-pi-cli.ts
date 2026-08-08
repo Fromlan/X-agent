@@ -79,4 +79,27 @@ assert(
   "embedded quotes are doubled for cmd.exe",
 );
 
+// Cmd.exe re-parses %VAR% BEFORE quotes, so args must be quoted too
+// (command injection via `&`/`|`/`%` under shell:true).
+assert(
+  quoteWinCmdArg('a&echo PWNED') === '"a&echo PWNED"',
+  "ampersand args must be quoted",
+);
+assert(
+  quoteWinCmdArg('a|b') === '"a|b"',
+  "pipe args must be quoted",
+);
+assert(
+  quoteWinCmdArg('%COMSPEC%') === '"%COMSPEC%"',
+  "percent args must be quoted to prevent env expansion splicing",
+);
+assert(
+  quoteWinCmdArg('a^b') === '"a^b"',
+  "caret args must be quoted",
+);
+assert(
+  quoteWinCmdArg('plain-arg') === 'plain-arg',
+  "safe args stay unquoted",
+);
+
 console.log("test-pi-cli: ok");

@@ -30,6 +30,7 @@ function makeHost(overrides?: {
   navCancelled?: boolean;
   shadowRestore?: "shadow" | "none";
   promptOk?: boolean;
+  promptPreparing?: boolean;
 }) {
   const scanSegment = {
     mutationPaths: ["a.txt"],
@@ -85,6 +86,9 @@ function makeHost(overrides?: {
         warnings: [],
       },
     })),
+    discardPendingPre: vi.fn(),
+    pruneAbandonedTurns: vi.fn(),
+    persistDirty: vi.fn(),
   };
 
   const session = {
@@ -125,6 +129,7 @@ function makeHost(overrides?: {
     emitHistoryReplace,
     emitUsageUpdate,
     prompt,
+    isPromptPreparing: () => overrides?.promptPreparing ?? false,
     onRetractSuccess,
   };
 
@@ -248,6 +253,23 @@ describe("RetractOrchestrator.retract", () => {
     expect((await orch.retract("u1")).ok).toBe(false);
   });
 
+  it("prompt 准备窗口内拒绝撤回（竞态硬闸）", async () => {
+    const ctx = makeHost({ promptPreparing: true });
+    const orch = makeOrchestrator(ctx.host);
+    const res = await orch.retract("u1");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toContain("发送中");
+    expect(ctx.session.navigateTree).not.toHaveBeenCalled();
+    expect(ctx.shadowCheckpoints.restore).not.toHaveBeenCalled();
+  });
+
+  it("成功路径丢弃未绑定的 pending pre SHA", async () => {
+    const ctx = makeHost();
+    const orch = makeOrchestrator(ctx.host);
+    await orch.retract("u1");
+    expect(ctx.shadowCheckpoints.discardPendingPre).toHaveBeenCalled();
+  });
+
   it("流式时先 abort 再走流程", async () => {
     const ctx = makeHost({ streaming: true });
     const orch = makeOrchestrator(ctx.host);
@@ -282,6 +304,20 @@ describe("RetractOrchestrator.retract", () => {
     expect(res.ok).toBe(true);
     expect(ctx.shadowCheckpoints.restore).not.toHaveBeenCalled();
     expect(ctx.fileTracker.restore).not.toHaveBeenCalled();
+  });
+
+  it("B10: undoFiles=false 仍清理基线/检查点元数据", async () => {
+    const ctx = makeHost();
+    const orch = makeOrchestrator(ctx.host);
+    const res = await orch.retract("u1", { undoFiles: false });
+    expect(res.ok).toBe(true);
+    expect(ctx.fileTracker.dropBaselinesForTurns).toHaveBeenCalledWith(["u1"]);
+    expect(ctx.fileTracker.persistDirty).toHaveBeenCalled();
+    expect(ctx.shadowCheckpoints.pruneAbandonedTurns).toHaveBeenCalledWith(
+      "u1",
+      ["u1"],
+    );
+    expect(ctx.shadowCheckpoints.persistDirty).toHaveBeenCalled();
   });
 
   it("成功路径触发历史替换与状态清理", async () => {

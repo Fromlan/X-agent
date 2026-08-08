@@ -659,8 +659,8 @@ try {
     ),
     "utf8",
   );
-  assert(repairDeepSeekModelsJson(legacyPaths), "repair writes");
-  assert(!repairDeepSeekModelsJson(legacyPaths), "repair idempotent");
+  assert(await repairDeepSeekModelsJson(legacyPaths), "repair writes");
+  assert(!(await repairDeepSeekModelsJson(legacyPaths)), "repair idempotent");
   const repaired = JSON.parse(readFileSync(legacyPaths.modelsPath, "utf8")) as {
     providers: Record<
       string,
@@ -753,6 +753,81 @@ try {
       !modelsAfter.providers.deepseek.models.some((m) => m.id === "deepseek-chat"),
       "pre-edit model id removed",
     );
+  }
+
+  // --- B3: 解密失败（换机器 / 密钥环重置）时保留原密文，保存不覆写 ---
+  {
+    const undecryptableRoot = mkdtempSync(join(tmpdir(), "alpha-providers-undec-"));
+    const undecryptablePaths: ProviderPaths = {
+      agentDir: undecryptableRoot,
+      storePath: join(undecryptableRoot, "x-agent-providers.json"),
+      authPath: join(undecryptableRoot, "auth.json"),
+      modelsPath: join(undecryptableRoot, "models.json"),
+    };
+    try {
+      // 非 Electron 环境 safeStorage 不可用：enc:v1: 密文必然解密失败。
+      const cipher = "enc:v1:c2VjcmV0LWtleS1jaXBoZXJ0ZXh0";
+      writeFileSync(
+        undecryptablePaths.storePath,
+        JSON.stringify({
+          version: 1,
+          activeId: null,
+          profiles: [
+            {
+              id: "undec-1",
+              name: "Undecryptable",
+              providerId: "undec",
+              api: "openai-completions",
+              baseUrl: "https://relay.example.com/v1",
+              apiKey: cipher,
+              models: [{ id: "model-x" }],
+              updatedAt: new Date().toISOString(),
+              enabled: true,
+            },
+          ],
+        }),
+        "utf8",
+      );
+      const listed = await listProviderProfiles(undecryptablePaths);
+      assert(listed.length === 1, "undecryptable profile loads");
+      const undec = await getProviderProfile("undec-1", undecryptablePaths);
+      assert(undec !== null, "undecryptable profile fetchable");
+      assert(
+        undec!.apiKey === "",
+        "undecryptable key surfaces as empty (not ciphertext)",
+      );
+      assert(
+        undec!.encryptedKey === cipher,
+        "ciphertext kept in encryptedKey for later saves",
+      );
+
+      // 先建一条常驻启用档案，避免 disable 触发「至少一个启用」约束。
+      const keeper = await upsertProviderProfile(
+        {
+          name: "Keeper",
+          providerId: "keeper",
+          api: "openai-completions",
+          baseUrl: "https://relay.example.com/v1",
+          apiKey: "sk-keeper-123456",
+          models: [{ id: "model-k" }],
+        },
+        undecryptablePaths,
+      );
+      assert(keeper.ok, "keeper created");
+
+      // 任一次全量保存（如 setEnabled）后，盘上密文必须原样保留。
+      const res = await setProviderProfileEnabled("undec-1", false, undecryptablePaths);
+      assert(res.ok, "toggle enabled on undecryptable profile");
+      const onDisk = JSON.parse(
+        readFileSync(undecryptablePaths.storePath, "utf8"),
+      ) as { profiles: Array<{ apiKey: string }> };
+      assert(
+        onDisk.profiles[0]!.apiKey === cipher,
+        "ciphertext preserved after save (not overwritten by empty string)",
+      );
+    } finally {
+      rmSync(undecryptableRoot, { recursive: true, force: true });
+    }
   }
 
   console.log("test-provider-store: ok");

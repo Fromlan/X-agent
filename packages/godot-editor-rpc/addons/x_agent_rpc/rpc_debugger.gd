@@ -43,8 +43,10 @@ func _on_session_started(session_id: int) -> void:
 					continue
 				session.set_breakpoint(str(entry.get("file", "")), int(entry.get("line", 0)), true)
 
-func _on_session_stopped(_session_id: int) -> void:
-	pass
+func _on_session_stopped(session_id: int) -> void:
+	# C7：会话结束后立即移除记录，避免 _sessions_by_id 只增不减
+	# （断点遍历 / 状态快照会持续处理已死的会话）。
+	_sessions_by_id.erase(session_id)
 
 func _on_session_breaked(can_debug: bool, _session_id: int) -> void:
 	_break_count += 1
@@ -62,14 +64,15 @@ func _try_hook_script_debuggers() -> void:
 	var base := EditorInterface.get_base_control()
 	if base == null:
 		return
+	# C7：每次重建 hooked 集合 —— 编辑器重建 ScriptEditorDebugger 后旧 ObjectID
+	# 失效，重建保证 _hooked_debuggers 只含当前真实存在的节点（防无限增长）。
+	_hooked_debuggers.clear()
 	var nodes: Array = base.find_children("*", "ScriptEditorDebugger", true, false)
 	for n in nodes:
 		var node: Node = n as Node
 		if node == null or not is_instance_valid(node):
 			continue
 		var oid: int = node.get_instance_id()
-		if _hooked_debuggers.has(oid):
-			continue
 		_hooked_debuggers[oid] = true
 		# Output dock (console)
 		if node.has_signal("output") and not node.output.is_connected(_on_debugger_output):
@@ -158,7 +161,7 @@ func apply_breakpoint(path: String, line: int, enabled: bool) -> int:
 	var applied := 0
 	for sid in _sessions_by_id:
 		var session: EditorDebuggerSession = _sessions_by_id[sid]
-		if session == null or not session.has_method("set_breakpoint"):
+		if session == null or not is_instance_valid(session) or not session.has_method("set_breakpoint"):
 			continue
 		session.set_breakpoint(path, line, enabled)
 		applied += 1
@@ -169,7 +172,7 @@ func snapshot() -> Dictionary:
 	var sessions: Array = []
 	for sid in _sessions_by_id:
 		var session: EditorDebuggerSession = _sessions_by_id[sid]
-		if session == null:
+		if session == null or not is_instance_valid(session):
 			continue
 		sessions.append({
 			"id": sid,

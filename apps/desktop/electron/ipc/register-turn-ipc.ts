@@ -5,11 +5,18 @@ import { dbgLog, dbgTimer } from "../../shared/debug-log";
 import { handle } from "./register-ipc";
 
 /** Turn / retract IPC — thin forwards to SessionHost. */
+
+/** E2: 单条 prompt 上限（数 MB 文本会撑爆会话序列化与 API 请求）。 */
+export const PROMPT_MAX_LENGTH = 512_000;
+
 export function registerTurnIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
   handle(ipcMain, IPC_CHANNELS.prompt, async (_e, text: string) => {
+    if (typeof text !== "string" || text.length > PROMPT_MAX_LENGTH) {
+      return { ok: false, error: `消息过长（上限 ${PROMPT_MAX_LENGTH} 字符）` };
+    }
     dbgLog("ipc", "prompt handler entered", { len: text?.length });
     const done = dbgTimer("ipc", "prompt handler");
     try {

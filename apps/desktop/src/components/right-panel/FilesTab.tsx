@@ -66,14 +66,21 @@ function TreeNode({
     if (!cwdReady) return;
     setLoading(true);
     setError(null);
-    const res = await window.xAgent.listProjectDir(relDir);
-    setLoading(false);
-    if (!res.ok) {
-      setError(res.error ?? "列出目录失败");
+    try {
+      const res = await window.xAgent.listProjectDir(relDir);
+      if (!res.ok) {
+        setError(res.error ?? "列出目录失败");
+        setEntries([]);
+        return;
+      }
+      setEntries(res.entries ?? []);
+    } catch {
+      // D10: IPC 异常（如项目切换中）时展示错误态，避免 unhandled rejection。
+      setError("读取目录失败");
       setEntries([]);
-      return;
+    } finally {
+      setLoading(false);
     }
-    setEntries(res.entries ?? []);
   }, [cwdReady, relDir]);
 
   useEffect(() => {
@@ -162,6 +169,7 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mdSource, setMdSource] = useState(false);
+  const [previewTruncated, setPreviewTruncated] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
@@ -176,10 +184,12 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
     if (!cwd || !previewPath) {
       setContent("");
       setError(null);
+      setPreviewTruncated(false);
       return;
     }
     setLoading(true);
     setError(null);
+    setPreviewTruncated(false);
     void window.xAgent.readProjectFile(previewPath).then((res) => {
       if (cancelled) return;
       setLoading(false);
@@ -189,6 +199,8 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
         return;
       }
       setContent(res.content ?? "");
+      // D12: 大文件预览被截断时提示（与工具详情面板行为一致）。
+      setPreviewTruncated(Boolean(res.truncated));
       setError(null);
     });
     return () => {
@@ -327,6 +339,9 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
         </div>
         {loading && <div className="rp-empty">读取中…</div>}
         {error && <div className="rp-banner-soft">{error}</div>}
+        {previewTruncated && (
+          <div className="rp-banner-soft">文件较大，预览已截断（仅展示开头部分）</div>
+        )}
         {!loading && !error && previewPath && markdown && !mdSource && (
           <div className="rp-file-content rp-file-content-md">
             <MarkdownBody content={content} />

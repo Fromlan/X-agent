@@ -63,7 +63,7 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\path\to\proje
 Electron 三进程边界：
 
 - `electron/main.ts`：注册 IPC；持有 `SessionHost`、`GodotRpcBridge`、`AppAutoUpdater`。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索均在主进程。
-- `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关；新增能力需同步改 `shared/ipc.ts`、main handler、preload。
+- `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**（preload 为 CJS 单文件，仅依赖 electron 受限 API）；新增能力需同步改 `shared/ipc.ts`、main handler、preload。
 - `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。新代码优先走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / …）；扁平方法仅作兼容。
 - `shared/ipc.ts`：跨进程协议源；`shared/godot-rpc.ts`：Godot TCP 协议。
 
@@ -89,14 +89,14 @@ Electron 三进程边界：
 6. 用量经 `usage_update` / `usage-store`；右栏可 `compactSession` → `session.compact()`。
 7. `session_info` / status / prefs（如 `lastSessionPath`）写入顶栏与偏好。
 
-流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
+流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)，**按 diff 路径还原**，不整库 reset）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
 
 上下文组装细节见 [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)。
 
 ### 供应商
 
 - `provider-store.ts` → `~/.pi/agent/x-agent-providers.json`；档案保存到本地，**启用**才同步 Pi `auth.json` / `models.json` 并出现在顶栏；关闭则从 Pi 摘掉（无其它启用档案共用 providerId 时）
-- `model-fetch.ts`：探测 `/v1/models` 等；IPC `fetchProviderModels`
+- `model-fetch.ts`：探测 `/v1/models` 等；IPC `fetchProviderModels`。**SSRF 闸**：`baseUrl` 与模型探测仅允许公网 http(s)（回环 / 私网 / 链路本地 / 已知 DNS 重绑定域一律拒绝，域名再做 DNS 解析校验）；本地 LLM 需经公网代理中转
 - UI：设置 → 供应商（每张档案有启用开关）
 
 ### 插件与 Packages
@@ -114,7 +114,7 @@ Electron 三进程边界：
 | 编辑器工具 | `electron/agent/godot-tools.ts`（`GODOT_TOOLS`，默认关） |
 | 惯例技能 | `packages/godot-pi/skills/godot-docs-4-7`（仅 Godot 项目索引） |
 | Addon 安装 | `electron/agent/godot-addon-install.ts` |
-| Addon | `packages/godot-editor-rpc`（0.6.0：endpoint mtime 轮询、`editor_ready` 上报 addonVersion、场景内省 / 调试器 / 资源治理 / 导出 / 配置读写 / 只读内省全套工具） |
+| Addon | `packages/godot-editor-rpc`（0.6.2：endpoint mtime 轮询、`editor_ready` 上报 addonVersion、场景内省 / 调试器 / 资源治理 / 导出 / 配置读写 / 只读内省全套工具；lint 子进程走子线程、只读捕获不切换编辑场景、序列化 5000 节点预算） |
 
 要点：默认端口 `8765`（回退 `8765–8774`），endpoint 写入 `x-agent-godot-rpc.json`（`{host,port,token,version,updatedAt}`）；`stop()` 不再删除 endpoint —— 残留文件让下次启动复用旧 token，已运行的 Godot 插件无需重装即可恢复。`run_current_scene` / `play_main_scene` 短时收集报错；`import_resources` 扫描或按路径 reimport。就绪清单的 `rpcBridge` 状态分五态（宽限中 / 已连接 / 握手失败 → 引导更新插件 / 未启动 / 启动编辑器）。设置入口：**设置 → Godot → 编辑器连接**。详见 [`packages/godot-editor-rpc/README.md`](packages/godot-editor-rpc/README.md)。
 
@@ -129,14 +129,14 @@ Electron 三进程边界：
 - `auth-check.ts` / `pi-cli.ts`（含 `openPiLogin`）
 - `auto-updater.ts` / `update-feed.ts`：仅打包版启用 `electron-updater`，`provider: "github"` → `Fromlan/X-agent` Releases；启动后静默检查（不自动下载），有更新时应用内提示条 + 顶栏角标引导下载/安装；设置可「打开 Releases」回退
 - UI：设置 → 通用 → 检查 / 下载 / 安装更新；顶栏角标；`loadPrefsWithRecovery` 损坏偏好备份提示
-- 安全说明见 README「安全与隐私」；临时只读用会话「调研」/ Plan（硬闸关闭 write/edit，bash 仅放行只读命令且路径须落在项目 cwd 内）
+- 安全说明见 README「安全与隐私」；临时只读用会话「调研」/ Plan（硬闸关闭 write/edit，bash 仅放行只读命令且路径须落在项目 cwd 内；`read`/`grep`/`find`/`ls`/`godot_detect_project` 的路径参数同样强制 cwd 内；`godotRpcRequest` 在 IPC 层校验工具开关）
 
 ### 持久化与隔离
 
 | 路径 | 用途 |
 |---|---|
 | `~/.pi/agent/x-agent.json` | 客户端偏好 |
-| `~/.pi/agent/x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时明文同步写入 Pi `auth.json`） |
+| `~/.pi/agent/x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时明文同步写入 Pi `auth.json`；**解密失败保留密文 `encryptedKey`，保存不覆写**） |
 | `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint（host/port/token/version/updatedAt；`stop()` 不再删除，下次启动复用） |
 | `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent-usage.json` | 用量汇总 |
@@ -151,6 +151,7 @@ Electron 三进程边界：
 ### 构建
 
 `electron.vite.config.ts`：main `electron/main.ts`、preload `electron/preload.ts`、renderer `index.html`。  
+**preload 构建特例**（sandbox 兼容）：`externalizeDeps: false` + 仅 external `electron` + CJS 单文件（`index.cjs`）——typebox / shared 常量内联，改 preload 依赖时不得引入需运行时 require 的包。  
 `tsconfig.node.json` 查 Electron / shared；`tsconfig.web.json` 查 React / shared。别名：`@/`、`@shared/`（Node 侧仅 `@shared/`）。  
 打包 `extraResources`：Godot addon + `godot-pi`。
 

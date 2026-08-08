@@ -13,7 +13,11 @@ import {
   normalizePositiveInt,
 } from "../../shared/model-context";
 import { getAgentDirPath } from "./prefs";
-import { decryptSecret, encryptSecret } from "./secret-codec";
+import {
+  decryptSecretResult,
+  encryptSecret,
+} from "./secret-codec";
+import { validateExternalHttpUrl } from "./external-url";
 import {
   writeJsonAtomic,
   readJsonAsync,
@@ -102,7 +106,7 @@ function encodeProviderStore(store: ProviderStoreFile): ProviderStoreFile {
     ...store,
     profiles: store.profiles.map((p) => ({
       ...p,
-      apiKey: encryptSecret(p.apiKey),
+      apiKey: serializeApiKey(p),
     })),
   };
 }
@@ -167,13 +171,17 @@ function hasOtherEnabledProfilePure(
 function normalizeProfile(
   p: Partial<ProviderProfile> & { apiKey?: string },
 ): ProviderProfile {
+  // 解密失败（换机器 / 密钥环重置）时保留原密文到 encryptedKey，
+  // 保存路径据此写回原密文，避免空串覆盖导致密钥永久丢失。
+  const rawKey = typeof p.apiKey === "string" ? p.apiKey : "";
+  const dec = decryptSecretResult(rawKey);
   return {
     id: typeof p.id === "string" ? p.id : randomUUID(),
     name: typeof p.name === "string" ? p.name : "",
     providerId: typeof p.providerId === "string" ? p.providerId : "",
     api: (p.api as ProviderApiKind) ?? "openai-completions",
     baseUrl: typeof p.baseUrl === "string" ? p.baseUrl : "",
-    apiKey: decryptSecret(typeof p.apiKey === "string" ? p.apiKey : ""),
+    apiKey: dec.value,
     models: Array.isArray(p.models) ? p.models : [],
     notes: typeof p.notes === "string" ? p.notes : undefined,
     updatedAt:
@@ -181,7 +189,15 @@ function normalizeProfile(
         ? p.updatedAt
         : new Date().toISOString(),
     enabled: normalizeEnabled(p.enabled),
+    ...(dec.ok ? {} : { encryptedKey: rawKey }),
   };
+}
+
+/** 落盘时序列化 apiKey：解密失败的档案写回原密文而非空串。 */
+export function serializeApiKey(profile: ProviderProfile): string {
+  if (profile.apiKey) return encryptSecret(profile.apiKey);
+  if (profile.encryptedKey) return profile.encryptedKey;
+  return "";
 }
 
 export async function loadStore(
@@ -191,7 +207,11 @@ export async function loadStore(
   return providerStore(paths).reload();
 }
 
-export async function saveStore(
+/**
+ * 无锁版落盘（供已持 storePath 锁的调用方复用，避免嵌套锁死）。
+ * 与 saveStore 完全一致：serializeApiKey + 原子写。
+ */
+export async function saveStoreUnlocked(
   paths: ProviderPaths,
   store: ProviderStoreFile,
 ): Promise<void> {
@@ -200,13 +220,18 @@ export async function saveStore(
     ...store,
     profiles: store.profiles.map((p) => ({
       ...p,
-      apiKey: encryptSecret(p.apiKey),
+      apiKey: serializeApiKey(p),
     })),
   };
+  await writeJsonAtomic(paths.storePath, serialized);
+}
+
+export async function saveStore(
+  paths: ProviderPaths,
+  store: ProviderStoreFile,
+): Promise<void> {
   // 串行化所有写,避免并发 upsert / setEnabled / delete 互踩。
-  await withStoreLock(paths.storePath, () =>
-    writeJsonAtomic(paths.storePath, serialized),
-  );
+  await withStoreLock(paths.storePath, () => saveStoreUnlocked(paths, store));
 }
 
 export function maskApiKey(key: string): string {
@@ -223,11 +248,11 @@ function validateUpsert(input: ProviderUpsertInput): string | null {
   }
   if (!API_KINDS.includes(input.api)) return "不支持的 API 类型";
   if (!input.baseUrl.trim()) return "baseUrl 不能为空";
-  try {
-    // eslint-disable-next-line no-new
-    new URL(input.baseUrl.trim());
-  } catch {
-    return "baseUrl 不是合法 URL";
+  // 仅接受 http(s) 且 host 非本地/私网/重绑定域（与模型 fetch 的 SSRF 闸一致；
+  // 本地 LLM 需经公网代理中转）。
+  const checked = validateExternalHttpUrl(input.baseUrl.trim());
+  if (!checked.ok) {
+    return `baseUrl 不被允许：${checked.error}`;
   }
   if (!input.apiKey.trim()) return "API Key 不能为空";
   if (!input.models.length || !input.models.some((m) => m.id.trim())) {

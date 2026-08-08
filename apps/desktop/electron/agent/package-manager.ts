@@ -19,6 +19,7 @@ import type {
 } from "../../shared/ipc";
 import { getAgentDirPath } from "./prefs";
 import { checkPiCli, spawnCli } from "./pi-cli";
+import { mutatePiSettingsSync } from "./pi-settings";
 
 const requireElectron = createRequire(import.meta.url);
 
@@ -72,6 +73,29 @@ function normalizeSourceKey(source: string): string {
   return source.replace(/\\/g, "/").toLowerCase();
 }
 
+/**
+ * Package source whitelist gate before `pi install/uninstall <source>`
+ * (which reaches cmd.exe on Windows). Allows:
+ * - package-manager specs with known schemes: `npm:`, `git+`, `https:`, `ssh:`
+ *   (mirrors `pruneMissingPiPackageSources`); no whitespace allowed
+ * - existing local paths (resolved to an absolute path)
+ * Anything else (shell metacharacters, unknown schemes, bare names) is
+ * rejected so renderer input can never shape the spawned command line.
+ */
+export function isSafePackageSource(source: string): boolean {
+  const trimmed = source.trim();
+  if (!trimmed) return false;
+  if (/[\r\n]/.test(trimmed)) return false;
+  if (/^(npm:|git\+|https?:|ssh:)/i.test(trimmed)) {
+    return !/\s/.test(trimmed);
+  }
+  try {
+    return existsSync(trimmed) && statSync(trimmed).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function readRegistry(): RegistryFile {
   const path = registryPath();
   if (!existsSync(path)) return { packages: [] };
@@ -109,18 +133,10 @@ export function readPiSettingsPackageSources(): string[] {
 
 /** Write `packages` into settings.json, preserving other keys. */
 export function writePiSettingsPackageSources(packages: string[]): void {
-  const path = settingsPath();
-  mkdirSync(getAgentDirPath(), { recursive: true });
-  let raw: Record<string, unknown> = {};
-  if (existsSync(path)) {
-    try {
-      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    } catch {
-      raw = {};
-    }
-  }
-  raw.packages = packages;
-  writeFileSync(path, JSON.stringify(raw, null, 2), "utf8");
+  // E6: 与 bash-check 共用 settings.json 的同步原子写，字段互不覆盖。
+  mutatePiSettingsSync((settings) => {
+    settings.packages = packages;
+  });
 }
 
 /** True when `source` resolves to a directory with package.json. */
@@ -522,6 +538,13 @@ async function uninstallOtherSourcesForPackageName(
 export async function installPackage(source: string): Promise<PackageInstallResult> {
   const trimmed = source.trim();
   if (!trimmed) return { ok: false, error: "安装源不能为空" };
+  if (!isSafePackageSource(trimmed)) {
+    return {
+      ok: false,
+      error:
+        "安装源不合法：仅支持 npm: / git+ / https: / ssh: 形式的包源，或本机存在的包目录路径。",
+    };
+  }
   const cli = checkPiCli();
   if (!cli.ok || !cli.piPath) {
     return {
@@ -615,6 +638,13 @@ export async function uninstallPackage(source: string): Promise<{
 }> {
   const trimmed = source.trim();
   if (!trimmed) return { ok: false, error: "卸载源不能为空" };
+  if (!isSafePackageSource(trimmed)) {
+    return {
+      ok: false,
+      error:
+        "卸载源不合法：仅支持 npm: / git+ / https: / ssh: 形式的包源，或本机存在的包目录路径。",
+    };
+  }
 
   const absSource = existsSync(trimmed) ? resolve(trimmed) : trimmed;
   const inPiSettings = readPiSettingsPackageSources().some(

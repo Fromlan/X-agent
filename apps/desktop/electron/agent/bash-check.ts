@@ -1,10 +1,11 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { BashCheckResult } from "../../shared/ipc";
+import { mutatePiSettingsSync } from "./pi-settings";
 
 const execFileAsync = promisify(execFile);
 
@@ -120,17 +121,10 @@ export async function applyBashShellPath(
     };
   }
 
-  const path = settingsPath();
-  await mkdir(join(homedir(), ".pi", "agent"), { recursive: true });
-  let settings: Record<string, unknown> = {};
-  try {
-    const raw = await readFile(path, "utf8");
-    settings = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    settings = {};
-  }
-  settings.shellPath = target;
-  await writeFile(path, JSON.stringify(settings, null, 2), "utf8");
+  // E6: 与 package-manager 共用 settings.json 的同步原子写，字段互不覆盖。
+  mutatePiSettingsSync((settings) => {
+    settings.shellPath = target;
+  });
   return {
     ok: true,
     shellPath: target,

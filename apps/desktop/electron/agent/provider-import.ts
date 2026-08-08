@@ -14,12 +14,13 @@ import {
   normalizePositiveInt,
 } from "../../shared/model-context";
 import { listProviderPresets } from "./provider-presets";
+import { withStoreLock } from "./lib/store-mutex";
 import {
   API_KINDS,
   defaultProviderPaths,
   loadStore,
   readJsonFile,
-  saveStore,
+  saveStoreUnlocked,
   type ProviderPaths,
 } from "./provider-persist";
 
@@ -510,19 +511,7 @@ export async function importExistingProviderProfiles(
   paths: ProviderPaths = defaultProviderPaths(),
   options?: { ccSwitchDbPath?: string },
 ): Promise<ProviderImportResult> {
-  const store = await loadStore(paths);
-  const usedIds = new Set(store.profiles.map((p) => p.providerId));
-  const existingFp = new Set(
-    store.profiles.map((p) =>
-      profileFingerprint({
-        providerId: p.providerId,
-        api: p.api,
-        baseUrl: p.baseUrl,
-        apiKey: p.apiKey,
-      }),
-    ),
-  );
-
+  // 外部数据收集（auth/models/cc-switch）在锁外进行，只读无副作用。
   const pi = await collectPiCandidates(paths);
   const cc = collectCcSwitchCandidates(
     options?.ccSwitchDbPath ?? defaultCcSwitchDbPath(),
@@ -531,59 +520,76 @@ export async function importExistingProviderProfiles(
   if (pi.length) sources.add("pi");
   if (cc.length) sources.add("cc-switch");
 
-  // Prefer Pi first so built-in providerIds stay stable; cc-switch fills the rest.
-  const candidates = [...pi, ...cc];
-  let imported = 0;
-  let skipped = 0;
-  let activeCandidateId: string | null = null;
-  const now = new Date().toISOString();
+  // 整个「读最新 store → 去重 → push → 落盘」在 storePath 锁内完成，
+  // 首启时 TopBar / 设置页并发触发不会读到同一空 base 互相覆盖。
+  return withStoreLock(paths.storePath, async () => {
+    const store = await loadStore(paths);
+    const usedIds = new Set(store.profiles.map((p) => p.providerId));
+    const existingFp = new Set(
+      store.profiles.map((p) =>
+        profileFingerprint({
+          providerId: p.providerId,
+          api: p.api,
+          baseUrl: p.baseUrl,
+          apiKey: p.apiKey,
+        }),
+      ),
+    );
 
-  for (const candidate of candidates) {
-    const fp = profileFingerprint({
-      providerId: candidate.providerId,
-      api: candidate.api,
-      baseUrl: candidate.baseUrl,
-      apiKey: candidate.apiKey,
-    });
-    if (existingFp.has(fp)) {
-      skipped += 1;
-      continue;
+    // Prefer Pi first so built-in providerIds stay stable; cc-switch fills the rest.
+    const candidates = [...pi, ...cc];
+    let imported = 0;
+    let skipped = 0;
+    let activeCandidateId: string | null = null;
+    const now = new Date().toISOString();
+
+    for (const candidate of candidates) {
+      const fp = profileFingerprint({
+        providerId: candidate.providerId,
+        api: candidate.api,
+        baseUrl: candidate.baseUrl,
+        apiKey: candidate.apiKey,
+      });
+      if (existingFp.has(fp)) {
+        skipped += 1;
+        continue;
+      }
+      const providerId = uniqueProviderId(candidate.providerId, usedIds);
+      const profile: ProviderProfile = {
+        id: randomUUID(),
+        name: candidate.name,
+        providerId,
+        api: candidate.api,
+        baseUrl: candidate.baseUrl,
+        apiKey: candidate.apiKey,
+        models: candidate.models,
+        notes: candidate.notes,
+        updatedAt: now,
+        enabled: true,
+      };
+      store.profiles.push(profile);
+      existingFp.add(fp);
+      imported += 1;
+      if (candidate.preferActive) {
+        activeCandidateId = profile.id;
+      }
     }
-    const providerId = uniqueProviderId(candidate.providerId, usedIds);
-    const profile: ProviderProfile = {
-      id: randomUUID(),
-      name: candidate.name,
-      providerId,
-      api: candidate.api,
-      baseUrl: candidate.baseUrl,
-      apiKey: candidate.apiKey,
-      models: candidate.models,
-      notes: candidate.notes,
-      updatedAt: now,
-      enabled: true,
+
+    if (imported > 0) {
+      if (!store.activeId && activeCandidateId) {
+        store.activeId = activeCandidateId;
+      }
+      await saveStoreUnlocked(paths, store);
+    } else if (!existsSync(paths.storePath)) {
+      // Persist empty store so listProviderProfiles does not re-scan forever.
+      await saveStoreUnlocked(paths, store);
+    }
+
+    return {
+      ok: true,
+      imported,
+      skipped,
+      sources: [...sources],
     };
-    store.profiles.push(profile);
-    existingFp.add(fp);
-    imported += 1;
-    if (candidate.preferActive) {
-      activeCandidateId = profile.id;
-    }
-  }
-
-  if (imported > 0) {
-    if (!store.activeId && activeCandidateId) {
-      store.activeId = activeCandidateId;
-    }
-    await saveStore(paths, store);
-  } else if (!existsSync(paths.storePath)) {
-    // Persist empty store so listProviderProfiles does not re-scan forever.
-    await saveStore(paths, store);
-  }
-
-  return {
-    ok: true,
-    imported,
-    skipped,
-    sources: [...sources],
-  };
+  });
 }

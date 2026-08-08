@@ -36,11 +36,16 @@ export function useAutoCompact(options: {
     if (firedForSession.current === sessionId) return;
 
     firedForSession.current = sessionId;
-    void window.xAgent.session.compactSession().then((result) => {
-      if (!result.ok) {
-        // Allow retry on next usage tick after a brief cooldown via reset below.
+    void window.xAgent.session.compactSession()
+      .then((result) => {
+        if (!result.ok) {
+          // Allow retry on next usage tick after a brief cooldown via reset below.
+          firedForSession.current = null;
+        }
+      })
+      .catch(() => {
+        // D10: IPC 异常（如会话已关闭）时允许下次重试。
         firedForSession.current = null;
-      }
-    });
+      });
   }, [thresholdPercent, usage, busy, compacting, sessionId]);
 }

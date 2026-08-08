@@ -154,9 +154,11 @@ export function findNestedGitEntries(cwd: string): string[] {
 
 /**
  * If a previous crash left `.git.__xagent_shadow__`, rename back before new work.
+ * Returns how many nested repos were recovered.
  */
-export function recoverDisabledNestedGit(cwd: string): void {
+export function recoverDisabledNestedGit(cwd: string): number {
   const root = resolve(cwd);
+  let recovered = 0;
   const walk = (dir: string, depth: number) => {
     if (depth > 12) return;
     let entries: string[];
@@ -187,6 +189,7 @@ export function recoverDisabledNestedGit(cwd: string): void {
         if (!existsSync(restored)) {
           try {
             renameSync(abs, restored);
+            recovered += 1;
           } catch {
             /* leave for next attempt */
           }
@@ -197,6 +200,47 @@ export function recoverDisabledNestedGit(cwd: string): void {
     }
   };
   walk(root, 0);
+  return recovered;
+}
+
+/** Path of the file recording which work tree a shadow repo mirrors. */
+function worktreePathFile(gitDir: string): string {
+  return join(gitDir, "worktree-path");
+}
+
+/**
+ * 启动兜底：扫描所有 shadow 检查点仓库记录的 work tree，
+ * 把崩溃残留的 `.git.__xagent_shadow__` 改名恢复（避免用户项目不可用）。
+ * 返回恢复的嵌套仓库数量。
+ */
+export function recoverAllDisabledNestedGit(): number {
+  const root = getCheckpointsRoot();
+  let dirs: string[];
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    return 0;
+  }
+  let total = 0;
+  for (const name of dirs) {
+    const gitDir = join(root, name);
+    let st;
+    try {
+      st = statSync(gitDir);
+    } catch {
+      continue;
+    }
+    if (!st.isDirectory()) continue;
+    let cwd: string;
+    try {
+      cwd = readFileSync(worktreePathFile(gitDir), "utf8").trim();
+    } catch {
+      continue;
+    }
+    if (!cwd) continue;
+    total += recoverDisabledNestedGit(cwd);
+  }
+  return total;
 }
 
 async function withNestedGitDisabled<T>(
@@ -307,6 +351,12 @@ export class ShadowGit {
         buildExcludeContents(this.cwd),
         "utf8",
       );
+      // 记录 work tree，供应用启动时恢复崩溃残留的改名嵌套 .git。
+      try {
+        writeFileSync(worktreePathFile(this.gitDir), this.cwd, "utf8");
+      } catch {
+        /* non-fatal */
+      }
       this.ready = true;
       this.unavailableReason = null;
       return { ok: true };
@@ -366,6 +416,18 @@ export class ShadowGit {
       }
       const sha = await this.revParse("HEAD");
       if (!sha) return { ok: false, error: "commit succeeded but HEAD missing" };
+
+      // B9: 修剪检查点仓库 —— 撤回/abort 产生的孤儿 commit 立即变为不可达
+      // 并回收，避免 ~/.pi/agent/x-agent/checkpoints 无界膨胀。
+      // 当前分支可达链不受影响（reflog expire 只清不可达条目）。
+      await gitShadow(this.gitDir, this.cwd, [
+        "reflog",
+        "expire",
+        "--expire-unreachable=now",
+        "--all",
+      ]);
+      await gitShadow(this.gitDir, this.cwd, ["gc", "--auto", "--prune=now"]);
+
       return { ok: true, sha };
     });
   }

@@ -35,10 +35,17 @@ export function appendPendingUser(
   ];
 }
 
-/** Drop a pending bubble (e.g. prompt IPC failed before the real event). */
+/**
+ * Drop a pending bubble (e.g. prompt IPC failed before the real event).
+ * Only removes items that are still unconfirmed (no entryId): a pending id
+ * may have been reused by `user_message` to keep the virtual row stable,
+ * and deleting that would remove a real message.
+ */
 export function removePendingUser(items: ChatItem[], id: string): ChatItem[] {
   if (!isPendingUserId(id)) return items;
-  return items.filter((i) => !(i.kind === "user" && i.id === id));
+  return items.filter(
+    (i) => !(i.kind === "user" && i.id === id && !i.entryId),
+  );
 }
 
 /** Find the index of an assistant / tool item by id. Hot path callers first
@@ -162,30 +169,23 @@ export function applyAgentEvent(
       if (items.some((i) => i.kind === "user" && i.id === id)) {
         return items;
       }
-      // 替换 pending 时**保持原 pending 的 id**(仅更新 text/entryId),
-      // 避免 getItemKey 改变导致 virtual-row React unmount + remount,
-      // 视觉上 user bubble 闪烁、滚动位置丢失。
-      const last = items[items.length - 1];
-      const replaceTrailing =
-        last?.kind === "user" && isPendingUserId(last.id);
-      const replaceIdx =
-        !event.id && !replaceTrailing
-          ? items.findIndex(
-              (i) => i.kind === "user" && isPendingUserId(i.id),
-            )
-          : -1;
-      if (replaceTrailing || replaceIdx >= 0) {
-        const idx = replaceTrailing ? items.length - 1 : replaceIdx;
-        const prev = items[idx] as Extract<ChatItem, { kind: "user" }>;
+      // 替换**第一个**仍未确认的 pending（FIFO：事件按发送顺序到达，与 pending
+      // 队列对应），并**保持原 pending 的 id**（仅更新 text/entryId）——避免
+      // getItemKey 改变导致 virtual-row React unmount + remount（气泡闪烁、
+      // 滚动锚点丢失）。已确认项（带 entryId）不再视为 pending。
+      const pendingIdx = items.findIndex(
+        (i) =>
+          i.kind === "user" && isPendingUserId(i.id) && !i.entryId,
+      );
+      if (pendingIdx >= 0) {
+        const prev = items[pendingIdx] as Extract<ChatItem, { kind: "user" }>;
         const merged: ChatItem = {
           ...prev,
           text: event.text,
           ...(event.entryId ? { entryId: event.entryId } : {}),
-          // 若事件自带 id,则用真实 id 覆盖 pending 占位 id(主路径有 id)。
-          ...(event.id ? { id } : {}),
         };
         const next = items.slice();
-        next[idx] = merged;
+        next[pendingIdx] = merged;
         return next;
       }
       return [

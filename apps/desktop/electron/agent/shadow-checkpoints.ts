@@ -22,6 +22,8 @@ export type TurnCheckpoint = {
 
 export type ShadowCheckpointPersistPayload = {
   turns: Record<string, TurnCheckpoint>;
+  /** B9: 增量持久化 —— 自上次 append 以来被删除（撤回）的 turn 列表。 */
+  droppedTurns?: string[];
 };
 
 type SessionManagerLike = RestoreSessionManager;
@@ -48,6 +50,10 @@ export class ShadowCheckpointTracker implements RestoreSource {
   private shadow: ShadowGit | null = null;
   private turns = new Map<string, TurnCheckpoint>();
   private dirty = false;
+  /** B9: 自上次持久化以来变更的 turn（增量 append，避免全量快照膨胀）。 */
+  private dirtyTurns = new Set<string>();
+  /** B9: 自上次持久化以来被删除（撤回）的 turn。 */
+  private droppedTurns = new Set<string>();
   private enabled = false;
   private initPromise: Promise<boolean> | null = null;
   /** Serialize commits so pre/post ordering stays consistent. */
@@ -69,6 +75,8 @@ export class ShadowCheckpointTracker implements RestoreSource {
     this.epoch += 1;
     this.turns.clear();
     this.dirty = false;
+    this.dirtyTurns.clear();
+    this.droppedTurns.clear();
     this.shadow = null;
     this.enabled = false;
     this.initPromise = null;
@@ -143,6 +151,17 @@ export class ShadowCheckpointTracker implements RestoreSource {
     this.turns.set(userEntryId, cur);
     this.pendingPreSha = null;
     this.dirty = true;
+    this.dirtyTurns.add(userEntryId);
+    this.droppedTurns.delete(userEntryId);
+  }
+
+  /**
+   * 撤回 / 分支切换后丢弃未绑定的 pending pre SHA。
+   * 否则「撤回恰落在 prepare 与 prompt 之间」的旧 pre 会被下一次 bind 复活，
+   * 再撤回新 turn 时会 reset 回被撤回的旧状态。
+   */
+  discardPendingPre(): void {
+    this.pendingPreSha = null;
   }
 
   /** Capture post-turn workspace state (updates each turn_end). */
@@ -159,6 +178,8 @@ export class ShadowCheckpointTracker implements RestoreSource {
       // Do NOT invent pre=post: that would make retract a no-op when prepare/bind failed.
       this.turns.set(userEntryId, cur);
       this.dirty = true;
+      this.dirtyTurns.add(userEntryId);
+      this.droppedTurns.delete(userEntryId);
     });
   }
 
@@ -172,19 +193,26 @@ export class ShadowCheckpointTracker implements RestoreSource {
     if (epoch !== this.epoch) return;
   }
 
+  /** B9: 增量持久化 —— 只 append 自上次以来的变更，避免全量快照 O(N²) 膨胀。 */
   persistDirty(sm: SessionManagerLike): void {
     if (!this.dirty) return;
     const turns: Record<string, TurnCheckpoint> = {};
-    for (const [uid, cp] of this.turns) {
+    for (const uid of this.dirtyTurns) {
+      const cp = this.turns.get(uid);
+      if (!cp) continue;
       turns[uid] = { ...cp };
     }
     try {
-      sm.appendCustomEntry(SHADOW_CHECKPOINT_CUSTOM_TYPE, {
-        turns,
-      } satisfies ShadowCheckpointPersistPayload);
+      const payload: ShadowCheckpointPersistPayload = { turns };
+      if (this.droppedTurns.size > 0) {
+        payload.droppedTurns = [...this.droppedTurns];
+      }
+      sm.appendCustomEntry(SHADOW_CHECKPOINT_CUSTOM_TYPE, payload);
       this.dirty = false;
+      this.dirtyTurns.clear();
+      this.droppedTurns.clear();
     } catch {
-      /* non-fatal */
+      /* non-fatal; dirty flags stay set so the next turn retries */
     }
   }
 
@@ -198,6 +226,12 @@ export class ShadowCheckpointTracker implements RestoreSource {
       }
       const data = entry.data as ShadowCheckpointPersistPayload | undefined;
       if (!data?.turns || typeof data.turns !== "object") continue;
+      // B9: 增量删除 —— 旧快照中的已删 turn 不得复活（先删后合）。
+      if (Array.isArray(data.droppedTurns)) {
+        for (const uid of data.droppedTurns) {
+          this.turns.delete(uid);
+        }
+      }
       for (const [uid, cp] of Object.entries(data.turns)) {
         if (!cp || typeof cp !== "object") continue;
         const prev = this.turns.get(uid) ?? {};
@@ -269,6 +303,9 @@ export class ShadowCheckpointTracker implements RestoreSource {
           "该段包含 bash：cwd 内文件改动可由 Shadow 检查点还原；cwd 外副作用仍无法还原。",
         );
       }
+      warnings.push(
+        "只还原该回合内变化过的文件；你的手动编辑若与 Agent 改动同一路径也会被还原。",
+      );
       return {
         mode: "shadow",
         shadowSha: sha,
@@ -298,6 +335,35 @@ export class ShadowCheckpointTracker implements RestoreSource {
     };
   }
 
+  /**
+   * B10: 撤回后清理被废弃 turn 的检查点元数据（不碰磁盘 / shadow 工作树）。
+   * 目标 turn 保留 pre（后续仍可再撤回）；其余废弃 turn 的检查点删除。
+   */
+  pruneAbandonedTurns(
+    targetUserEntryId: string,
+    abandonedUserEntryIds: string[],
+  ): void {
+    for (const id of abandonedUserEntryIds) {
+      if (id === targetUserEntryId) {
+        const cp = this.turns.get(id);
+        if (cp?.pre) {
+          this.turns.set(id, { pre: cp.pre });
+          this.dirtyTurns.add(id);
+          this.droppedTurns.delete(id);
+        } else {
+          this.turns.delete(id);
+          this.droppedTurns.add(id);
+          this.dirtyTurns.delete(id);
+        }
+        continue;
+      }
+      this.turns.delete(id);
+      this.droppedTurns.add(id);
+      this.dirtyTurns.delete(id);
+    }
+    this.dirty = true;
+  }
+
   async restoreToUserTurn(
     sm: SessionManagerLike,
     targetUserEntryId: string,
@@ -311,23 +377,26 @@ export class ShadowCheckpointTracker implements RestoreSource {
     if (!(await this.ensureReady()) || !this.shadow || !sha) {
       return { used: "none" };
     }
-    const result = await this.shadow.restore(sha);
+    // 只还原「该回合内变化过的路径」（target→HEAD 的 diff 路径集），
+    // 不再整库 reset --hard：用户回合期间未动过的文件（含回合后的手动编辑）
+    // 原样保留。diff 计算失败时回退全量还原（旧行为）。
+    let restorePaths: string[] | undefined;
+    const head = await this.shadow.revParse("HEAD");
+    if (head) {
+      const diff = await this.shadow.diffPaths(sha, head);
+      if (diff.ok && diff.paths.length > 0) restorePaths = diff.paths;
+    }
+    const result = await this.shadow.restore(
+      sha,
+      restorePaths ? { paths: restorePaths } : undefined,
+    );
     if (!result.ok) {
       return {
         used: "none",
         report: toReport(result),
       };
     }
-    for (const id of abandonedUserEntryIds) {
-      if (id === targetUserEntryId) {
-        const cp = this.turns.get(id);
-        if (cp?.pre) this.turns.set(id, { pre: cp.pre });
-        else this.turns.delete(id);
-        continue;
-      }
-      this.turns.delete(id);
-    }
-    this.dirty = true;
+    this.pruneAbandonedTurns(targetUserEntryId, abandonedUserEntryIds);
     this.persistDirty(sm);
     return { used: "shadow", report: toReport(result) };
   }

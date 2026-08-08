@@ -33,7 +33,7 @@
   - **Plan** — 只读研究 + `write_plan`；右栏「计划」可编辑 / 保存到项目；审阅后点「执行计划」切回 Agent 实施；tool_call 硬闸防误写
   - **目标（Goal）** — 设定完成条件，独立评估未达标则自动续轮
 - **会话** — 按项目分组；恢复 / 重命名 / 删除；自动标题；可从侧栏隐藏项目
-- **对话编辑** — 撤回、编辑重发、重新生成；优先用 Shadow Git 检查点还原工作区（独立于用户 `.git`），无 Git 时降级为还原该段 `write` / `edit` 基线；撤回前有确认与风险提示
+- **对话编辑** — 撤回、编辑重发、重新生成；优先用 Shadow Git 检查点**按 diff 路径还原**工作区（独立于用户 `.git`；仅还原回合内变化过的文件，保留回合期间你的手动编辑），无 Git 时降级为还原该段 `write` / `edit` 基线；撤回前有确认与风险提示
 - **技能可见** — `read` 加载 `SKILL.md` 时显示为「技能 · 名称」卡片
 - **右栏** — 上下文占用拆解与手动压缩、**计划**、工具详情、项目文件树（Markdown 可预览）、Godot 状态
 
@@ -114,9 +114,9 @@
 | 面 | 说明 |
 |---|---|
 | API Key | 供应商密钥在 `x-agent-providers.json` 中尽量用 Electron `safeStorage` 加密；激活时仍写入 Pi `auth.json`；勿把该目录同步到不可信位置 |
-| 工具 | 默认开启 `bash` / `write` / `edit`；会话「调研」/ Plan 硬闸关闭 write/edit，bash 仅放行只读命令且路径须在项目 cwd 内（不写回设置）；设置 → 工具控制 Agent/目标默认白名单 |
+| 工具 | 默认开启 `bash` / `write` / `edit`；会话「调研」/ Plan 硬闸关闭 write/edit，bash 仅放行只读命令且路径须在项目 cwd 内（不写回设置），`read`/`grep`/`find`/`ls` 的路径参数同样强制 cwd 内；设置 → 工具控制 Agent/目标默认白名单，Godot 工具开关在 IPC 层强制校验（默认关闭时被攻陷的界面也无法绕过） |
 | 项目沙箱 | 右栏文件树与调研/Plan 的 bash 受 cwd 约束；Agent 模式下 Pi `bash` 仍可能访问更广路径 |
-| Godot RPC | 仅监听 `127.0.0.1`；endpoint 含共享 token，插件 `editor_ready` 握手校验后才接受调用。握手失败时请更新并重启编辑器内 `x_agent_rpc` 插件 |
+| Godot RPC | 仅监听 `127.0.0.1`；endpoint 含共享 token，插件 `editor_ready` 握手校验后才接受调用；多编辑器显式选路，未鉴权客户端不会静默改道。握手失败时请更新并重启编辑器内 `x_agent_rpc` 插件 |
 | Packages | `pi install` 可安装任意来源包，注意供应链风险 |
 | 会话 | 仅存储在 `~/.pi/agent/x-agent/sessions/`，与 Pi CLI 会话隔离；Goal journal 在 `~/.pi/agent/x-agent/goals/` |
 

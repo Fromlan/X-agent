@@ -12,6 +12,9 @@
 
 export const GODOT_RPC_DEFAULT_PORT = 8765;
 
+/** 桥与插件一致的回退端口上限（插件候选表 8765–8774）。 */
+export const GODOT_RPC_FALLBACK_PORT_END = 8774;
+
 /** Default collection window after play scene methods. */
 export const GODOT_RPC_DEFAULT_WAIT_MS = 3000;
 
@@ -26,6 +29,13 @@ export const GODOT_RPC_BASE_TIMEOUT_MS = 8000;
  * `export_project` 走 Godot 子进程 `--headless --export-release`，大项目出包可达数分钟。
  */
 export const GODOT_RPC_EXPORT_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * C4: export 桥接超时在插件超时之外追加的余量。
+ * 插件侧从「收到请求」起算 5 分钟并主动 kill 子进程 + 回响应；
+ * 桥侧多等一个余量，保证永远先收到插件的最终结果（而非桥先 timeout 丢响应）。
+ */
+export const GODOT_RPC_EXPORT_GRACE_MS = 15_000;
 
 /**
  * 桥接启动后的重连宽限期。
@@ -177,6 +187,47 @@ export function isAllowedGodotRpcMethod(
   );
 }
 
+/**
+ * RPC method → settings tool name that gates it in `prefs.tools`
+ * (GODOT_TOOLS 默认关闭；未勾选时经 godotRpcRequest 的调用必须被拒绝)。
+ * `null` = ungated (protocol-level calls like `ping`).
+ */
+export const GODOT_RPC_METHOD_TOOL: Record<string, string | null> = {
+  ping: null,
+  get_editor_info: "godot_editor_info",
+  get_open_scenes: "godot_open_scenes",
+  get_edited_scene: "godot_edited_scene",
+  open_scene: "godot_open_scene",
+  reload_scene: "godot_reload_scene",
+  get_scene_tree: "godot_get_scene_tree",
+  get_node_properties: "godot_get_node_properties",
+  run_current_scene: "godot_run_scene",
+  play_main_scene: "godot_run_main_scene",
+  import_resources: "godot_import_resources",
+  get_play_errors: "godot_play_errors",
+  stop_scene: "godot_stop_scene",
+  get_debugger_state: "godot_get_debugger_state",
+  set_breakpoint: "godot_set_breakpoint",
+  find_unused_resources: "godot_find_unused_resources",
+  export_project: "godot_export_project",
+  get_project_setting: "godot_get_project_setting",
+  set_project_setting: "godot_set_project_setting",
+  lint_scripts: "godot_lint_scripts",
+  list_project_files: "godot_list_project_files",
+  resolve_uid: "godot_resolve_uid",
+  wait_for_import_done: "godot_wait_for_import_done",
+  list_global_classes: "godot_list_global_classes",
+  find_class_name_conflicts: "godot_find_class_name_conflicts",
+  inspect_script: "godot_inspect_script",
+  list_export_presets: "godot_list_export_presets",
+  check_export_templates: "godot_check_export_templates",
+};
+
+/** Tool name required by `prefs.tools` for an RPC method, or null if ungated. */
+export function godotRpcMethodTool(method: string): string | null {
+  return GODOT_RPC_METHOD_TOOL[method] ?? null;
+}
+
 export type GodotRpcRequest = GodotRpcCall & { id: string };
 
 export type GodotRpcResponse =
@@ -184,11 +235,15 @@ export type GodotRpcResponse =
       id: string;
       ok: true;
       result: unknown;
+      /** C1: 请求被改道送达的客户端（preferred 未鉴权时的 fallback）。 */
+      routedTo?: string;
     }
   | {
       id: string;
       ok: false;
       error: string;
+      /** C1: 请求被改道送达的客户端（preferred 未鉴权时的 fallback）。 */
+      routedTo?: string;
     };
 
 export type GodotRpcEvent =
@@ -288,9 +343,9 @@ export function godotRpcTimeoutMs(call: GodotRpcCall): number {
       "wait_ms" in call ? clampGodotRunWaitMs(call.wait_ms) : GODOT_RPC_DEFAULT_WAIT_MS;
     return wait + GODOT_RPC_BASE_TIMEOUT_MS;
   }
-  // 项目导出走 Godot 子进程出包，最慢档（5 分钟）。
+  // 项目导出走 Godot 子进程出包，最慢档（5 分钟 + 启动余量，保证插件先收尾）。
   if (call.method === "export_project") {
-    return GODOT_RPC_EXPORT_TIMEOUT_MS;
+    return GODOT_RPC_EXPORT_TIMEOUT_MS + GODOT_RPC_EXPORT_GRACE_MS;
   }
   // wait_for_import_done：用户窗口 + 1s 基线（wait_for_break 同模式，待 1.3 调试回路 PR 启用）。
   if (call.method === "wait_for_import_done") {

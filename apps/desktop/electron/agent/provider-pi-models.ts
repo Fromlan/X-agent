@@ -1,6 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { ProviderApiKind, ProviderModelEntry } from "../../shared/ipc";
 import { enrichModelEntry } from "../../shared/model-context";
+import { withStoreLock } from "./lib/store-mutex";
+import { writeJsonAtomic } from "./lib/atomic-write";
 import {
   defaultProviderPaths,
   type ProviderPaths,
@@ -105,10 +107,12 @@ export function modelEntryForPiModelsJson(
  * Patch existing ~/.pi/agent/models.json DeepSeek entries that lack `reasoning`.
  * Custom ids (e.g. deepseek-v4-pro[1M]) written before this fix clamp thinking to off.
  * Returns true when the file was rewritten.
+ * B4: 写入走与 provider-pi-sync 相同的 models.json 锁 + 原子写（tmp+rename），
+ * 避免与并发激活档案的加锁写互踩（撕裂 / 丢更新）或崩溃截断文件。
  */
-export function repairDeepSeekModelsJson(
+export async function repairDeepSeekModelsJson(
   paths: ProviderPaths = defaultProviderPaths(),
-): boolean {
+): Promise<boolean> {
   if (!existsSync(paths.modelsPath)) return false;
   let modelsFile: { providers?: Record<string, unknown> };
   try {
@@ -168,7 +172,9 @@ export function repairDeepSeekModelsJson(
   }
 
   if (!changed) return false;
-  writeFileSync(paths.modelsPath, JSON.stringify(modelsFile, null, 2), "utf8");
+  await withStoreLock(paths.modelsPath, () =>
+    writeJsonAtomic(paths.modelsPath, modelsFile),
+  );
   return true;
 }
 

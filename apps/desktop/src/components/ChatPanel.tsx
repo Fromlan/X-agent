@@ -8,6 +8,7 @@ import type {
 } from "@shared/ipc";
 import { isRestorableGoalStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
+import { isPendingUserId } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
 import { AtMenu } from "./AtMenu";
@@ -573,7 +574,14 @@ function ChatPanelImpl(props: Props) {
                 disabled={
                   props.disabled ||
                   !props.input.trim() ||
-                  Boolean(props.editingEntryId)
+                  Boolean(props.editingEntryId) ||
+                  // B7: 已有未确认的 pending 气泡时禁止再发（双 pending 会错位归并）
+                  props.items.some(
+                    (i) =>
+                      i.kind === "user" &&
+                      isPendingUserId(i.id) &&
+                      !i.entryId,
+                  )
                 }
               >
                 <Send size={14} />

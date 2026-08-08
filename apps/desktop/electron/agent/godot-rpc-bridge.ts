@@ -11,7 +11,11 @@ import type {
   GodotRpcRequestOptions,
   GodotRpcResponse,
 } from "../../shared/godot-rpc";
-import { GODOT_RPC_BASE_TIMEOUT_MS, GODOT_RPC_DEFAULT_PORT } from "../../shared/godot-rpc";
+import {
+  GODOT_RPC_BASE_TIMEOUT_MS,
+  GODOT_RPC_DEFAULT_PORT,
+  GODOT_RPC_FALLBACK_PORT_END,
+} from "../../shared/godot-rpc";
 import { ensureAgentDir } from "./prefs";
 import { fileExistsAsync, readJsonAsync, writeJsonAtomic } from "./lib/atomic-write";
 
@@ -141,7 +145,12 @@ export class GodotRpcBridge {
   private listeners = new Set<Listener>();
   private pending = new Map<
     string,
-    { resolve: (v: GodotRpcResponse) => void; timer: NodeJS.Timeout }
+    {
+      resolve: (v: GodotRpcResponse) => void;
+      timer: NodeJS.Timeout;
+      /** C4: 发起请求的客户端 id —— 断连时立即 reject，避免悬挂到超时。 */
+      clientId: string;
+    }
   >();
   private buffers = new WeakMap<Socket, string>();
 
@@ -187,7 +196,9 @@ export class GodotRpcBridge {
   }
 
   listClients(): GodotRpcClientInfo[] {
+    // C1: 只列出已鉴权客户端（未鉴权的裸 socket 无任何项目信息，UI 展示无意义）。
     return [...this.clients.values()]
+      .filter((c) => c.authenticated)
       .map((c) => ({
         id: c.id,
         projectPath: c.projectPath,
@@ -204,7 +215,9 @@ export class GodotRpcBridge {
       this.emitStatus();
       return true;
     }
-    if (!this.clients.has(clientId)) return false;
+    // C1: 只允许选中已鉴权客户端，避免把请求静默发往未完成握手的连接。
+    const client = this.clients.get(clientId);
+    if (!client || !client.authenticated) return false;
     this.activeClientId = clientId;
     this.emitStatus();
     return true;
@@ -255,7 +268,20 @@ export class GodotRpcBridge {
     this.clients.delete(id);
     this.socketToId.delete(socket);
     if (this.activeClientId === id) {
-      this.activeClientId = this.clients.keys().next().value ?? null;
+      // C1: 断连后只指向已鉴权客户端，避免请求发往未完成握手的连接。
+      const firstAuthed = [...this.clients.values()].find((c) => c.authenticated);
+      this.activeClientId = firstAuthed?.id ?? null;
+    }
+    // C4: 该客户端的在途请求立即 reject（如导出中编辑器退出，不再悬挂满超时）。
+    for (const [reqId, entry] of this.pending) {
+      if (entry.clientId !== id) continue;
+      clearTimeout(entry.timer);
+      this.pending.delete(reqId);
+      entry.resolve({
+        id: reqId,
+        ok: false,
+        error: "Godot editor disconnected",
+      });
     }
     this.lastEvent = { type: "disconnected", clientId: id };
     this.emitStatus();
@@ -332,15 +358,26 @@ export class GodotRpcBridge {
       this.authToken = randomUUID().replace(/-/g, "");
     }
 
+    // C6: 回退端口始终落在插件候选表 8765–8774 内（模运算环绕）。
+    // 否则复用端口接近上限时回退到 8775+，插件探测不到，重连失败。
+    // 显式传入候选表外的端口（测试等）保持线性回退，尊重调用方意图。
+    const portMin = GODOT_RPC_DEFAULT_PORT;
+    const portSpan = GODOT_RPC_FALLBACK_PORT_END - portMin + 1;
+    const inCandidateRange =
+      preferredPort >= portMin && preferredPort <= GODOT_RPC_FALLBACK_PORT_END;
+    const wrap = (i: number): number =>
+      inCandidateRange
+        ? portMin +
+          ((((preferredPort - portMin + i) % portSpan) + portSpan) % portSpan)
+        : preferredPort + i;
+
     let lastErr: unknown;
     for (let i = 0; i < attempts; i++) {
-      const port = preferredPort + i;
+      const port = wrap(i);
       const result = await this.tryListen(port);
       if (result.ok) {
         if (i > 0) {
           this.lastWarning = `端口 ${originalPreferred} 被占用，已自动改用 ${port}`;
-        } else if (reused && reused.port !== originalPreferred) {
-          this.lastWarning = `已沿用上次 endpoint（端口 ${port}）`;
         } else if (reused) {
           this.lastWarning = `已沿用上次 endpoint（端口 ${port}）`;
         }
@@ -481,19 +518,34 @@ export class GodotRpcBridge {
     }
   }
 
+  /**
+   * C1: 解析请求目标客户端。
+   * - 显式 `options.clientId`：必须存在且已鉴权，否则返回 null（不静默改道）。
+   * - 默认（activeClientId / 首个已鉴权）：activeClientId 未鉴权/失效时回退到
+   *   首个已鉴权客户端，并通过 `routedTo` 告知调用方实际送达目标。
+   */
   private resolveClient(
     options?: GodotRpcRequestOptions,
-  ): ClientState | null {
-    if (this.clients.size === 0) return null;
-    const preferred = options?.clientId ?? this.activeClientId;
+  ): { client: ClientState | null; routedTo?: string } {
+    if (this.clients.size === 0) return { client: null };
+    const explicit = options?.clientId ?? null;
+    const preferred = explicit ?? this.activeClientId;
     if (preferred) {
       const hit = this.clients.get(preferred);
-      if (hit && !hit.socket.destroyed && hit.authenticated) return hit;
+      if (hit && !hit.socket.destroyed && hit.authenticated) {
+        return { client: hit };
+      }
+      if (explicit) {
+        // 显式选择的目标不可用 → 不静默改道，直接失败。
+        return { client: null };
+      }
     }
     for (const client of this.clients.values()) {
-      if (!client.socket.destroyed && client.authenticated) return client;
+      if (!client.socket.destroyed && client.authenticated) {
+        return { client, routedTo: client.id };
+      }
     }
-    return null;
+    return { client: null };
   }
 
   async request(
@@ -501,9 +553,15 @@ export class GodotRpcBridge {
     timeoutMs = GODOT_RPC_BASE_TIMEOUT_MS,
     options?: GodotRpcRequestOptions,
   ): Promise<GodotRpcResponse> {
-    const client = this.resolveClient(options);
+    const { client, routedTo } = this.resolveClient(options);
     if (!client) {
-      return { id: req.id, ok: false, error: "no Godot editor connected" };
+      return {
+        id: req.id,
+        ok: false,
+        error: options?.clientId
+          ? `Godot client not found or not authenticated: ${options.clientId}`
+          : "no Godot editor connected",
+      };
     }
     if (options?.clientId && !this.clients.has(options.clientId)) {
       return {
@@ -519,7 +577,12 @@ export class GodotRpcBridge {
         this.pending.delete(req.id);
         resolve({ id: req.id, ok: false, error: "timeout" });
       }, timeoutMs);
-      this.pending.set(req.id, { resolve, timer });
+      this.pending.set(req.id, {
+        resolve: (res: GodotRpcResponse) =>
+          resolve(routedTo ? { ...res, routedTo } : res),
+        timer,
+        clientId: client.id,
+      });
     });
   }
 }

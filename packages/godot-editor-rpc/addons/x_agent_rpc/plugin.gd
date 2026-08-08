@@ -5,7 +5,7 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
-const ADDON_VERSION := "0.6.0"
+const ADDON_VERSION := "0.6.2"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
 const CONNECT_TIMEOUT_SEC := 1.2
@@ -82,6 +82,12 @@ var _pending_export: Dictionary = {}
 ## 已设置的编辑器断点（path → { line, condition }）；会话启动时自动重放。
 var _breakpoints: Dictionary = {}
 
+# --- 1.2 lint：--check-only 子进程在线程中执行，避免冻结编辑器主线程 ---
+## 正在运行的 lint 子线程（一次一个；同一时刻只处理一个失败文件）。
+var _lint_thread: Thread = null
+## 子线程完成标志（简单 bool 跨线程赋值是原子的）。
+var _lint_worker_done: bool = false
+
 # =============================================================================
 # Lifecycle
 # =============================================================================
@@ -100,6 +106,10 @@ func _exit_tree() -> void:
 	if scene_changed.is_connected(_on_scene_changed):
 		scene_changed.disconnect(_on_scene_changed)
 	_teardown_debugger()
+	# 等 lint 子线程收尾（最多一个 LINT_CHECK_ONLY_TIMEOUT_MS 周期），
+	# 避免插件卸载时线程仍在跑（OS.execute 子进程随之被系统清理）。
+	if _lint_thread != null and _lint_thread.is_started() and not _lint_worker_done:
+		_lint_thread.wait_to_finish()
 	if _peer.get_status() != StreamPeerTCP.STATUS_NONE:
 		_peer.disconnect_from_host()
 
@@ -451,21 +461,46 @@ func _import_resources(raw_paths) -> Dictionary:
 	fs.reimport_files(packed)
 	return {"ok": true, "mode": "reimport", "paths": paths}
 
+## 只读取场景根：优先复用当前编辑中的同名场景（拿到内存最新状态），
+## 否则 load + instantiate 一份副本 —— 不再 open_scene_from_path 切换编辑场景
+## （避免顶掉用户正在编辑的 tab；open 失败也不再返回错场景的树）。
+## 返回 [root, borrowed]：borrowed=true 表示编辑场景实例，调用方不得 free。
+func _scene_root_for_read(scene_path: String) -> Array:
+	var edited := EditorInterface.get_edited_scene_root()
+	if edited != null and edited.scene_file_path == scene_path:
+		return [edited, true]
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		return [null, false]
+	return [packed.instantiate(), false]
+
+## 节点树序列化预算（C8：防巨型场景把响应撑爆模型上下文）。
+const SERIALIZE_NODE_BUDGET := 5000
+
+## 当前序列化预算（每次 _capture_scene_tree 前重置；同步调用无并发）。
+var _serialize_budget: int = SERIALIZE_NODE_BUDGET
+
 func _capture_scene_tree(scene_path: String, max_depth: int) -> Dictionary:
-	# 确保场景已打开（仅当需要时打开，避免覆盖当前编辑场景）
-	var open := Array(EditorInterface.get_open_scenes())
-	if scene_path not in open:
-		EditorInterface.open_scene_from_path(scene_path)
-	var root := EditorInterface.get_edited_scene_root()
+	var root_and_owned := _scene_root_for_read(scene_path)
+	var root: Node = root_and_owned[0]
+	var borrowed: bool = root_and_owned[1]
 	if root == null:
-		return {"error": "scene not open or empty"}
-	return {
+		return {"error": "scene not open or failed to load: %s" % scene_path}
+	_serialize_budget = SERIALIZE_NODE_BUDGET
+	var result := {
 		"path": scene_path,
 		"max_depth": max_depth,
 		"tree": _serialize_node(root, max_depth, 0),
+		"truncated": _serialize_budget <= 0,
 	}
+	if not borrowed:
+		root.free()
+	return result
 
 func _serialize_node(node: Node, max_depth: int, depth: int) -> Dictionary:
+	if _serialize_budget <= 0:
+		return {"name": str(node.name), "type": node.get_class(), "truncated": true}
+	_serialize_budget -= 1
 	var out := {
 		"name": str(node.name),
 		"type": node.get_class(),
@@ -476,6 +511,9 @@ func _serialize_node(node: Node, max_depth: int, depth: int) -> Dictionary:
 		return out
 	var children: Array = []
 	for c in node.get_children():
+		if _serialize_budget <= 0:
+			out["children_truncated"] = node.get_child_count()
+			break
 		children.append(_serialize_node(c, max_depth, depth + 1))
 	out["children"] = children
 	return out
@@ -487,14 +525,15 @@ func _script_path_of(node: Node) -> String:
 	return str(script.resource_path)
 
 func _capture_node_properties(scene_path: String, node_path: String) -> Dictionary:
-	var open := Array(EditorInterface.get_open_scenes())
-	if scene_path not in open:
-		EditorInterface.open_scene_from_path(scene_path)
-	var root := EditorInterface.get_edited_scene_root()
+	var root_and_owned := _scene_root_for_read(scene_path)
+	var root: Node = root_and_owned[0]
+	var borrowed: bool = root_and_owned[1]
 	if root == null:
-		return {"error": "scene not open or empty"}
+		return {"error": "scene not open or failed to load: %s" % scene_path}
 	var target := root.get_node_or_null(NodePath(node_path))
 	if target == null:
+		if not borrowed:
+			root.free()
 		return {"error": "node not found: %s" % node_path}
 	var props: Array = []
 	var plist := target.get_property_list()
@@ -507,7 +546,10 @@ func _capture_node_properties(scene_path: String, node_path: String) -> Dictiona
 				"type": type_string(int(p.type)),
 				"hint": str(p.get("hint", "")),
 			})
-	return {"path": scene_path, "node_path": node_path, "properties": props}
+	var result := {"path": scene_path, "node_path": node_path, "properties": props}
+	if not borrowed:
+		root.free()
+	return result
 
 # =============================================================================
 # 1.2 扩展：项目配置读写 / GDScript lint / 资源治理 / 导出 / 调试器
@@ -533,6 +575,7 @@ func _set_project_setting(key: String, value) -> Dictionary:
 
 ## Godot 4 无公开的 parse error 细节 API（Script.reload 只给错误码），
 ## 失败文件用 --check-only 子进程补全行号；子进程不可用则退回错误码文案。
+## 协程化：每个失败文件的子进程在线程中执行，主线程逐帧轮询，不冻结编辑器。
 func _lint_scripts(paths: Array) -> Dictionary:
 	var files: Array = []
 	for raw in paths:
@@ -542,7 +585,7 @@ func _lint_scripts(paths: Array) -> Dictionary:
 		if not FileAccess.file_exists(path):
 			files.append({"path": path, "ok": false, "issues": [{"line": 0, "column": 0, "message": "file not found", "severity": "error"}]})
 			continue
-		files.append(_lint_script(path))
+		files.append(await _lint_script(path))
 	return {"files": files}
 
 func _lint_script(path: String) -> Dictionary:
@@ -555,22 +598,47 @@ func _lint_script(path: String) -> Dictionary:
 		return {"path": path, "ok": true, "issues": []}
 	var issues: Array = []
 	# reload() 的错误码在 4.4+ 之间有重排，不可依赖具体数值 → 一律用子进程补细节
-	var detail := _check_only_details(path)
+	var detail := await _check_only_details(path)
 	if detail.is_empty():
 		issues.append({"line": 0, "column": 0, "message": error_string(int(err)), "severity": "error"})
 	else:
 		issues = detail
 	return {"path": path, "ok": false, "issues": issues}
 
+## 启动 --check-only 子线程并等待完成（不阻塞编辑器主线程）。
 func _check_only_details(path: String) -> Array:
 	var exe := OS.get_executable_path()
 	if exe == "":
 		return []
-	var output := []
-	var exit_code := OS.execute(exe, ["--headless", "--path", ProjectSettings.globalize_path("res://"), "--check-only", "-s", path], output, true, LINT_CHECK_ONLY_TIMEOUT_MS)
-	if exit_code == 0 and output.is_empty():
+	var res_root := ProjectSettings.globalize_path("res://")
+	# 上一个 worker 未结束（异常时序）时先等它收尾。
+	if _lint_thread != null and _lint_thread.is_started() and not _lint_worker_done:
+		while not _lint_worker_done:
+			await get_tree().process_frame
+	_lint_worker_done = false
+	var thread := Thread.new()
+	var err := thread.start(_lint_worker.bind(path, exe, res_root))
+	if err != OK:
 		return []
+	_lint_thread = thread
+	while not _lint_worker_done:
+		await get_tree().process_frame
+	var output: Array = thread.wait_to_finish()
+	_lint_thread = null
+	return _parse_lint_output(output)
+
+## 子线程执行体：只做 OS 调用（纯子进程，无编辑器 API），完成后置标志。
+func _lint_worker(path: String, exe: String, res_root: String) -> Array:
+	var output := []
+	OS.execute(exe, ["--headless", "--path", res_root, "--check-only", "-s", path], output, true, LINT_CHECK_ONLY_TIMEOUT_MS)
+	_lint_worker_done = true
+	return output
+
+## 解析 --check-only 输出（exit_code==0 且无输出 → 空数组；否则逐行提取 SCRIPT ERROR）。
+func _parse_lint_output(output: Array) -> Array:
 	var issues: Array = []
+	if output.is_empty():
+		return issues
 	# 输出形如 "SCRIPT ERROR: Parse Error: <msg>\n   at: ... (res://foo.gd:4)"；
 	# Windows 上 stdout/stderr 会合并成单个大块，需要逐行拆分。
 	var kind_re := RegEx.new()
@@ -698,8 +766,11 @@ func _start_export(id: String, preset: String, output_dir: String, debug: bool) 
 		out_path = ProjectSettings.globalize_path(out_path)
 	elif not out_path.is_absolute_path():
 		out_path = project_dir.path_join(out_path)
-	if out_path.ends_with("/") or out_path == "":
-		out_path = out_path.trim_suffix("/")
+	# C5: 目录判定 —— 尾斜杠（正/反）或已存在的目录都视为目录模式；
+	# 否则当作文件路径（生成指定文件名）。
+	var is_dir := out_path.ends_with("/") or out_path.ends_with("\\") or DirAccess.dir_exists_absolute(out_path)
+	if is_dir or out_path == "":
+		out_path = out_path.trim_suffix("/").trim_suffix("\\")
 		var exe_name := str(ProjectSettings.get_setting("application/config/name", "game")).replace(" ", "_")
 		out_path = out_path.path_join("%s.exe" % exe_name)
 	DirAccess.make_dir_recursive_absolute(out_path.get_base_dir())
@@ -1135,7 +1206,8 @@ func _handle_line(raw: String) -> void:
 			if typeof(lint_paths) != TYPE_ARRAY or lint_paths.is_empty():
 				response = {"id": id, "ok": false, "error": "paths (non-empty array) required"}
 			else:
-				response["result"] = _lint_scripts(lint_paths)
+				# 协程：--check-only 子进程在线程中执行，不阻塞编辑器主线程。
+				response["result"] = await _lint_scripts(lint_paths)
 
 		"find_unused_resources":
 			response["result"] = _find_unused_resources(str(data.get("root", "res://")))
@@ -1241,12 +1313,10 @@ func _handle_line(raw: String) -> void:
 				if fs == null:
 					response = {"id": id, "ok": false, "error": "EditorFileSystem not available"}
 				else:
+					# 协程轮询：每帧检查一次，不再 OS.delay_msec 忙等（冻结编辑器）。
 					var start_ms := Time.get_ticks_msec()
-					var done := false
-					while not done and (Time.get_ticks_msec() - start_ms) < w_timeout:
-						done = not fs.is_scanning()
-						if not done:
-							OS.delay_msec(100)
+					while fs.is_scanning() and (Time.get_ticks_msec() - start_ms) < w_timeout:
+						await get_tree().process_frame
 					var elapsed := Time.get_ticks_msec() - start_ms
 					var remaining: Array = []
 					for p in w_paths:

@@ -38,8 +38,9 @@ npm run dist             # electron-builder --win（NSIS + portable）
 
 ## 架构约束（改代码前必读）
 
-- 三进程边界：Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索**全在主进程**；renderer 只能经 `window.xAgent.*` 调用，**禁止直接访问 Node API**（`contextIsolation` 开、`nodeIntegration` 关）。
+- 三进程边界：Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索**全在主进程**；renderer 只能经 `window.xAgent.*` 调用，**禁止直接访问 Node API**（`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**——preload 构建为 CJS 单文件，`electron.vite.config.ts` 中关闭 externalizeDeps，仅依赖 electron 受限 API；改 preload 依赖时不得引入需运行时 require 的包）。
 - **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 名注册表）+ `shared/ipc.ts`（类型）+ `electron/ipc/register-*-ipc.ts`（handler，按模块挂：session / session-config / provider / godot / update，其余在 `app-runtime.ts` 的 `registerIpc()`）+ `electron/preload.ts`（bridge）。`window.xAgent` 实际暴露 6 个分面对象（workspace/turn/plan/session/prefs/updates）+ flat 方法；新代码优先走分面，扁平方法仅作兼容。
+- **全部 IPC handler 经统一 sender 校验**（`electron/ipc/register-ipc.ts` 的 `handle()` 包装器：主窗口 webContents + frame origin 匹配），新增 handler 无需额外处理；主进程对外发起的网络请求（模型探测等）须过 `external-url.ts` 的 URL 校验（仅公网 http(s)）。
 - 上下文组装由 Pi SDK（`@earendil-works/pi-coding-agent`）完成，**不要手写 system prompt**。
 - 别名：renderer 用 `@/` → `src`、`@shared/` → `shared`；Node 侧仅 `@shared/`。`main.ts` 是薄入口，重逻辑动态 import `app-runtime`。
 
@@ -47,14 +48,18 @@ npm run dist             # electron-builder --win（NSIS + portable）
 
 - Agent / Ask（调研）/ Plan / Goal 四种模式互斥，切换时硬闸重排工具集。
 - Ask 与 Plan **只读**：关 `write` / `edit`（Ask 还关 `write_plan`）；bash 仅放行只读命令且路径须落在项目 cwd 内。**Ask 模式不写回设置**。
-- 工具常量：`shared/mode-tools.ts`；模式提示：`shared/mode-prompt.ts`；只读 bash 过滤：`electron/agent/session-mode/bash-readonly.ts`（拒 `$()` / 反引号 / `{}`；`godot` / `dotnet` 不算只读）。
+- 工具常量：`shared/mode-tools.ts`（含 Ask/Plan 放行的 Godot 只读工具清单，1.0/1.2/1.3 全量已列入）；模式提示：`shared/mode-prompt.ts`；只读 bash 过滤：`electron/agent/session-mode/bash-readonly.ts`（拒 `$()` / 反引号 / `$VAR` / `~` 展开、`>|` / `<` 重定向、裸 `git stash`、`git branch/tag/remote` 创建形态、`date -s`；`godot` / `dotnet` 不算只读）。
+- **路径类只读工具也受 cwd 约束**：`read` / `grep` / `find` / `ls` / `godot_detect_project` 的 `path` 参数经 `plan-mode-guard.ts` 校验（Pi 工具会展开 `~` / 绝对路径 / `file://`，检查器同样展开后判定）。
 - CWD 沙箱：`electron/agent/cwd-sandbox.ts`（拒绝逃出 cwd，Windows 大小写归一）。Agent 模式下 Pi `bash` 仍可访问更广路径——不要承诺绝对安全。
+- Godot RPC 工具开关在 IPC 层强制：`godotRpcRequest` 校验 `prefs.tools` 是否启用对应工具（GODOT_TOOLS 默认关闭），被攻陷的 renderer 也无法绕过。
 
 ## 持久化与撤回
 
-- 数据全在 `~/.pi/agent/`：`x-agent.json`（prefs）、`x-agent-providers.json`（API Key 尽量 `safeStorage` 加密）、`x-agent-usage.json`、`x-agent-godot-rpc.json`、`x-agent/sessions/`、`x-agent/checkpoints/`、`x-agent/plans/`、`x-agent/goals/`。与 Pi CLI **共用** `auth.json` / `models.json`，其余隔离。
-- prefs / usage / provider / auth / godot-rpc **必须原子写**（`electron/agent/lib/atomic-write.ts` tmp+rename）；prefs / usage 走 `withStoreLock` 串行化。
+- 数据全在 `~/.pi/agent/`：`x-agent.json`（prefs）、`x-agent-providers.json`（API Key 尽量 `safeStorage` 加密；**解密失败时保留盘上密文 `encryptedKey`，保存不覆写**）、`x-agent-usage.json`、`x-agent-godot-rpc.json`、`x-agent/sessions/`、`x-agent/checkpoints/`、`x-agent/plans/`、`x-agent/goals/`。与 Pi CLI **共用** `auth.json` / `models.json` / `settings.json`，其余隔离。
+- prefs / usage / provider / auth / godot-rpc **必须原子写**（`electron/agent/lib/atomic-write.ts` tmp+rename）；prefs / usage 走 `withStoreLock` 串行化。**`settings.json`（与 Pi CLI 共用）走 `pi-settings.ts` 的同步原子写**，bash `shellPath` 与包 sources 两处写入方共用。
 - 撤回走 `retract-orchestrator.ts`：优先 Shadow Git 检查点（`shadow-git.ts` + `shadow-checkpoints.ts`，独立 `GIT_DIR=` 指向 `~/.pi/agent/x-agent/checkpoints/`，**不污染用户 `.git`**）；无 Git 降级 `turn-file-tracker.ts`。
+- **撤回按 diff 路径还原**：只还原 target→HEAD 之间变化过的文件，回合期间用户手动编辑且 Agent 未触碰的路径保留；检查点仓库有 reflog expire + `gc --auto` 防膨胀；persistDirty 为**增量落盘**（dirtyTurns / droppedTurns，`loadFromSession` 先删后合）；`.git.__xagent_shadow__` 崩溃残留由启动扫描（`recoverAllDisabledNestedGit`）恢复。
+- **撤回与发送互斥**：prompt 的「检查点准备 → session.prompt」过渡窗口（`promptPreparing`）内撤回被拒绝；撤回后丢弃未绑定的 pending pre-sha。
 - 关键时序：Pi 在 `message_end` 之后才 `appendMessage`——active user / Shadow pre **必须在该 append 之后绑定**（`tool_execution_start` / `queueMicrotask`），不能在 `message_start` 取 leaf。
 
 ## 技能与插件
@@ -65,9 +70,10 @@ npm run dist             # electron-builder --win（NSIS + portable）
 
 ## Godot 集成
 
-- RPC 桥 `electron/agent/godot-rpc-bridge.ts`：默认端口 8765（回退 8765–8774），仅监听 127.0.0.1，握手 token 校验；`GODOT_TOOLS` 默认**关闭**，需在 设置 → 工具 勾选。
-- 协议 `shared/godot-rpc.ts`；addon 在 `packages/godot-editor-rpc/addons/x_agent_rpc/`。`x-agent-godot-rpc.json` 残留是特性（下次启动复用旧 token，插件无需重装），`stop()` 不删。
+- RPC 桥 `electron/agent/godot-rpc-bridge.ts`：默认端口 8765（回退 8765–8774 内环绕，与插件候选表一致），仅监听 127.0.0.1，握手 token 校验；`GODOT_TOOLS` 默认**关闭**，需在 设置 → 工具 勾选，且 IPC 层强制校验开关。
+- 协议 `shared/godot-rpc.ts`（含 method→工具名映射 `GODOT_RPC_METHOD_TOOL`）；addon 在 `packages/godot-editor-rpc/addons/x_agent_rpc/`（当前 0.6.2）。`x-agent-godot-rpc.json` 残留是特性（下次启动复用旧 token，插件无需重装），`stop()` 不删。
 - `run_current_scene` / `play_main_scene` 短时收集报错，插件不因报错自动停止。
+- 多编辑器选路：显式 `clientId` 未鉴权时不静默改道（直接报错）；自动回退时响应带 `routedTo`。
 
 ## 环境与其他坑
 

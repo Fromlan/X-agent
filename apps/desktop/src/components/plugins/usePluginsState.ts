@@ -115,7 +115,7 @@ export function usePluginsState(opts: {
       setBusy(true);
       setError(null);
       try {
-        const next = await window.xAgent.setPrefs({
+        const next = await window.xAgent.prefs.set({
           disabledSkills: nextDisabled,
         });
         onPrefsChanged?.(next);

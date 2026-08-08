@@ -83,22 +83,38 @@ export function encryptSecret(plain: string): string {
   }
 }
 
-/** Decrypt from disk; passthrough for legacy plaintext. */
-export function decryptSecret(stored: string): string {
+/**
+ * Decrypt with failure reporting.
+ * - plaintext (legacy) → `{ ok: true, value }`
+ * - `enc:v1:` ciphertext + safeStorage available + decrypt succeeds → `{ ok: true, value }`
+ * - ciphertext but safeStorage missing / decrypt throws → `{ ok: false, value: "" }`
+ * Callers must keep the ciphertext around when `ok === false` so a later save
+ * cannot overwrite the only copy of the key with an empty string.
+ */
+export function decryptSecretResult(stored: string): {
+  ok: boolean;
+  value: string;
+} {
   const trimmed = (stored ?? "").trim();
-  if (!trimmed) return "";
-  if (!trimmed.startsWith(ENC_PREFIX)) return trimmed;
+  if (!trimmed) return { ok: true, value: "" };
+  if (!trimmed.startsWith(ENC_PREFIX)) return { ok: true, value: trimmed };
   const ss = tryGetSafeStorage();
   if (!ss) {
-    // Cannot decrypt without OS keychain — return empty to avoid leaking ciphertext as key.
-    return "";
+    // Cannot decrypt without OS keychain — report failure so the caller can
+    // preserve the ciphertext instead of leaking it as a fake key.
+    return { ok: false, value: "" };
   }
   try {
     const b64 = trimmed.slice(ENC_PREFIX.length);
-    return ss.decryptString(Buffer.from(b64, "base64"));
+    return { ok: true, value: ss.decryptString(Buffer.from(b64, "base64")) };
   } catch {
-    return "";
+    return { ok: false, value: "" };
   }
+}
+
+/** Decrypt from disk; passthrough for legacy plaintext. */
+export function decryptSecret(stored: string): string {
+  return decryptSecretResult(stored).value;
 }
 
 export function isEncryptedSecret(stored: string): boolean {

@@ -54,6 +54,27 @@ describe("mode-tools allowlists", () => {
     );
   });
 
+  it("C3: 1.0/1.3 纯只读工具已入白名单", () => {
+    expect(PLAN_MODE_OPTIONAL_READONLY_TOOLS).toEqual(
+      expect.arrayContaining([
+        "godot_open_scenes",
+        "godot_edited_scene",
+        "godot_play_errors",
+        "godot_list_project_files",
+        "godot_resolve_uid",
+        "godot_list_global_classes",
+        "godot_find_class_name_conflicts",
+        "godot_inspect_script",
+        "godot_list_export_presets",
+        "godot_check_export_templates",
+      ]),
+    );
+    // 写型 / 会改编辑器状态的工具绝不能混入
+    expect(PLAN_MODE_OPTIONAL_READONLY_TOOLS).not.toContain(
+      "godot_wait_for_import_done",
+    );
+  });
+
   it("扩展只读工具放行 godot_detect_project 且与 prefs 开关互斥", () => {
     // godot_detect_project 由 godot-pi Package 注册,不进 prefs 开关,
     // 因此放在独立的 READONLY_EXTENSION_TOOLS 列表中,无需 prefs.has 过滤。
