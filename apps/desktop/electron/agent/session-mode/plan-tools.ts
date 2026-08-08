@@ -15,6 +15,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   PLAN_MODE_CORE_TOOLS,
+  PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS,
   PLAN_MODE_OPTIONAL_READONLY_TOOLS,
   READONLY_CORE_TOOLS,
   WRITE_PLAN_TOOL,
@@ -154,6 +155,9 @@ function appendOptionalReadonlyGodotTools(
   for (const name of PLAN_MODE_OPTIONAL_READONLY_TOOLS) {
     if (prefs.has(name)) tools.push(name);
   }
+  // 扩展工具由 godot-pi Package 注册到 Pi 扩展运行时,不进 prefs 开关表;
+  // 它们是纯只读 fs 探测,Plan/Ask 模式默认放行,免得调研场景每次都得先去设置勾选。
+  tools.push(...PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS);
 }
 
 /**

@@ -403,6 +403,71 @@ export function GodotSettingsPage({
         </div>
       </div>
 
+      <div className="settings-block">
+        <h4 className="settings-block-title">项目内省（只读 1.3）</h4>
+        <p className="modal-hint">
+          这些 RPC 只读取编辑器状态，不修改文件 / 不启动子进程，适合手动验证扩展工具。
+        </p>
+        <div className="settings-toolbar">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() =>
+              runRpc({
+                method: "list_project_files",
+                root: "res://",
+                type: "",
+                pattern: "",
+                limit: 50,
+              })
+            }
+          >
+            列出文件（前 50）
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => runRpc({ method: "list_global_classes" })}
+          >
+            全局类名
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => runRpc({ method: "list_export_presets" })}
+          >
+            导出预设
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => runRpc({ method: "check_export_templates" })}
+          >
+            模板状态
+          </button>
+        </div>
+        <div className="settings-inline-row">
+          <input
+            type="text"
+            className="input"
+            value={scenePath}
+            onChange={(e) => setScenePath(e.target.value)}
+            placeholder="res://player.gd（脚本路径）"
+            aria-label="Inspect script path"
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={!scenePath.trim()}
+            onClick={() =>
+              runRpc({ method: "inspect_script", path: scenePath.trim() })
+            }
+          >
+            反射脚本
+          </button>
+        </div>
+      </div>
+
       {rpcMsg && (
         <SettingsNotice
           text={rpcMsg}

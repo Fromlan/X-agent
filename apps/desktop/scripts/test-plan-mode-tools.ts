@@ -58,6 +58,8 @@ assert.deepEqual(computeAskModeTools(["read", "bash", "write", "edit"]), [
   "find",
   "ls",
   "bash",
+  // godot-pi 注册的扩展只读工具无须 prefs 开关,默认放行
+  "godot_detect_project",
 ]);
 assert.ok(!computeAskModeTools(["read", "bash"]).includes("write_plan"));
 assert.deepEqual(
@@ -66,7 +68,7 @@ assert.deepEqual(
     "godot_run_scene",
     "godot_editor_info",
   ]),
-  ["read", "grep", "find", "ls", "bash", "godot_editor_info"],
+  ["read", "grep", "find", "ls", "bash", "godot_editor_info", "godot_detect_project"],
 );
 
 assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
@@ -76,6 +78,7 @@ assert.deepEqual(computePlanModeTools(["read", "bash", "write", "edit"]), [
   "ls",
   "bash",
   "write_plan",
+  "godot_detect_project",
 ]);
 assert.deepEqual(
   computePlanModeTools([
@@ -91,8 +94,12 @@ assert.deepEqual(
     "bash",
     "write_plan",
     "godot_editor_info",
+    "godot_detect_project",
   ],
 );
+// 写型 Godot 工具不应出现在 Plan/Ask 模式工具集。
+assert.ok(!computeAskModeTools(["read", "godot_set_project_setting"]).includes("godot_set_project_setting"));
+assert.ok(!computePlanModeTools(["read", "godot_set_project_setting"]).includes("godot_set_project_setting"));
 
 const prompt = buildImplementPrompt("C:\\plans\\demo.md");
 assert.ok(prompt.includes('<mode name="build">'));

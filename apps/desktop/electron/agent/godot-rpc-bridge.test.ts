@@ -1,9 +1,10 @@
 /**
  * Vitest 套件 —— 覆盖 ROADMAP 1.1 首批关键模块迁移：godot-rpc-bridge。
  *
- * 与 `scripts/test-godot-rpc-bridge.ts`（离线断言脚本）并存，用真实 TCP 连接
- * 验证：握手鉴权 / 请求响应配对 / 超时 / 多客户端路由 / 端口回退 / token 复用。
- * 每个用例使用独立端口与隔离 endpoint 文件，避免与开发者本机状态冲突。
+ * 用真实 TCP 连接验证：握手鉴权 / 请求响应配对 / 超时 / 多客户端路由 /
+ * 端口回退 / token 复用。每个用例使用独立端口与隔离 endpoint 文件，
+ * 避免与开发者本机状态冲突。Godot 工具契约另有 `godot-tools.test.ts`，
+ * 端点查找路径另有 `scripts/test-godot-addon-install.ts`。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createConnection, type Socket } from "node:net";

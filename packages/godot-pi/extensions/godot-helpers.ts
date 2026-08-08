@@ -4,8 +4,10 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  detectGodotProject,
+  formatGodotProjectInfo,
+} from "./godot-project-detect";
 
 const RPC_METHODS =
   "ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, run_current_scene, play_main_scene, import_resources, get_play_errors, stop_scene";
@@ -33,41 +35,10 @@ export default function godotHelpersExtension(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const root = params.path || ctx.cwd;
-      const projectFile = join(root, "project.godot");
-      if (!existsSync(projectFile)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Not a Godot project root: missing project.godot under ${root}`,
-            },
-          ],
-          details: { isGodot: false, root },
-        };
-      }
-      const text = readFileSync(projectFile, "utf8");
-      const nameMatch = text.match(/config\/name\s*=\s*"([^"]+)"/);
-      const versionMatch = text.match(/config_version\s*=\s*(\d+)/);
-      const mainMatch = text.match(/run\/main_scene\s*=\s*"([^"]+)"/);
-      const name = nameMatch?.[1] ?? "(unnamed)";
-      const configVersion = versionMatch?.[1] ?? "?";
-      const mainScene = mainMatch?.[1] ?? "";
+      const info = detectGodotProject(root);
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Godot project "${name}" (config_version=${configVersion}) at ${root}${
-              mainScene ? `; main_scene=${mainScene}` : ""
-            }`,
-          },
-        ],
-        details: {
-          isGodot: true,
-          root,
-          name,
-          configVersion,
-          mainScene: mainScene || null,
-        },
+        content: [{ type: "text" as const, text: formatGodotProjectInfo(info) }],
+        details: info,
       };
     },
   });
