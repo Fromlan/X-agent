@@ -1,4 +1,5 @@
 import type { AgentSession, DefaultResourceLoader, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { existsSync } from "node:fs";
 import type {
   AgentSessionMode,
   GoalInfo,
@@ -41,6 +42,11 @@ import {
   loadGoalJournal,
   saveGoalJournal,
 } from "./goal-journal";
+import {
+  clearPlanJournal,
+  loadPlanJournal,
+  savePlanJournal,
+} from "./plan-journal";
 import {
   buildAskModeSystemAppend,
   buildGoalModeSystemAppend,
@@ -117,11 +123,13 @@ export class SessionModeController {
 
   setPlanPath(path: string | null): void {
     this.planPath = path;
+    this.persistPlanJournal();
   }
 
   /** write_plan callback: set path and notify UI. */
   onPlanWritten(path: string): void {
     this.planPath = path;
+    this.persistPlanJournal();
     this.emitSessionMode();
     this.host().emitReplaceableNotice(
       "plan",
@@ -180,6 +188,37 @@ export class SessionModeController {
     } else {
       clearGoalJournal(path);
     }
+  }
+
+  /** Persist the current plan reference (or clear it) for this session. */
+  private persistPlanJournal(): void {
+    const path = this.sessionPath();
+    if (!path) return;
+    if (this.planPath) {
+      savePlanJournal(path, this.planPath);
+    } else {
+      clearPlanJournal(path);
+    }
+  }
+
+  /**
+   * Restore the plan reference from disk after resumeSession, so the right
+   * panel Plan tab shows the plan again after an app restart.
+   * Skips (and clears) when the file is gone or the path is outside the
+   * allowed plan roots (home plans dir / cwd .pi/plans).
+   */
+  restorePlanFromJournal(): void {
+    const path = this.sessionPath();
+    if (!path) return;
+    const stored = loadPlanJournal(path);
+    if (!stored) return;
+    const cwd = this.host().getBundle()?.cwd ?? null;
+    if (!existsSync(stored) || !isAllowedPlanPath(stored, cwd)) {
+      clearPlanJournal(path);
+      return;
+    }
+    this.planPath = stored;
+    this.emitSessionMode();
   }
 
   /**
@@ -539,6 +578,7 @@ export class SessionModeController {
     try {
       const nextPath = savePlanToWorkspacePath(this.planPath, cwd);
       this.planPath = nextPath;
+      this.persistPlanJournal();
       this.emitSessionMode();
       this.host().emitReplaceableNotice(
         "plan",
@@ -563,6 +603,7 @@ export class SessionModeController {
       return { ok: true, info: this.getInfo() };
     }
     this.planPath = null;
+    this.persistPlanJournal();
     this.emitSessionMode();
     this.host().emitReplaceableNotice(
       "plan",

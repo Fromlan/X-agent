@@ -119,4 +119,62 @@ assert.ok(reply.includes("→ Mobile"));
   assert.deepEqual(r[0].options, ["6 FPS", "12 FPS", "18 FPS"]);
 }
 
+// 多行单块多问题:Q1/Q2/Q3 各自带选项,选项归属各自问题
+{
+  const multi = [
+    "<clarify>",
+    "Q1: 第一步的交付范围？",
+    "- A: 第一关最小可玩闭环（推荐）：数据层 + 地图 + 史莱姆移动/分裂 + 箭塔射击 + 路障阻挡/维修 + 尖刺 + 开波/波次 + 补给经济 + 营火耐久 + 极简 HUD + 胜败/重试",
+    "- B: 先做白盒框架：数据层 + 场景骨架 + 极简 HUD，敌人/塔先用占位色块验证战斗规则",
+    "- C: 只搭数据层：枚举 + 数据类 + Level 1 JSON 数据 + 加载测试",
+    "Q2: 中文 UI 字体怎么解决？（项目无字体文件）",
+    "",
+    "A: 添加可商用中文字体（如思源黑体/霞鹜文楷，约 5–15MB）",
+    "B: 用 Godot SystemFont 引用 Windows 系统字体",
+    "C: 第一步 UI 先用英文/拼音占位",
+    "Q3: 第一步 UI 的呈现方式？（GDD §17.1 允许原型用程序绘制）",
+    "",
+    "A: 程序绘制九宫格面板 + 文字 + 简单图标（推荐）",
+    "B: 第一步就要像素风美术 UI",
+    "</clarify>",
+  ].join("\n");
+  const r = parseClarifyBlocks(multi);
+  assert.equal(r.length, 3, "3 questions in one multi-line block");
+  assert.equal(r[0].question, "第一步的交付范围？");
+  assert.equal(r[0].options.length, 3, "Q1 keeps its own 3 options");
+  assert.deepEqual(r[0].options, [
+    "第一关最小可玩闭环（推荐）：数据层 + 地图 + 史莱姆移动/分裂 + 箭塔射击 + 路障阻挡/维修 + 尖刺 + 开波/波次 + 补给经济 + 营火耐久 + 极简 HUD + 胜败/重试",
+    "先做白盒框架：数据层 + 场景骨架 + 极简 HUD，敌人/塔先用占位色块验证战斗规则",
+    "只搭数据层：枚举 + 数据类 + Level 1 JSON 数据 + 加载测试",
+  ]);
+  assert.equal(r[1].question, "中文 UI 字体怎么解决？（项目无字体文件）");
+  assert.deepEqual(r[1].options, [
+    "添加可商用中文字体（如思源黑体/霞鹜文楷，约 5–15MB）",
+    "用 Godot SystemFont 引用 Windows 系统字体",
+    "第一步 UI 先用英文/拼音占位",
+  ]);
+  assert.equal(r[2].question, "第一步 UI 的呈现方式？（GDD §17.1 允许原型用程序绘制）");
+  assert.deepEqual(r[2].options, [
+    "程序绘制九宫格面板 + 文字 + 简单图标（推荐）",
+    "第一步就要像素风美术 UI",
+  ]);
+}
+
+// 多行块里 Q 行后选项不足 2 个 → 该问题不入列,其余问题保留
+{
+  const partial = [
+    "<clarify>",
+    "Q1: good?",
+    "- A",
+    "- B",
+    "Q2: drop?",
+    "- X",
+    "</clarify>",
+  ].join("\n");
+  const r = parseClarifyBlocks(partial);
+  assert.equal(r.length, 1, "question with <2 options is dropped");
+  assert.equal(r[0].question, "good?");
+  assert.deepEqual(r[0].options, ["A", "B"]);
+}
+
 console.log("test-plan-clarify: ok");

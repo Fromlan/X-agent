@@ -26,34 +26,32 @@ export type ClarifyQuestion = {
 const CLARIFY_RE = /<clarify>\s*([\s\S]*?)\s*<\/clarify>/gi;
 
 /**
- * 多行 clarify 解析:每行独立匹配,Q 行取问题,-/1./a) 等行首前缀取选项。
- * 行为 100% 保留,以兼容旧的测试 / 历史会话。
+ * 多行 clarify 解析:每个 Q 行开启一个新问题,其后的选项行归属该问题,
+ * 直到下一个 Q 行。支持 `- A: xxx` / `A: xxx` / `1. xxx` 等行首前缀。
+ * 选项文本统一剥掉 `选项 X:` / `X:` / `X.` / `X)` 前缀(与内联分支一致)。
  */
-function parseMultilineBlock(body: string): ClarifyQuestion | null {
+function parseMultilineBlocks(body: string): ClarifyQuestion[] {
   const lines = body
     .split(/\r?\n/)
     .map((l: string) => l.trim())
     .filter(Boolean);
-  let question = "";
-  const options: string[] = [];
+  const questions: ClarifyQuestion[] = [];
+  let current: ClarifyQuestion | null = null;
   for (const line of lines) {
-    const q = line.match(/^Q\d*\s*:\s*(.+)$/i);
+    const q = line.match(/^Q\d*\s*[:：]\s*(.+)$/i);
     if (q) {
-      question = q[1].trim();
+      current = { question: q[1].trim(), options: [] };
+      questions.push(current);
       continue;
     }
-    const opt =
-      line.match(/^[-*+]\s+(.+)$/) ||
-      line.match(/^\d+[.)]\s+(.+)$/) ||
-      line.match(/^[a-zA-Z][.)]\s+(.+)$/);
-    if (opt) {
-      options.push(opt[1].trim());
-    }
+    if (!current) continue;
+    const bullet = line.match(/^[-*+]\s+(.+)$/);
+    let text = bullet ? bullet[1].trim() : line;
+    const label = text.match(/^(?:选项\s+)?[A-Za-z\d]+\s*[:：.)]\s*(.+)$/);
+    if (label) text = label[1].trim();
+    current.options.push(text);
   }
-  if (question && options.length >= 2) {
-    return { question, options };
-  }
-  return null;
+  return questions.filter((q) => q.options.length >= 2);
 }
 
 /**
@@ -99,10 +97,12 @@ export function parseClarifyBlocks(text: string): ClarifyQuestion[] {
     const raw = match[1] ?? "";
     const body = raw.trim();
     if (!body) continue;
-    const result = /[\r\n]/.test(body)
-      ? parseMultilineBlock(body)
-      : parseInlineBlock(body);
-    if (result) out.push(result);
+    if (/[\r\n]/.test(body)) {
+      out.push(...parseMultilineBlocks(body));
+    } else {
+      const r = parseInlineBlock(body);
+      if (r) out.push(r);
+    }
   }
   return out;
 }

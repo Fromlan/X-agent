@@ -2698,7 +2698,8 @@ body.is-resizing-column * {
 .composer textarea {
   width: 100%;
   max-width: 760px;
-  margin-inline: auto;
+  /* 全屏宽窗下输入框保持与消息气泡一致的左对齐,避免文本从屏幕中间开始 */
+  margin-inline: 0;
   resize: none;
   min-height: 52px;
   max-height: 220px;
@@ -4824,6 +4825,39 @@ body.is-resizing-column * {
 .rp-plan-editor:focus {
   outline: none;
   box-shadow: var(--focus-ring-soft);
+}
+
+/* 渲染预览容器:与 textarea 共享 .rp-plan flex 列的剩余空间,
+   让 markdown 区块可滚且留白与编辑器一致 */
+.rp-plan-preview {
+  flex: 1;
+  min-height: 160px;
+  width: 100%;
+  overflow-y: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 10px 12px;
+}
+
+.rp-plan-preview .markdown {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.rp-plan-preview .markdown > :first-child {
+  margin-top: 0;
+}
+
+.rp-plan-preview .markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* 把切换按钮挤到 meta 行右端 */
+.rp-plan-meta .rp-plan-view-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .rp-plan-loading {

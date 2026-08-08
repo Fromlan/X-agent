@@ -4,7 +4,7 @@
  * (same helper SessionHost.deleteSession calls).
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,6 +17,11 @@ import {
   loadGoalJournal,
   saveGoalJournal,
 } from "../electron/agent/session-mode/goal-journal.ts";
+import {
+  clearPlanJournal,
+  loadPlanJournal,
+  savePlanJournal,
+} from "../electron/agent/session-mode/plan-journal.ts";
 import type { GoalInfo, UiAgentEvent } from "../shared/ipc.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "x-agent-smoke-"));
@@ -114,6 +119,51 @@ assert.equal(controller.getGoal()?.tokensUsed, 1000);
 // SessionHost.deleteSession contract: removing a session clears its journal.
 clearGoalJournal(sessionPath);
 assert.equal(loadGoalJournal(sessionPath), null);
+
+// —— Plan journal round-trip: write → restore → cleanup ——
+const planDir = join(dir, "x-agent", "plans");
+mkdirSync(planDir, { recursive: true });
+const planPath = join(planDir, "smoke-plan.md");
+writeFileSync(planPath, "# Smoke Plan\n\n## Steps\n- [ ] one\n", "utf8");
+
+controller.onPlanWritten(planPath);
+assert.equal(controller.getPlanPath(), planPath);
+assert.equal(loadPlanJournal(sessionPath), planPath);
+
+// App restart: fresh controller restores the plan reference and emits it.
+controller.reset({ emit: false });
+assert.equal(controller.getPlanPath(), null);
+controller.restorePlanFromJournal();
+assert.equal(controller.getPlanPath(), planPath);
+const modeEvent = events[events.length - 1];
+assert.equal(modeEvent?.type, "session_mode");
+assert.equal(
+  (modeEvent as { planPath?: string | null }).planPath,
+  planPath,
+);
+
+// Plan file removed on disk → restore skips and clears the journal.
+unlinkSync(planPath);
+controller.reset({ emit: false });
+controller.restorePlanFromJournal();
+assert.equal(controller.getPlanPath(), null);
+assert.equal(loadPlanJournal(sessionPath), null);
+
+// Out-of-root plan path → restore rejects and clears the journal.
+const outsidePath = join(dir, "outside.md");
+writeFileSync(outsidePath, "# x\n", "utf8");
+savePlanJournal(sessionPath, outsidePath);
+controller.reset({ emit: false });
+controller.restorePlanFromJournal();
+assert.equal(controller.getPlanPath(), null);
+assert.equal(loadPlanJournal(sessionPath), null);
+
+// clearPlan clears the journal.
+controller.setPlanPath(planPath);
+assert.equal(loadPlanJournal(sessionPath), planPath);
+controller.clearPlan();
+assert.equal(controller.getPlanPath(), null);
+assert.equal(loadPlanJournal(sessionPath), null);
 
 setAgentDirOverrideForTests(null);
 rmSync(dir, { recursive: true, force: true });
