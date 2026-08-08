@@ -43,6 +43,55 @@ export interface GodotRpcClientInfo {
   connectedAt: string;
 }
 
+/** 1.3：只读内省、UID 与导出预检 工具的请求类型。 */
+export type GodotFileKind =
+  | "scene"
+  | "script"
+  | "shader"
+  | "resource"
+  | "texture"
+  | "audio"
+  | "other";
+
+export type GodotInspectMember = {
+  name: string;
+  type?: string;
+  /** godot 返回的 raw hint 字段，可能含 enum/flag/usage 等信息。 */
+  hint?: string;
+};
+
+export type GodotInspectResult = {
+  path: string;
+  base?: string;
+  extends?: string;
+  signals: GodotInspectMember[];
+  methods: GodotInspectMember[];
+  properties: GodotInspectMember[];
+  constants: GodotInspectMember[];
+};
+
+export type GodotFileEntry = {
+  path: string;
+  /** res:// 路径（与 path 同）。 */
+  type: GodotFileKind | string;
+  uid?: string;
+};
+
+export type GodotExportPreset = {
+  name: string;
+  platform: string;
+  index: number;
+};
+
+export type GodotExportTemplatesStatus = {
+  installed: boolean;
+  /** 当前 Godot 版本。 */
+  version?: string;
+  /** 已安装的模板版本（不一定与 current 一致）。 */
+  templateVersion?: string;
+  missingPlatforms: string[];
+};
+
 /** Call payload without correlation id (desktop assigns id). */
 export type GodotRpcCall =
   | { method: "ping" }
@@ -65,7 +114,23 @@ export type GodotRpcCall =
   | { method: "export_project"; preset: string; output_dir: string; debug?: boolean }
   | { method: "get_project_setting"; key: string }
   | { method: "set_project_setting"; key: string; value: unknown }
-  | { method: "lint_scripts"; paths: string[] };
+  | { method: "lint_scripts"; paths: string[] }
+  // 1.3 扩展：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检
+  | {
+      method: "list_project_files";
+      root?: string;
+      type?: string;
+      pattern?: string;
+      limit?: number;
+      cursor?: string;
+    }
+  | { method: "resolve_uid"; uid?: string; path?: string }
+  | { method: "wait_for_import_done"; paths: string[]; timeout_ms?: number }
+  | { method: "list_global_classes" }
+  | { method: "find_class_name_conflicts"; include_addons?: boolean }
+  | { method: "inspect_script"; path: string }
+  | { method: "list_export_presets" }
+  | { method: "check_export_templates" };
 
 /** Methods the renderer / tools may invoke over Godot RPC. */
 export const GODOT_RPC_ALLOWED_METHODS = [
@@ -90,6 +155,15 @@ export const GODOT_RPC_ALLOWED_METHODS = [
   "get_project_setting",
   "set_project_setting",
   "lint_scripts",
+  // 1.3 扩展：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检
+  "list_project_files",
+  "resolve_uid",
+  "wait_for_import_done",
+  "list_global_classes",
+  "find_class_name_conflicts",
+  "inspect_script",
+  "list_export_presets",
+  "check_export_templates",
 ] as const;
 
 export type GodotRpcMethodName = (typeof GODOT_RPC_ALLOWED_METHODS)[number];
@@ -182,6 +256,31 @@ function isPlayWaitMethod(method: string): boolean {
   return method === "run_current_scene" || method === "play_main_scene";
 }
 
+/** 1.3：list_project_files 默认上限，避免 Agent 一次性吞下整个项目树。 */
+export const GODOT_LIST_FILES_DEFAULT_LIMIT = 500;
+/** 1.3：list_project_files / wait_for_import_done 上限，防止 Tool 描述被巨大参数撑爆。 */
+export const GODOT_LIST_FILES_MAX_LIMIT = 5000;
+/** 1.3：wait_for_import_done / wait_for_break 默认等待时长（ms）。 */
+export const GODOT_WAIT_DEFAULT_TIMEOUT_MS = 30_000;
+/** 1.3：wait_for_import_done / wait_for_break 最长允许等待（ms）。 */
+export const GODOT_WAIT_MAX_TIMEOUT_MS = 60_000;
+
+/** 钳制 wait_for_import_done / wait_for_break 的 timeout_ms。 */
+export function clampGodotWaitMs(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+    return Math.min(GODOT_WAIT_MAX_TIMEOUT_MS, Math.floor(raw));
+  }
+  return GODOT_WAIT_DEFAULT_TIMEOUT_MS;
+}
+
+/** 钳制 list_project_files 的 limit。 */
+export function clampGodotListLimit(raw: unknown): number {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 1) {
+    return Math.min(GODOT_LIST_FILES_MAX_LIMIT, Math.floor(raw));
+  }
+  return GODOT_LIST_FILES_DEFAULT_LIMIT;
+}
+
 /** RPC timeout for a call (play wait + base timeout for play methods). */
 export function godotRpcTimeoutMs(call: GodotRpcCall): number {
   if (isPlayWaitMethod(call.method)) {
@@ -193,11 +292,22 @@ export function godotRpcTimeoutMs(call: GodotRpcCall): number {
   if (call.method === "export_project") {
     return GODOT_RPC_EXPORT_TIMEOUT_MS;
   }
+  // wait_for_import_done：用户窗口 + 1s 基线（wait_for_break 同模式，待 1.3 调试回路 PR 启用）。
+  if (call.method === "wait_for_import_done") {
+    const wait =
+      "timeout_ms" in call
+        ? clampGodotWaitMs(call.timeout_ms)
+        : GODOT_WAIT_DEFAULT_TIMEOUT_MS;
+    return wait + GODOT_RPC_BASE_TIMEOUT_MS;
+  }
   // 资源导入 / 全项目扫描 / 批量脚本解析可能较慢。
   if (
     call.method === "import_resources" ||
     call.method === "find_unused_resources" ||
-    call.method === "lint_scripts"
+    call.method === "lint_scripts" ||
+    call.method === "list_project_files" ||
+    call.method === "inspect_script" ||
+    call.method === "find_class_name_conflicts"
   ) {
     return GODOT_RPC_BASE_TIMEOUT_MS * 4;
   }

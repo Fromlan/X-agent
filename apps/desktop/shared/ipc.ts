@@ -221,6 +221,15 @@ export const GODOT_TOOLS = [
   "godot_get_project_setting",
   "godot_set_project_setting",
   "godot_lint_scripts",
+  // 1.3 扩展：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检
+  "godot_list_project_files",
+  "godot_resolve_uid",
+  "godot_wait_for_import_done",
+  "godot_list_global_classes",
+  "godot_find_class_name_conflicts",
+  "godot_inspect_script",
+  "godot_list_export_presets",
+  "godot_check_export_templates",
 ] as const;
 
 export type GodotToolName = (typeof GODOT_TOOLS)[number];
@@ -235,6 +244,7 @@ export {
   READONLY_CORE_TOOLS,
   PLAN_MODE_CORE_TOOLS,
   PLAN_MODE_OPTIONAL_READONLY_TOOLS,
+  PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS,
 } from "./mode-tools";
 import { WRITE_PLAN_TOOL } from "./mode-tools";
 

@@ -13,7 +13,6 @@
 ### 1.1 目标
 
 - **工程质量**：测试体系从「离线断言脚本」升级到「单元 + 集成 + E2E + 覆盖率门槛」
-- **跨平台**：从 Windows-only 升级到 Windows + macOS + Linux 三平台 CI 与分发
 - **国际化**：UI 文案可双语 / 多语切换，建立 i18n 流程
 - **Godot 深化**：从「运行 / 重载 / 导入」扩展到「场景内省 / 调试器 / 资源治理 / 导出」
 - **可观测性**：崩溃报告、结构化日志、性能遥测
@@ -31,7 +30,7 @@
 
 | Phase | 周期 | 主题 | 关键交付物 | 状态 |
 |---|---|---|---|---|
-| **Phase 1** | M1-M2（4-6 周） | 工程质量 + Godot 深化 + 跨平台 | Vitest + Playwright E2E；7 个 Godot 新工具；macOS/Linux CI 与打包；i18n 基础 | 进行中（1.1/1.2/1.5/1.6 已完成；剩 1.3/1.4/1.7） |
+| **Phase 1** | M1-M2（4-6 周） | 工程质量 + Godot 深化 | Vitest + Playwright E2E；7 个 Godot 新工具；i18n 基础；E2E 契约锁 | 进行中（1.1/1.2/1.4/1.5 已完成；剩 1.3/1.6） |
 | **Phase 2** | M2-M4（4-6 周） | 用户体验打磨 | 会话导出 / 导入；@-补全；开发者诊断页；Plan / Skill 模板；Crash 报告；A11y 自动化 | 待启动 |
 | **Phase 3** | M4-M8（8-12 周） | 差异化能力 | 插件可视化市场；主题编辑器；快捷键中心；Web fallback；多项目工作区；会话时间线；CI 增强；Telemetry | 待启动 |
 | **Phase 4** | 每个 Phase 末 | 验证与发版 | 综合回归 + 文档同步 + CHANGELOG 整理 | 持续 |
@@ -40,14 +39,13 @@
 
 ```mermaid
 flowchart LR
-  P1A[1.1 Vitest+Playwright] --> P1B[1.7 E2E 契约锁]
+  P1A[1.1 Vitest+Playwright] --> P1B[1.6 E2E 契约锁]
   P1B --> P2A[2.x P2 全套]
-  P1C[1.2 Godot 工具扩展] --> P1D[1.3 macOS/Linux]
-  P1D --> P3A[3.4 Web fallback]
-  P1E[1.4 i18n 基础] --> P2A
+  P1E[1.3 i18n 基础] --> P2A
+  P1E --> P3A[3.4 Web fallback]
   P2B[2.5 Crash 报告] --> P3D[3.8 Telemetry]
   P2C[2.4 Plan 模板] --> P3E[3.6 会话时间线]
-  P1F[1.5 Godot 项目 lint] --> P2D[2.7 GDScript linter]
+  P1F[1.4 Godot 项目 lint] --> P2D[2.7 GDScript linter]
 ```
 
 ---
@@ -62,12 +60,12 @@ flowchart LR
 - **状态**：✅ 已完成（2026-08）
 - **完成度与最终交付**：
   - `apps/desktop/vitest.config.ts`：`environment: node`；`coverage.provider: v8`、`coverage.thresholds: { lines: 60, functions: 55, branches: 50 }`
-  - **Vitest 迁移落地模块**（比计划多覆盖 2 个）：`cwd-sandbox` / `usage-store` / `shadow-checkpoints` / `retract-orchestrator` / `godot-rpc-bridge` + 共享层 `godot-rpc`、1.2 新增工具 `godot-tools`、1.6 `at-completion`；覆盖率实际 70%+（超过门槛）
+  - **Vitest 迁移落地模块**（比计划多覆盖 2 个）：`cwd-sandbox` / `usage-store` / `shadow-checkpoints` / `retract-orchestrator` / `godot-rpc-bridge` + 共享层 `godot-rpc`、1.2 新增工具 `godot-tools`、1.5 `at-completion`；覆盖率实际 70%+（超过门槛）
   - `apps/desktop/e2e/`：`playwright.config.ts` 指向 Electron 入口；首批用例「应用可启动 + 主界面壳渲染 + 打开项目后 Plan/Agent 模式切换契约」（`app-shell.spec.ts` / `mode-switch.spec.ts`）
   - `apps/desktop/package.json`：新增 `test:unit` / `test:unit:watch` / `test:coverage` / `test:e2e`；保留 `test` 串联旧脚本
   - `.github/workflows/ci.yml`：新增 `unit-test`（覆盖率门槛）+ `e2e` 两个 job
   - 附带修复：`clampGodotRunWaitMs` 负数误钳到 0（应回退默认 3000）；`main.ts` 新增 `X_AGENT_ALLOW_MULTI=1` 放开单实例锁供 E2E 并行
-- **遗留**：完整「新建会话 → 切 Plan → 撤回 → 切回 Agent」模型链路需真实 Pi 认证 / 模型 fixture，留给 ROADMAP 1.7 契约锁（e2e 目录已就绪）。
+- **遗留**：完整「新建会话 → 切 Plan → 撤回 → 切回 Agent」模型链路需真实 Pi 认证 / 模型 fixture，留给 ROADMAP 1.6 契约锁（e2e 目录已就绪）。
 - **验收**：
   - `npm run desktop:test` 仍通过（旧断言脚本）✅
   - `npm run desktop:test:unit` 通过新 Vitest 套件，覆盖率门槛达标 ✅
@@ -85,7 +83,7 @@ flowchart LR
   - ✅ `godot_get_scene_tree(path, max_depth?)` — 场景树序列化（name / type / script），`max_depth` 钳制 [1,16]，默认 8
   - ✅ `godot_get_node_properties(path, node_path)` — 仅导出 `SCRIPT_VARIABLE` / `STORAGE` usage 属性
   - ✅ `godot_get_project_setting(key)` / `godot_set_project_setting(key, value)` — ProjectSettings 读写 + `save()` 落盘 project.godot
-  - ✅ `godot_lint_scripts(paths)` — 进程内 `GDScript.reload()` 快速判错 + 失败文件 `--check-only` 子进程补行号（含 1.5 交付物）
+  - ✅ `godot_lint_scripts(paths)` — 进程内 `GDScript.reload()` 快速判错 + 失败文件 `--check-only` 子进程补行号（含 1.4 交付物）
   - ✅ `godot_find_unused_resources(root?)` — `res://` 路径 + `uid://` 双引用图扫描；`class_name` 脚本与 `addons/` 排除出候选
   - ✅ `godot_export_project(preset, output_dir, debug?)` — 异步子进程 `--headless --export-release`，未知 preset 返回可用列表
   - ✅ `godot_get_debugger_state()` / `godot_set_breakpoint(file, line, condition?, remove?)` — `EditorDebuggerSession.set_breakpoint()`（4.x 公开 API，spike 通过）+ 会话启动自动重放；Godot 4 断点无 condition 支持
@@ -114,26 +112,7 @@ flowchart LR
   - 真实工程 E2E：settings / lint / unused / debugger / breakpoint / export 全链路通过 ✅
 - **风险**：~~调试器 API 在 Godot 4.7 与 4.4 之间差异~~ → spike 结论：`EditorDebuggerSession.set_breakpoint` 为公开 API（4.x 全系），无需降级。
 
-### 1.3 macOS / Linux 三平台 CI 与打包  `P0`
-
-- **目标**：CI 矩阵扩到 `windows-latest` / `macos-latest` / `ubuntu-latest`；electron-builder 出对应格式。
-- **工作量**：6 人天
-- **前置依赖**：codesign 证书（Apple Developer ID / Linux GPG）；本机首次手动配一遍
-- **交付物**：
-  - `.github/workflows/ci.yml`：改 `strategy.matrix.os` 三平台；Node 版本矩阵暂保持 22
-  - `.github/workflows/release.yml`：增加 macOS dmg + Linux AppImage/deb/rpm；保留 Windows NSIS+portable
-  - `apps/desktop/electron-builder.yml`：
-    - `mac.target: dmg + zip`、`mac.category: public.app-category.developer-tools`
-    - `linux.target: AppImage + deb + rpm`、`linux.category: Development`
-  - Secrets（GitHub repo）：`CSC_LINK`（Win pfx）、`MAC_CSC_LINK`（macOS p12）、`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `NOTARYTOOL_TEAM_ID`（公证）、`CSC_KEY_PASSWORD`
-  - `apps/desktop/electron/main.ts`：单实例锁分支兼容 `app.requestSingleInstanceLock` 在 macOS 上的行为差异
-- **验收**：
-  - 三平台 CI 同时绿
-  - Release tag 触发后产物同时含 `*.exe` / `*.dmg` / `*.AppImage` / `*.deb` / `*.rpm`
-  - macOS 装包后 Gatekeeper 不拦（已公证）
-- **风险**：Apple 公证一次 ~30s，首次配置可能踩坑；准备手动回退路径。Linux 字体差异（Inter / JetBrains Mono 在默认字体回退要补全）。
-
-### 1.4 国际化基础（i18n）  `P0`
+### 1.3 国际化基础（i18n）  `P0`
 
 - **目标**：UI 文案从硬编码迁到 i18next，支持中 / 英双语切换。
 - **工作量**：4 人天
@@ -150,7 +129,7 @@ flowchart LR
   - `apps/desktop/scripts/check-i18n-keys.ts`：CI 校验两套 json 的 key 集合一致
 - **风险**：HTML / MarkdownBody 内的英文代码块不动；只迁 UI 控件文案。
 
-### 1.5 Godot 项目级 Lint（GDScript 静态检查）  `P1`
+### 1.4 Godot 项目级 Lint（GDScript 静态检查）  `P1`
 
 - **目标**：用 Godot 自身的 `GDScript.new().parse()` 做轻量 lint，挂在 `godot_lint_scripts` 工具上。
 - **工作量**：与 1.2 合并
@@ -163,11 +142,11 @@ flowchart LR
 - **交付物**：addon 端 `lint_scripts(paths)` 返回 `{ file: { line, column, message, severity }[] }`
 - **验收**：故意写一个语法错的 `.gd`，调用工具返回行号 + 错误信息。✅
 
-### 1.6 @-补全基础  `P1`
+### 1.5 @-补全基础  `P1`
 
 - **目标**：实现 `@/文件` / `@skill` / `@mode` 三类补全；命令调出菜单。
-- **工作量**：3 人天（1.4 完成后并行启动）
-- **前置依赖**：1.4 文案稳定
+- **工作量**：3 人天（1.3 完成后并行启动）
+- **前置依赖**：1.3 文案稳定
 - **状态**：✅ 已完成（2026-08）
 - **完成度与最终交付**：
   - `src/lib/at-completion.ts`：`@` 触发解析 + 分类（path / skill / mode）+ 插入逻辑（`@skill:name`）
@@ -181,7 +160,7 @@ flowchart LR
   - `ChatPanel.tsx` 集成；现有 `@路径` 引用文件逻辑保留为 `@/path` 别名
 - **验收**：在编辑器里敲 `@sk` 弹出技能列表，选中后变为 `@skill:name` 插入。
 
-### 1.7 E2E 契约锁（虚拟列表 / 模式切换 / 撤回）  `P1`
+### 1.6 E2E 契约锁（虚拟列表 / 模式切换 / 撤回）  `P1`
 
 - **目标**：把 CHANGELOG 修过的虚拟列表缓存、行叠层、模式切换时序锁进 Playwright。
 - **工作量**：与 1.1 并行（同一个 Playwright 配置）
@@ -209,7 +188,7 @@ flowchart LR
 
 - **目标**：在 `--x-agent-debug` 模式下新增一屏自检页。
 - **工作量**：3 人天
-- **前置依赖**：1.4（i18n）
+- **前置依赖**：1.3（i18n）
 - **交付物**：
   - 设置 → 通用 → 开发者下新增「诊断」入口
   - `apps/desktop/src/components/DevDiagnostics.tsx`：
@@ -263,7 +242,7 @@ flowchart LR
 
 - **目标**：检测到 `gdlint` / `gdformat` 时自动跑，给出反馈。
 - **工作量**：2 人天
-- **前置依赖**：1.5（项目 lint 基础）
+- **前置依赖**：1.4（项目 lint 基础）
 - **交付物**：
   - `electron/agent/godot-tools.ts` 新增 `godot_lint_with_gdlint(paths)`（调用 `gdlint` 二进制）
   - 与 `x-safe-edit` skill 联动
@@ -320,7 +299,7 @@ flowchart LR
 
 - **目标**：renderer 拆成可独立部署的 Next.js 子项目，与主进程通过 WebSocket 桥接同一套 IPC。
 - **工作量**：12 人天
-- **前置依赖**：1.3（三平台 CI）；1.4（i18n）
+- **前置依赖**：1.3（i18n）
 - **交付物**：
   - 新仓库（或 monorepo 新增）`apps/web/`：Next.js + React 19；复用 `src/components/`、`src/hooks/`、`src/lib/`
   - IPC 抽象：把现有 `window.xAgent.*` 包成 WS 客户端
@@ -352,9 +331,9 @@ flowchart LR
 
 ### 3.7 CI 工作流增强  `P2`
 
-- **目标**：CI 增 `actionlint` / `npm audit` / CHANGELOG 一致性 / 三平台并行。
+- **目标**：CI 增 `actionlint` / `npm audit` / CHANGELOG 一致性；Windows 单平台跑全量。
 - **工作量**：3 人天
-- **前置依赖**：1.3（三平台）
+- **前置依赖**：无（依赖现有 CI 基础设施）
 - **交付物**：
   - `.github/workflows/ci.yml`：拆 4 个 job（typecheck / test / build / release-validate）
   - 新增 `release-validate.yml`：校验 CHANGELOG 的 Unreleased 段在 PR 时被更新
@@ -384,7 +363,7 @@ flowchart LR
 - **契约**：CHANGELOG.md 已整理；git tag 与 `apps/desktop/package.json` 一致
 - **文档**：
   - 同步 `CLAUDE.md` / `CONTEXT.md` 中模块路径与发版约定
-  - 同步 `DESIGN.md` 中新增的 token / 组件（如 1.4 i18n）
+  - 同步 `DESIGN.md` 中新增的 token / 组件（如 1.3 i18n）
   - `README.md` / `README.en.md` 中能力列表对齐（双语文案）
 - **发布**：`npm run release:prepare -- x.y.z` + tag 触发 CI
 - **回滚预案**：每个 P0 改动配 `git revert` 演练记录
@@ -395,16 +374,15 @@ flowchart LR
 
 | # | 风险 | 影响面 | 缓解 | 触发条件 |
 |---|---|---|---|---|
-| R1 | Apple 公证失败（账号 / 证书 / 网络） | Phase 1.3 | 提前 1 周本地试一次；保留未签名 dmg 备用 | release tag 触发 |
-| R2 | E2E 在 CI 慢 / 不稳 | Phase 1.1 | 分支策略：main 跑全量、PR 跑契约子集；shard | CI 5 次连续失败 |
-| R3 | Vitest 迁断言脚本改写大量代码 | Phase 1.1 | 选 5 个模块试点，成功后批量迁移；保留旧脚本并行 | 单模块迁移超 1 人天 |
-| R4 | Godot 4.4 / 4.7 API 差异 | Phase 1.2 | addon 内部 try/catch + 降级；CI 在两个 Godot 版本矩阵跑 | 工具失败率 > 5% |
-| R5 | i18n 大量硬编码迁移 | Phase 1.4 | 顶层组件优先；保留 fallback 文案；CI 校验 key 集合 | PR review 中发现遗漏 > 10 处 |
-| R6 | Sentry DSN 暴露 / 滥用 | Phase 2.4 | `beforeSend` 限流 + 脱敏；环境变量注入 | 7 天内上报 > 10k 条 |
-| R7 | Web fallback 工程量大 / 推迟 | Phase 3.4 | 严格 scope 收敛：先 1 个视图；不做实时协同 | 12 人天超期 50% |
-| R8 | 多项目 workspace 与现有会话隔离冲突 | Phase 3.5 | 渐进：先只支持 2 个 workspace；旧会话迁移脚本 | 回归测试失败 > 3 处 |
-| R9 | Pi 官方 registry API 不开放 → 自建 | Phase 3.1 | MVP 用静态 json + S3；后续考虑 CDN 缓存 | Pi 团队 1 个月内未答复 |
-| R10 | 主题编辑器改 token 导致 a11y 退化 | Phase 3.2 | 强制 WCAG AA 对比度阈值；超阈值给警告 | 任意 token 改动 |
+| R1 | E2E 在 CI 慢 / 不稳 | Phase 1.1 | 分支策略：main 跑全量、PR 跑契约子集；shard | CI 5 次连续失败 |
+| R2 | Vitest 迁断言脚本改写大量代码 | Phase 1.1 | 选 5 个模块试点，成功后批量迁移；保留旧脚本并行 | 单模块迁移超 1 人天 |
+| R3 | Godot 4.4 / 4.7 API 差异 | Phase 1.2 | addon 内部 try/catch + 降级；CI 在两个 Godot 版本矩阵跑 | 工具失败率 > 5% |
+| R4 | i18n 大量硬编码迁移 | Phase 1.3 | 顶层组件优先；保留 fallback 文案；CI 校验 key 集合 | PR review 中发现遗漏 > 10 处 |
+| R5 | Sentry DSN 暴露 / 滥用 | Phase 2.4 | `beforeSend` 限流 + 脱敏；环境变量注入 | 7 天内上报 > 10k 条 |
+| R6 | Web fallback 工程量大 / 推迟 | Phase 3.4 | 严格 scope 收敛：先 1 个视图；不做实时协同 | 12 人天超期 50% |
+| R7 | 多项目 workspace 与现有会话隔离冲突 | Phase 3.5 | 渐进：先只支持 2 个 workspace；旧会话迁移脚本 | 回归测试失败 > 3 处 |
+| R8 | Pi 官方 registry API 不开放 → 自建 | Phase 3.1 | MVP 用静态 json + S3；后续考虑 CDN 缓存 | Pi 团队 1 个月内未答复 |
+| R9 | 主题编辑器改 token 导致 a11y 退化 | Phase 3.2 | 强制 WCAG AA 对比度阈值；超阈值给警告 | 任意 token 改动 |
 
 ---
 
@@ -416,7 +394,6 @@ flowchart LR
 |---|---|---|---|---|
 | 主进程单测覆盖率（lines） | 0% | ≥ 60% | ≥ 70% | ≥ 75% |
 | E2E 用例数 | 0 | ≥ 5（契约） | ≥ 15 | ≥ 30 |
-| 三平台 CI 绿 | 仅 Windows | Windows + macOS + Linux | 同左 | 同左 |
 | UI 文案 i18n 覆盖率 | 0% | 顶层 5 组件 100% | ≥ 80% | ≥ 95% |
 | Godot 工具数 | 10 | 19（含 1.2 全部 7 个 + lint） | 19 + 外部 linter | 19 + 外部 linter |
 | Crash 报告接入 | 无 | 无 | 已接入 | 已接入 + 性能 |

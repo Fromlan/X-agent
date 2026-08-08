@@ -299,3 +299,287 @@ describe("createGodotTools —— 1.2 剩余 7 个工具", () => {
     expect(ctx.captured[1].params.remove).toBe(false);
   });
 });
+
+describe("createGodotTools —— 1.3 只读内省 / UID / 类名 / 脚本反射 / 导出预检", () => {
+  let ctx: ReturnType<typeof makeMockBridge>;
+  let tools: ReturnType<typeof createGodotTools>;
+  type ToolExec = (params: Record<string, unknown>) => Promise<unknown>;
+  let byName: Map<string, ToolExec>;
+
+  beforeEach(() => {
+    ctx = makeMockBridge();
+    tools = createGodotTools(ctx.bridge);
+    byName = new Map(
+      tools.map((t) => [
+        t.name,
+        (params: Record<string, unknown>) =>
+          t.execute(
+            "call-id",
+            params as never,
+            undefined as never,
+            undefined as never,
+            undefined as never,
+          ),
+      ]),
+    );
+  });
+
+  const NAMES = [
+    "godot_list_project_files",
+    "godot_resolve_uid",
+    "godot_wait_for_import_done",
+    "godot_list_global_classes",
+    "godot_find_class_name_conflicts",
+    "godot_inspect_script",
+    "godot_list_export_presets",
+    "godot_check_export_templates",
+  ];
+
+  it("全部 8 个工具已注册", () => {
+    for (const n of NAMES) expect(byName.has(n)).toBe(true);
+  });
+
+  it("description + promptSnippet 非空（保证 LLM 可见）", () => {
+    for (const n of NAMES) {
+      const t = tools.find((x) => x.name === n);
+      expect(t?.description?.length ?? 0).toBeGreaterThan(10);
+      expect(t?.promptSnippet?.length ?? 0).toBeGreaterThan(5);
+    }
+  });
+
+  it("godot_list_project_files 转发 root/type/pattern/limit/cursor，钳制 limit 1-5000", async () => {
+    ctx.setResult({ total: 0, files: [] });
+    await byName.get("godot_list_project_files")!({
+      root: "res://scenes",
+      type: "scene",
+      pattern: "main",
+      limit: 100,
+      cursor: "res://scenes/a",
+    });
+    expect(ctx.captured[0].method).toBe("list_project_files");
+    expect(ctx.captured[0].params.root).toBe("res://scenes");
+    expect(ctx.captured[0].params.type).toBe("scene");
+    expect(ctx.captured[0].params.pattern).toBe("main");
+    expect(ctx.captured[0].params.limit).toBe(100);
+    expect(ctx.captured[0].params.cursor).toBe("res://scenes/a");
+
+    await byName.get("godot_list_project_files")!({ limit: 9999 });
+    expect(ctx.captured[1].params.limit).toBe(5000);
+
+    await byName.get("godot_list_project_files")!({ limit: 0 });
+    expect(ctx.captured[2].params.limit).toBe(500);
+  });
+
+  it("godot_list_project_files 文本含 root / total / 文件行", async () => {
+    ctx.setResult({
+      root: "res://",
+      total: 12,
+      files: [
+        { path: "res://main.tscn", type: "scene" },
+        { path: "res://player.gd", type: "script" },
+      ],
+    });
+    const res = await byName.get("godot_list_project_files")!({});
+    const text = String(res.content[0].text);
+    expect(text).toContain("res://main.tscn");
+    expect(text).toContain("res://player.gd");
+    expect(text).toContain("total=");
+  });
+
+  it("godot_resolve_uid 在只给 uid 时转发 uid", async () => {
+    ctx.setResult({
+      uid: "uid://abc",
+      path: "res://foo.gd",
+      exists: true,
+    });
+    await byName.get("godot_resolve_uid")!({ uid: "uid://abc" });
+    expect(ctx.captured[0].method).toBe("resolve_uid");
+    expect(ctx.captured[0].params.uid).toBe("uid://abc");
+    expect(ctx.captured[0].params.path).toBe("");
+  });
+
+  it("godot_resolve_uid 在只给 path 时转发 path", async () => {
+    ctx.setResult({
+      uid: "uid://xyz",
+      path: "res://bar.gd",
+      exists: true,
+    });
+    await byName.get("godot_resolve_uid")!({ path: "res://bar.gd" });
+    expect(ctx.captured[0].method).toBe("resolve_uid");
+    expect(ctx.captured[0].params.uid).toBe("");
+    expect(ctx.captured[0].params.path).toBe("res://bar.gd");
+  });
+
+  it("godot_resolve_uid 两个都给则直接报错不发 RPC", async () => {
+    const res = await byName.get("godot_resolve_uid")!({
+      uid: "uid://a",
+      path: "res://b",
+    });
+    expect(ctx.captured).toHaveLength(0);
+    expect(res.content[0].text).toMatch(/only one|Provide/i);
+    expect((res.details as { ok: boolean }).ok).toBe(false);
+  });
+
+  it("godot_resolve_uid 都不给则直接报错", async () => {
+    const res = await byName.get("godot_resolve_uid")!({});
+    expect(ctx.captured).toHaveLength(0);
+    expect((res.details as { ok: boolean }).ok).toBe(false);
+  });
+
+  it("godot_resolve_uid 成功文本含 exists + uid + path", async () => {
+    ctx.setResult({
+      uid: "uid://abc",
+      path: "res://foo.gd",
+      exists: true,
+    });
+    const res = await byName.get("godot_resolve_uid")!({ uid: "uid://abc" });
+    const text = String(res.content[0].text);
+    expect(text).toContain("exists=true");
+    expect(text).toContain("uid=uid://abc");
+    expect(text).toContain("path=res://foo.gd");
+  });
+
+  it("godot_wait_for_import_done 转发 paths/timeout_ms 并钳制 0-60000", async () => {
+    ctx.setResult({ ok: true, remaining: [], elapsedMs: 100 });
+    await byName.get("godot_wait_for_import_done")!({
+      paths: ["res://a.png", "res://b.wav"],
+      timeout_ms: 5000,
+    });
+    expect(ctx.captured[0].method).toBe("wait_for_import_done");
+    expect(ctx.captured[0].params.paths).toEqual(["res://a.png", "res://b.wav"]);
+    expect(ctx.captured[0].params.timeout_ms).toBe(5000);
+
+    await byName.get("godot_wait_for_import_done")!({
+      paths: ["res://x.png"],
+      timeout_ms: 999999,
+    });
+    expect(ctx.captured[1].params.timeout_ms).toBe(60000);
+
+    await byName.get("godot_wait_for_import_done")!({
+      paths: ["res://y.png"],
+    });
+    expect(ctx.captured[2].params.timeout_ms).toBe(30000);
+  });
+
+  it("godot_wait_for_import_done paths 为空时直接报错", async () => {
+    const res = await byName.get("godot_wait_for_import_done")!({ paths: [] });
+    expect(ctx.captured).toHaveLength(0);
+    expect((res.details as { ok: boolean }).ok).toBe(false);
+  });
+
+  it("godot_wait_for_import_done 成功 / remaining 非空文本与 hasError", async () => {
+    ctx.setResult({
+      ok: true,
+      remaining: [],
+      elapsedMs: 250,
+    });
+    const ok = await byName.get("godot_wait_for_import_done")!({
+      paths: ["res://a.png"],
+    });
+    expect(String(ok.content[0].text)).toContain("Import complete");
+    expect((ok.details as { hasError: boolean }).hasError).toBe(false);
+
+    ctx.setResult({
+      ok: false,
+      remaining: ["res://c.png"],
+      elapsedMs: 60000,
+    });
+    const left = await byName.get("godot_wait_for_import_done")!({
+      paths: ["res://c.png"],
+    });
+    expect(String(left.content[0].text)).toContain("res://c.png");
+    expect((left.details as { hasError: boolean }).hasError).toBe(true);
+  });
+
+  it("godot_list_global_classes 无参", async () => {
+    ctx.setResult({ classes: [], count: 0 });
+    await byName.get("godot_list_global_classes")!({});
+    expect(ctx.captured[0].method).toBe("list_global_classes");
+  });
+
+  it("godot_find_class_name_conflicts 转发 include_addons", async () => {
+    ctx.setResult({ conflicts: [], count: 0 });
+    await byName.get("godot_find_class_name_conflicts")!({
+      include_addons: true,
+    });
+    expect(ctx.captured[0].method).toBe("find_class_name_conflicts");
+    expect(ctx.captured[0].params.include_addons).toBe(true);
+
+    await byName.get("godot_find_class_name_conflicts")!({});
+    expect(ctx.captured[1].params.include_addons).toBe(false);
+  });
+
+  it("godot_inspect_script 转发 path 并在 path 为空时报错", async () => {
+    ctx.setResult({
+      path: "res://player.gd",
+      signals: [],
+      methods: [],
+      properties: [],
+      constants: [],
+    });
+    await byName.get("godot_inspect_script")!({ path: "res://player.gd" });
+    expect(ctx.captured[0].method).toBe("inspect_script");
+    expect(ctx.captured[0].params.path).toBe("res://player.gd");
+
+    const res = await byName.get("godot_inspect_script")!({});
+    expect(ctx.captured).toHaveLength(1);
+    expect((res.details as { ok: boolean }).ok).toBe(false);
+  });
+
+  it("godot_inspect_script 文本含 signals/properties/methods 块", async () => {
+    ctx.setResult({
+      path: "res://player.gd",
+      signals: [{ name: "died" }],
+      methods: [{ name: "take_damage", type: "void" }],
+      properties: [{ name: "hp", type: "int" }],
+      constants: [{ name: "MAX_HP", type: "int" }],
+    });
+    const res = await byName.get("godot_inspect_script")!({
+      path: "res://player.gd",
+    });
+    const text = String(res.content[0].text);
+    expect(text).toContain("signals");
+    expect(text).toContain("died");
+    expect(text).toContain("hp");
+    expect(text).toContain("take_damage");
+    expect(text).toContain("MAX_HP");
+  });
+
+  it("godot_list_export_presets 无参", async () => {
+    ctx.setResult({ presets: [], count: 0 });
+    await byName.get("godot_list_export_presets")!({});
+    expect(ctx.captured[0].method).toBe("list_export_presets");
+  });
+
+  it("godot_check_export_templates 无参 + 文本随 installed 变化", async () => {
+    ctx.setResult({
+      installed: true,
+      version: "4.7",
+      templateDir: "/x/exported/templates/4.7",
+      templateFiles: ["windows_x86_64"],
+      missingPlatforms: [],
+    });
+    const ok = await byName.get("godot_check_export_templates")!({});
+    expect(ctx.captured[0].method).toBe("check_export_templates");
+    expect(String(ok.content[0].text)).toContain("Templates installed");
+    expect((ok.details as { hasError: boolean }).hasError).toBe(false);
+
+    ctx.setResult({
+      installed: false,
+      version: "4.7",
+      templateDir: "/x/exported/templates/4.7",
+      templateFiles: [],
+      missingPlatforms: [],
+    });
+    const bad = await byName.get("godot_check_export_templates")!({});
+    expect(String(bad.content[0].text)).toContain("NOT installed");
+    expect((bad.details as { hasError: boolean }).hasError).toBe(true);
+  });
+
+  it("响应失败时 1.3 工具返回含 'Godot RPC error'", async () => {
+    ctx.setResult(null, false);
+    const res = await byName.get("godot_list_global_classes")!({});
+    expect(res.content[0].text).toMatch(/Godot RPC error/);
+    expect((res.details as { ok: boolean }).ok).toBe(false);
+  });
+});

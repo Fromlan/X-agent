@@ -4,13 +4,19 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  GODOT_LIST_FILES_DEFAULT_LIMIT,
+  GODOT_LIST_FILES_MAX_LIMIT,
   GODOT_RPC_ALLOWED_METHODS,
   GODOT_RPC_DEFAULT_PORT,
   GODOT_RPC_DEFAULT_WAIT_MS,
   GODOT_RPC_MAX_WAIT_MS,
   GODOT_RPC_BASE_TIMEOUT_MS,
   GODOT_RPC_GRACE_PERIOD_MS,
+  GODOT_WAIT_DEFAULT_TIMEOUT_MS,
+  GODOT_WAIT_MAX_TIMEOUT_MS,
+  clampGodotListLimit,
   clampGodotRunWaitMs,
+  clampGodotWaitMs,
   godotRpcTimeoutMs,
   isAllowedGodotRpcMethod,
   type GodotRpcCall,
@@ -31,12 +37,17 @@ describe("GODOT_RPC 常量", () => {
     expect(GODOT_RPC_GRACE_PERIOD_MS).toBe(8000);
   });
 
+  it("1.3 wait/list 默认值与上限", () => {
+    expect(GODOT_WAIT_DEFAULT_TIMEOUT_MS).toBe(30_000);
+    expect(GODOT_WAIT_MAX_TIMEOUT_MS).toBe(60_000);
+    expect(GODOT_LIST_FILES_DEFAULT_LIMIT).toBe(500);
+    expect(GODOT_LIST_FILES_MAX_LIMIT).toBe(5000);
+  });
+
   it("方法白名单包含所有当前方法 + 新增只读方法", () => {
-    // 含 ping + 10 个旧方法 + 1.2 新增的 2 个
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("ping");
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("get_editor_info");
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("stop_scene");
-    // 1.2 新增
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("get_scene_tree");
     expect(GODOT_RPC_ALLOWED_METHODS).toContain("get_node_properties");
   });
@@ -50,6 +61,21 @@ describe("GODOT_RPC 常量", () => {
       "get_project_setting",
       "set_project_setting",
       "lint_scripts",
+    ]) {
+      expect(GODOT_RPC_ALLOWED_METHODS).toContain(m);
+    }
+  });
+
+  it("1.3 八个只读内省 / UID / 类名 / 脚本反射 / 导出预检方法均在白名单", () => {
+    for (const m of [
+      "list_project_files",
+      "resolve_uid",
+      "wait_for_import_done",
+      "list_global_classes",
+      "find_class_name_conflicts",
+      "inspect_script",
+      "list_export_presets",
+      "check_export_templates",
     ]) {
       expect(GODOT_RPC_ALLOWED_METHODS).toContain(m);
     }
@@ -73,6 +99,51 @@ describe("clampGodotRunWaitMs", () => {
     expect(clampGodotRunWaitMs(GODOT_RPC_MAX_WAIT_MS + 1000)).toBe(
       GODOT_RPC_MAX_WAIT_MS,
     );
+  });
+});
+
+describe("clampGodotWaitMs", () => {
+  it("undefined / 非有限数走默认", () => {
+    expect(clampGodotWaitMs(undefined)).toBe(GODOT_WAIT_DEFAULT_TIMEOUT_MS);
+    expect(clampGodotWaitMs(null)).toBe(GODOT_WAIT_DEFAULT_TIMEOUT_MS);
+  });
+
+  it("负数走默认值（30s）", () => {
+    expect(clampGodotWaitMs(-10)).toBe(GODOT_WAIT_DEFAULT_TIMEOUT_MS);
+  });
+
+  it("超过上限被截断到上限", () => {
+    expect(clampGodotWaitMs(GODOT_WAIT_MAX_TIMEOUT_MS + 5000)).toBe(
+      GODOT_WAIT_MAX_TIMEOUT_MS,
+    );
+  });
+
+  it("0 原样保留为 0（语义：不等立即返回）", () => {
+    expect(clampGodotWaitMs(0)).toBe(0);
+  });
+
+  it("合法值原样返回", () => {
+    expect(clampGodotWaitMs(15000)).toBe(15000);
+  });
+});
+
+describe("clampGodotListLimit", () => {
+  it("undefined / null / 0 走默认", () => {
+    expect(clampGodotListLimit(undefined)).toBe(GODOT_LIST_FILES_DEFAULT_LIMIT);
+    expect(clampGodotListLimit(null)).toBe(GODOT_LIST_FILES_DEFAULT_LIMIT);
+    expect(clampGodotListLimit(0)).toBe(GODOT_LIST_FILES_DEFAULT_LIMIT);
+  });
+
+  it("负数走默认", () => {
+    expect(clampGodotListLimit(-1)).toBe(GODOT_LIST_FILES_DEFAULT_LIMIT);
+  });
+
+  it("超过上限被截断到上限", () => {
+    expect(clampGodotListLimit(99999)).toBe(GODOT_LIST_FILES_MAX_LIMIT);
+  });
+
+  it("合法值原样保留", () => {
+    expect(clampGodotListLimit(120)).toBe(120);
   });
 });
 
@@ -123,14 +194,50 @@ describe("godotRpcTimeoutMs", () => {
     const dbg: GodotRpcCall = { method: "get_debugger_state" };
     expect(godotRpcTimeoutMs(dbg)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
   });
+
+  it("1.3 wait_for_import_done 使用 timeout_ms + 基础超时", () => {
+    const call: GodotRpcCall = {
+      method: "wait_for_import_done",
+      paths: ["res://a.png"],
+      timeout_ms: 10000,
+    };
+    expect(godotRpcTimeoutMs(call)).toBe(GODOT_RPC_BASE_TIMEOUT_MS + 10000);
+  });
+
+  it("1.3 列表 / 扫描 / 反射类走 4 倍基础超时档", () => {
+    const cases: GodotRpcCall[] = [
+      { method: "list_project_files" },
+      { method: "find_class_name_conflicts" },
+      { method: "inspect_script", path: "res://a.gd" },
+    ];
+    for (const c of cases) {
+      expect(godotRpcTimeoutMs(c)).toBe(GODOT_RPC_BASE_TIMEOUT_MS * 4);
+    }
+  });
+
+  it("1.3 resolve_uid / list_global_classes / 导出预检走基础超时", () => {
+    for (const c of [
+      { method: "resolve_uid", uid: "uid://abc" },
+      { method: "list_global_classes" },
+      { method: "list_export_presets" },
+      { method: "check_export_templates" },
+    ] as GodotRpcCall[]) {
+      expect(godotRpcTimeoutMs(c)).toBe(GODOT_RPC_BASE_TIMEOUT_MS);
+    }
+  });
 });
 
 describe("isAllowedGodotRpcMethod", () => {
-  it("合法方法返回 true", () => {
+  it("合法方法返回 true（含 1.3 新增 8 个）", () => {
     expect(isAllowedGodotRpcMethod("ping")).toBe(true);
     expect(isAllowedGodotRpcMethod("get_scene_tree")).toBe(true);
     expect(isAllowedGodotRpcMethod("export_project")).toBe(true);
     expect(isAllowedGodotRpcMethod("lint_scripts")).toBe(true);
+    expect(isAllowedGodotRpcMethod("list_project_files")).toBe(true);
+    expect(isAllowedGodotRpcMethod("resolve_uid")).toBe(true);
+    expect(isAllowedGodotRpcMethod("wait_for_import_done")).toBe(true);
+    expect(isAllowedGodotRpcMethod("inspect_script")).toBe(true);
+    expect(isAllowedGodotRpcMethod("check_export_templates")).toBe(true);
   });
 
   it("非法方法返回 false", () => {

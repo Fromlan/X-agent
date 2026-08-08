@@ -95,11 +95,11 @@ export function useColumnResize(options: {
 
 export const SIDEBAR_WIDTH_DEFAULT = 260;
 export const SIDEBAR_WIDTH_MIN = 160;
-export const SIDEBAR_WIDTH_MAX = 480;
+export const SIDEBAR_WIDTH_MAX = 269;
 
-export const RIGHT_PANEL_WIDTH_DEFAULT = 360;
-export const RIGHT_PANEL_WIDTH_MIN = 240;
-export const RIGHT_PANEL_WIDTH_MAX = 640;
+export const RIGHT_PANEL_WIDTH_DEFAULT = 480;
+export const RIGHT_PANEL_WIDTH_MIN = 400;
+export const RIGHT_PANEL_WIDTH_MAX = 507;
 
 /** Keep chat column usable when the window shrinks. */
 export const CHAT_COLUMN_MIN = 300;
