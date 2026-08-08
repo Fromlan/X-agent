@@ -137,17 +137,61 @@ assert(
     id: "u-real",
     entryId: "entry-1",
   });
+  // B7: 保持 pending 占位 id（避免 virtual-row remount 闪烁），entryId 更新。
   assert(
     pending.length === 1 &&
       pending[0]!.kind === "user" &&
-      pending[0]!.id === "u-real" &&
+      pending[0]!.id === pendingId &&
       pending[0]!.entryId === "entry-1",
-    "real user_message should replace pending bubble",
+    "real user_message should replace pending bubble in place",
   );
 
   let failed = appendPendingUser(createEmptyState(), "nope", pendingId);
   failed = removePendingUser(failed, pendingId);
   assert(failed.length === 0, "removePendingUser drops the optimistic bubble");
+
+  // B7: 已确认（有 entryId）的 pending id 不应被 removePendingUser 误删。
+  const confirmed = applyAgentEvent(
+    appendPendingUser(createEmptyState(), "sent", pendingId),
+    { type: "user_message", text: "sent", id: "u-real", entryId: "entry-9" },
+  );
+  const afterFailedRemove = removePendingUser(confirmed, pendingId);
+  assert(
+    afterFailedRemove.length === 1,
+    "removePendingUser keeps confirmed user bubble",
+  );
+}
+
+// B7: 双 pending（连发两条）按 FIFO 归并，不串位。
+{
+  let items = createEmptyState();
+  const idA = makePendingUserId();
+  const idB = makePendingUserId();
+  items = appendPendingUser(items, "message A", idA);
+  items = appendPendingUser(items, "message B", idB);
+  // 事件按发送顺序到达：A 先替换第一个 pending，B 替换第二个。
+  items = applyAgentEvent(items, {
+    type: "user_message",
+    text: "message A",
+    id: "u-A",
+    entryId: "entry-A",
+  });
+  items = applyAgentEvent(items, {
+    type: "user_message",
+    text: "message B",
+    id: "u-B",
+    entryId: "entry-B",
+  });
+  assert(
+    items.length === 2 &&
+      items[0]!.kind === "user" &&
+      items[0]!.id === idA &&
+      (items[0] as { entryId?: string }).entryId === "entry-A" &&
+      items[1]!.kind === "user" &&
+      items[1]!.id === idB &&
+      (items[1] as { entryId?: string }).entryId === "entry-B",
+    "double pending resolves FIFO without swapping content",
+  );
 }
 
 // usage_update / compaction events must not alter the transcript

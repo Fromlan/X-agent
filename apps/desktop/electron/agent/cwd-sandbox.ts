@@ -20,7 +20,8 @@ export function resolveInsideCwd(
     const root = normalize(resolve(cwd));
     const abs = normalize(resolve(relPath));
     const relToRoot = relative(root, abs);
-    if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
+    // Reject real `..` escapes only (`..foo` is a legal sibling-named dir).
+    if (relToRoot.split(sep)[0] === ".." || isAbsolute(relToRoot)) {
       return { ok: false, error: "路径超出项目目录" };
     }
     // Windows NTFS / ReFS 默认大小写不敏感 —— 大小写归一化后再做前缀比对。
@@ -39,7 +40,7 @@ export function resolveInsideCwd(
   const root = normalize(resolve(cwd));
   const abs = normalize(resolve(root, raw || "."));
   const relToRoot = relative(root, abs);
-  if (relToRoot.startsWith("..") || isAbsolute(relToRoot)) {
+  if (relToRoot.split(sep)[0] === ".." || isAbsolute(relToRoot)) {
     return { ok: false, error: "路径超出项目目录" };
   }
   // Windows NTFS / ReFS 默认大小写不敏感 —— 大小写归一化后再做前缀比对。

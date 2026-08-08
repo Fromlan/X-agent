@@ -6,6 +6,52 @@
 
 升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，`prepare-release` 会把上一线全部小版本（`0.2.0`…`0.2.x`）汇总写入本章节；GitHub Release 正文使用该章节（已含汇总则不再重复附加）。补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭自动附加。
 
+## 0.5.1
+
+### 安全（全面审查后修复）
+
+- **命令注入修复（高危）**：Windows 下 `pi.cmd` 经 `cmd.exe` 执行时 Node 对 args 只做拼接不转义（DEP0190）。`spawnCli` 现对每个参数做完整 cmd 转义（含 `%` 环境变量展开防护）；`installPackage` / `uninstallPackage` 入口加包源格式白名单（仅 `npm:` / `git+` / `https:` / `ssh:` 或本机存在的目录）。
+- **SSRF 防护统一**：`fetchProviderModels` 与供应商档案 `baseUrl` 保存侧均接入 URL 校验——仅 http(s) 且 host 非回环 / 私网 / 链路本地 / 已知 DNS 重绑定域（`localtest.me` / `*.nip.io` 等）；`validateExternalHttpUrl` 补 IPv4-mapped IPv6 十六进制形态（`::ffff:7f00:1`）绕过，并对域名做 DNS 解析后校验。本地 LLM（Ollama 等）需经公网代理中转。
+- **Ask/Plan 只读硬闸加深**：
+  - bash 只读过滤补拦：裸 `git stash`（= stash push）、`git branch <名>` / `git tag <名>` / `git remote add|set-url` 等 ref/config 写入、`$VAR` / `~` / `$'…'` 展开、`>|` / `<` 重定向、`date -s`；路径检查支持 `~` 展开判越界与 Windows 大小写归一，`..foo` 不再误拦。
+  - `read` / `grep` / `find` / `ls` / `godot_detect_project` 的 `path` 参数现强制落在项目 cwd 内（Pi 工具会展开 `~` / 绝对路径 / `file://`）。
+- **Godot 工具开关不可绕过**：`godotRpcRequest` 现校验 `prefs.tools` 是否启用对应工具（GODOT_TOOLS 默认关闭的硬闸从纯 UI 偏好恢复为安全边界），并做参数长度/类型钳制。
+- **IPC sender 统一校验**：全部 87 个 invoke handler 经包装器校验来源（主窗口 webContents + frame origin 匹配），纵深防御。
+- **lastProjectPath 路径约束**：`patchPrefs` 仅接受已存在目录；Godot addon 安装 / 编辑器启动消费处二次确认。
+- **主窗口 `sandbox: true`**：preload 改为 CJS 单文件（关闭 externalizeDeps，仅依赖 electron 受限 API），`contextBridge` 不再是唯一防线。
+- **供应商密钥保护**：safeStorage 解密失败（换机器 / 密钥环重置）时保留盘上密文（`encryptedKey`），任一次保存不再用空串覆盖导致密钥永久丢失。
+- **外部链接 / 导航边界**：`will-navigate` 改 origin 精确匹配（堵 `127.0.0.1:5173.evil.com` 前缀伪匹配）。
+
+### 修复（数据完整性与健壮性）
+
+- **撤回与发送竞态**：prompt 的「检查点准备 → session.prompt」过渡窗口内撤回被拒绝；撤回后丢弃未绑定的 pending pre-sha，旧状态不再「复活」。
+- **Shadow 撤回按 diff 路径还原**：不再整库 `reset --hard`（会静默丢弃回合期间的用户手动编辑）——只还原该回合内变化过的文件；预览文案同步说明。
+- **供应商档案并发**：`importExistingProviderProfiles` 读-改-写整体纳入 storePath 锁；`syncProfileToPi` 的 activeId 更新在锁内重读最新 store；`repairDeepSeekModelsJson` 改走锁 + 原子写。
+- **chat 归并修复**：pending 气泡替换保留占位 id（消除虚拟行 remount 闪烁）、按 FIFO 替换未确认项（连发两条不再内容互换）；发送按钮在 pending 未确认时禁用；`removePendingUser` 不误删已确认气泡。
+- **检查点仓库防膨胀**：shadow commit 后 reflog expire + `gc --auto` 修剪撤回孤儿 commit；persistDirty 改增量落盘（dirtyTurns / droppedTurns），会话文件不再 O(N²) 全量快照。
+- **settings.json 双写入方原子化**：bash `shellPath` 与 Pi 包 sources 统一走同步 tmp+rename 原子写，字段互不覆盖。
+- **其余健壮性**：session 损坏自动备份 `.broken-*.bak`；`deleteSession` / `godotRpcStop` 异常不再挂死 IPC；prompt / 计划正文 / 目标条件加长度上限；auth-check 缓存加 5s TTL + 窗口 focus 失效；Godot 编辑器启动等 `spawn` 事件确认成功；断连的编辑器在途请求立即报错（不再悬挂满超时）。
+
+### Godot 集成
+
+- **插件 0.6.2**：`lint_scripts` 的 `--check-only` 子进程改子线程执行、`wait_for_import_done` 忙等改帧循环（编辑器不再被冻结 N×30s / 60s）；`get_scene_tree` / `get_node_properties` 只读捕获不再切换当前编辑场景（load 失败返回错误而非错场景树）；`export_project` 的 `output_dir` 目录判定支持反斜杠与已存在目录；节点树序列化加 5000 节点预算（巨型场景截断）；调试会话 / 断点记录随会话结束清理。
+- **多编辑器路由**：显式选中的客户端未鉴权时不再静默改道（直接报错）；自动回退时响应携带 `routedTo` 供 UI/工具详情展示；客户端列表只显示已鉴权编辑器。
+- **Ask/Plan 白名单补全**：1.0 + 1.3 共 10 个纯只读 Godot 工具（`godot_open_scenes` / `godot_edited_scene` / `godot_play_errors` / `godot_list_project_files` / `godot_resolve_uid` / `godot_list_global_classes` / `godot_find_class_name_conflicts` / `godot_inspect_script` / `godot_list_export_presets` / `godot_check_export_templates`）在 Ask/Plan 模式放行。
+- **export 超时对齐**：桥接侧在插件 5 分钟超时外追加 15s 余量，保证插件先收尾回结果；端口回退固定在插件候选表 8765–8774 内环绕。
+
+### UI 与设计规范
+
+- bash 诊断状态 emoji 改 `settings-status` 色点 chip；bash 诊断块硬编码色值 / 未定义 token 全部 token 化（`--accent-*` + color-mix）。
+- 4 个未定义 CSS 变量修正（starter chip / 计划 todo 背景透明问题）；字重统一 400/500（4 处 600 降级）；硬编码圆角（999px×10 / 6px / 8px / 4px）全部走 `--radius-*`。
+- ready-strip 的 inset 阴影改 `border-left`；设置页脚渐隐改纯色（skeleton shimmer 按规范豁免保留）；sidebar 冲突的 overflow 声明修复。
+- 右栏宽度默认/下限统一 360（与 prefs 默认及 DESIGN.md 一致）。
+- IPC promise 未捕获 rejection ×5 补齐；会话切换清空过期排队 steer；大文件预览截断提示。
+- 21 处扁平 `setPrefs` / `getPrefs` / `checkAuth` 等迁移到 `window.xAgent.prefs.*` 分面。
+
+### 测试
+
+- 新增/扩充断言：bash 只读硬闸 +38、外部 URL 校验 +11、包源白名单 +13、模式 guard 路径约束 +11、双 pending 归并 +3、撤回竞态 +2、密文保留 +1 全链路、路径级还原 +1、1.3 只读白名单 +1 等；vitest 200 用例、离线链 54 脚本全绿。
+
 ## 0.5.0
 
 ### 功能

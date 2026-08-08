@@ -51,6 +51,8 @@ export type BaselinePersistPayload = {
    * 与 turns 互斥：同一 (uid, rel) 不会同时出现在两个表里。
    */
   symlinks?: Record<string, Record<string, string>>;
+  /** B9: 增量持久化 —— 自上次 append 以来被删除（撤回）的 turn 列表。 */
+  droppedTurns?: string[];
 };
 
 /** 内部基线条目：symlink 需记录 target 而非内容 */
@@ -150,6 +152,10 @@ export class TurnFileTracker implements RestoreSource {
   private oversized = new Set<string>();
   private activeUserEntryId: string | null = null;
   private dirty = false;
+  /** B9: 自上次持久化以来变更的 turn（增量 append，避免 O(N²) 全量快照）。 */
+  private dirtyTurns = new Set<string>();
+  /** B9: 自上次持久化以来被删除的 turn（撤回 drop）。 */
+  private droppedTurns = new Set<string>();
 
   /**
    * 切换项目工作目录。cwd 变更意味着所有旧基线的相对路径已失效，
@@ -215,6 +221,7 @@ export class TurnFileTracker implements RestoreSource {
       if (!existsSync(resolved.abs)) {
         map.set(rel, { kind: "absent" });
         this.dirty = true;
+        this.dirtyTurns.add(this.activeUserEntryId);
         return;
       }
       // lstat 不跟随 symlink：用其判断文件类型
@@ -224,10 +231,12 @@ export class TurnFileTracker implements RestoreSource {
           const target = readFileSync(resolved.abs); // symlink 自身即 target 字符串
           map.set(rel, { kind: "symlink", target: target.toString("utf8") });
           this.dirty = true;
+          this.dirtyTurns.add(this.activeUserEntryId);
         } catch {
           // readlink on Windows may fail for unprivileged links; fall back to stat
           map.set(rel, { kind: "symlink", target: "" });
           this.dirty = true;
+          this.dirtyTurns.add(this.activeUserEntryId);
         }
         return;
       }
@@ -238,6 +247,7 @@ export class TurnFileTracker implements RestoreSource {
       }
       map.set(rel, { kind: "file", bytes: buf });
       this.dirty = true;
+      this.dirtyTurns.add(this.activeUserEntryId);
     } catch {
       // ignore capture failures
     }
@@ -488,20 +498,26 @@ export class TurnFileTracker implements RestoreSource {
   dropBaselinesForTurns(userEntryIds: string[]): void {
     for (const uid of userEntryIds) {
       this.turnBaselines.delete(uid);
+      // B9: 记录删除以便增量持久化（否则旧快照会把它「复活」）。
+      this.droppedTurns.add(uid);
+      this.dirtyTurns.delete(uid);
     }
     this.dirty = true;
   }
 
   /**
-   * 把内存中的基线追加为 session 的 custom entry。
-   * 文件内容走 turns（base64）；symlink target 走 symlinks 表。
-   * null 表示原本不存在。
+   * 把自上次持久化以来的变更追加为 session 的 custom entry（增量）。
+   * 文件内容走 turns（base64）；symlink target 走 symlinks 表；
+   * 被删除的 turn 走 droppedTurns（loadFromSession 按 entry 顺序先删后合，
+   * 旧快照中的已删 turn 不会复活）。
    */
   persistDirty(sm: SessionManagerLike): void {
     if (!this.dirty) return;
     const turns: Record<string, Record<string, string | null>> = {};
     const symlinks: Record<string, Record<string, string>> = {};
-    for (const [uid, map] of this.turnBaselines) {
+    for (const uid of this.dirtyTurns) {
+      const map = this.turnBaselines.get(uid);
+      if (!map) continue;
       const paths: Record<string, string | null> = {};
       const links: Record<string, string> = {};
       for (const [rel, entry] of map) {
@@ -523,10 +539,15 @@ export class TurnFileTracker implements RestoreSource {
     try {
       const payload: BaselinePersistPayload = { turns };
       if (Object.keys(symlinks).length > 0) payload.symlinks = symlinks;
+      if (this.droppedTurns.size > 0) {
+        payload.droppedTurns = [...this.droppedTurns];
+      }
       sm.appendCustomEntry(FILE_BASELINE_CUSTOM_TYPE, payload);
       this.dirty = false;
+      this.dirtyTurns.clear();
+      this.droppedTurns.clear();
     } catch {
-      // non-fatal
+      // non-fatal; dirty flags stay set so the next turn retries
     }
   }
 
@@ -544,6 +565,16 @@ export class TurnFileTracker implements RestoreSource {
         | { paths?: Record<string, string | null> }
         | undefined;
       if (!data || typeof data !== "object") continue;
+
+      // B9: 增量删除 —— 旧快照中的已删 turn 不得复活（先删后合）。
+      if (
+        "droppedTurns" in data &&
+        Array.isArray((data as BaselinePersistPayload).droppedTurns)
+      ) {
+        for (const uid of (data as BaselinePersistPayload).droppedTurns!) {
+          this.turnBaselines.delete(uid);
+        }
+      }
 
       // New format: per-turn
       if ("turns" in data && data.turns && typeof data.turns === "object") {

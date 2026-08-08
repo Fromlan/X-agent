@@ -44,7 +44,7 @@ export function ToolsSettingsPage({
     }
     const withoutGroup = prefs.tools.filter((tool) => !tools.includes(tool));
     const nextTools = enabled ? [...withoutGroup, ...tools] : withoutGroup;
-    const next = await window.xAgent.setPrefs({ tools: nextTools });
+    const next = await window.xAgent.prefs.set({ tools: nextTools });
     onPrefsChanged?.(next);
   };
 

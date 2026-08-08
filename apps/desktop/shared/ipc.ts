@@ -775,6 +775,8 @@ export interface GodotRpcRequestResult {
   ok: boolean;
   error?: string;
   result?: unknown;
+  /** C1: 请求实际送达的客户端 id（preferred 未鉴权时的 fallback）。 */
+  routedTo?: string;
 }
 
 export interface ToolDetailDto {
@@ -902,6 +904,12 @@ export interface ProviderProfile {
   updatedAt: string;
   /** When true, profile is synced into Pi auth/models and appears in TopBar. */
   enabled: boolean;
+  /**
+   * 盘上密文（safeStorage 解不开时的保留副本）。
+   * 解密失败时 apiKey 为空、此字段保留原 `enc:v1:` 串，保存时写回原密文，
+   * 避免「换机器/密钥环重置」后任一次保存把密钥永久覆盖丢失。
+   */
+  encryptedKey?: string;
 }
 
 export interface ProviderProfileSummary {

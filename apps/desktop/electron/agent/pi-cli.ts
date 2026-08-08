@@ -5,7 +5,10 @@ import type { PiCliStatus } from "../../shared/ipc";
 
 /**
  * Windows .cmd/.bat cannot be spawned without shell after CVE-2024-27980
- * (Node throws spawn EINVAL). Safe for args arrays Node escapes under shell.
+ * (Node throws spawn EINVAL). NOTE: with `shell: true` Node concatenates
+ * `command + args` into one `cmd /d /s /c "..."` string WITHOUT escaping
+ * args (DEP0190). Callers MUST escape user-controlled args via
+ * `quoteWinCmdArg` (see `spawnCli`).
  */
 export function spawnOptsForCli(
   command: string,
@@ -22,18 +25,23 @@ export function spawnOptsForCli(
 }
 
 /**
- * Quote for `cmd.exe` when the value has whitespace/specials.
- * Needed because Node `spawn(file, args, { shell: true })` concatenates
- * `file` + args before wrapping in `cmd /d /s /c "…"`, so an unquoted
- * `C:\Program Files\nodejs\npm.cmd` becomes the bogus command `C:\Program`.
+ * Quote a value for `cmd.exe` when it contains characters that would be
+ * re-parsed after `%VAR%` expansion or split the command line:
+ * whitespace, `"` `&` `<` `>` `|` `^` `(` `)` and `%`.
+ * `%` is included because cmd expands `%NAME%` BEFORE parsing quotes, so an
+ * unquoted `%VAR%` argument could expand into a command separator.
+ * Inside quotes, expanded values stay within the token (no injection).
+ * Embedded `"` is doubled (`""`), which cmd decodes back to a literal quote.
  */
 export function quoteWinCmdArg(value: string): string {
-  if (!/[\s"&<>|^()]/.test(value)) return value;
+  if (!/[\s"&<>|^()%]/.test(value)) return value;
   return `"${value.replace(/"/g, '""')}"`;
 }
 
 /**
- * Spawn a CLI binary. On Windows, quote .cmd/.bat paths that need shell.
+ * Spawn a CLI binary. On Windows, quote the .cmd/.bat path AND every
+ * argument for cmd.exe (Node does NOT escape args under `shell: true`;
+ * an unescaped `&`/`|`/`%VAR%` in an arg would execute arbitrary commands).
  */
 export function spawnCli(
   command: string,
@@ -43,7 +51,7 @@ export function spawnCli(
   const needsWinShell =
     process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
   if (needsWinShell) {
-    return spawn(quoteWinCmdArg(command), [...args], {
+    return spawn(quoteWinCmdArg(command), [...args].map(quoteWinCmdArg), {
       ...spawnOptsForCli(command, extra),
     });
   }

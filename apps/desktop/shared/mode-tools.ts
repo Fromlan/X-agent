@@ -15,6 +15,10 @@ export const PLAN_MODE_CORE_TOOLS = [
 /** Read-only Godot tools allowed in Ask/Plan when already enabled in prefs. */
 export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_editor_info",
+  // 1.0：纯只读内省
+  "godot_open_scenes",
+  "godot_edited_scene",
+  "godot_play_errors",
   // 1.2 扩展：场景树 / 节点属性 / 调试器状态 / 资源治理 / 配置读取 / lint 只读工具
   "godot_get_scene_tree",
   "godot_get_node_properties",
@@ -22,6 +26,14 @@ export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
   "godot_find_unused_resources",
   "godot_get_project_setting",
   "godot_lint_scripts",
+  // 1.3 扩展：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检（C3）
+  "godot_list_project_files",
+  "godot_resolve_uid",
+  "godot_list_global_classes",
+  "godot_find_class_name_conflicts",
+  "godot_inspect_script",
+  "godot_list_export_presets",
+  "godot_check_export_templates",
 ] as const;
 
 /**

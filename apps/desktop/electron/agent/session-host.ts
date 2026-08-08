@@ -94,6 +94,13 @@ export class SessionHost {
   private status: AgentStatus = "idle";
   /** Prevent overlapping model title requests for the same open session. */
   private autoTitleInFlight = false;
+  /**
+   * True while prompt() is inside the preparePromptCheckpoint → session.prompt
+   * transition (isStreaming is still false there, so a concurrent retract
+   * would corrupt turn state / resurrect stale pre SHAs). Retract rejects
+   * while this flag is set.
+   */
+  private promptPreparing = false;
   private lastError: string | undefined;
   private getWindow: () => BrowserWindow | null;
   private godotRpc: GodotRpcBridge | null;
@@ -206,6 +213,7 @@ export class SessionHost {
       emitHistoryReplace: () => this.emitHistoryReplace(),
       emitUsageUpdate: () => this.emitUsageUpdate(),
       prompt: (text) => this.prompt(text),
+      isPromptPreparing: () => this.promptPreparing,
       onRetractSuccess: (abandonedUserEntryIds) =>
         this.sessionMode.rollbackGoalAfterRetract(abandonedUserEntryIds),
     };
@@ -572,7 +580,7 @@ export class SessionHost {
     if (!this.modelRuntime) {
       const dir = getAgentDirPath();
       // Fix legacy DeepSeek models.json entries missing reasoning (thinking→off).
-      repairDeepSeekModelsJson();
+      await repairDeepSeekModelsJson();
       this.modelRuntime = await ModelRuntime.create({
         authPath: join(dir, "auth.json"),
         modelsPath: join(dir, "models.json"),
@@ -761,7 +769,15 @@ export class SessionHost {
         donePi();
       } else {
         dbgLog("session", "prompt: prepare shadow checkpoint…");
-        await this.shadowCheckpoints.preparePromptCheckpoint();
+        // 进入 prepare→prompt 过渡窗口：期间拒绝撤回（见 RetractOrchestrator）。
+        // 标志在 prepare 结束后立即释放（此后同步进入 session.prompt，
+        // streaming 为 true，撤回走 abort 路径）。
+        this.promptPreparing = true;
+        try {
+          await this.shadowCheckpoints.preparePromptCheckpoint();
+        } finally {
+          this.promptPreparing = false;
+        }
         doneShadow();
         if (this.bundle !== bundle) {
           dbgLog("session", "prompt aborted: bundle switched during shadow");

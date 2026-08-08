@@ -14,10 +14,24 @@ import {
   godotRpcTimeoutMs,
 } from "../../shared/godot-rpc";
 
+/** C8: 单个 Godot 工具结果的字节上限（防止巨型响应撑爆模型上下文）。 */
+const GODOT_TOOL_RESULT_MAX_CHARS = 200_000;
+
 function textResult(text: string, details: unknown = {}) {
+  const truncated = text.length > GODOT_TOOL_RESULT_MAX_CHARS;
   return {
-    content: [{ type: "text" as const, text }],
-    details,
+    content: [
+      {
+        type: "text" as const,
+        text: truncated
+          ? `${text.slice(0, GODOT_TOOL_RESULT_MAX_CHARS)}\n…（结果过长已截断）`
+          : text,
+      },
+    ],
+    details: {
+      ...(details as object),
+      ...(truncated ? { truncated: true } : {}),
+    },
   };
 }
 
@@ -39,13 +53,18 @@ function formatResponse(res: GodotRpcResponse): {
     return textResult(`Godot RPC error: ${res.error}`, {
       ok: false,
       error: res.error,
+      ...(res.routedTo ? { routedTo: res.routedTo } : {}),
     });
   }
   const body =
     typeof res.result === "string"
       ? res.result
       : JSON.stringify(res.result, null, 2);
-  return textResult(body, { ok: true, result: res.result });
+  return textResult(body, {
+    ok: true,
+    result: res.result,
+    ...(res.routedTo ? { routedTo: res.routedTo } : {}),
+  });
 }
 
 type PlayErrorEntry = { severity?: string; message?: string };

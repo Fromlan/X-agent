@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateExternalHttpUrl } from "./agent/external-url";
+import { invalidateAuthCache } from "./agent/auth-check";
 
 const BG = "#141414";
 const SPLASH_TIMEOUT_MS = 30_000;
@@ -217,10 +218,12 @@ function createMain(): void {
     show: false,
     ...(icon ? { icon } : {}),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // E5: 开启 sandbox —— preload 仅使用 electron 受限 API + 内联常量，
+      // 无需完整 Node 权限；contextBridge 不再是唯一防线。
+      sandbox: true,
       devTools: true,
     },
   });
@@ -230,13 +233,19 @@ function createMain(): void {
   mainWindow.setMinimumSize(1188, 800);
 
   installDebugShortcuts(mainWindow);
+  // E1: 窗口获得焦点时 auth.json 可能已被外部 `pi /login` 改写，
+  // 立即失效缓存，让 ReadyChecklist 在本次运行内也能看到认证状态。
+  mainWindow.on("focus", () => invalidateAuthCache());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void openExternalHttpUrl(url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (url === mainWindow?.webContents.getURL()) return;
-    if (rendererUrl && url.startsWith(rendererUrl)) return;
+    // E4: origin 精确匹配（防止 `127.0.0.1:5173.evil.com` 前缀伪匹配）。
+    if (rendererUrl && new URL(url).origin === new URL(rendererUrl).origin) {
+      return;
+    }
     if (url.startsWith("file:")) {
       // Packaged app: only allow navigation within our renderer directory.
       try {

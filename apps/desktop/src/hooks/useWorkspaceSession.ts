@@ -99,11 +99,15 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const fetchSessionUsage = useCallback(() => {
     const gen = ++usageFetchGen.current;
-    void window.xAgent.session.getSessionUsage().then((u) => {
-      if (gen !== usageFetchGen.current) return;
-      if (u) setSessionUsage(u);
-      else setSessionUsage(null);
-    });
+    void window.xAgent.session.getSessionUsage()
+      .then((u) => {
+        if (gen !== usageFetchGen.current) return;
+        if (u) setSessionUsage(u);
+        else setSessionUsage(null);
+      })
+      .catch(() => {
+        // D10: IPC 异常时保持上次快照，避免 unhandled rejection。
+      });
   }, [usageFetchGen]);
 
   const syncFromHost = useCallback(async () => {

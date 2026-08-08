@@ -16,6 +16,7 @@ import {
   dropRegistryPackagesBySource,
   findLivePackageSourcesByName,
   isResolvablePackageSource,
+  isSafePackageSource,
   listInstalledPackages,
   packageNameForSource,
   pruneMissingPiPackageSources,
@@ -143,6 +144,26 @@ try {
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(agentHome2, { recursive: true, force: true });
+}
+
+// Source whitelist gate (command injection surface via `pi install <source>`).
+const gateHome = mkdtempSync(join(tmpdir(), "x-agent-pkg-gate-"));
+const gateDir = join(gateHome, "local-pkg");
+mkdirSync(gateDir, { recursive: true });
+try {
+  for (const bad of ["a&echo PWNED", "npm:x | calc", "C:\\proj;del /f x", "`whoami`", "%COMSPEC%", "dir && echo x", ""]) {
+    assert.equal(isSafePackageSource(bad), false, `reject unsafe source: ${bad}`);
+  }
+  assert.equal(isSafePackageSource("npm:@scope/pkg"), true, "npm spec ok");
+  assert.equal(isSafePackageSource("git+https://example.com/repo.git"), true, "git+ spec ok");
+  assert.equal(isSafePackageSource("ssh://git@example.com/repo.git"), true, "ssh spec ok");
+  assert.equal(isSafePackageSource("https://example.com/x?a=1&b=2"), true, "https URL ok");
+  assert.equal(isSafePackageSource("npm:@scope/pkg with space"), false, "whitespace spec rejected");
+  assert.equal(isSafePackageSource(gateDir), true, "existing local dir ok");
+  assert.equal(isSafePackageSource(join(gateHome, "missing-dir")), false, "missing local dir rejected");
+  assert.equal(isSafePackageSource("some-bare-name"), false, "bare name rejected");
+} finally {
+  rmSync(gateHome, { recursive: true, force: true });
 }
 
 console.log("test-package-manager: ok");

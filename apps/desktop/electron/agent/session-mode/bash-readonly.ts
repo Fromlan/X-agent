@@ -2,7 +2,8 @@
  * Classify bash commands as read-only for Ask/Plan hard gates.
  * Conservative: unknown / mixed / redirect-heavy / path-escaping commands are writes.
  */
-import { isAbsolute, normalize, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
 
 /** Commands that are generally safe for codebase research (no mutation). */
 const READONLY_COMMAND_HEADS = new Set([
@@ -75,13 +76,15 @@ const MUTATION_PATTERNS: RegExp[] = [
   /(^|[|&;]\s*)(rm|mv|cp|mkdir|rmdir|touch|chmod|chown|ln|dd|truncate|tee)\b/i,
   /(^|[|&;]\s*)(npm|pnpm|yarn|bun)\s+(install|add|remove|uninstall|publish|update|upgrade)/i,
   /(^|[|&;]\s*)(pip|pip3)\s+(install|uninstall)/i,
-  /(^|[|&;]\s*)git\s+(add|commit|push|pull|fetch|merge|rebase|reset|checkout|switch|cherry-pick|tag\s+-d|branch\s+-[dD]|clean|stash\s+(push|pop|apply|drop|clear))/i,
+  /(^|[|&;]\s*)git\s+(add|commit|push|pull|fetch|merge|rebase|reset|checkout|switch|cherry-pick|tag\s+-d|branch\s+-[dD]|clean|stash\s+(push|pop|apply|drop|clear)|remote\s+(add|set-url|remove|rename|set-head))/i,
   /(^|[|&;]\s*)(sed|perl|ruby)\s+.*\s-i\b/i,
   /(^|[|&;]\s*)(python|python3|node|nodejs)\b/i,
   /\bfind\b[\s\S]*\s-(?:delete|exec|execdir|ok|okdir)\b/i,
-  /(?:^|[^>])>(?!>)\s*[^|&;]/, // single > redirect to a file
+  /(?:^|[^>])>(?!>)/, // any single `>` redirect (incl. `>|`); `>>` also matches the second `>`
   />>/,
+  /</, // input redirect
   /\|\s*tee\b/i,
+  /^date\b[\s\S]*\s-{1,2}(?:s|set)\b/i, // `date -s` / `date --set` mutates the clock
 ];
 
 function stripShellNoise(command: string): string {
@@ -97,9 +100,19 @@ function firstToken(segment: string): string {
   return (m?.[1] ?? "").replace(/^["']|["']$/g, "");
 }
 
-/** Reject command substitution / expansion that can hide mutating payloads. */
+/**
+ * Reject command substitution / expansion that can hide mutating payloads:
+ * `$(…)`, `${…}`, backticks, `$VAR` / `$'…'` / `$"…"` / `$$` / `$?` / `$!` etc.
+ * NOTE: single-quoted `$VAR` is not expanded by bash, but we fail closed —
+ * Ask/Plan bash is a hard gate, false positives are acceptable.
+ */
 function hasShellSubstitution(command: string): boolean {
-  return /\$\(|\$\{|`/.test(command);
+  return (
+    /\$\(|\$\{|`/.test(command) ||
+    /\$[A-Za-z_][A-Za-z0-9_]*/.test(command) ||
+    /\$[$?#@*!0-9]/.test(command) ||
+    /\$['"]/.test(command)
+  );
 }
 
 function splitShellSegments(command: string): string[] {
@@ -129,8 +142,32 @@ function isReadonlyGit(segment: string): boolean {
   const sub = (tokens[i] ?? "").toLowerCase();
   if (!READONLY_GIT_SUBCOMMANDS.has(sub)) return false;
   if (sub === "stash") {
-    const stashOp = (tokens[i + 1] ?? "list").toLowerCase();
+    // Bare `git stash` = `git stash push` (moves working-tree changes into the
+    // stash and reverts files): require an explicit read-only subcommand.
+    const stashOp = (tokens[i + 1] ?? "").toLowerCase();
     return stashOp === "list" || stashOp === "show";
+  }
+  if (sub === "branch" || sub === "tag") {
+    // `git branch foo` / `git tag v1` create refs (write .git/refs).
+    // Read-only forms use only flags (`-a`/`-v`/`--show-current`…);
+    // any positional arg may be a new ref name → block (fail closed, so
+    // `--merged <branch>` lists are also rejected). Exception: `tag -l`
+    // / `tag --list` takes an optional filter pattern that is not a write.
+    const rest = tokens.slice(i + 1);
+    if (
+      sub === "tag" &&
+      (rest[0] === "-l" || rest[0] === "--list") &&
+      rest.slice(1).length <= 1
+    ) {
+      return true;
+    }
+    return rest.every((t) => t.startsWith("-"));
+  }
+  if (sub === "remote") {
+    // `remote add|set-url|remove|rename|set-head` write .git/config;
+    // plain `remote`, `-v`, `show <name>`, `get-url <name>` are reads.
+    const op = (tokens[i + 1] ?? "").toLowerCase();
+    return !["add", "set-url", "remove", "rename", "set-head"].includes(op);
   }
   if (sub === "config") {
     // Block mutating config writes: `git config name value` or --unset / --add
@@ -158,14 +195,28 @@ function isPathLikeToken(token: string): boolean {
   const t = unquote(token);
   if (!t || t === "." || t === "-" || t.startsWith("-")) return false;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return false; // URLs
+  if (t.startsWith("~")) return true; // ~ / ~/... / ~user/... expand to HOME
   if (t.includes("/") || t.includes("\\")) return true;
   if (/^[A-Za-z]:/.test(t)) return true;
   if (t === ".." || t.startsWith("../") || t.startsWith("..\\")) return true;
   return false;
 }
 
+/**
+ * Expand `~` / `~/…` against the current user HOME (Git Bash HOME ==
+ * %USERPROFILE% on Windows). `~user/…` is unknown → left as-is (fails the
+ * cwd check downstream unless it resolves inside the project).
+ */
+function expandTilde(token: string): string {
+  if (!token.startsWith("~")) return token;
+  if (token === "~" || token.startsWith("~/") || token.startsWith("~\\")) {
+    return join(homedir(), token.slice(1));
+  }
+  return token;
+}
+
 function pathEscapesCwd(cwd: string, pathToken: string): boolean {
-  const cleaned = unquote(pathToken);
+  const cleaned = expandTilde(unquote(pathToken));
   if (!cleaned) return false;
   const root = normalize(resolve(cwd));
   let abs: string;
@@ -179,8 +230,20 @@ function pathEscapesCwd(cwd: string, pathToken: string): boolean {
     return true;
   }
   const rel = relative(root, abs);
-  if (rel.startsWith("..") || isAbsolute(rel)) return true;
-  if (abs !== root && !abs.startsWith(root + sep)) return true;
+  // Reject real `..` escapes only (`..foo` is a legal sibling-named dir).
+  const firstSeg = rel.split(sep)[0];
+  if (firstSeg === ".." || isAbsolute(rel)) return true;
+  // Case-normalize on win32 (NTFS is case-insensitive) so a differently-cased
+  // in-cwd path is not falsely flagged as an escape.
+  if (process.platform === "win32") {
+    const lowerRoot = root.toLowerCase();
+    const lowerAbs = abs.toLowerCase();
+    if (lowerAbs !== lowerRoot && !lowerAbs.startsWith(lowerRoot + sep)) {
+      return true;
+    }
+  } else if (abs !== root && !abs.startsWith(root + sep)) {
+    return true;
+  }
   return false;
 }
 

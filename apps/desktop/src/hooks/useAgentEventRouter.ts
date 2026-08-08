@@ -114,12 +114,12 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
         setCwd(event.cwd || null);
         setSessionId(nextId);
         sessionIdRef.current = nextId;
-        if (!nextId) {
+        if (!nextId || prevId !== nextId) {
           usageFetchGen.current += 1;
           clearSessionUsage();
-        } else if (prevId !== nextId) {
-          usageFetchGen.current += 1;
-          clearSessionUsage();
+          // D11: 会话切换后清除上一会话残留的排队 steer（主进程不会对
+          // 新会话补发 queue_update([])，banner 会显示过期内容）。
+          setQueuedSteering([]);
         }
         setPrefs((prev) =>
           prev

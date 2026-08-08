@@ -1,5 +1,5 @@
 import { dialog, shell, type IpcMain } from "electron";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -11,11 +11,34 @@ import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
 import {
   GODOT_RPC_DEFAULT_PORT,
+  godotRpcMethodTool,
   godotRpcTimeoutMs,
   isAllowedGodotRpcMethod,
 } from "../../shared/godot-rpc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
 import { handle } from "./register-ipc";
+
+/** Basic param hygiene for renderer-provided RPC calls (length / shape caps). */
+function validateGodotRpcCallParams(call: GodotRpcCallDto): string | null {
+  for (const [key, value] of Object.entries(call)) {
+    if (key === "method" || value == null) continue;
+    if (typeof value === "string") {
+      if (value.length > 4096) return `参数 ${key} 过长（>4096）`;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      if (value.length > 512) return `参数 ${key} 条目过多（>512）`;
+      if (
+        value.some(
+          (x) => typeof x === "string" && x.length > 4096,
+        )
+      ) {
+        return `参数 ${key} 含超长字符串`;
+      }
+    }
+  }
+  return null;
+}
 
 /** Godot RPC bridge + editor launch IPC. */
 export function registerGodotIpc(
@@ -39,8 +62,14 @@ export function registerGodotIpc(
     }
   });
   handle(ipcMain, IPC_CHANNELS.godotRpcStop, async () => {
-    await godotRpc.stop();
-    return { ok: true };
+    try {
+      await godotRpc.stop();
+      return { ok: true };
+    } catch (err) {
+      // E3: stop 异常（如 socket 关闭竞态）不应让 IPC reject 挂起 UI。
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `停止桥接失败：${message}` };
+    }
   });
   handle(ipcMain, IPC_CHANNELS.godotRpcPing, async () => {
     const res = await godotRpc.request({ id: randomUUID(), method: "ping" });
@@ -60,10 +89,23 @@ export function registerGodotIpc(
           error: `不允许的 Godot RPC 方法：${String((call as { method?: unknown })?.method ?? "")}`,
         };
       }
+      // 工具开关硬闸：GODOT_TOOLS 默认关闭，未勾选对应工具时拒绝调用
+      // （否则「设置 → 工具」开关退化为纯 UI 偏好）。
+      const gateTool = godotRpcMethodTool(call.method);
+      if (gateTool && !getCachedPrefs().tools.includes(gateTool)) {
+        return {
+          ok: false,
+          error: `未启用 Godot 工具 ${gateTool}，请先在 设置 → 工具 中勾选`,
+        };
+      }
+      const paramError = validateGodotRpcCallParams(call);
+      if (paramError) {
+        return { ok: false, error: `Godot RPC 参数不合法：${paramError}` };
+      }
       const req = { ...call, id: randomUUID() } as GodotRpcCall & { id: string };
       const res = await godotRpc.request(req, godotRpcTimeoutMs(call), options);
-      if (!res.ok) return { ok: false, error: res.error };
-      return { ok: true, result: res.result };
+      if (!res.ok) return { ok: false, error: res.error, routedTo: res.routedTo };
+      return { ok: true, result: res.result, routedTo: res.routedTo };
     },
   );
   handle(ipcMain, IPC_CHANNELS.godotRpcSetActiveClient, async (_e, clientId: string | null) => ({
@@ -116,6 +158,10 @@ export function registerGodotIpc(
       sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
 
     if (project) {
+      // 二次确认：路径必须真实存在且为目录（prefs 侧已校验，防御纵深）。
+      if (!existsSync(project) || !statSync(project).isDirectory()) {
+        return { ok: false, error: `项目路径无效或不存在：${project}` };
+      }
       const install = installGodotRpcAddon(project);
       if (!install.ok) {
         return { ok: false, error: install.error ?? "插件安装失败" };
@@ -128,11 +174,21 @@ export function registerGodotIpc(
       args.push("--editor");
     }
     try {
-      const child = spawn(editor, args, {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      });
+      // C9: spawn 的 error 是异步事件（ENOENT 之外 EACCES / 损坏 exe 等），
+      // 同步 try/catch 抓不到。等 'spawn' 事件确认启动成功，失败时返回错误。
+      const child = await new Promise<ReturnType<typeof spawn>>(
+        (resolvePromise, rejectPromise) => {
+          const child = spawn(editor, args, {
+            detached: true,
+            stdio: "ignore",
+            windowsHide: false,
+          });
+          child.once("error", (err) => {
+            rejectPromise(err);
+          });
+          child.once("spawn", () => resolvePromise(child));
+        },
+      );
       child.unref();
       return {
         ok: true,
@@ -142,9 +198,10 @@ export function registerGodotIpc(
           : `已启动编辑器。请打开含 X-agent RPC 插件的项目（桥接端口 ${bridgeStatus.port}）。`,
       };
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       return {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: `无法启动 Godot 编辑器：${message}`,
       };
     }
   });
@@ -154,6 +211,9 @@ export function registerGodotIpc(
     const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
     if (!project) {
       return { ok: false, error: "请先打开项目或设置 lastProjectPath" };
+    }
+    if (!existsSync(project) || !statSync(project).isDirectory()) {
+      return { ok: false, error: `项目路径无效或不存在：${project}` };
     }
     return installGodotRpcAddon(project);
   });

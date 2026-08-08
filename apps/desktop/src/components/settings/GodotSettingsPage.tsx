@@ -110,7 +110,7 @@ export function GodotSettingsPage({
                 setRpcMsg("未选择引擎");
                 return;
               }
-              const next = await window.xAgent.getPrefs();
+              const next = await window.xAgent.prefs.get();
               onPrefsChanged?.(next);
               setRpcMsg(`已选择引擎：${res.path}`);
             }}

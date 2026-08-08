@@ -7,6 +7,7 @@ import {
   renameSync,
   writeFileSync,
   existsSync,
+  statSync,
 } from "node:fs";
 import { createStore, type Store } from "./lib/store";
 import {
@@ -265,6 +266,22 @@ export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPre
             .map((k) => k.trim())
             .filter((k) => k.length > 0)
         : [];
+    }
+    // lastProjectPath 是下游（Godot addon 安装 / 编辑器启动）的权威项目路径：
+    // 非空时必须指向已存在的目录，否则回退为原值（空值/null 表示清除）。
+    if (patch.lastProjectPath !== undefined) {
+      const candidate = patch.lastProjectPath?.trim();
+      if (!candidate) {
+        next.lastProjectPath = null;
+      } else {
+        let valid = false;
+        try {
+          valid = existsSync(candidate) && statSync(candidate).isDirectory();
+        } catch {
+          valid = false;
+        }
+        next.lastProjectPath = valid ? candidate : prev.lastProjectPath;
+      }
     }
     return next;
   });

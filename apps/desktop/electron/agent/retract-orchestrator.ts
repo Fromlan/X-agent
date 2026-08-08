@@ -27,6 +27,8 @@ export type RetractOrchestratorHost = {
   emitHistoryReplace(): void;
   emitUsageUpdate(): void;
   prompt(text: string): Promise<{ ok: boolean; error?: string }>;
+  /** True while prompt() is between checkpoint prepare and session.prompt. */
+  isPromptPreparing?(): boolean;
   /** Called after successful navigate + restore so Goal budget can roll back. */
   onRetractSuccess?(abandonedUserEntryIds: readonly string[]): void;
 };
@@ -129,6 +131,12 @@ export class RetractOrchestrator {
   ): Promise<RetractResult> {
     const h = this.host();
     if (!h.getBundle()) return { ok: false, error: "尚未打开项目" };
+    // 竞态硬闸：prompt 正处于 prepare→session.prompt 过渡窗口时拒绝撤回。
+    // （该窗口内 isStreaming 仍为 false，abort 会空转，navigateTree 会与新
+    //   一轮 prompt 交错；pendingPreSha 也可能被错绑。）
+    if (h.isPromptPreparing?.()) {
+      return { ok: false, error: "消息发送中，请稍后再试" };
+    }
     const resolved = this.resolveUserEntryId(entryId);
     if (!resolved.ok) return { ok: false, error: resolved.error };
 
@@ -160,10 +168,22 @@ export class RetractOrchestrator {
         restoreReport = attempt.report;
         h.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);
         h.fileTracker.persistDirty(sm);
+      } else {
+        // B10: 不做磁盘还原，但仍清理基线 / 检查点元数据并持久化，
+        // 避免被废弃 turn 的字节快照随后续 turn_end 反复全量落盘。
+        h.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);
+        h.fileTracker.persistDirty(sm);
+        h.shadowCheckpoints.pruneAbandonedTurns(
+          resolved.entryId,
+          pendingScan.userEntryIds,
+        );
+        h.shadowCheckpoints.persistDirty(sm);
       }
 
       // 撤回后旧 leaf 不再属于 active branch；下一次 user_message 事件再赋新 id。
+      // 同时丢弃未绑定的 pending pre SHA，避免旧 pre 复活到新 turn。
       h.fileTracker.setActiveUserEntryId(null);
+      h.shadowCheckpoints.discardPendingPre();
       h.pruneToolDetailsToBranch();
       h.emitHistoryReplace();
       h.emitUsageUpdate();

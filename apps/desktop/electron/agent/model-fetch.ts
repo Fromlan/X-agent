@@ -6,6 +6,7 @@ import {
   parseContextWindowFromApiModel,
   resolveModelContextWindow,
 } from "../../shared/model-context";
+import { validateOutboundHttpUrl } from "./external-url";
 
 export interface FetchedModel {
   id: string;
@@ -141,6 +142,16 @@ export async function fetchProviderModels(input: {
   }
   if (!input.baseUrl.trim()) {
     return { ok: false, error: "请先填写 Base URL" };
+  }
+
+  // SSRF gate: only public http(s) endpoints are reachable from the main
+  // process (the request carries the user's API Key as Bearer token).
+  const checked = await validateOutboundHttpUrl(input.baseUrl);
+  if (!checked.ok) {
+    return {
+      ok: false,
+      error: `Base URL 不被允许：${checked.error}`,
+    };
   }
 
   let candidates: string[];

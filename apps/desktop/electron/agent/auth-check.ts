@@ -18,11 +18,21 @@ import {
  * `pruneProviderIdFromPi`。
  */
 let cachedAuth: AuthStatus | null = null;
+let cachedAt = 0;
+
+/** E1: 缓存 TTL —— 外部 `pi /login` 写盘后最多 5s 内可见，避免永久陈旧。 */
+const AUTH_CACHE_TTL_MS = 5_000;
 
 /** Lightweight check that Pi auth.json exists and has at least one credential entry. */
 export async function checkAuth(): Promise<AuthStatus> {
-  if (cachedAuth) return cachedAuth;
+  if (cachedAuth && Date.now() - cachedAt < AUTH_CACHE_TTL_MS) {
+    return cachedAuth;
+  }
   const authPath = join(getAgentDirPath(), "auth.json");
+  const stamp = (): AuthStatus => {
+    cachedAt = Date.now();
+    return cachedAuth!;
+  };
   if (!(await fileExistsAsync(authPath))) {
     cachedAuth = {
       ok: false,
@@ -30,7 +40,7 @@ export async function checkAuth(): Promise<AuthStatus> {
       message:
         "未找到 Pi 认证。可点「打开 Pi 登录」用 CLI /login，或在设置 → 供应商中配置 API Key。",
     };
-    return cachedAuth;
+    return stamp();
   }
   try {
     const raw = await readJsonAsync<unknown>(authPath, null);
@@ -50,14 +60,14 @@ export async function checkAuth(): Promise<AuthStatus> {
           message:
             "auth.json 为空。可点「打开 Pi 登录」用 CLI /login，或在设置 → 供应商中配置 API Key。",
         };
-    return cachedAuth;
+    return stamp();
   } catch {
     cachedAuth = {
       ok: false,
       authPath,
       message: "auth.json 无法解析，请检查文件格式。",
     };
-    return cachedAuth;
+    return stamp();
   }
 }
 
@@ -70,4 +80,5 @@ export async function checkAuth(): Promise<AuthStatus> {
  */
 export function invalidateAuthCache(): void {
   cachedAuth = null;
+  cachedAt = 0;
 }

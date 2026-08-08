@@ -97,8 +97,9 @@ export const SIDEBAR_WIDTH_DEFAULT = 260;
 export const SIDEBAR_WIDTH_MIN = 160;
 export const SIDEBAR_WIDTH_MAX = 269;
 
-export const RIGHT_PANEL_WIDTH_DEFAULT = 480;
-export const RIGHT_PANEL_WIDTH_MIN = 400;
+// D9: 与 prefs 默认（rightPanelWidth: 360）及 DESIGN.md「RightPanel ~360px」对齐。
+export const RIGHT_PANEL_WIDTH_DEFAULT = 360;
+export const RIGHT_PANEL_WIDTH_MIN = 360;
 export const RIGHT_PANEL_WIDTH_MAX = 507;
 
 /** Keep chat column usable when the window shrinks. */

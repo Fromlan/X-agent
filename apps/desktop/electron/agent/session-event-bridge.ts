@@ -198,7 +198,13 @@ export function bridgeSessionEvents(
           usage?: unknown;
         };
         if (msg.role === "user") {
-          // appendMessage runs after listeners return; bind on next microtask.
+          // 关键时序（AGENTS.md）：Pi 在 message_end 的 listeners 返回之后才
+          // appendMessage —— 此处 active user / Shadow pre 必须在 append 之后
+          // 绑定，因此用 queueMicrotask 推到同一 tick 的微任务（append 已同步
+          // 完成）再 bindActiveUserTurn；不能在 message_start 取 leaf。
+          // 若 Pi 的 appendMessage 改为异步落盘，此绑定可能拿到上一 uid，
+          // bindPendingPre 会走 existing.pre 分支丢弃新 pre（无工具回合时
+          // 不自行恢复）——升级 Pi SDK 时需回归 test-session-bind-timing。
           queueMicrotask(() => {
             bindActiveUserTurn(deps);
           });

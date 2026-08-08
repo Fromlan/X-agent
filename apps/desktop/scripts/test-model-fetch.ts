@@ -1,5 +1,6 @@
 import {
   buildModelsUrlCandidates,
+  fetchProviderModels,
   parseModelsJson,
 } from "../electron/agent/model-fetch";
 
@@ -47,5 +48,18 @@ const foo = parsed.find((m) => m.id === "foo");
 assert(foo?.contextWindow === 64_000, "parse uses API context_length");
 const flash = parsed.find((m) => m.id === "deepseek-v4-flash");
 assert(flash?.contextWindow === 1_000_000, "parse falls back to lookup");
+
+// SSRF gate: localhost / loopback / non-http(s) base URLs are rejected
+// before any network request is made (static checks only, stays offline).
+async function expectRejected(baseUrl: string, label: string): Promise<void> {
+  const res = await fetchProviderModels({ baseUrl, apiKey: "k" });
+  assert(res.ok === false, `${label} must be rejected`);
+  assert(/不允许|仅支持/.test(res.error ?? ""), `${label} error mentions the rule`);
+}
+
+await expectRejected("http://127.0.0.1:11434", "loopback base url");
+await expectRejected("http://localhost:8080", "localhost base url");
+await expectRejected("http://[::ffff:7f00:1]:8080", "mapped-ipv6 base url");
+await expectRejected("file:///etc/passwd", "non-http base url");
 
 console.log("test-model-fetch: ok");

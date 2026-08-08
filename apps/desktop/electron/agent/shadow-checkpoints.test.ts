@@ -188,6 +188,35 @@ describe.skipIf(!gitAvailable)("ShadowGit + ShadowCheckpointTracker（需要 git
     expect(tracker2.getCheckpoint("u1")?.pre).toBeTruthy();
   });
 
+  it("B2: 路径级还原保留用户手动编辑（回合外 / agent 未碰路径）", async () => {
+    writeFileSync(join(work, "f.txt"), "f1", "utf8");
+    writeFileSync(join(work, "h.txt"), "h1", "utf8");
+    const tracker = new ShadowCheckpointTracker();
+    await tracker.setCwd(work);
+    await tracker.preparePromptCheckpoint();
+    tracker.bindPendingPre("u1");
+
+    // agent 改动：改 f.txt + 新建 g.txt；用户回合内改 h.txt（agent 未碰）
+    writeFileSync(join(work, "f.txt"), "f2-agent", "utf8");
+    writeFileSync(join(work, "g.txt"), "g-new", "utf8");
+    writeFileSync(join(work, "h.txt"), "h1-user-edited", "utf8");
+    await tracker.capturePost("u1");
+
+    // 用户在 post 之后手动新建文件（不在 target→HEAD diff 中）
+    writeFileSync(join(work, "user-notes.txt"), "keep me", "utf8");
+
+    const { sm } = makeSm();
+    const restore = await tracker.restoreToUserTurn(sm, "u1", ["u1"]);
+    expect(restore.used).toBe("shadow");
+    // agent 改过的路径还原；agent 新建文件删除
+    expect(readFileSync(join(work, "f.txt"), "utf8")).toBe("f1");
+    expect(existsSync(join(work, "g.txt"))).toBe(false);
+    // 回合后手动新建的文件保留（全量 reset --hard 会删除它）
+    expect(readFileSync(join(work, "user-notes.txt"), "utf8")).toBe("keep me");
+    // 回合内未动过的文件（d.txt 场景外）不受影响
+    expect(existsSync(join(work, "sub", "b.txt"))).toBe(true);
+  });
+
   it("recoverDisabledNestedGit 恢复被禁用的嵌套 .git", async () => {
     const nest = join(work, "vendor-lib");
     const disabledGit = join(nest, ".git.__xagent_shadow__");

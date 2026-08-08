@@ -187,15 +187,24 @@ export default function App() {
   });
 
   const refreshSessions = useCallback(async () => {
-    const list = await window.xAgent.workspace.listSessions();
-    setSessions(list);
-    setSessionsLoaded(true);
+    try {
+      const list = await window.xAgent.workspace.listSessions();
+      setSessions(list);
+      setSessionsLoaded(true);
+    } catch {
+      // D10: IPC 异常时保持旧列表，避免 unhandled rejection。
+      setSessionsLoaded(true);
+    }
   }, []);
   const sessionsLoading = !sessionsLoaded;
 
   const refreshModels = useCallback(async () => {
-    const list = await window.xAgent.session.listModels();
-    setModels(list);
+    try {
+      const list = await window.xAgent.session.listModels();
+      setModels(list);
+    } catch {
+      // D10: IPC 异常时保持旧模型列表。
+    }
   }, []);
 
   const {
@@ -548,27 +557,27 @@ export default function App() {
     if (!prefs) return;
     const showThinking = !prefs.showThinking;
     setPrefs({ ...prefs, showThinking });
-    const next = await window.xAgent.setPrefs({ showThinking });
+    const next = await window.xAgent.prefs.set({ showThinking });
     setPrefs(next);
   };
 
   const toggleTheme = async () => {
     if (!prefs) return;
     const colorMode = prefs.colorMode === "dark" ? "light" : "dark";
-    const next = await window.xAgent.setPrefs({ colorMode });
+    const next = await window.xAgent.prefs.set({ colorMode });
     setPrefs(next);
     applyTheme(next.themeId, next.colorMode);
   };
 
   const commitSidebarWidth = useCallback(async (sidebarWidth: number) => {
     setPrefs((prev) => (prev ? { ...prev, sidebarWidth } : prev));
-    const next = await window.xAgent.setPrefs({ sidebarWidth });
+    const next = await window.xAgent.prefs.set({ sidebarWidth });
     setPrefs(next);
   }, []);
 
   const commitRightPanelWidth = useCallback(async (rightPanelWidth: number) => {
     setPrefs((prev) => (prev ? { ...prev, rightPanelWidth } : prev));
-    const next = await window.xAgent.setPrefs({ rightPanelWidth });
+    const next = await window.xAgent.prefs.set({ rightPanelWidth });
     setPrefs(next);
   }, []);
 
@@ -633,13 +642,13 @@ export default function App() {
     if (!prefs) return;
     const rightPanelOpen = !prefs.rightPanelOpen;
     setPrefs({ ...prefs, rightPanelOpen });
-    const next = await window.xAgent.setPrefs({ rightPanelOpen });
+    const next = await window.xAgent.prefs.set({ rightPanelOpen });
     setPrefs(next);
   };
 
   const ensureRightPanelOpen = useCallback(async () => {
     if (prefs?.rightPanelOpen) return;
-    const next = await window.xAgent.setPrefs({ rightPanelOpen: true });
+    const next = await window.xAgent.prefs.set({ rightPanelOpen: true });
     setPrefs(next);
   }, [prefs, setPrefs]);
 
@@ -697,7 +706,7 @@ export default function App() {
     const tools = prefs.tools.includes(tool)
       ? prefs.tools.filter((t) => t !== tool)
       : [...prefs.tools, tool];
-    const next = await window.xAgent.setPrefs({ tools });
+    const next = await window.xAgent.prefs.set({ tools });
     setPrefs(next);
   };
 
@@ -751,7 +760,7 @@ export default function App() {
     if (!prefs || !projectKey) return;
     const keys = new Set(prefs.dismissedReadyChecklistKeys ?? []);
     keys.add(projectKey);
-    const next = await window.xAgent.setPrefs({
+    const next = await window.xAgent.prefs.set({
       dismissedReadyChecklistKeys: [...keys],
     });
     setPrefs(next);
@@ -762,7 +771,7 @@ export default function App() {
     if (!prefs || !projectKey) return;
     const keys = new Set(prefs.dismissedGodotToolsNudgeKeys ?? []);
     keys.add(projectKey);
-    const next = await window.xAgent.setPrefs({
+    const next = await window.xAgent.prefs.set({
       dismissedGodotToolsNudgeKeys: [...keys],
     });
     setPrefs(next);
@@ -775,7 +784,7 @@ export default function App() {
       const without = prefs.tools.filter(
         (t) => !(GODOT_TOOLS as readonly string[]).includes(t),
       );
-      const next = await window.xAgent.setPrefs({
+      const next = await window.xAgent.prefs.set({
         tools: [...without, ...GODOT_TOOLS],
       });
       setPrefs(next);
@@ -1138,7 +1147,7 @@ export default function App() {
             autoCompactPercent={prefs?.autoCompactPercent ?? 0}
             onAutoCompactPercentChange={(percent) => {
               void (async () => {
-                const next = await window.xAgent.setPrefs({
+                const next = await window.xAgent.prefs.set({
                   autoCompactPercent: percent,
                 });
                 setPrefs(next);
@@ -1196,9 +1205,9 @@ export default function App() {
           onPiCliChanged={setPiCli}
           onProvidersChanged={async () => {
             await refreshModels();
-            const p = await window.xAgent.getPrefs();
+            const p = await window.xAgent.prefs.get();
             setPrefs(p);
-            setAuth(await window.xAgent.checkAuth());
+            setAuth(await window.xAgent.prefs.checkAuth());
           }}
         />
       )}

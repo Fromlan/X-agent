@@ -4,7 +4,7 @@
  * 验证 disabledSkills 归一化。
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -110,6 +110,34 @@ try {
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(skillPrefsDir, { recursive: true, force: true });
+}
+
+// 6. lastProjectPath 只接受已存在目录（下游 addon 安装把它当权威项目路径）
+const projectPrefsDir = mkdtempSync(join(tmpdir(), "x-agent-project-prefs-"));
+const realDir = join(projectPrefsDir, "real-project");
+mkdirSync(realDir, { recursive: true });
+try {
+  setAgentDirOverrideForTests(projectPrefsDir);
+  const base = await patchPrefs({ lastProjectPath: null });
+  assert.equal(base.lastProjectPath, null, "base null");
+
+  const valid = await patchPrefs({ lastProjectPath: realDir });
+  assert.equal(valid.lastProjectPath, realDir, "existing dir accepted");
+
+  const invalid = await patchPrefs({
+    lastProjectPath: "C:\\definitely\\not\\a\\real\\dir",
+  });
+  assert.equal(
+    invalid.lastProjectPath,
+    realDir,
+    "non-directory path is ignored (keeps previous)",
+  );
+
+  const cleared = await patchPrefs({ lastProjectPath: "" });
+  assert.equal(cleared.lastProjectPath, null, "empty string clears");
+} finally {
+  setAgentDirOverrideForTests(null);
+  rmSync(projectPrefsDir, { recursive: true, force: true });
 }
 
 console.log("DEFAULT_PREFS migration: ok");

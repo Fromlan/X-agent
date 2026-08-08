@@ -2,7 +2,7 @@
  * Workspace session lifecycle — open / resume / dispose / createSession.
  * SessionHost composes this module; turn / mode / retract stay on the host.
  */
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, renameSync, unlinkSync } from "node:fs";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -419,8 +419,25 @@ export class SessionLifecycle {
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        // E7: 会话文件损坏（崩溃半写等）时先备份，避免用户会话静默不可恢复。
+        let backedUp = "";
+        try {
+          if (existsSync(sessionPath)) {
+            const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const backup = `${sessionPath}.broken-${stamp}.bak`;
+            renameSync(sessionPath, backup);
+            backedUp = backup;
+          }
+        } catch {
+          /* ignore */
+        }
         this.a().setStatus("error", message);
-        return failOpen(message, this.a().getBundle()?.cwd ?? "");
+        return failOpen(
+          backedUp
+            ? `会话文件无法解析，已备份到 ${backedUp}`
+            : message,
+          this.a().getBundle()?.cwd ?? "",
+        );
       }
     });
   }
@@ -446,7 +463,13 @@ export class SessionLifecycle {
         this.clearResourceLoader();
       }
 
-      unlinkSync(sessionPath);
+      try {
+        unlinkSync(sessionPath);
+      } catch (err) {
+        // E3: Windows 上会话文件可能被后台进程短暂占用，删除失败不应让 IPC reject。
+        const message = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `删除会话文件失败：${message}` };
+      }
       clearGoalJournal(sessionPath);
       clearPlanJournal(sessionPath);
 

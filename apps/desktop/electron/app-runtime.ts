@@ -15,6 +15,7 @@ import {
   revealProjectPath,
 } from "./agent/project-fs";
 import { AppAutoUpdater } from "./agent/auto-updater";
+import { recoverAllDisabledNestedGit } from "./agent/shadow-git";
 import {
   ensureGodotPiPackageInstalled,
   installGodotPiPackage,
@@ -47,7 +48,10 @@ import { registerSessionConfigIpc } from "./ipc/register-session-config-ipc";
 import { registerProviderIpc } from "./ipc/register-provider-ipc";
 import { registerGodotIpc } from "./ipc/register-godot-ipc";
 import { registerUpdateIpc } from "./ipc/register-update-ipc";
-import { handle } from "./ipc/register-ipc";
+import {
+  configureIpcSenderGuard,
+  handle,
+} from "./ipc/register-ipc";
 
 export type RuntimeHooks = {
   getMainWindow: () => BrowserWindow | null;
@@ -90,6 +94,11 @@ function registerIpc(
   updater: AppAutoUpdater,
   hooks: RuntimeHooks,
 ): void {
+  // 统一 IPC sender 守卫：仅主窗口 webContents 可调用任何 channel。
+  configureIpcSenderGuard(
+    () => hooks.getMainWindow(),
+    process.env.ELECTRON_RENDERER_URL ?? null,
+  );
   const cwdOf = () => host.getStatus().cwd;
 
   handle(ipcMain, 
@@ -283,6 +292,12 @@ export function bootRuntime(hooks: RuntimeHooks): void {
   updater.init();
 
   void (async () => {
+    try {
+      // B8: 启动兜底 — 恢复上次崩溃残留的改名嵌套 .git。
+      recoverAllDisabledNestedGit();
+    } catch {
+      /* ignore */
+    }
     try {
       await godotRpc.start();
     } catch {

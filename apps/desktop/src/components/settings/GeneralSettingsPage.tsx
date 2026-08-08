@@ -64,18 +64,22 @@ export function GeneralSettingsPage({
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      const [bashStatus, gitStatus, piStatus] = await Promise.all([
-        window.xAgent.prefs.checkBash(),
-        window.xAgent.prefs.checkGit(),
-        window.xAgent.prefs.checkPiCli(),
-      ]);
-      if (cancelled) return;
-      setBash(bashStatus);
-      setGit(gitStatus);
-      setPiCli(piStatus);
-      onBashChanged?.(bashStatus);
-      onGitChanged?.(gitStatus);
-      onPiCliChanged?.(piStatus);
+      try {
+        const [bashStatus, gitStatus, piStatus] = await Promise.all([
+          window.xAgent.prefs.checkBash(),
+          window.xAgent.prefs.checkGit(),
+          window.xAgent.prefs.checkPiCli(),
+        ]);
+        if (cancelled) return;
+        setBash(bashStatus);
+        setGit(gitStatus);
+        setPiCli(piStatus);
+        onBashChanged?.(bashStatus);
+        onGitChanged?.(gitStatus);
+        onPiCliChanged?.(piStatus);
+      } catch {
+        // D10: 诊断 IPC 异常时保持空状态，避免 unhandled rejection。
+      }
     })();
     return () => {
       cancelled = true;
@@ -132,7 +136,7 @@ export function GeneralSettingsPage({
                       }))}
                       onChange={(v) => {
                         void (async () => {
-                          const next = await window.xAgent.setPrefs({
+                          const next = await window.xAgent.prefs.set({
                             themeId: v as ThemeId,
                           });
                           onPrefsChanged?.(next);
@@ -152,7 +156,7 @@ export function GeneralSettingsPage({
                       ]}
                       onChange={(v) => {
                         void (async () => {
-                          const next = await window.xAgent.setPrefs({
+                          const next = await window.xAgent.prefs.set({
                             colorMode: v as ColorMode,
                           });
                           onPrefsChanged?.(next);
@@ -171,7 +175,7 @@ export function GeneralSettingsPage({
                       type="checkbox"
                       checked={prefs.showThinking}
                       onChange={async (e) => {
-                        const next = await window.xAgent.setPrefs({
+                        const next = await window.xAgent.prefs.set({
                           showThinking: e.target.checked,
                         });
                         onPrefsChanged?.(next);
@@ -192,14 +196,14 @@ export function GeneralSettingsPage({
                           const level = v as ThinkingLevel;
                           // Persist preference first so it survives even when no
                           // session is open (setThinkingLevel requires a session).
-                          let next = await window.xAgent.setPrefs({
+                          let next = await window.xAgent.prefs.set({
                             thinkingLevel: level,
                           });
                           const applied =
                             await window.xAgent.setThinkingLevel(level);
                           if (applied.ok) {
                             // Session path may clamp (e.g. DeepSeek V4 medium→high).
-                            next = await window.xAgent.getPrefs();
+                            next = await window.xAgent.prefs.get();
                             onPrefsChanged?.(next);
                             setGeneralMsg(null);
                             return;
@@ -225,7 +229,7 @@ export function GeneralSettingsPage({
                       onChange={(e) => {
                         const n = Number(e.target.value);
                         void (async () => {
-                          const next = await window.xAgent.setPrefs({
+                          const next = await window.xAgent.prefs.set({
                             goalMaxTurns: n,
                           });
                           onPrefsChanged?.(next);
@@ -247,7 +251,7 @@ export function GeneralSettingsPage({
                       onChange={(e) => {
                         const n = Number(e.target.value);
                         void (async () => {
-                          const next = await window.xAgent.setPrefs({
+                          const next = await window.xAgent.prefs.set({
                             goalMaxTokens: n,
                           });
                           onPrefsChanged?.(next);
@@ -355,7 +359,12 @@ export function GeneralSettingsPage({
                     )}
                   {bashLiveness && (
                     <div className="modal-hint bash-liveness-hint" data-kind={bashLiveness.kind}>
-                      <strong>诊断结果：{bashLivenessLabel(bashLiveness.kind)}</strong>
+                      <strong>
+                        诊断结果：
+                        <span className={`settings-status ${bashLivenessTone(bashLiveness.kind)}`}>
+                          {bashLivenessLabel(bashLiveness.kind)}
+                        </span>
+                      </strong>
                       <span className="bash-liveness-detail">{bashLiveness.message}</span>
                       {bashLiveness.kind === "half_dead" && (
                         <span className="bash-liveness-detail">
@@ -388,7 +397,7 @@ export function GeneralSettingsPage({
                       type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={async () => {
-                        const status = await window.xAgent.checkGit();
+                        const status = await window.xAgent.prefs.checkGit();
                         setGit(status);
                         onGitChanged?.(status);
                         setGeneralMsg(status.message);
@@ -613,12 +622,26 @@ export function GeneralSettingsPage({
 function bashLivenessLabel(kind: BashLivenessResult["kind"]): string {
   switch (kind) {
     case "live":
-      return "✅ 正常";
+      return "正常";
     case "half_dead":
-      return "🟡 半死（命令能执行但输出回不来）";
+      return "半死（命令能执行但输出回不来）";
     case "full_dead":
-      return "🔴 全死（命令也无法完成）";
+      return "全死（命令也无法完成）";
     case "no_bash":
-      return "⚠ 未找到 bash";
+      return "未找到 bash";
+  }
+}
+
+/** D1: 状态用色点（settings-status 的 is-ok/is-warn/is-error/is-off），不用 emoji。 */
+function bashLivenessTone(kind: BashLivenessResult["kind"]): string {
+  switch (kind) {
+    case "live":
+      return "is-ok";
+    case "half_dead":
+      return "is-warn";
+    case "full_dead":
+      return "is-error";
+    case "no_bash":
+      return "is-off";
   }
 }
