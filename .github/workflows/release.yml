@@ -73,6 +73,6 @@ jobs:
           body_path: ${{ runner.temp }}/release-notes.md
           generate_release_notes: false
           files: |
-            apps/desktop/release/*.exe
+            apps/desktop/release/X-agent-Setup-*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/*.yml

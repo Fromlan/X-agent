@@ -22,7 +22,7 @@ npm test                 # 离线断言链：约 57 个 tsx 脚本串行（无�
 npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
 npm run dev              # electron-vite dev（renderer 固定 127.0.0.1:5173，strictPort）
 npm run debug            # 同上但置 X_AGENT_DEBUG=1
-npm run dist             # electron-builder --win（NSIS + portable）
+npm run dist             # electron-builder --win（仅 NSIS 安装包；不产便携版）
 ```
 
 根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial`，以及 `release:prepare|notes|test-changelog|dist`。发版由 maintainer 执行，Agent 不要主动打 tag / 提交 `apps/desktop/release/`（构建产物，CI 的 GitHub Releases 才是权威发布源）。
@@ -71,7 +71,7 @@ npm run dist             # electron-builder --win（NSIS + portable）
 ## Godot 集成
 
 - RPC 桥 `electron/agent/godot-rpc-bridge.ts`：默认端口 8765（回退 8765–8774 内环绕，与插件候选表一致），仅监听 127.0.0.1，握手 token 校验；`GODOT_TOOLS` 默认**关闭**，需在 设置 → 工具 勾选，且 IPC 层强制校验开关。
-- 协议 `shared/godot-rpc.ts`（含 method→工具名映射 `GODOT_RPC_METHOD_TOOL`）；addon 在 `packages/godot-editor-rpc/addons/x_agent_rpc/`（当前 0.6.2）。`x-agent-godot-rpc.json` 残留是特性（下次启动复用旧 token，插件无需重装），`stop()` 不删。
+- 协议 `shared/godot-rpc.ts`（含 method→工具名映射 `GODOT_RPC_METHOD_TOOL`）；addon 在 `packages/godot-editor-rpc/addons/x_agent_rpc/`（当前 0.6.3）。`x-agent-godot-rpc.json` 残留是特性（下次启动复用旧 token，插件无需重装），`stop()` 不删。
 - `run_current_scene` / `play_main_scene` 短时收集报错，插件不因报错自动停止。
 - 多编辑器选路：显式 `clientId` 未鉴权时不静默改道（直接报错）；自动回退时响应带 `routedTo`。
 
