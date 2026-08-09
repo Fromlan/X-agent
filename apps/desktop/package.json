@@ -1,6 +1,6 @@
 {
   "name": "x-agent-desktop",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Pi Agent desktop client (X-agent)",
   "main": "./out/main/index.js",
   "type": "module",
@@ -92,8 +92,7 @@
     "win": {
       "icon": "icon.ico",
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ]
     },
     "nsis": {
@@ -103,10 +102,6 @@
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
-    },
-    "portable": {
-      "splashImage": "build/splash.bmp",
-      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
     }
   }
 }

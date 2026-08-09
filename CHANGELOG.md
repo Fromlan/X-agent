@@ -8,6 +8,28 @@
 
 ## Unreleased
 
+（空占位）
+
+## 0.5.2
+
+### 修复（Godot 工具 · 插件 0.6.3）
+
+- **`godot_list_project_files` 恒超时根因修复**：请求携带 `type` 过滤参数，插件 `_handle_line` 用 `data.has("type")` 区分请求/事件时被误判为事件直接丢弃（1.3 引入 `type` 参数以来一直如此——表现为任意参数组合恒 timeout、无 SCRIPT ERROR、其余 16 个工具正常）。判定改为以 `method` 为准。另：移除逐文件 uid 主线程查询（uid 需要时用 `godot_resolve_uid` 按需查询）、遍历排除 `res://.godot/` 缓存目录、每 300 个文件分帧让出主线程（不再冻结编辑器）、编辑器文件系统重扫中返回 `scanning` 标记供稍后重试。
+- **`godot_inspect_script` 恒返回空修复**：`get_constants()` / `can_reload()` 均为版本敏感 API（4.6/4.7 已移除），无守卫调用会运行时中断整个函数 → 响应为空对象（全 none + 无 extends）。改为 `has_method` 守卫 + 引擎反射为空时从源码提取（func / @export / signal / const）兜底；方法返回类型改从 `return` 子字段提取（顶层无 `type` 字段）。
+- **`godot_lint_scripts` 误报 class_name 脚本**：裸脚本 reload 对含 `class_name` 的合法脚本伪报 Parse error；`--check-only` 子进程改为 exit code + 输出双信号判定（exit 0 即判合法），不再回退错误码文案误报。
+- **`godot_get_node_properties` 补 hint 详情**：`hint` 输出语义名（RANGE / ENUM / …），新增 `hintString`（range 的 min/max/step、enum 成员列表、数组元素类型线索）。
+- **`godot_open_scenes` 无场景时返回 `[]`**：过滤 `EditorInterface.get_open_scenes()` 返回的空字符串条目。
+
+### 修复（chat / 其他）
+
+- **长会话发送消息不再弹到上面**：虚拟列表贴底与异步行测量解耦——启用 tanstack `anchorTo: "end"` 贴底补偿（测量完成当帧同步修正滚动位置），尾行不可见时也保持跟随；"回到底部"按钮层级修复（`isolation: isolate`，不再被消息气泡盖住）。
+- **供应商模型残留**：档案编辑删除的模型不再残留在模型选择器——按档案声明的模型 id 过滤（Pi 内置目录合并残留同步收敛，大小写不敏感）。
+
+### 改进
+
+- **打包仅 NSIS 安装包**：移除 portable 便携版产物，安装包为唯一分发形态（CI 产物匹配同步收紧）。
+- **Godot RPC 诊断**：桥接侧新增请求发送 / 响应命中（含 unmatched）/ 超时日志（`X_AGENT_DEBUG=1` 可见）；插件侧 `recv/send` 闭环 print（编辑器 Output 面板），RPC 链路问题可远程定位。
+
 ### UI 与设计规范
 
 - **Composer 状态行动画化并常驻**：移植 thinking-orbs（MIT © Jakub Antalik）点阵思考球引擎（`src/lib/thinking-orbs/`）——空闲时显示呼吸环「已就绪」，模型响应中显示粒子轨道，接收回复时切换波形环，自动重试时显示星座连线；四态之间 350ms 交叉溶解过渡，离屏 / 标签隐藏自动暂停，`prefers-reduced-motion` 下渲染静态帧。
