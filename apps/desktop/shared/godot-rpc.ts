@@ -66,8 +66,10 @@ export type GodotFileKind =
 export type GodotInspectMember = {
   name: string;
   type?: string;
-  /** godot 返回的 raw hint 字段，可能含 enum/flag/usage 等信息。 */
+  /** godot 返回的 hint 语义名（RANGE / ENUM / …，0.6.3+；旧版为数字字符串）。 */
   hint?: string;
+  /** hint 详情：range 的 "min,max,step"、enum 的成员名等（0.6.3+）。 */
+  hintString?: string;
 };
 
 export type GodotInspectResult = {
