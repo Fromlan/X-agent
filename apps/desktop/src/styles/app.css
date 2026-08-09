@@ -10,7 +10,6 @@
  * lower in the file via source order. */
 @media (prefers-reduced-motion: reduce) {
   .status-icon-dot,
-  .api-status-line .api-status-dot,
   .stream-cursor::after,
   .icon-spin {
     animation: none !important;
@@ -658,18 +657,6 @@ input:not([type]):-webkit-autofill {
 .select-menu-option:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--border-focus);
-}
-
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  background: var(--bg-list-hover);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-primary);
 }
 
 .thinking-toggle {
@@ -2767,7 +2754,8 @@ body.is-resizing-column * {
   margin: 0 0 6px;
   padding: 4px 8px;
   font-size: 11px;
-  line-height: 1.4;
+  /* 与 thinking 态 20px orb 等高，保证 orb 与文字垂直居中对齐 */
+  line-height: 20px;
   color: var(--text-muted);
   user-select: none;
 }
@@ -2775,25 +2763,6 @@ body.is-resizing-column * {
 .api-status-line .api-status-text {
   font-variant-numeric: tabular-nums;
 }
-
-.api-status-line .api-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--text-muted);
-}
-
-.api-status-line.api-status-thinking .api-status-dot,
-.api-status-line.api-status-retrying .api-status-dot {
-  background: var(--warning-accent);
-  animation: pulse 1.2s ease-in-out infinite;
-}
-
-.api-status-line.api-status-receiving .api-status-dot {
-  background: var(--accent-green);
-}
-
 .composer-actions {
   display: flex;
   align-items: center;
@@ -5706,8 +5675,7 @@ body.is-resizing-column * {
 }
 
 @media (max-width: 1100px) {
-  .topbar .btn-label,
-  .topbar .status-label {
+  .topbar .btn-label {
     display: none;
   }
 

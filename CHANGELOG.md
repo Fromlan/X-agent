@@ -6,6 +6,13 @@
 
 升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，`prepare-release` 会把上一线全部小版本（`0.2.0`…`0.2.x`）汇总写入本章节；GitHub Release 正文使用该章节（已含汇总则不再重复附加）。补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭自动附加。
 
+## Unreleased
+
+### UI 与设计规范
+
+- **Composer 状态行动画化并常驻**：移植 thinking-orbs（MIT © Jakub Antalik）点阵思考球引擎（`src/lib/thinking-orbs/`）——空闲时显示呼吸环「已就绪」，模型响应中显示粒子轨道，接收回复时切换波形环，自动重试时显示星座连线；四态之间 350ms 交叉溶解过渡，离屏 / 标签隐藏自动暂停，`prefers-reduced-motion` 下渲染静态帧。
+- **顶栏去重**：移除 TopBar 的 status-chip 状态徽标（运行中 / 空闲），状态语义统一由 Composer 状态行承载。
+
 ## 0.5.1
 
 ### 安全（全面审查后修复）
@@ -495,8 +502,6 @@
 - **新会话输入框偶发卡死**：切换 / 新建 / 恢复会话时清除编辑态，避免误锁输入
 - **文档检索后读错路径**：搜索结果提供 `absPath`，并引导用 `read` 读本地缓存而非项目内 docs
 - **Packages 安装区异常渐变**：供应商页 sticky 渐变不再误套到插件 Packages 面板
-
-## Unreleased
 
 ## 0.4.1
 

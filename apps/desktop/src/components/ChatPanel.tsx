@@ -36,6 +36,7 @@ import {
 } from "react";
 import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
+import { ThinkingOrb } from "./ThinkingOrb";
 
 /** @-补全 path 候选暂未接入 file-tree IPC；空数组常量化避免每次渲染新建引用。 */
 const EMPTY_PATH_CANDIDATES: AtPathCandidate[] = [];
@@ -383,13 +384,24 @@ function ChatPanelImpl(props: Props) {
             onSelect={selectAtCandidate}
             onClose={() => dismissAtMenu()}
           />
-          {props.apiStatus && (
+          {props.apiStatus ? (
             <div
               className={`api-status-line api-status-${props.apiStatus.phase}`}
               role="status"
               aria-live="polite"
             >
-              <span className="api-status-dot" aria-hidden="true" />
+              {/* per-phase orb: thinking→orbits, receiving→wave, retrying→constellation */}
+              <ThinkingOrb
+                state={
+                  props.apiStatus.phase === "receiving"
+                    ? "listening"
+                    : props.apiStatus.phase === "retrying"
+                      ? "connecting"
+                      : "working"
+                }
+                size={20}
+                aria-hidden="true"
+              />
               <span className="api-status-text">
                 {props.apiStatus.phase === "thinking" && (
                   <>模型响应中{formatWait(props.apiStatus.waitedMs)}…</>
@@ -399,6 +411,16 @@ function ChatPanelImpl(props: Props) {
                   <>自动重试中{formatWait(props.apiStatus.waitedMs)}…</>
                 )}
               </span>
+            </div>
+          ) : (
+            // idle: always-on breathing ring + ready label
+            <div
+              className="api-status-line api-status-idle"
+              role="status"
+              aria-live="polite"
+            >
+              <ThinkingOrb state="breathing" size={20} aria-hidden="true" />
+              <span className="api-status-text">已就绪</span>
             </div>
           )}
           <textarea
