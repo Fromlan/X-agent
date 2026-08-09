@@ -1175,6 +1175,11 @@ body.is-resizing-column * {
   padding: 20px 20px 36px;
   /* Block, not flex: tanstack virtual measures the scrollport; flex on the
      scroller can yield a 0-range (no rows) until a later remount/remeasure. */
+  /* 虚拟行 / flow 行的 z-index(行内上盖下)会穿透 static 的滚动容器,
+     直接在根层叠上下文与 .scroll-to-bottom(z-index:3) 竞争,轮次多时
+     (行 z-index = itemCount - index 可达几十上百)消息会盖住按钮。
+     isolate 把行内层叠关进消息流,按钮回到所有消息之上。 */
+  isolation: isolate;
   overscroll-behavior: contain;
 }
 

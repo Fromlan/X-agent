@@ -14,6 +14,12 @@ export const ESTIMATE_ROW_PX = 72;
 /** Streaming estimate: markdown is still growing + tool cards can be tall. */
 export const ESTIMATE_ROW_PX_STREAMING = 120;
 export const ROW_GAP_PX = 16;
+/**
+ * 贴底补偿阈值(px):视口距底部 ≤ 该值即视为"贴底",
+ * 此后任何行的测量/尺寸变化都会同步补偿 scrollTop。
+ * 与 chat-scroll-pin 的 PIN_THRESHOLD_PX(80) 保持一致。
+ */
+export const SCROLL_END_THRESHOLD_PX = 80;
 const OVERSCAN = 8;
 /** Overscan during streaming — larger to mask measure lag while content races. */
 const OVERSCAN_STREAMING = 12;
@@ -78,6 +84,15 @@ export function useChatTranscriptVirtualizer(opts: {
     estimateSize: config.estimateSize,
     overscan: config.overscan,
     getItemKey,
+    /**
+     * 聊天贴底锚定:发送/流式期间新行与既有行是异步测量(estimate →
+     * 实测)的,totalSize 会随测量增长;若只在组件侧 rAF 里贴底,
+     * 测量完成那一帧视口会停在"估算底",视觉上窗口弹到会话中部。
+     * anchorTo:"end" 让 tanstack 在贴底状态下测量到尺寸变化时同步
+     * 补偿 scrollTop(totalSize 增量),测量与贴底在同一帧收敛。
+     */
+    anchorTo: "end",
+    scrollEndThreshold: SCROLL_END_THRESHOLD_PX,
   });
 }
 

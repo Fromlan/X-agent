@@ -455,11 +455,13 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       (entries) => {
         const entry = entries[0];
         if (!entry) return;
-        if (entry.isIntersecting) {
-          if (shouldFollow(pinStateRef.current)) {
-            scheduleFollow();
-          }
-        } else {
+        // pinned 时无论尾行是否可见都跟随:测量前的估算 totalSize 可能让
+        // 尾行落在视口外,若只在 intersecting 时跟随,贴底会卡在"估算底"
+        // (窗口弹到会话中部)且无法自愈。
+        if (shouldFollow(pinStateRef.current)) {
+          scheduleFollow();
+        }
+        if (!entry.isIntersecting) {
           syncJumpVisibility();
         }
       },
