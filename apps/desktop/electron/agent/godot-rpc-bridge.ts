@@ -18,6 +18,7 @@ import {
 } from "../../shared/godot-rpc";
 import { ensureAgentDir } from "./prefs";
 import { fileExistsAsync, readJsonAsync, writeJsonAtomic } from "./lib/atomic-write";
+import { dbgLog } from "../../shared/debug-log";
 
 type Listener = (status: GodotRpcBridgeStatus) => void;
 
@@ -150,6 +151,8 @@ export class GodotRpcBridge {
       timer: NodeJS.Timeout;
       /** C4: 发起请求的客户端 id —— 断连时立即 reject，避免悬挂到超时。 */
       clientId: string;
+      /** 诊断：请求方法（超时日志定位用）。 */
+      method: string;
     }
   >();
   private buffers = new WeakMap<Socket, string>();
@@ -459,7 +462,21 @@ export class GodotRpcBridge {
         if (pending) {
           clearTimeout(pending.timer);
           this.pending.delete(response.id);
+          dbgLog("godot-rpc", "response matched", {
+            id: response.id,
+            method: pending.method,
+            ok: response.ok,
+            bytes: raw.length,
+          });
           pending.resolve(response);
+        } else {
+          // 关键诊断：插件回了响应但 id 未在 pending —— 超时的另一形态。
+          dbgLog("godot-rpc", "unmatched response", {
+            id: response.id,
+            ok: response.ok,
+            bytes: raw.length,
+            raw: raw.slice(0, 200),
+          });
         }
         return;
       }
@@ -572,9 +589,21 @@ export class GodotRpcBridge {
     }
     const payload = `${JSON.stringify(req)}\n`;
     client.socket.write(payload);
+    dbgLog("godot-rpc", "request sent", {
+      id: req.id,
+      method: req.method,
+      clientId: client.id,
+      bytes: payload.length,
+    });
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(req.id);
+        dbgLog("godot-rpc", "request timed out", {
+          id: req.id,
+          method: req.method,
+          timeoutMs,
+          clientId: client.id,
+        });
         resolve({ id: req.id, ok: false, error: "timeout" });
       }, timeoutMs);
       this.pending.set(req.id, {
@@ -582,6 +611,7 @@ export class GodotRpcBridge {
           resolve(routedTo ? { ...res, routedTo } : res),
         timer,
         clientId: client.id,
+        method: req.method,
       });
     });
   }

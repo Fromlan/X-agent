@@ -1,5 +1,21 @@
 # X-agent RPC addon changelog
 
+## 0.6.3
+
+### 修复（对应第二轮工具测试反馈）
+
+- `get_open_scenes`：过滤 `EditorInterface.get_open_scenes()` 返回的空串条目（Godot 4 无打开场景时返回 `[""]`），现在返回 `[]`。
+- `lint_scripts`：`--check-only` 子进程改用**双信号判定**（exit code + 输出）。裸 `GDScript.new()` reload 对含 `class_name` 的合法脚本会伪报 Parse error（无 resource_path 无法注册全局类），此前子进程无输出时回退错误码文案导致误报；现在子进程 exit 0 即判合法。
+- `inspect_script`：`get_constants()` 在 4.5.x 实测不存在（无守卫调用即运行时报错中断响应）；改为 `has_method` 守卫 + 信号/常量从源码正则提取 + 方法/属性引擎反射为空时正则兜底 + 加载后强制 `reload()` 触发完整分析。方法类型从 `return` 子字典提取（`get_script_method_list` 顶层无 `type` 字段）。**reload 守卫用 `has_method("can_reload")`——`can_reload()` 在 4.6/4.7 已移除（4.5.x 存在），直接调用会运行时中断 → 响应为空对象（全 none + 无 extends）。**
+- `get_node_properties`：`hint` 输出语义名（RANGE / ENUM / …），新增 `hintString` 字段（range 的 `min,max,step`、enum 成员列表等，此前只透传枚举编号）。
+- `list_project_files`：**修复恒超时根因**——`_handle_line` 用 `data.has("type")` 区分请求与事件，而 `list_project_files` 的请求带 `type` 参数（过滤类型），被误判为事件直接丢弃（1.3 引入 type 参数以来一直如此；表现为任意参数组合恒 timeout、无 SCRIPT ERROR、其他 16 个工具正常）。判定改为 `not data.has("method")`。另：移除逐文件 `ResourceLoader.get_resource_uid` 主线程查询（4.7 无 `EditorFileSystemDirectory.get_file_uid` 可用；uid 恒为空，需要时走 `resolve_uid`）；BFS 排除 `res://.godot` 子树；每 300 个文件 `await process_frame` 分帧遍历；EFS 重扫中（`is_scanning`）返回 `scanning: true`。
+- `_handle_line` / `_send` 增加 `X-agent RPC: recv/send` 诊断 print（编辑器 Output 面板可见，便于远程定位 RPC 链路问题）。
+- `plugin.cfg` version 升到 0.6.3。
+
+### 兼容性
+
+- 协议方法签名不变；`hintString` / `scanning` 为新增可选字段，`uid` 恒为空字符串——旧桌面端完全兼容，新桌面端（0.5.1+）已同步工具描述。
+
 ## 0.6.2
 
 ### 修复

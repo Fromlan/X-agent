@@ -5,7 +5,7 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
-const ADDON_VERSION := "0.6.2"
+const ADDON_VERSION := "0.6.3"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
 const CONNECT_TIMEOUT_SEC := 1.2
@@ -421,8 +421,12 @@ func _poll_messages() -> void:
 
 func _send(payload: Dictionary) -> void:
 	if _peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+		print("X-agent RPC: send skipped (not connected) id=%s" % str(payload.get("id", payload.get("type", "?"))))
 		return
-	_peer.put_data((JSON.stringify(payload) + "\n").to_utf8_buffer())
+	var body := JSON.stringify(payload) + "\n"
+	# 诊断：响应是否发出（id 与 recv 对应上即链路闭环）
+	print("X-agent RPC: send id=%s bytes=%d" % [str(payload.get("id", "-")), body.length()])
+	_peer.put_data(body.to_utf8_buffer())
 
 # =============================================================================
 # Scene helpers + RPC methods
@@ -524,6 +528,20 @@ func _script_path_of(node: Node) -> String:
 		return ""
 	return str(script.resource_path)
 
+## PROPERTY_HINT 枚举 → 名称（0..PROPERTY_HINT_MAX）。
+## 顺序与 Godot 4.2+ 一致；hintString 才是 Agent 需要的详情
+## （range 的 "min,max,step"、enum 的 "A,B,C"），名称仅作可读性。
+const PROPERTY_HINT_NAMES := [
+	"NONE", "RANGE", "ENUM", "ENUM_FLAGS", "EXP_EASE", "LINK",
+	"FLAGS", "LAYERS_2D_RENDER", "LAYERS_2D_PHYSICS", "LAYERS_2D_NAVIGATION",
+	"LAYERS_3D_RENDER", "LAYERS_3D_PHYSICS", "LAYERS_3D_NAVIGATION",
+	"LAYERS_AVOIDANCE", "FILE", "DIR", "GLOBAL_FILE", "GLOBAL_DIR",
+	"RESOURCE_TYPE", "MULTILINE_TEXT", "EXPRESSION", "PLACEHOLDER_TEXT",
+	"COLOR_NO_ALPHA", "IMAGE_COMPRESS_LOSSY", "IMAGE_COMPRESS_LOSSY_ASYNC",
+	"OBJECT_ID", "TYPE_STRING", "NODE_PATH_TO_EDITED_NODE", "OBJECT_TOO_BIG",
+	"NODE_PATH_EXISTING_NODES", "RESOURCE_TOO_BIG", "MAX",
+]
+
 func _capture_node_properties(scene_path: String, node_path: String) -> Dictionary:
 	var root_and_owned := _scene_root_for_read(scene_path)
 	var root: Node = root_and_owned[0]
@@ -541,10 +559,14 @@ func _capture_node_properties(scene_path: String, node_path: String) -> Dictiona
 		var usage: int = int(p.get("usage", 0))
 		# 仅导出脚本变量与持久化属性
 		if (usage & PROPERTY_USAGE_SCRIPT_VARIABLE) != 0 or (usage & PROPERTY_USAGE_STORAGE) != 0:
+			var hint_idx := int(p.get("hint", 0))
 			props.append({
 				"name": str(p.name),
 				"type": type_string(int(p.type)),
-				"hint": str(p.get("hint", "")),
+				# hint 语义名（RANGE / ENUM / …），未知值透传数字
+				"hint": PROPERTY_HINT_NAMES[hint_idx] if hint_idx >= 0 and hint_idx < PROPERTY_HINT_NAMES.size() else str(hint_idx),
+				# hint 详情：range 的 "min,max,step"、enum 的成员名等
+				"hintString": str(p.get("hint_string", "")),
 			})
 	var result := {"path": scene_path, "node_path": node_path, "properties": props}
 	if not borrowed:
@@ -596,20 +618,28 @@ func _lint_script(path: String) -> Dictionary:
 	# 因此只以 reload() 的错误码判定；细节交给 _check_only_details 补全。
 	if err == OK:
 		return {"path": path, "ok": true, "issues": []}
-	var issues: Array = []
-	# reload() 的错误码在 4.4+ 之间有重排，不可依赖具体数值 → 一律用子进程补细节
-	var detail := await _check_only_details(path)
-	if detail.is_empty():
-		issues.append({"line": 0, "column": 0, "message": error_string(int(err)), "severity": "error"})
-	else:
-		issues = detail
-	return {"path": path, "ok": false, "issues": issues}
+	# reload() 的错误码在 4.4+ 之间有重排，不可依赖具体数值 → 一律用子进程判定。
+	# 子进程是完整加载（class_name 等全局注册正常），裸脚本 reload 报错而子进程
+	# 判定合法时（如 class_name 脚本的伪报错），以子进程为准，不再误报。
+	var verdict := await _check_only_details(path)
+	if verdict.is_empty():
+		verdict = {"ok": false, "issues": []}
+	if not bool(verdict.get("ok", false)) and (verdict.get("issues", []) as Array).is_empty():
+		verdict["issues"] = [
+			{"line": 0, "column": 0, "message": error_string(int(err)), "severity": "error"}
+		]
+	return {
+		"path": path,
+		"ok": bool(verdict.get("ok", false)),
+		"issues": verdict.get("issues", []),
+	}
 
 ## 启动 --check-only 子线程并等待完成（不阻塞编辑器主线程）。
-func _check_only_details(path: String) -> Array:
+## 返回 Dictionary {ok, issues}；{} 表示子进程不可用（调用方回退错误码文案）。
+func _check_only_details(path: String) -> Dictionary:
 	var exe := OS.get_executable_path()
 	if exe == "":
-		return []
+		return {}
 	var res_root := ProjectSettings.globalize_path("res://")
 	# 上一个 worker 未结束（异常时序）时先等它收尾。
 	if _lint_thread != null and _lint_thread.is_started() and not _lint_worker_done:
@@ -619,26 +649,32 @@ func _check_only_details(path: String) -> Array:
 	var thread := Thread.new()
 	var err := thread.start(_lint_worker.bind(path, exe, res_root))
 	if err != OK:
-		return []
+		return {}
 	_lint_thread = thread
 	while not _lint_worker_done:
 		await get_tree().process_frame
-	var output: Array = thread.wait_to_finish()
+	var result: Array = thread.wait_to_finish()
 	_lint_thread = null
-	return _parse_lint_output(output)
+	if result.size() < 2:
+		return {}
+	return _parse_lint_output(int(result[0]), result[1])
 
 ## 子线程执行体：只做 OS 调用（纯子进程，无编辑器 API），完成后置标志。
+## 返回 [exit_code, output]——exit code 与 stdout/stderr 合并输出一起带回。
 func _lint_worker(path: String, exe: String, res_root: String) -> Array:
 	var output := []
-	OS.execute(exe, ["--headless", "--path", res_root, "--check-only", "-s", path], output, true, LINT_CHECK_ONLY_TIMEOUT_MS)
+	var code := OS.execute(exe, ["--headless", "--path", res_root, "--check-only", "-s", path], output, true, LINT_CHECK_ONLY_TIMEOUT_MS)
 	_lint_worker_done = true
-	return output
+	return [code, output]
 
-## 解析 --check-only 输出（exit_code==0 且无输出 → 空数组；否则逐行提取 SCRIPT ERROR）。
-func _parse_lint_output(output: Array) -> Array:
+## 解析 --check-only 子进程结果（双信号判定，不依赖具体版本错误码语义）：
+## - exit 0 且无输出 → 脚本合法（裸 reload 对 class_name 脚本的伪报错在此消除）；
+## - 有输出 → 提取 "SCRIPT ERROR: Parse Error..." 逐行 issue；
+## - exit 非 0 且无输出/输出无法解析 → ok=false + 空 issues（调用方回退错误码文案）。
+func _parse_lint_output(code: int, output: Array) -> Dictionary:
 	var issues: Array = []
 	if output.is_empty():
-		return issues
+		return {"ok": code == 0, "issues": issues}
 	# 输出形如 "SCRIPT ERROR: Parse Error: <msg>\n   at: ... (res://foo.gd:4)"；
 	# Windows 上 stdout/stderr 会合并成单个大块，需要逐行拆分。
 	var kind_re := RegEx.new()
@@ -663,7 +699,7 @@ func _parse_lint_output(output: Array) -> Array:
 				line = int(m.get_string(2))
 		var severity := "warning" if kind_match.get_string(1) == "Warning" else "error"
 		issues.append({"line": line, "column": 0, "message": message, "severity": severity})
-	return issues
+	return {"ok": issues.is_empty() and code == 0, "issues": issues}
 
 func _collect_files(root: String) -> Array[String]:
 	var out: Array[String] = []
@@ -916,10 +952,20 @@ func _classify_file_kind(type_name: String, path: String) -> String:
 ## BFS 走到的文件按 type/pattern 过滤并分页返回。
 ## cursor 格式 "#N"（N = 上一页已返回的匹配数，从 0 起）；旧格式纯 res:// 目录兼容（从该目录起、不跳过）。
 ## total 恒为整棵子树中匹配文件总数（不随翻页变化）；分页恢复时跳过前 N 个匹配文件，避免重复页。
+##
+## 协程分帧：每 300 个文件让出主线程，避免大项目 / 异常 EFS 缓存下冻结编辑器。
+## uid 字段恒为空字符串：逐文件 ResourceLoader.get_resource_uid 在主线程是重量级 IO，
+## 且 4.7 无 EditorFileSystemDirectory.get_file_uid 可用（见 CHANGELOG），小目录也会
+## 拖到 RPC 超时；需要 uid 时由 resolve_uid 工具按需查询。
 func _list_project_files(root: String, type_filter: String, pattern: String, limit: int, cursor: String) -> Dictionary:
+	print("X-agent RPC: list start root=%s type=%s limit=%d" % [root, type_filter, limit])
 	var fs := EditorInterface.get_resource_filesystem()
 	if fs == null:
 		return {"root": root, "total": 0, "files": [], "nextCursor": null, "truncated": false}
+	# EFS 正在重扫（缓存缺失 / 残留损坏会触发）：文件树此时不可用，
+	# 直接返回 scanning 标记让调用方稍后重试，避免在不可用树上做无效遍历。
+	if fs.is_scanning():
+		return {"root": root, "total": 0, "files": [], "nextCursor": null, "truncated": false, "scanning": true}
 	var skip_count := 0
 	var start_dir := fs.get_filesystem_path(root)
 	if cursor != "":
@@ -938,12 +984,26 @@ func _list_project_files(root: String, type_filter: String, pattern: String, lim
 	var type_lower := type_filter.to_lower()
 	var queue: Array = [start_dir]
 	var truncated := false
+	var visited := 0
 	while not queue.is_empty():
 		var dir: EditorFileSystemDirectory = queue.pop_front()
+		if dir == null:
+			continue
+		# .godot 编辑器缓存目录（imported/editor/uid 缓存）不参与资源内省，
+		# 与 _collect_files 的语义一致；残留缓存会让遍历量膨胀数倍。
+		var dir_path := dir.get_path()
+		if dir_path == "res://.godot" or dir_path.begins_with("res://.godot/"):
+			continue
 		var subdir_count := dir.get_subdir_count()
 		for i in range(subdir_count):
-			queue.append(dir.get_subdir(i))
+			var sub: EditorFileSystemDirectory = dir.get_subdir(i)
+			if sub != null:
+				queue.append(sub)
 		var file_count := dir.get_file_count()
+		visited += file_count
+		if visited >= 300:
+			visited = 0
+			await get_tree().process_frame
 		for i in range(file_count):
 			var file_path := dir.get_file_path(i)
 			var file_type := dir.get_file_type(i)
@@ -958,15 +1018,11 @@ func _list_project_files(root: String, type_filter: String, pattern: String, lim
 			if files.size() >= limit:
 				truncated = true
 				continue
-			var uid_str := ""
-			if ResourceLoader.has_method("get_resource_uid"):
-				var u: int = ResourceLoader.get_resource_uid(file_path)
-				if u != -1 and ResourceUID.has_id(u):
-					uid_str = ResourceUID.id_to_text(u)
-			files.append({"path": file_path, "type": kind, "uid": uid_str})
+			files.append({"path": file_path, "type": kind, "uid": ""})
 	var next_cursor := ""
 	if truncated:
 		next_cursor = "#%d" % (skip_count + limit)
+	print("X-agent RPC: list done matched=%d returned=%d truncated=%s" % [matched, files.size(), str(truncated)])
 	return {
 		"root": root,
 		"total": matched,
@@ -975,24 +1031,60 @@ func _list_project_files(root: String, type_filter: String, pattern: String, lim
 		"truncated": truncated,
 	}
 
-## 把方法/属性/信号 / 常量列表归一成 {name,type} 数组。
+## 把方法/属性/信号列表归一成 {name,type} 数组。
+## 方法 dict 的类型在 "return" 子字典里（顶层无 type 字段）；
+## 属性/信号 dict 直接带 type/class_name/hint_string。
 func _gd_member_array(arr: Array) -> Array:
 	var out: Array = []
 	for m in arr:
 		if typeof(m) != TYPE_DICTIONARY:
 			continue
+		var name := str(m.get("name", ""))
+		if name == "":
+			continue
 		var t := int(m.get("type", TYPE_NIL))
+		var class_name_h := str(m.get("class_name", ""))
+		var hint_string := str(m.get("hint_string", ""))
+		if t == TYPE_NIL:
+			var ret = m.get("return")
+			if typeof(ret) == TYPE_DICTIONARY:
+				t = int(ret.get("type", TYPE_NIL))
+				class_name_h = str(ret.get("class_name", ""))
+				hint_string = str(ret.get("hint_string", ""))
 		var type_name := ""
 		if t == TYPE_OBJECT:
-			var hint_string := str(m.get("hint_string", ""))
-			var class_name_h := str(m.get("class_name", ""))
 			type_name = hint_string if hint_string != "" else (class_name_h if class_name_h != "" else "Object")
 		else:
 			type_name = type_string(t)
-		out.append({"name": str(m.get("name", "")), "type": type_name})
+		out.append({"name": name, "type": type_name})
+	return out
+
+## 源码级提取脚本成员（func / @export var / const / signal），
+## 作为引擎反射 API 的兜底与信号来源：
+## - get_script_method_list 在部分版本/加载路径下可能为空；
+## - get_signal_list 只返回基类信号，自定义 signal 不在其中，统一由此提取。
+func _parse_gd_script_members(path: String) -> Dictionary:
+	var out := {"methods": [], "properties": [], "signals": [], "constants": []}
+	var text := _read_text_file(path)
+	if text == "":
+		return out
+	var rx := RegEx.new()
+	rx.compile("(?m)^(?:static\\s+)?func\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+	for m in rx.search_all(text):
+		out["methods"].append({"name": m.get_string(1), "type": ""})
+	rx.compile("(?m)^@export(?:[_a-z]*)?(?:\\([^)]*\\))?\\s+var\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::\\s*([A-Za-z0-9_.\\[\\]]+))?")
+	for m in rx.search_all(text):
+		out["properties"].append({"name": m.get_string(1), "type": m.get_string(2)})
+	rx.compile("(?m)^signal\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:\\([^)]*\\))?")
+	for m in rx.search_all(text):
+		out["signals"].append({"name": m.get_string(1), "type": ""})
+	rx.compile("(?m)^const\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::=|=)")
+	for m in rx.search_all(text):
+		out["constants"].append({"name": m.get_string(1), "type": ""})
 	return out
 
 ## 解析 GDScript 资源 → {signals,methods,properties,constants,base?,extends?}。
+## 方法/属性优先用引擎反射（准确含参数/类型）；为空时退回源码解析。
 func _inspect_script(path: String) -> Dictionary:
 	if not ResourceLoader.exists(path):
 		return {"path": path, "error": "script not loadable: " + path}
@@ -1000,22 +1092,39 @@ func _inspect_script(path: String) -> Dictionary:
 	if res == null or not (res is GDScript):
 		return {"path": path, "error": "not a GDScript"}
 	var script: GDScript = res
+	# 编辑器进程加载的 GDScript 可能处于懒分析状态（4.7 实测反射 API 恒空），
+	# 强制 reload() 触发完整编译再取反射信息；reload 失败不影响正则兜底。
+	# 注意：can_reload() 在 4.6/4.7 已移除（4.5.x 存在），必须 has_method 守卫，
+	# 否则运行时 Invalid call 中断整个函数 → 响应为空对象（全 none + 无 extends）。
+	if script.has_method("can_reload"):
+		script.reload()
+	var methods := _gd_member_array(script.get_script_method_list())
+	var props := _gd_member_array(script.get_script_property_list())
+	var consts: Array = []
+	# get_constants() 只在部分引擎版本存在（4.5.1 实测缺失，调用即运行时报错），
+	# 必须 has_method 守卫，缺失时交给源码解析兜底。
+	if script.has_method("get_constants"):
+		var c = script.get_constants()
+		if typeof(c) == TYPE_DICTIONARY:
+			for k in c.keys():
+				consts.append({"name": str(k), "type": type_string(typeof(c[k]))})
+	var parsed := _parse_gd_script_members(path)
+	if methods.is_empty():
+		methods = parsed.get("methods", [])
+	if props.is_empty():
+		props = parsed.get("properties", [])
+	if consts.is_empty():
+		consts = parsed.get("constants", [])
 	var inspect := {
 		"path": path,
-		"signals": _gd_member_array(script.get_signal_list()),
-		"methods": _gd_member_array(script.get_script_method_list()),
-		"properties": _gd_member_array(script.get_script_property_list()),
-		"constants": [],
+		"signals": parsed.get("signals", []),
+		"methods": methods,
+		"properties": props,
+		"constants": consts,
 	}
 	var base = script.get_base_script()
 	if base != null and base is Resource:
 		inspect["base"] = base.resource_path
-	var consts = script.get_constants()
-	if typeof(consts) == TYPE_DICTIONARY and not consts.is_empty():
-		var arr: Array = []
-		for k in consts.keys():
-			arr.append({"name": str(k), "type": type_string(typeof(consts[k]))})
-		inspect["constants"] = arr
 	if script.get_instance_base_type() != "":
 		inspect["extends"] = script.get_instance_base_type()
 	return inspect
@@ -1121,12 +1230,18 @@ func _handle_line(raw: String) -> void:
 	var data = JSON.parse_string(raw)
 	if typeof(data) != TYPE_DICTIONARY:
 		return
-	if data.has("type"):
+	# 事件（play_error / scene_changed / editor_ready）只有 type 没有 method。
+	# 不能用 data.has("type") 区分请求与事件——list_project_files 的请求带
+	# type 参数（过滤类型），会被误判为事件直接丢弃 → RPC 恒超时（1.3 引入
+	# type 参数以来一直如此）。请求必有 method，以此判定。
+	if not data.has("method"):
 		return
 
 	var id := str(data.get("id", ""))
 	var method := str(data.get("method", ""))
 	var response := {"id": id, "ok": true, "result": {}}
+	# 诊断：请求是否到达 handler（输出见编辑器 Output 面板，不进 godot.log）
+	print("X-agent RPC: recv method=%s id=%s" % [method, id])
 
 	match method:
 		"ping":
@@ -1141,9 +1256,13 @@ func _handle_line(raw: String) -> void:
 			}
 
 		"get_open_scenes":
-			response["result"] = {
-				"scenes": Array(EditorInterface.get_open_scenes()),
-			}
+			# Godot 4 在无打开场景时 get_open_scenes() 可能返回 [""]，
+			# 过滤空串，避免下游把空路径当成真实场景。
+			var open_scenes: Array = []
+			for s in Array(EditorInterface.get_open_scenes()):
+				if str(s).strip_edges() != "":
+					open_scenes.append(str(s))
+			response["result"] = {"scenes": open_scenes}
 
 		"get_edited_scene":
 			response["result"] = {
@@ -1277,7 +1396,7 @@ func _handle_line(raw: String) -> void:
 			var lpf_limit := int(data.get("limit", LIST_FILES_DEFAULT_LIMIT))
 			lpf_limit = clamp(lpf_limit, 1, LIST_FILES_MAX_LIMIT)
 			var lpf_cursor := str(data.get("cursor", ""))
-			response["result"] = _list_project_files(lpf_root, lpf_type, lpf_pattern, lpf_limit, lpf_cursor)
+			response["result"] = await _list_project_files(lpf_root, lpf_type, lpf_pattern, lpf_limit, lpf_cursor)
 
 		"resolve_uid":
 			var r_uid := str(data.get("uid", ""))

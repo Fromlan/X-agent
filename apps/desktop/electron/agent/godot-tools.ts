@@ -703,10 +703,10 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       name: "godot_list_project_files",
       label: "Godot list project files",
       description:
-        "Enumerate files under a res:// directory via the EditorFileSystem. Returns paths with kind (scene/script/resource/...) and optional uid. Read-only; paged by cursor.",
+        "Enumerate files under a res:// directory via the EditorFileSystem. Returns paths with kind (scene/script/resource/...). Read-only; paged by cursor. Per-file uid is not included (0.6.3+); resolve a specific uid with godot_resolve_uid when needed.",
       promptSnippet: "godot_list_project_files: enumerate res:// files",
       promptGuidelines: [
-        "Prefer this before walking the project tree with bash/shell tools — it understands res:// paths and uid:// links.",
+        "Prefer this before walking the project tree with bash/shell tools — it understands res:// paths; use godot_resolve_uid for uid:// lookups.",
         "Use type/pattern to narrow first; only widen or request the next page when you actually need more.",
       ],
       parameters: Type.Object({
@@ -764,7 +764,15 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
           files?: Array<{ path: string; type?: string; uid?: string }>;
           nextCursor?: string | null;
           truncated?: boolean;
+          /** 插件 0.6.3+：编辑器文件系统正在重扫时返回，文件树暂不可用。 */
+          scanning?: boolean;
         };
+        if (r.scanning) {
+          return textResult(
+            "Godot editor filesystem is still scanning (import/refresh in progress). Try again shortly.",
+            { ok: false, error: "efs scanning" },
+          );
+        }
         const files = Array.isArray(r.files) ? r.files : [];
         const lines: string[] = [];
         lines.push(
