@@ -13,7 +13,6 @@ import type {
   AppUpdateStatus,
   ColorMode,
 } from "@shared/ipc";
-import { StatusIcon } from "./StatusIcon";
 
 interface Props {
   cwd: string | null;
@@ -31,13 +30,6 @@ interface Props {
   onOpenSettings: () => void;
   /** Download / install, or re-show the update prompt after dismiss. */
   onUpdateAction?: () => void;
-}
-
-function statusLabel(status: AgentStatus): string {
-  if (status === "streaming") return "运行中";
-  if (status === "retrying") return "重试中";
-  if (status === "error") return "错误";
-  return "空闲";
 }
 
 function TopBarImpl(props: Props) {
@@ -136,11 +128,6 @@ function TopBarImpl(props: Props) {
         >
           {props.theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
         </button>
-
-        <span className="status-chip" title={statusLabel(props.status)}>
-          <StatusIcon status={props.status} />
-          <span className="status-label">{statusLabel(props.status)}</span>
-        </span>
       </div>
     </header>
   );
