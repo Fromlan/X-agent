@@ -4729,6 +4729,57 @@ body.is-resizing-column * {
   min-width: 0;
 }
 
+/* 自定义输入:切换按钮 + 展开的 textarea */
+.clarify-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clarify-custom-toggle .clarify-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.clarify-custom-toggle.is-selected .clarify-option-label {
+  color: var(--text-primary);
+}
+
+.clarify-custom-toggle.is-selected {
+  border-style: dashed;
+}
+
+.clarify-custom-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.clarify-custom-input::placeholder {
+  color: var(--text-muted);
+}
+
+.clarify-custom-input:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--focus-ring-soft);
+}
+
+.clarify-custom-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 /* 底部操作行:左侧提示 + 右侧提交按钮 */
 .clarify-actions {
   display: flex;

@@ -39,6 +39,25 @@ const reply = formatClarifyReply([
 assert.ok(reply.includes("Which renderer?"));
 assert.ok(reply.includes("→ Mobile"));
 
+// 自定义输入答案:玩家自由文本直接作为 option 传入,格式与选项一致
+{
+  const r = formatClarifyReply([
+    { question: "Which renderer?", option: "我这边用 Forward+ 就行" },
+  ]);
+  assert.ok(r.includes("Which renderer?"));
+  assert.ok(r.includes("→ 我这边用 Forward+ 就行"));
+}
+
+// 多问题混合:一个选选项、一个自定义输入(含多行文本),逐题输出
+{
+  const r = formatClarifyReply([
+    { question: "Q1: renderer?", option: "Mobile" },
+    { question: "Q2: 其他补充?", option: "第一行补充\n第二行补充" },
+  ]);
+  assert.ok(r.indexOf("→ Mobile") < r.indexOf("→ 第一行补充"), "题目顺序保持");
+  assert.ok(r.includes("第一行补充\n第二行补充"), "多行自定义答案原样保留");
+}
+
 
 // --- Inline (single-line) format tests ---
 

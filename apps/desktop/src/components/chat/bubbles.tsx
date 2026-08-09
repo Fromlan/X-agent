@@ -135,10 +135,12 @@ export function ClarifyPanel(props: {
   canAct: boolean;
   onSubmit: (reply: string) => void;
 }) {
+  // 每题两种作答方式互斥:选中某个选项(selected)或自行输入(customText)
   const [selected, setSelected] = useState<Record<string, string>>({});
-  const answeredCount = props.questions.filter(
-    (q) => Boolean(selected[q.question]),
-  ).length;
+  const [customText, setCustomText] = useState<Record<string, string>>({});
+  const isAnswered = (q: ClarifyQuestion) =>
+    Boolean(selected[q.question]) || Boolean(customText[q.question]?.trim());
+  const answeredCount = props.questions.filter(isAnswered).length;
   const allAnswered = answeredCount === props.questions.length;
 
   return (
@@ -174,9 +176,15 @@ export function ClarifyPanel(props: {
                   }
                   disabled={!props.canAct}
                   aria-pressed={isSelected}
-                  onClick={() =>
-                    setSelected((prev) => ({ ...prev, [q.question]: opt }))
-                  }
+                  onClick={() => {
+                    setSelected((prev) => ({ ...prev, [q.question]: opt }));
+                    setCustomText((prev) => {
+                      if (!prev[q.question]) return prev;
+                      const next = { ...prev };
+                      delete next[q.question];
+                      return next;
+                    });
+                  }}
                 >
                   <span className="clarify-option-check" aria-hidden>
                     <Check size={11} strokeWidth={3} />
@@ -185,6 +193,56 @@ export function ClarifyPanel(props: {
                 </button>
               );
             })}
+            <div
+              className={
+                "clarify-custom" +
+                (customText[q.question] !== undefined ? " is-open" : "")
+              }
+            >
+              <button
+                type="button"
+                className={
+                  "clarify-option clarify-custom-toggle" +
+                  (customText[q.question] !== undefined ? " is-selected" : "")
+                }
+                disabled={!props.canAct}
+                aria-pressed={customText[q.question] !== undefined}
+                onClick={() =>
+                  setCustomText((prev) =>
+                    prev[q.question] !== undefined
+                      ? (() => {
+                          const next = { ...prev };
+                          delete next[q.question];
+                          return next;
+                        })()
+                      : { ...prev, [q.question]: "" },
+                  )
+                }
+              >
+                <span className="clarify-option-check" aria-hidden>
+                  <Check size={11} strokeWidth={3} />
+                </span>
+                <span className="clarify-option-label">
+                  <Pencil size={11} strokeWidth={2} aria-hidden />
+                  <span>自行输入答案</span>
+                </span>
+              </button>
+              {customText[q.question] !== undefined && (
+                <textarea
+                  className="clarify-custom-input"
+                  rows={3}
+                  placeholder="输入你的答案…"
+                  value={customText[q.question]}
+                  disabled={!props.canAct}
+                  onChange={(e) =>
+                    setCustomText((prev) => ({
+                      ...prev,
+                      [q.question]: e.target.value,
+                    }))
+                  }
+                />
+              )}
+            </div>
           </div>
         </div>
       ))}
@@ -195,8 +253,8 @@ export function ClarifyPanel(props: {
           }
         >
           {allAnswered
-            ? "所有问题已选择完成"
-            : "请为每个问题选择一项后再发送"}
+            ? "所有问题已回答完成"
+            : "请为每个问题选择一项或输入答案后再发送"}
         </span>
         <button
           type="button"
@@ -207,12 +265,12 @@ export function ClarifyPanel(props: {
           title={
             allAnswered
               ? "发送全部所选答案"
-              : "请为每个问题选择一项后再发送"
+              : "请为每个问题选择一项或输入答案后再发送"
           }
           onClick={() => {
             const selections = props.questions.map((q) => ({
               question: q.question,
-              option: selected[q.question],
+              option: (customText[q.question] ?? selected[q.question]) || "",
             }));
             props.onSubmit(formatClarifyReply(selections));
           }}
