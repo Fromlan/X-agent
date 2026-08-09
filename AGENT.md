@@ -35,7 +35,7 @@
 
 ## 三、技术栈与版本下限
 
-- **Electron** ^43 + **electron-vite** ^5 + **electron-builder** ^26（NSIS + portable 双产物）
+- **Electron** ^43 + **electron-vite** ^5 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
 - **React** 19 + **TypeScript** ^7.0 + **Vite** ^7；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
 - **@earendil-works/pi-coding-agent** ^0.83（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `AGENT_CONTEXT.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
@@ -59,7 +59,7 @@ npm run desktop:build          # 仅打包 out/
 npm run desktop:typecheck      # tsc -p tsconfig.node.json && tsc -p tsconfig.web.json
 npm run desktop:test           # 离线断言脚本（约 57 个 tsx 脚本串联，见 apps/desktop/package.json:scripts.test）
 npm run desktop:smoke          # 真实模型冒烟（需本机认证）
-npm run desktop:dist           # electron-builder --win --publish never（NSIS + portable）
+npm run desktop:dist           # electron-builder --win --publish never（仅 NSIS 安装包）
 npm run desktop:reset-tutorial # 重置教程环境（Windows 脚本）
 npm run release:prepare -- x.y.z     # 改版本号 + 校验 CHANGELOG
 npm run release:notes -- x.y.z        # 预览 GitHub Release 正文（minor 线起点会汇总上一线全部 patch）
