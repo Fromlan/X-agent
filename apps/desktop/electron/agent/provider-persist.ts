@@ -356,9 +356,25 @@ export async function isProviderEnabledInCatalog(
   return managed.some((p) => p.enabled);
 }
 
-/** Drop models whose provider is a disabled catalog profile. */
+/**
+ * Drop models whose provider is disabled in the catalog, and also models the
+ * catalog profile does not list.
+ *
+ * Pi's ModelRuntime merges models.json onto its BUILTIN provider catalog
+ * (provider-composer applyModelsJson keeps every builtin model and only
+ * overrides/appends ids from models.json).  A profile edit that removes a
+ * model therefore must hide the leftover builtin entries here — otherwise
+ * deleted models keep showing in the TopBar picker.
+ *
+ * Matching rules per model:
+ * - provider present in catalog (case-insensitive): visible only when some
+ *   profile is enabled AND its id is listed by that provider's profiles.
+ * - provider absent but baseUrl matches a catalog profile: treat as that
+ *   profile (legacy providerId spelling drift), same id-level gate.
+ * - otherwise (Pi OAuth builtins, unmanaged endpoints): passthrough.
+ */
 export async function filterModelsByCatalogEnabled<
-  T extends { provider: string; baseUrl?: string },
+  T extends { provider: string; id: string; baseUrl?: string },
 >(
   models: readonly T[],
   paths: ProviderPaths = defaultProviderPaths(),
@@ -366,41 +382,55 @@ export async function filterModelsByCatalogEnabled<
   const store = await loadStore(paths);
   if (store.profiles.length === 0) return [...models];
 
-  const enabledByProvider = new Map<string, boolean>();
+  // providerId(lower) -> enabled flag + declared model ids (case-insensitive).
+  const byProvider = new Map<
+    string,
+    { enabled: boolean; modelIds: Set<string> }
+  >();
+  // baseUrl(lower) -> same shape, for providerId spelling-drift fallback.
+  const byBaseUrl = new Map<
+    string,
+    { enabled: boolean; modelIds: Set<string> }
+  >();
+
   for (const p of store.profiles) {
     const key = p.providerId.toLowerCase();
-    enabledByProvider.set(
-      key,
-      (enabledByProvider.get(key) ?? false) || p.enabled,
-    );
+    const entry =
+      byProvider.get(key) ?? { enabled: false, modelIds: new Set<string>() };
+    entry.enabled = entry.enabled || p.enabled;
+    for (const m of p.models) entry.modelIds.add(m.id.trim().toLowerCase());
+    byProvider.set(key, entry);
+
+    const base = p.baseUrl.trim().replace(/\/+$/, "").toLowerCase();
+    if (base) {
+      const baseEntry =
+        byBaseUrl.get(base) ?? { enabled: false, modelIds: new Set<string>() };
+      baseEntry.enabled = baseEntry.enabled || p.enabled;
+      for (const m of p.models) baseEntry.modelIds.add(m.id.trim().toLowerCase());
+      byBaseUrl.set(base, baseEntry);
+    }
   }
 
-  // baseUrl 兜底用于处理历史档案的 providerId 拼写/大小写漂移:
-  // 例如老版本 import 时给同 baseUrl 加了 "-2" 后缀,Pi 仍按原始 key 暴露。
-  // 只有"catalog 中存在任意档案(不论 enabled)共享此 baseUrl"时,才把带该
-  // baseUrl 但 provider 不在 catalog 的模型视为指向档案 —— 否则 Pi OAuth
-  // builtin 等未在 catalog 的端点会被误伤。
-  const catalogBaseUrls = new Set<string>();
-  for (const p of store.profiles) {
-    const base = p.baseUrl.trim().replace(/\/+$/, "").toLowerCase();
-    if (base) catalogBaseUrls.add(base);
-  }
+  const visibleBy = (
+    entry: { enabled: boolean; modelIds: Set<string> } | undefined,
+    modelId: string,
+  ): boolean => {
+    if (!entry) return true;
+    if (!entry.enabled) return false;
+    return entry.modelIds.has(modelId.trim().toLowerCase());
+  };
 
   return models.filter((m) => {
     const key = m.provider.toLowerCase();
-    if (enabledByProvider.has(key)) {
-      return enabledByProvider.get(key) === true;
+    if (byProvider.has(key)) {
+      return visibleBy(byProvider.get(key), m.id);
     }
     if (m.baseUrl) {
       const modelBase = m.baseUrl.trim().replace(/\/+$/, "").toLowerCase();
-      // baseUrl 命中 catalog 内某条档案:
-      //   若该档案 enabled 则放行;否则视为指向 disabled 档案,隐藏。
-      if (modelBase && catalogBaseUrls.has(modelBase)) {
-        return store.profiles.some(
-          (p) =>
-            p.enabled &&
-            p.baseUrl.trim().replace(/\/+$/, "").toLowerCase() === modelBase,
-        );
+      if (modelBase) {
+        // baseUrl 命中 catalog 内某条档案:
+        //   若该档案 enabled 且声明了此模型 id 则放行;否则隐藏。
+        return visibleBy(byBaseUrl.get(modelBase), m.id);
       }
     }
     return true;

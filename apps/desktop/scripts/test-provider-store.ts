@@ -184,6 +184,27 @@ try {
     "filter shows enabled catalog provider (case-insensitive)",
   );
 
+  // —— 模型级过滤:档案只声明 model-a 时,Pi 内置目录残留的 model-b 也应收敛 ——
+  // (Pi ModelRuntime 把 models.json 合并到内置 provider 目录,删除模型后内置
+  // 残留仍会出现在 getAvailable() 里;filter 必须按档案声明的模型 id 收口。)
+  const modelLevelFiltered = await filterModelsByCatalogEnabled(
+    [
+      { provider: "Test-Relay", id: "model-a" },
+      { provider: "Test-Relay", id: "model-b" },
+      { provider: "Test-Relay", id: "MODEL-A" },
+    ],
+    paths,
+  );
+  assert(
+    modelLevelFiltered.length === 2,
+    `filter keeps only catalog-declared ids, got ${modelLevelFiltered.length}`,
+  );
+  assert(
+    modelLevelFiltered.some((m) => m.id === "model-a") &&
+      modelLevelFiltered.some((m) => m.id === "MODEL-A"),
+    "filter matches model ids case-insensitively",
+  );
+
   const other = await upsertProviderProfile(
     {
       name: "Other",
