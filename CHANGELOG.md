@@ -12,6 +12,25 @@
 
 - **Clarify 问答每题支持自行输入答案**：Plan 模式 AI 追问（`<clarify>` 多选块）每题新增「自行输入答案」选项——点选展开输入框填写自由文本，与选项互斥（选选项会清掉自定义、开自定义会取消选项）；已填文本计入作答进度，提交时自定义答案与选项同格式（`问题 → 答案`）发送给模型。
 
+### 安全（项目整体审查后修复）
+
+- **Godot 项目设置硬闸**：`godot_set_project_setting` 经 `shared/godot-project-setting.ts` 校验——敏感前缀（`autoload/*` / `input/*` / `debug/file_logging/*` / `debug/shapes/*` / `project_settings_override/*` / `editor_plugins/enabled` / `network/tls/certificate_bundle_override` 等）拒绝写入；value 收窄为 string / number / boolean 或简单嵌套（最多 1 层）；key 限 ASCII 字母数字+`/_`，避免 `project.godot` 注入。
+- **Provider baseUrl DNS 闸**：保存供应商档案时 `upsertProviderProfile` 经 `validateUpsertAsync` 双重校验（静态 host 黑名单 + 异步 DNS rebinding 解析），拒绝私网 / `localtest.me` / `*.nip.io` 等。
+- **Godot RPC 客户端与项目绑定**：`GodotRpcBridge` 新增 `setCurrentCwd`——已绑定时仅当前会话项目下的客户端合法；显式 `clientId` 与 cwd 不匹配直接拒绝（不静默改道）；切换项目时若原 active 不匹配则重置为首个匹配客户端。
+- **shellPath 真 Bash 闸**：`applyBashShellPath` 要求 `--version` 输出包含 GNU bash 特征；非可信目录会同时返回 `warning`，由 renderer 横幅提示。
+- **Godot 资源清理**：RPC 启动期 `server.unref()`、`stop()` 强制 1s 超时降级；编辑器子进程 spawn 失败路径也 `unref()`；auto-updater 启动检查 `unref()`。
+- **持久化原子化**：`plan-journal` / `goal-journal` 改走 `atomic-write.ts` 的 `writeJsonAtomicSync`（tmp + rename），不再写半截；`package-manager` registry 同步入口加 per-key 自旋锁，避免 install / prune 并发互相覆盖。
+- **启动失败摘要**：recover / bridge / package install 失败写入 `getStartupReport` 通道并 dbgLog，renderer 经 ReadyChecklist 提示用户。
+- **abort 失败状态修正**：abort 抛错时不再盲目 `setStatus('idle')`——重读 `isStreaming`，仍 streaming 时保留 `error` 状态并 emit notice。
+- **usage 写入失败**：error-bridge 内 catch 改为 dbgWarn，便于诊断。
+- **orphan 清理**：启动期清理残留 `.tmp` / bash-liveness probe / 90 天未用的 godot-rpc endpoint。
+
+### 测试 & 质量
+
+- **Vitest 覆盖扩展**：新增 `bash-readonly` / `external-url` / `secret-codec` / `atomic-write` / `provider-persist` 五套 vitest 单元测试（与 `godot-project-setting` / `godot-rpc-bridge` 合计 24 套 323 测试 92% 覆盖率）；新增 `setSkipDnsForTests` / `setSkipPiSyncForTests` 用于隔离外部依赖。
+- **E2E 契约扩展**：从 2 个扩到 6 个（`contracts` / `mode-flow` / `mode-attestation` / `ipc-validation` / `startup-report`）——锁定 facade 行为、IPC 校验、状态机契约。
+- **CI 加固**：新增 `concurrency` 与 `lint` 步骤；`e2e` job 加 Playwright 浏览器缓存；`release` workflow 加 `lint` 与 `test-extract-changelog` 校验。
+
 ## 0.5.2
 
 ### 修复（Godot 工具 · 插件 0.6.3）

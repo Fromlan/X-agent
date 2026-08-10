@@ -18,14 +18,17 @@
 cd apps/desktop
 npm install
 npm run typecheck        # tsc 两个 tsconfig：tsconfig.node.json + tsconfig.web.json
+npm run lint             # typecheck + echo lint-ok（CI 也会跑）
 npm test                 # 离线断言链：约 57 个 tsx 脚本串行（无需认证，见下）
 npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
+npm run test:coverage    # vitest --coverage（CI 必跑）
+npm run test:e2e         # playwright E2E（需要先 npm run build）
 npm run dev              # electron-vite dev（renderer 固定 127.0.0.1:5173，strictPort）
 npm run debug            # 同上但置 X_AGENT_DEBUG=1
 npm run dist             # electron-builder --win（仅 NSIS 安装包；不产便携版）
 ```
 
-根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial`，以及 `release:prepare|notes|test-changelog|dist`。发版由 maintainer 执行，Agent 不要主动打 tag / 提交 `apps/desktop/release/`（构建产物，CI 的 GitHub Releases 才是权威发布源）。
+根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。发版由 maintainer 执行，Agent 不要主动打 tag / 提交 `apps/desktop/release/`（构建产物，CI 的 GitHub Releases 才是权威发布源）。
 
 真实模型冒烟：`npm run desktop:smoke`（需本机 Pi 认证，`~/.pi/agent/auth.json`），不是 CI 检查。
 
@@ -39,7 +42,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 ## 架构约束（改代码前必读）
 
 - 三进程边界：Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索**全在主进程**；renderer 只能经 `window.xAgent.*` 调用，**禁止直接访问 Node API**（`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**——preload 构建为 CJS 单文件，`electron.vite.config.ts` 中关闭 externalizeDeps，仅依赖 electron 受限 API；改 preload 依赖时不得引入需运行时 require 的包）。
-- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 名注册表）+ `shared/ipc.ts`（类型）+ `electron/ipc/register-*-ipc.ts`（handler，按模块挂：session / session-config / provider / godot / update，其余在 `app-runtime.ts` 的 `registerIpc()`）+ `electron/preload.ts`（bridge）。`window.xAgent` 实际暴露 6 个分面对象（workspace/turn/plan/session/prefs/updates）+ flat 方法；新代码优先走分面，扁平方法仅作兼容。
+- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 名注册表）+ `shared/ipc.ts`（类型）+ `electron/ipc/register-*-ipc.ts`（handler，按模块挂：session / session-config / provider / godot / update，其余在 `app-runtime.ts` 的 `registerIpc()`）+ `electron/preload.ts`（bridge）。`window.xAgent` 暴露 6 个分面对象（`workspace` / `turn` / `plan` / `session` / `prefs` / `updates`）+ 其余 flat 方法（godot/plugins/providers/packages/project-fs/external/usage/startup-report 等）。新代码优先走分面；flat 是兼容入口，**不允许在分面之外新增无 facade 的方法**。
 - **全部 IPC handler 经统一 sender 校验**（`electron/ipc/register-ipc.ts` 的 `handle()` 包装器：主窗口 webContents + frame origin 匹配），新增 handler 无需额外处理；主进程对外发起的网络请求（模型探测等）须过 `external-url.ts` 的 URL 校验（仅公网 http(s)）。
 - 上下文组装由 Pi SDK（`@earendil-works/pi-coding-agent`）完成，**不要手写 system prompt**。
 - 别名：renderer 用 `@/` → `src`、`@shared/` → `shared`；Node 侧仅 `@shared/`。`main.ts` 是薄入口，重逻辑动态 import `app-runtime`。
@@ -52,6 +55,9 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 - **路径类只读工具也受 cwd 约束**：`read` / `grep` / `find` / `ls` / `godot_detect_project` 的 `path` 参数经 `plan-mode-guard.ts` 校验（Pi 工具会展开 `~` / 绝对路径 / `file://`，检查器同样展开后判定）。
 - CWD 沙箱：`electron/agent/cwd-sandbox.ts`（拒绝逃出 cwd，Windows 大小写归一）。Agent 模式下 Pi `bash` 仍可访问更广路径——不要承诺绝对安全。
 - Godot RPC 工具开关在 IPC 层强制：`godotRpcRequest` 校验 `prefs.tools` 是否启用对应工具（GODOT_TOOLS 默认关闭），被攻陷的 renderer 也无法绕过。
+- **Godot 项目设置硬闸**：`godot_set_project_setting` 经 `shared/godot-project-setting.ts` 校验，敏感前缀（`autoload/*` / `input/*` / `debug/file_logging/*` / `project_settings_override/*` 等）拒绝写入；value 收窄为 string/number/boolean 或简单嵌套。
+- **Provider baseUrl DNS 闸**：保存供应商档案时 `upsertProviderProfile` 经 `validateUpsertAsync` 双重校验（静态 host 黑名单 + 异步 DNS rebinding 解析），拒绝私网 / `localtest.me` / `*.nip.io` 等。
+- **shellPath 真 Bash 闸**：`applyBashShellPath` 要求 `--version` 输出包含 GNU bash 特征；非可信目录（Git for Windows / `/bin` / `/usr/bin` 等之外）会同时返回 `warning`，由 renderer 横幅提示。
 
 ## 持久化与撤回
 
@@ -91,5 +97,5 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 ## 提交前自检
 
-- 在 `apps/desktop` 内：`npm run typecheck` + `npm test`（CI 会再跑一遍 + vitest 覆盖率）。
-- 不要提交：`docs/`、`.scratch/`、`apps/desktop/release/`、`out/`。
+- 在 `apps/desktop` 内：`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`（CI 会再跑一遍 + E2E）。
+- 不要提交：`docs/`、`.scratch/`、`apps/desktop/release/`、`out/`、`node_modules.broken-*/`。
