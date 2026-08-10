@@ -12,6 +12,7 @@ export {
   maskApiKey,
   setProviderProfileEnabled,
   upsertProviderProfile,
+  validateUpsertAsync,
 } from "./provider-persist";
 
 export { listProviderPresets } from "./provider-presets";

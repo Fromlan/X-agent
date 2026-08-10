@@ -17,7 +17,7 @@ import {
   decryptSecretResult,
   encryptSecret,
 } from "./secret-codec";
-import { validateExternalHttpUrl } from "./external-url";
+import { validateExternalHttpUrl, validateOutboundHttpUrl } from "./external-url";
 import {
   writeJsonAtomic,
   readJsonAsync,
@@ -241,7 +241,7 @@ export function maskApiKey(key: string): string {
   return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
 }
 
-function validateUpsert(input: ProviderUpsertInput): string | null {
+export function validateUpsert(input: ProviderUpsertInput): string | null {
   if (!input.name.trim()) return "名称不能为空";
   if (!/^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/i.test(input.providerId.trim())) {
     return "providerId 须为字母数字/_/-";
@@ -257,6 +257,23 @@ function validateUpsert(input: ProviderUpsertInput): string | null {
   if (!input.apiKey.trim()) return "API Key 不能为空";
   if (!input.models.length || !input.models.some((m) => m.id.trim())) {
     return "至少需要一个模型 id";
+  }
+  return null;
+}
+
+/**
+ * 异步校验：当前 Pi DNS 解析是否安全（防 DNS rebinding 在保存与实际请求之间
+ * 切换解析结果）。Provider 档案先走 `validateUpsert` 静态闸，再过本闸。
+ * 返回 null 表示通过；否则返回人类可读错误。
+ */
+export async function validateUpsertAsync(
+  input: ProviderUpsertInput,
+): Promise<string | null> {
+  const sync = validateUpsert(input);
+  if (sync) return sync;
+  const checked = await validateOutboundHttpUrl(input.baseUrl.trim());
+  if (!checked.ok) {
+    return `baseUrl 不被允许：${checked.error}`;
   }
   return null;
 }
@@ -469,7 +486,9 @@ export async function upsertProviderProfile(
   /** True when the profile was written into Pi auth/models. */
   syncedToPi?: boolean;
 }> {
-  const err = validateUpsert(input);
+  // 1.3 防御：先静态校验（host 黑名单），再异步 DNS 校验，关闭
+  // DNS rebinding 在保存与实际请求之间切换解析结果的窗口。
+  const err = await validateUpsertAsync(input);
   if (err) return { ok: false, error: err };
 
   const now = new Date().toISOString();

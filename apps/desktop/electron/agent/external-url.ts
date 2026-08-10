@@ -30,6 +30,12 @@ const REBIND_DOMAIN_SUFFIXES = [
 
 const DNS_TIMEOUT_MS = 3000;
 
+/** 测试闸：跳过 DNS 解析（生产代码永不设置）。 */
+let SKIP_DNS_FOR_TESTS = false;
+export function setSkipDnsForTests(skip: boolean): void {
+  SKIP_DNS_FOR_TESTS = skip;
+}
+
 function isIpv4(host: string): boolean {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
 }
@@ -171,7 +177,7 @@ export async function validateOutboundHttpUrl(
   if (!base.ok) return base;
   const parsed = new URL(base.href);
   const host = parsed.hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host) === 0) {
+  if (isIP(host) === 0 && !SKIP_DNS_FOR_TESTS) {
     const ok = await resolvesToPublicOnly(host);
     if (!ok) {
       return { ok: false, error: "域名无法解析，或解析到本地 / 私有网络地址" };
