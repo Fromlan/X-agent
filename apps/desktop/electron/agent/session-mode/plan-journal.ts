@@ -4,16 +4,11 @@
  * Plan files themselves live on disk (~/.pi/agent/x-agent/plans or cwd/.pi/plans);
  * only the in-memory planPath reference was lost across restarts.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { ensureAgentDir } from "../prefs";
+import { writeJsonAtomicSync } from "../lib/atomic-write";
 
 export type PlanJournalRecord = {
   version: 1;
@@ -48,11 +43,15 @@ export function savePlanJournal(
     planPath,
     updatedAt: Date.now(),
   };
-  writeFileSync(
-    planJournalPath(sessionPath),
-    JSON.stringify(record, null, 2),
-    "utf8",
-  );
+  // 1.3 防御：原子写（tmp + rename）避免 crash 半写导致 journal 损坏。
+  try {
+    writeJsonAtomicSync(planJournalPath(sessionPath), record);
+  } catch (err) {
+    // 写失败不致命：用户重启后只能从 preferences 重新关联 plan。
+    console.warn(
+      `[plan-journal] 写入失败（${planJournalPath(sessionPath)}）：${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 export function loadPlanJournal(sessionPath: string): string | null {

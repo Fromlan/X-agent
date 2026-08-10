@@ -6,13 +6,13 @@ import {
   mkdirSync,
   readFileSync,
   unlinkSync,
-  writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { GoalInfo } from "../../../shared/ipc";
 import { isRestorableGoalStatus } from "../../../shared/ipc";
 import { ensureAgentDir } from "../prefs";
+import { writeJsonAtomicSync } from "../lib/atomic-write";
 
 export type GoalJournalRecord = {
   version: 1;
@@ -46,7 +46,14 @@ export function saveGoalJournal(
     goal,
     updatedAt: Date.now(),
   };
-  writeFileSync(goalJournalPath(sessionPath), JSON.stringify(record, null, 2), "utf8");
+  // 1.3 防御：原子写（tmp + rename）避免 crash 半写导致 journal 损坏。
+  try {
+    writeJsonAtomicSync(goalJournalPath(sessionPath), record);
+  } catch (err) {
+    console.warn(
+      `[goal-journal] 写入失败（${goalJournalPath(sessionPath)}）：${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 export function loadGoalJournal(sessionPath: string): GoalInfo | null {
