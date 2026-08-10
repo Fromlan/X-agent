@@ -13,6 +13,7 @@ import {
   clampGodotWaitMs,
   godotRpcTimeoutMs,
 } from "../../shared/godot-rpc";
+import { validateProjectSettingPayload } from "../../shared/godot-project-setting";
 
 /** C8: 单个 Godot 工具结果的字节上限（防止巨型响应撑爆模型上下文）。 */
 const GODOT_TOOL_RESULT_MAX_CHARS = 200_000;
@@ -554,14 +555,27 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       promptGuidelines: [
         "Only set values that belong in project.godot. The editor applies most settings on next reload.",
         "Verify with godot_get_project_setting afterwards.",
+        "Autoload / input / debug / remote logging / project_settings_override / editor_plugins are blocked at the desktop guard.",
       ],
       parameters: setProjectSettingParams,
       async execute(_id, params) {
+        // 桌面端硬闸：黑名单敏感 key + value 类型收窄，避免一次调用写入
+        // autoload/* / input/* / debug/file_logging/* 等「写入即生效」开关。
+        const guard = validateProjectSettingPayload({
+          key: params.key,
+          value: params.value,
+        });
+        if (!guard.ok) {
+          return textResult(`Godot RPC error: ${guard.error}`, {
+            ok: false,
+            error: guard.error,
+          });
+        }
         return formatResponse(
           await callBridge(bridge, {
             method: "set_project_setting",
-            key: params.key,
-            value: params.value,
+            key: guard.key,
+            value: guard.value,
           }),
         );
       },
