@@ -60,7 +60,12 @@ jobs:
           cat "$RUNNER_TEMP/release-notes.md"
 
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
+      - name: Validate changelog extraction
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: node scripts/test-extract-changelog.mjs
       # Optional Windows code signing: set repository secrets CSC_LINK + CSC_KEY_PASSWORD
       # (or WIN_CSC_LINK). electron-builder signs automatically when present.
       - run: npm run dist

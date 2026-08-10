@@ -11,9 +11,10 @@
     "desktop:dist": "npm run dist --prefix apps/desktop",
     "desktop:smoke": "npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts",
     "desktop:reset-tutorial": "powershell -ExecutionPolicy Bypass -File scripts/reset-tutorial-env.ps1 -Yes",
+    "desktop:lint": "npm run lint --prefix apps/desktop",
     "release:prepare": "node scripts/prepare-release.mjs",
     "release:notes": "node scripts/extract-changelog.mjs",
     "release:test-changelog": "node scripts/test-extract-changelog.mjs",
-    "release:dist": "npm run desktop:typecheck && npm run desktop:test && npm run desktop:dist"
+    "release:dist": "npm run desktop:typecheck && npm run desktop:lint && npm run desktop:test && npm run desktop:dist"
   }
 }

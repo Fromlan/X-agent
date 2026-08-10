@@ -5,6 +5,11 @@ on:
     branches: [main, master]
   pull_request:
 
+concurrency:
+  # 同一 ref 的旧运行自动取消,避免堆积占资源
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   desktop:
     runs-on: windows-latest
@@ -21,6 +26,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run lint
       - run: npm run build
 
   unit-test:
@@ -52,6 +58,14 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
+      # 缓存 Playwright 浏览器,避免每次重下
+      - name: Playwright Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('apps/desktop/package-lock.json') }}
       - run: npm ci
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
