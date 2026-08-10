@@ -286,6 +286,9 @@ export class SessionLifecycle {
     await this.disposeBundle(previous);
     // Re-bind after disposeBundle — must stay set for Plan/Goal mode switches.
     this.a().setResourceLoader(loader);
+    // C11: 把 Godot RPC 路由绑定到当前会话项目，避免会话切换后旧项目
+    // 的 Godot 编辑器还能接收/观察本会话的工具调用。
+    this.a().godotRpc?.setCurrentCwd(cwd);
     // Fresh in-memory mode; restore pursuing/paused goal from journal if any.
     this.a().sessionMode.emitSessionMode();
     this.a().sessionMode.emitGoal();
@@ -600,6 +603,8 @@ export class SessionLifecycle {
       sessionPath: null,
     });
     this.a().setStatus("idle");
+    // C11: 关闭项目后解除 Godot RPC cwd 绑定，避免下一次会话被上次的项目拦截。
+    this.a().godotRpc?.setCurrentCwd(null);
   }
 
   async renameSession(

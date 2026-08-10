@@ -4,7 +4,7 @@ import {
   DefaultResourceLoader,
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
-import { dbgLog, dbgTimer } from "../../shared/debug-log";
+import { dbgLog, dbgTimer, dbgWarn } from "../../shared/debug-log";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   ALL_TOGGLEABLE_TOOLS,
@@ -802,7 +802,7 @@ export class SessionHost {
     }
   }
 
-  async abort(): Promise<{ ok: boolean }> {
+  async abort(): Promise<{ ok: boolean; cancelled?: boolean }> {
     const bundle = this.bundle;
     if (!bundle) {
       dbgLog("session", "abort: no bundle");
@@ -810,18 +810,34 @@ export class SessionHost {
     }
     dbgLog("session", "abort start", { isStreaming: bundle.session.isStreaming });
     const done = dbgTimer("session", "session.abort");
+    let abortError: string | null = null;
     try {
       await bundle.session.abort();
       done();
     } catch (err) {
-      dbgLog("session", "abort threw", err instanceof Error ? err.message : String(err));
+      abortError = err instanceof Error ? err.message : String(err);
+      dbgWarn("session", "abort threw", abortError);
     }
     if (this.bundle !== bundle) {
       dbgLog("session", "abort: bundle switched");
       return { ok: true };
     }
+    // 1.3 防御：abort 抛错时仍可能 isStreaming=true，盲目 setStatus("idle")
+    // 会让 UI 以为已停止，造成新一轮 prompt 与未结束 stream 交错。
+    // 重新检查：若仍 streaming，记录可见状态并写入 error。
+    if (abortError) {
+      if (bundle.session.isStreaming) {
+        this.setStatus("error", `取消失败：${abortError}`);
+        this.emitReplaceableNotice(
+          "session",
+          `取消失败：${abortError}。请稍后重试或重启会话。`,
+          "error",
+        );
+        return { ok: false, cancelled: false };
+      }
+    }
     this.setStatus("idle");
-    return { ok: true };
+    return { ok: true, cancelled: true };
   }
 
   async previewRetract(entryId: string): Promise<RetractPreview> {
