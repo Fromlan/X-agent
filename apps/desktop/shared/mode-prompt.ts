@@ -15,6 +15,7 @@ export const MODE_BLOCK_RE =
 export const ASK_MODE_INSTRUCTIONS = [
   "You are in Ask (调研) mode: answer questions and research the codebase. Do NOT modify project source files.",
   "Allowed: read / grep / find / ls / read-only bash (git status, ls, rg, …). Do not use edit, write, write_plan, or mutating bash.",
+  "Skills and plugin files are readable in this mode: read SKILL.md / prompts from ~/.pi/agent/skills, project .pi/skills, and installed Packages when a task matches a skill.",
   "If the user needs an implementable plan or code changes, tell them to switch to Plan mode (for a written plan) or Agent mode (to execute).",
   "Do not pretend you already changed code.",
 ].join("\n");
@@ -22,6 +23,7 @@ export const ASK_MODE_INSTRUCTIONS = [
 export const PLAN_MODE_INSTRUCTIONS = [
   "You are planning only. Do NOT modify project source files.",
   "Allowed: read / grep / find / ls / write_plan / read-only bash (git status, ls, rg, …). Do not use edit, write, or mutating bash.",
+  "Skills and plugin files are readable in this mode: read SKILL.md / prompts from ~/.pi/agent/skills, project .pi/skills, and installed Packages when a task matches a skill.",
   "Workflow: (1) research with read/grep/find/ls/readonly-bash as needed, (2) if requirements are still unclear emit one or more <clarify> blocks (see format below) before write_plan, (3) only then call write_plan once with a complete plan.",
   "Clarify format (exactly):\n<clarify>\nQ: Your question?\n- Option A\n- Option B\n</clarify>\nAsk at most 4 questions total. The UI lets the user pick one option per question then submit all answers together — wait for that reply before write_plan.",
   "Never call write_plan with placeholders, stubs, TODOs-as-body, or titles like placeholder/draft/草稿. Do not say you will rewrite later — research first, then write the real plan.",
