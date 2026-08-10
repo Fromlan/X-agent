@@ -165,6 +165,44 @@ try {
     true,
     "non-string path blocked",
   );
+
+  // B1: read-only plugin roots (skills/prompts/… ) are readable in Ask/Plan —
+  // every mode can load skill files, not just Agent.
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("ask", "read", askAllowed, { path: "~/.pi/agent/skills/foo/SKILL.md" }, guardCwd).block,
+    false,
+    "ask read skill.md allowed",
+  );
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("plan", "grep", planAllowed, { pattern: "x", path: "~/.pi/agent/skills" }, guardCwd).block,
+    false,
+    "plan grep skills root allowed",
+  );
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("ask", "ls", askAllowed, { path: "~/.pi/agent/prompts" }, guardCwd).block,
+    false,
+    "ask ls prompts root allowed",
+  );
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("ask", "read", askAllowed, { path: "~/.pi/agent/skills/../secrets.txt" }, guardCwd).block,
+    true,
+    ".. escape out of skill root blocked",
+  );
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("plan", "bash", planAllowed, { command: "cat ~/.pi/agent/skills/foo/SKILL.md" }, guardCwd).block,
+    false,
+    "plan bash cat skill allowed",
+  );
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("ask", "bash", askAllowed, { command: "ls ~/.pi/agent/skills" }, guardCwd).block,
+    false,
+    "ask bash ls skills allowed",
+  );
+  assert.equal(
+    shouldBlockReadonlyModeToolCall("ask", "bash", askAllowed, { command: "cat ~/.ssh/id_rsa" }, guardCwd).block,
+    true,
+    "bash home path outside plugin roots blocked",
+  );
   assert.equal(
     shouldBlockReadonlyModeToolCall("plan", "godot_detect_project", planAllowed, { path: guardCwd }, guardCwd).block,
     false,

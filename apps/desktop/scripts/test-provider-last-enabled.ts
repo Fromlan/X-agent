@@ -9,6 +9,8 @@ import {
   type ProviderPaths,
 } from "../electron/agent/provider-store";
 import { pruneProviderIdFromPi } from "../electron/agent/provider-pi-sync";
+import { setSkipDnsForTests } from "../electron/agent/external-url";
+setSkipDnsForTests(true);
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

@@ -2,6 +2,9 @@ import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "no
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setSkipDnsForTests } from "../electron/agent/external-url";
+// 测试环境跳过 DNS 解析：测试用域名（如 relay.example.com）不真实可解析。
+setSkipDnsForTests(true);
 import {
   dedupeModelInfosForUi,
   deepseekProxyModelExtras,
