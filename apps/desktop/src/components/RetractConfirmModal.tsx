@@ -1,5 +1,6 @@
 import { AlertTriangle, FileMinus2, FilePenLine, MessageSquareDashed } from "lucide-react";
 import type { RetractPreview } from "@shared/ipc";
+import { DiffView } from "./DiffView";
 
 export type RetractConfirmMode = "retract" | "edit" | "regenerate";
 
@@ -107,6 +108,20 @@ export function RetractConfirmModal(props: Props) {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {hasFiles && preview.diffText && (
+            <div className="retract-diff-block">
+              <div className="retract-diff-label">
+                {shadowMode ? "将被还原的内容" : "write/edit 改动预览（无 Git 降级）"}
+              </div>
+              <DiffView
+                text={preview.diffText}
+                truncated={preview.diffTruncated}
+                defaultOpen
+                maxHeight={280}
+              />
             </div>
           )}
 

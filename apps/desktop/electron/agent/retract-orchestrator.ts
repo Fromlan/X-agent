@@ -101,6 +101,10 @@ export class RetractOrchestrator {
         warnings: preview.warnings,
         restoreMode: "shadow",
         shadowAvailable: true,
+        ...(preview.diffText !== undefined ? { diffText: preview.diffText } : {}),
+        ...(preview.diffTruncated !== undefined
+          ? { diffTruncated: preview.diffTruncated }
+          : {}),
       };
     }
 
@@ -114,6 +118,10 @@ export class RetractOrchestrator {
       warnings: preview.warnings,
       restoreMode: preview.mode === "none" ? "none" : "baseline",
       shadowAvailable: h.shadowCheckpoints.enabledShadow,
+      ...(preview.diffText !== undefined ? { diffText: preview.diffText } : {}),
+      ...(preview.diffTruncated !== undefined
+        ? { diffTruncated: preview.diffTruncated }
+        : {}),
     };
   }
 

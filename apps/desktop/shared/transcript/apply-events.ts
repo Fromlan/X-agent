@@ -64,6 +64,23 @@ function indexOfById<T extends ChatItem & { id: string }>(
   return -1;
 }
 
+/** Last assistant item whose turn belongs to the given user entry (from the tail). */
+function indexOfAssistantByUserEntryId(
+  items: ChatItem[],
+  userEntryId: string,
+): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]!;
+    if (
+      it.kind === "assistant" &&
+      (it.userEntryId ?? it.entryId) === userEntryId
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 /**
  * Defense-only: when streaming events omit userEntryId, derive from the
  * preceding user message. Prefer event / history_replace payloads.
@@ -230,6 +247,21 @@ export function applyAgentEvent(
             }
           : {}),
       });
+    case "turn_diff": {
+      // 把回合 diff 挂到对应 assistant 条目上（assistant 在 turn_end 前已结束）。
+      // 找不到对应条目（撤回 / 会话切换竞态）时静默丢弃。
+      const idx = indexOfAssistantByUserEntryId(items, event.userEntryId);
+      if (idx === -1) return items;
+      const next = items.slice();
+      const cur = next[idx] as Extract<ChatItem, { kind: "assistant" }>;
+      next[idx] = {
+        ...cur,
+        diffText: event.diffText,
+        diffPaths: event.paths,
+        ...(event.truncated ? { diffTruncated: true } : {}),
+      };
+      return next;
+    }
     case "tool_start": {
       // Pi 在 abort / retract 边界可能重发 tool_start;若同 id 已存在则
       // upsert 而不是 push,避免 chat 流里出现两条同 id tool 行,叠加

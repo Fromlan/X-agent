@@ -129,11 +129,28 @@ export function bridgeSessionEvents(
           bindActiveUserTurn(deps) ??
           deps.turn.fileTracker.getActiveUserEntryId();
         if (currentSession && activeUid) {
-          void deps.turn.shadowCheckpoints.capturePost(activeUid).then(() => {
-            deps.turn.shadowCheckpoints.persistDirty(
-              currentSession.sessionManager,
-            );
-          });
+          void deps.turn.shadowCheckpoints.capturePost(activeUid).then(
+            async () => {
+              deps.turn.shadowCheckpoints.persistDirty(
+                currentSession.sessionManager,
+              );
+              // 回合 diff：优先 Shadow pre→post（覆盖 bash 等全部改动）；
+              // Shadow 不可用（无 Git / steer 无 pre）时降级为 write/edit
+              // 基线内容对比——bash 副作用在无 Git 时本就无法追踪。
+              const turnDiff =
+                (await deps.turn.shadowCheckpoints.diffForTurn(activeUid)) ??
+                deps.turn.fileTracker.diffTextForTurn(activeUid);
+              if (turnDiff && turnDiff.diffText && turnDiff.paths.length > 0) {
+                deps.emit({
+                  type: "turn_diff",
+                  userEntryId: activeUid,
+                  paths: turnDiff.paths,
+                  diffText: turnDiff.diffText,
+                  ...(turnDiff.truncated ? { truncated: true } : {}),
+                });
+              }
+            },
+          );
         }
         if (currentSession) {
           deps.turn.fileTracker.persistDirty(currentSession.sessionManager);

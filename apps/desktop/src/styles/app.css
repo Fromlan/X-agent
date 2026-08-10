@@ -49,6 +49,14 @@
   --accent-purple: var(--text-secondary);
   --accent-gray: #737373;
 
+  /* Diff semantic colors — resolved against the active theme pack's accents. */
+  --diff-add-bg: color-mix(in srgb, var(--accent-green) 13%, transparent);
+  --diff-del-bg: color-mix(in srgb, var(--accent-red) 13%, transparent);
+  --diff-add-text: var(--accent-green);
+  --diff-del-text: var(--accent-red);
+  --diff-hunk-text: var(--accent-blue);
+  --diff-meta-text: var(--text-muted);
+
   /* Context breakdown / turn stack (Cindy muted hues) */
   --ctx-system: #6b8fce;
   --ctx-project: #5ba87a;
@@ -1872,6 +1880,123 @@ body.is-resizing-column * {
   flex-direction: column;
   gap: 4px;
   line-height: 1.45;
+}
+
+.retract-diff-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.retract-diff-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* ---------- DiffView (shared by retract preview + turn diff) ---------- */
+
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-result);
+  overflow: hidden;
+}
+
+.diff-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-input);
+}
+
+.diff-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.diff-view-toggle:hover {
+  color: var(--text-primary);
+}
+
+.diff-view-toggle svg {
+  color: var(--text-muted);
+}
+
+/* +N / -N 统计着色：绿=新增行，红=删除行（与 diff 正文语义一致） */
+.diff-view-stats {
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-stat-add {
+  color: var(--diff-add-text);
+  font-weight: 500;
+}
+
+.diff-stat-del {
+  color: var(--diff-del-text);
+  font-weight: 500;
+}
+
+.diff-view-truncated {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.diff-view-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.diff-line {
+  min-height: 1.55em;
+  padding: 0 10px;
+  white-space: pre;
+  color: var(--text-secondary);
+}
+
+.diff-line.is-meta {
+  color: var(--diff-meta-text);
+  font-weight: 500;
+}
+
+.diff-line.is-hunk {
+  color: var(--diff-hunk-text);
+}
+
+.diff-line.is-add {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-text);
+}
+
+.diff-line.is-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-text);
+}
+
+.diff-view-tail {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-primary);
 }
 
 .retract-confirm-actions {

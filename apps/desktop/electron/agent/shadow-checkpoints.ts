@@ -244,6 +244,31 @@ export class ShadowCheckpointTracker implements RestoreSource {
   }
 
   /**
+   * 计算某回合 pre→post 的统一 diff（post 缺失时对 worktree），
+   * 供 turn_end 后聊天流展示"本轮改了什么"。无 Git / 无 pre 检查点返回 null。
+   */
+  async diffForTurn(
+    userEntryId: string,
+  ): Promise<
+    | { diffText: string; paths: string[]; truncated?: boolean }
+    | null
+  > {
+    if (!(await this.ensureReady()) || !this.shadow) return null;
+    await this.flush();
+    const cp = this.turns.get(userEntryId);
+    if (!cp?.pre) return null;
+    const to = cp.post ?? (await this.shadow.revParse("HEAD"));
+    const text = await this.shadow.diffText(cp.pre, to ?? undefined);
+    if (!text.ok || !text.text) return null;
+    const paths = await this.shadow.diffPaths(cp.pre, to ?? undefined);
+    return {
+      diffText: text.text,
+      paths: paths.ok ? paths.paths : [],
+      ...(text.truncated ? { truncated: true } : {}),
+    };
+  }
+
+  /**
    * Resolve pre SHA for retract target: the target user turn's pre,
    * else previous sibling turn's post on the branch.
    */
@@ -283,6 +308,8 @@ export class ShadowCheckpointTracker implements RestoreSource {
       | "hasBash"
       | "hasGodot"
       | "warnings"
+      | "diffText"
+      | "diffTruncated"
     > & { mode: "shadow" | "baseline" | "none"; shadowSha?: string }
   > {
     await this.flush();
@@ -293,6 +320,17 @@ export class ShadowCheckpointTracker implements RestoreSource {
       const head = await this.shadow.revParse("HEAD");
       const diff = await this.shadow.diffPathsIncludingWorktree(sha, head);
       const paths = diff.ok ? diff.paths : segmentScan.mutationPaths;
+      // 撤回预览 diff：pre→HEAD 的统一 diff（head 缺失时对 worktree）。
+      // 与还原范围（target→HEAD diff 路径集）保持一致，让用户看清将被还原的内容。
+      let diffText: string | undefined;
+      let diffTruncated: boolean | undefined;
+      if (diff.ok && paths.length > 0) {
+        const text = await this.shadow.diffText(sha, head ?? undefined);
+        if (text.ok && text.text) {
+          diffText = text.text;
+          diffTruncated = text.truncated;
+        }
+      }
       if (segmentScan.hasGodot) {
         warnings.push(
           "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
@@ -314,6 +352,8 @@ export class ShadowCheckpointTracker implements RestoreSource {
         hasBash: segmentScan.hasBash,
         hasGodot: segmentScan.hasGodot,
         warnings,
+        ...(diffText !== undefined ? { diffText } : {}),
+        ...(diffTruncated !== undefined ? { diffTruncated } : {}),
       };
     }
 

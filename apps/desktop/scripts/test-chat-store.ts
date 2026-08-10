@@ -257,4 +257,68 @@ assert(
   );
 }
 
+// turn_diff attaches the turn's unified diff to the matching assistant bubble
+// (by userEntryId), and drops silently when no matching assistant exists.
+{
+  let turn = createEmptyState();
+  turn = applyAgentEvent(turn, {
+    type: "user_message",
+    text: "add feature",
+    id: "u-turn",
+    entryId: "entry-turn",
+  });
+  turn = applyAgentEvent(turn, {
+    type: "assistant_start",
+    messageId: "a-turn",
+    userEntryId: "entry-turn",
+  });
+  turn = applyAgentEvent(turn, {
+    type: "assistant_end",
+    messageId: "a-turn",
+    isError: false,
+  });
+  turn = applyAgentEvent(turn, {
+    type: "turn_diff",
+    userEntryId: "entry-turn",
+    paths: ["src/a.ts"],
+    diffText: "diff --git a/src/a.ts b/src/a.ts\n@@ -1,1 +1,1 @@\n-old\n+new\n",
+  });
+  const at = turn.find((i) => i.kind === "assistant" && i.id === "a-turn");
+  assert(
+    at?.kind === "assistant" &&
+      at.diffText ===
+        "diff --git a/src/a.ts b/src/a.ts\n@@ -1,1 +1,1 @@\n-old\n+new\n" &&
+      at.diffPaths?.join(",") === "src/a.ts",
+    "turn_diff attaches diff to the matching assistant bubble",
+  );
+
+  // 找不到对应 assistant（撤回/会话切换竞态）时静默丢弃
+  const dropped = applyAgentEvent(turn, {
+    type: "turn_diff",
+    userEntryId: "entry-ghost",
+    paths: ["b.ts"],
+    diffText: "diff --git a/b.ts b/b.ts",
+  });
+  assert(
+    dropped.length === turn.length &&
+      dropped.find((i) => i.kind === "assistant" && i.id === "a-turn")?.kind ===
+        "assistant",
+    "turn_diff for an unknown userEntryId is dropped",
+  );
+
+  // truncated 标志透传
+  const truncated = applyAgentEvent(turn, {
+    type: "turn_diff",
+    userEntryId: "entry-turn",
+    paths: ["src/a.ts"],
+    diffText: "diff --git a/src/a.ts b/src/a.ts\n",
+    truncated: true,
+  });
+  const at2 = truncated.find((i) => i.kind === "assistant" && i.id === "a-turn");
+  assert(
+    at2?.kind === "assistant" && at2.diffTruncated === true,
+    "turn_diff truncated flag is attached",
+  );
+}
+
 console.log("test-chat-store: ok");

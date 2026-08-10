@@ -17,6 +17,7 @@ import { join, relative, resolve } from "node:path";
 import { isGitAvailable, runGit, type GitExecResult } from "./git-exec";
 import { ensureAgentDir } from "./prefs";
 import { resolveInsideCwd } from "./cwd-sandbox";
+import { truncateDiffText } from "./baseline-diff";
 
 /** Marker rename suffix while shadow-git add runs (avoid nested-repo gitlinks). */
 export const NESTED_GIT_DISABLED_SUFFIX = ".__xagent_shadow__";
@@ -66,6 +67,18 @@ export type ShadowDiffResult = {
   paths: string[];
   error?: string;
 };
+
+export type ShadowDiffTextResult = {
+  ok: boolean;
+  /** Unified diff text (path headers + hunks), already truncated to the cap. */
+  text?: string;
+  /** True when the output was cut to fit the size cap. */
+  truncated?: boolean;
+  error?: string;
+};
+
+/** Cap for diff payloads crossing IPC (per call); oversized diffs are head-truncated. */
+export const SHADOW_DIFF_TEXT_MAX_BYTES = 256 * 1024;
 
 /** Checkpoints root under ~/.pi/agent/x-agent/checkpoints (respects prefs agentDir override). */
 export function getCheckpointsRoot(): string {
@@ -484,6 +497,42 @@ export class ShadowGit {
     }
     for (const p of b.paths) paths.add(p);
     return { ok: true, paths: [...paths] };
+  }
+
+  /**
+   * Unified diff text between two commits, or between a commit and the work
+   * tree when `toSha` is omitted (`git diff -U3 <fromSha> [<toSha>]`).
+   * Output is head-truncated at SHADOW_DIFF_TEXT_MAX_BYTES (line-aligned) so
+   * oversized diffs cannot blow up IPC or the renderer.
+   */
+  async diffText(
+    fromSha: string,
+    toSha?: string,
+    options?: { maxBytes?: number },
+  ): Promise<ShadowDiffTextResult> {
+    const ensured = await this.ensureRepo();
+    if (!ensured.ok) {
+      return { ok: false, error: ensured.error };
+    }
+    const args = [
+      "diff",
+      "--no-ext-diff",
+      "--no-color",
+      "-U3",
+      fromSha,
+      ...(toSha ? [toSha] : []),
+    ];
+    const r = await gitShadow(this.gitDir, this.cwd, args, 60_000);
+    if (r.code !== 0) {
+      return {
+        ok: false,
+        error: (r.stderr || r.stdout || "git diff failed").trim().slice(0, 400),
+      };
+    }
+    const maxBytes = options?.maxBytes ?? SHADOW_DIFF_TEXT_MAX_BYTES;
+    const raw = r.stdout;
+    const { text, truncated } = truncateDiffText(raw, maxBytes);
+    return truncated ? { ok: true, text, truncated: true } : { ok: true, text };
   }
 
   /**

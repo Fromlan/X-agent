@@ -40,6 +40,10 @@ export type RestorePreview = {
   hasBash: boolean;
   hasGodot: boolean;
   warnings: string[];
+  /** Unified diff of restorable paths (shadow mode only, optional). */
+  diffText?: string;
+  /** True when diffText was truncated to the payload cap. */
+  diffTruncated?: boolean;
 };
 
 export type RestoreAttempt = {

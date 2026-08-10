@@ -103,12 +103,51 @@ describe.skipIf(!gitAvailable)("ShadowGit + ShadowCheckpointTracker（需要 git
       diff.paths.some((p) => p.replace(/\\/g, "/").endsWith("sub/b.txt")),
     ).toBe(true);
 
+    // diffText:统一 diff 内容 + 文件头
+    if (pre.ok && post.ok) {
+      const text = await shadow.diffText(pre.sha, post.sha);
+      expect(text.ok).toBe(true);
+      expect(text.text).toBeTruthy();
+      expect(text.text!.includes("diff --git")).toBe(true);
+      expect(text.text!.includes("a/a.txt")).toBe(true);
+      expect(text.text!.includes("@@")).toBe(true);
+      expect(text.truncated).toBeUndefined();
+    }
+
     const restored = await shadow.restore(pre.sha);
     expect(restored.ok).toBe(true);
     expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("v1");
     expect(existsSync(join(work, "sub", "b.txt"))).toBe(true);
     expect(readFileSync(join(work, "sub", "b.txt"), "utf8")).toBe("b1");
     expect(existsSync(join(work, "c.txt"))).toBe(false);
+
+    shadow.destroy();
+  });
+
+  it("diffText 超过上限时按行截断并标记 truncated", async () => {
+    const gitDir = join(agentHome, "x-agent", "checkpoints", "test-trunc");
+    const shadow = new ShadowGit(work, gitDir);
+    await shadow.ensureRepo();
+    const pre = await shadow.commit("pre-trunc");
+    expect(pre.ok).toBe(true);
+    if (!pre.ok) return;
+
+    // 写一个远超 4KB 上限的大文件
+    const big = Array.from({ length: 2000 }, (_, i) => `line-${i} padded content`).join("\n");
+    writeFileSync(join(work, "big.txt"), big, "utf8");
+    const post = await shadow.commit("post-trunc");
+    expect(post.ok).toBe(true);
+    if (!post.ok) return;
+
+    const text = await shadow.diffText(pre.sha, post.sha, { maxBytes: 4096 });
+    expect(text.ok).toBe(true);
+    expect(text.truncated).toBe(true);
+    expect(text.text).toBeTruthy();
+    // 截断不切行：尾行一定是完整行
+    const tail = text.text!.split("\n").pop()!;
+    expect(tail.endsWith("padded content")).toBe(true);
+    // 超过上限的文本不会整体返回
+    expect(Buffer.byteLength(text.text!, "utf8")).toBeLessThanOrEqual(8192);
 
     shadow.destroy();
   });
@@ -147,6 +186,49 @@ describe.skipIf(!gitAvailable)("ShadowGit + ShadowCheckpointTracker（需要 git
     await tracker.capturePost("u-orphan");
     expect(tracker.getCheckpoint("u-orphan")?.pre).toBeUndefined();
     expect(tracker.getCheckpoint("u-orphan")?.post).toBeTruthy();
+  });
+
+  it("diffForTurn 返回该回合 pre→post 的统一 diff", async () => {
+    writeFileSync(join(work, "a.txt"), "diff-for-turn-before", "utf8");
+    const tracker = new ShadowCheckpointTracker();
+    await tracker.setCwd(work);
+    await tracker.preparePromptCheckpoint();
+    tracker.bindPendingPre("u-turn");
+    expect(tracker.getCheckpoint("u-turn")?.pre).toBeTruthy();
+
+    writeFileSync(join(work, "a.txt"), "diff-for-turn-after", "utf8");
+    await tracker.capturePost("u-turn");
+    const diff = await tracker.diffForTurn("u-turn");
+    expect(diff).not.toBeNull();
+    expect(diff!.paths.includes("a.txt")).toBe(true);
+    expect(diff!.diffText).toContain("diff --git");
+    expect(diff!.diffText).toContain("-diff-for-turn-before");
+    expect(diff!.diffText).toContain("+diff-for-turn-after");
+
+    // 无 pre 检查点的 turn → null（不臆造 diff）
+    expect(await tracker.diffForTurn("u-ghost")).toBeNull();
+  });
+
+  it("previewRestore 在 shadow 模式附带 diffText", async () => {
+    writeFileSync(join(work, "a.txt"), "preview-before", "utf8");
+    const tracker = new ShadowCheckpointTracker();
+    await tracker.setCwd(work);
+    await tracker.preparePromptCheckpoint();
+    tracker.bindPendingPre("u-preview");
+    writeFileSync(join(work, "a.txt"), "preview-after", "utf8");
+    await tracker.capturePost("u-preview");
+
+    const { sm } = makeSm();
+    const preview = await tracker.previewRestore(sm, "u-preview", {
+      mutationPaths: ["a.txt"],
+      hasBash: false,
+      hasGodot: false,
+    });
+    expect(preview.mode).toBe("shadow");
+    expect(preview.restorablePaths.includes("a.txt")).toBe(true);
+    expect(preview.diffText).toBeTruthy();
+    expect(preview.diffText!.includes("preview-before")).toBe(true);
+    expect(preview.diffTruncated).toBeUndefined();
   });
 
   it("resolveRestoreSha 优先目标 turn 的 pre，否则回溯上一个 post", async () => {

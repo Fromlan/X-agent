@@ -10,6 +10,10 @@ import {
 import { dirname } from "node:path";
 import type { FileRestoreReport, FileRestoreSkipReason } from "../../shared/ipc";
 import { resolveInsideCwd } from "./cwd-sandbox";
+import {
+  baselineDiffTextForEntry,
+  joinBaselineDiffs,
+} from "./baseline-diff";
 import type {
   RestoreAttempt,
   RestorePreview,
@@ -330,6 +334,8 @@ export class TurnFileTracker implements RestoreSource {
     hasBash: boolean;
     hasGodot: boolean;
     warnings: string[];
+    diffText?: string;
+    diffTruncated?: boolean;
   } {
     const scan = this.scanSegmentSince(sm, entryId);
     const restorablePaths: string[] = [];
@@ -351,12 +357,73 @@ export class TurnFileTracker implements RestoreSource {
         `${unrestorablePaths.length} 个文件缺少基线，无法自动还原。`,
       );
     }
+    // 无 Git 降级：基于 write/edit 基线对比当前盘上内容，产出撤回预览 diff。
+    const diffParts: Array<{ rel: string; diffText: string }> = [];
+    if (this.cwd) {
+      for (const rel of restorablePaths) {
+        const hit = this.baselineForPath(rel, scan.userEntryIds);
+        if (!hit.ok) continue;
+        const res = baselineDiffTextForEntry(rel, hit.entry, this.cwd);
+        if ("diffText" in res) diffParts.push({ rel, diffText: res.diffText });
+      }
+    }
+    let diffText: string | undefined;
+    let diffTruncated: boolean | undefined;
+    if (diffParts.length > 0) {
+      const joined = joinBaselineDiffs(diffParts);
+      diffText = joined.diffText;
+      diffTruncated = joined.truncated;
+    }
     return {
       restorablePaths,
       unrestorablePaths,
       hasBash: scan.hasBash,
       hasGodot: scan.hasGodot,
       warnings,
+      ...(diffText !== undefined ? { diffText } : {}),
+      ...(diffTruncated !== undefined ? { diffTruncated } : {}),
+    };
+  }
+
+  /** 暴露某回合 write/edit 记录的基线快照（供无 Git 降级 diff 计算）。 */
+  getTurnBaselines(
+    userEntryId: string,
+  ): Array<{ rel: string; entry: BaselineEntry }> {
+    const map = this.turnBaselines.get(userEntryId);
+    if (!map) return [];
+    const out: Array<{ rel: string; entry: BaselineEntry }> = [];
+    for (const [rel, entry] of map) {
+      out.push({ rel, entry });
+    }
+    return out;
+  }
+
+  /**
+   * 无 Git 降级：基于 write/edit 字节基线对比当前盘上内容，
+   * 计算某回合的文件改动 diff（与 ShadowCheckpointTracker.diffForTurn 同构）。
+   * bash 改盘的文件没有基线，不在返回内（与"无法还原"的降级语义一致）。
+   */
+  diffTextForTurn(
+    userEntryId: string,
+  ): { diffText: string; paths: string[]; truncated?: boolean } | null {
+    if (!this.cwd) return null;
+    const baselines = this.getTurnBaselines(userEntryId);
+    if (baselines.length === 0) return null;
+    const parts: Array<{ rel: string; diffText: string }> = [];
+    const paths: string[] = [];
+    for (const { rel, entry } of baselines) {
+      const res = baselineDiffTextForEntry(rel, entry, this.cwd);
+      if ("diffText" in res) {
+        parts.push({ rel, diffText: res.diffText });
+        paths.push(rel);
+      }
+    }
+    if (parts.length === 0) return null;
+    const joined = joinBaselineDiffs(parts);
+    return {
+      diffText: joined.diffText,
+      paths,
+      ...(joined.truncated ? { truncated: true } : {}),
     };
   }
 

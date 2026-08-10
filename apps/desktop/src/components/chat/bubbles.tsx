@@ -9,6 +9,7 @@ import { Brain, Check, Hammer, HelpCircle, Pencil, RotateCcw, Undo2 } from "luci
 import { MarkdownBody } from "../MarkdownBody";
 import { ToolCard } from "../ToolCard";
 import { UserMessageBody } from "../UserMessageBody";
+import { DiffView } from "../DiffView";
 import {
   formatClarifyReply,
   parseClarifyBlocks,
@@ -322,6 +323,13 @@ export const AssistantBubble = memo(function AssistantBubble(
         streaming={!props.item.done}
         useMarkdown={props.item.done}
       />
+      {props.item.diffText && (
+        <DiffView
+          text={props.item.diffText}
+          truncated={props.item.diffTruncated}
+          maxHeight={300}
+        />
+      )}
       {clarifies.length > 0 && props.onClarifySelect && (
         <ClarifyPanel
           questions={clarifies}

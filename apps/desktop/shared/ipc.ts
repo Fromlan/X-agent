@@ -566,6 +566,12 @@ export type HistoryItem =
       entryId?: string;
       /** Preceding user message entry id on the active branch. */
       userEntryId?: string;
+      /** Unified diff of the turn (shadow pre→post), attached after turn_end. */
+      diffText?: string;
+      /** Rel-paths changed in this turn (shadow pre→post). */
+      diffPaths?: string[];
+      /** True when diffText was truncated to the payload cap. */
+      diffTruncated?: boolean;
     }
   | {
       kind: "tool";
@@ -620,6 +626,10 @@ export interface RetractPreview {
   restoreMode?: "shadow" | "baseline" | "none";
   /** True when Shadow Git checkpoints are active for this project. */
   shadowAvailable?: boolean;
+  /** Unified diff (pre→HEAD+worktree) of restorable paths; shadow mode only. */
+  diffText?: string;
+  /** True when diffText was truncated to the payload cap. */
+  diffTruncated?: boolean;
 }
 
 export interface RetractResult {
@@ -635,6 +645,17 @@ export type UiAgentEvent =
   | { type: "agent_end"; willRetry?: boolean }
   | { type: "turn_start" }
   | { type: "turn_end" }
+  | {
+      type: "turn_diff";
+      /** Preceding user message entry id (matches assistant.userEntryId). */
+      userEntryId: string;
+      /** Rel-paths changed in this turn (shadow pre→post). */
+      paths: string[];
+      /** Unified diff text (already truncated). */
+      diffText: string;
+      /** True when diffText hit the payload cap. */
+      truncated?: boolean;
+    }
   | {
       type: "user_message";
       text: string;
