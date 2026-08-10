@@ -67,13 +67,14 @@ function connectMockClient(
 function authenticate(
   bridge: GodotRpcBridge,
   socket: Socket,
+  projectPath = "D:/proj",
 ): Promise<void> {
   const before = bridge.listClients().filter((c) => Boolean(c.projectPath)).length;
   socket.write(
     `${JSON.stringify({
       type: "editor_ready",
       godotVersion: "4.3",
-      projectPath: "D:/proj",
+      projectPath,
       token: bridge.getAuthToken(),
     })}\n`,
   );
@@ -320,5 +321,103 @@ describe("GodotRpcBridge", () => {
   it("默认 endpoint 路径指向家目录", () => {
     expect(godotRpcEndpointPath()).toContain(".pi");
     expect(godotRpcEndpointPath().endsWith("x-agent-godot-rpc.json")).toBe(true);
+  });
+
+  it("setCurrentCwd 绑定后，只有匹配项目的客户端才接收请求", async () => {
+    isolateEndpoint();
+    bridge = new GodotRpcBridge();
+    const port = nextPort();
+    await bridge.start(port);
+
+    const mockMain = await connectMockClient(port, (line, write) => {
+      const msg = JSON.parse(line) as { id: string; method: string };
+      write({ id: msg.id, ok: true, result: { from: "main" } });
+    });
+    await waitFor(() => bridge!.getStatus().clients === 1, "main tcp");
+    await authenticate(bridge, mockMain.socket, "D:/proj");
+
+    const mockOther = await connectMockClient(port, (line, write) => {
+      const msg = JSON.parse(line) as { id: string; method: string };
+      write({ id: msg.id, ok: true, result: { from: "other" } });
+    });
+    await waitFor(() => bridge!.getStatus().clients === 2, "other tcp");
+    await authenticate(bridge, mockOther.socket, "D:/other");
+
+    expect(bridge.listClients()).toHaveLength(2);
+
+    // 绑定到 D:/proj：默认路由只会命中 main。
+    bridge.setCurrentCwd("D:/proj");
+    const ok = await bridge.request({ id: "main-default", method: "ping" }, 2000);
+    expect(ok.ok).toBe(true);
+    if (ok.ok) {
+      expect((ok as { result: { from: string } }).result.from).toBe("main");
+    }
+
+    // 显式选中 other 项目下的客户端 → 拒绝（不静默改道）。
+    const otherInfos = bridge.listClients().filter((c) => c.projectPath === "D:/other");
+    expect(otherInfos).toHaveLength(1);
+    const otherId = otherInfos[0]!.id;
+    const cross = await bridge.request(
+      { id: "cross", method: "ping" },
+      2000,
+      { clientId: otherId },
+    );
+    expect(cross.ok).toBe(false);
+    if (!cross.ok) expect(cross.error).toMatch(/不属于当前会话项目/);
+
+    // 解除绑定后又可接受任意客户端。
+    bridge.setCurrentCwd(null);
+    const free = await bridge.request(
+      { id: "free", method: "ping" },
+      2000,
+      { clientId: otherId },
+    );
+    expect(free.ok).toBe(true);
+    if (free.ok) {
+      expect((free as { result: { from: string } }).result.from).toBe("other");
+    }
+
+    mockMain.close();
+    mockOther.close();
+    await waitFor(() => bridge!.getStatus().clients === 0, "cleared");
+  });
+
+  it("setCurrentCwd 切换项目时，原本 active 的客户端不匹配会重置", async () => {
+    isolateEndpoint();
+    bridge = new GodotRpcBridge();
+    const port = nextPort();
+    await bridge.start(port);
+
+    const mockA = await connectMockClient(port, (line, write) => {
+      const msg = JSON.parse(line) as { id: string; method: string };
+      write({ id: msg.id, ok: true, result: { from: "A" } });
+    });
+    await waitFor(() => bridge!.getStatus().clients === 1, "A tcp");
+    await authenticate(bridge, mockA.socket, "D:/projA");
+
+    const mockB = await connectMockClient(port, (line, write) => {
+      const msg = JSON.parse(line) as { id: string; method: string };
+      write({ id: msg.id, ok: true, result: { from: "B" } });
+    });
+    await waitFor(() => bridge!.getStatus().clients === 2, "B tcp");
+    await authenticate(bridge, mockB.socket, "D:/projB");
+
+    const idA = bridge.listClients().find((c) => c.projectPath === "D:/projA")!.id;
+    const idB = bridge.listClients().find((c) => c.projectPath === "D:/projB")!.id;
+
+    bridge.setCurrentCwd("D:/projA");
+    expect(bridge.setActiveClient(idA)).toBe(true);
+    expect(bridge.getStatus().activeClientId).toBe(idA);
+
+    // 切换到 projB：原 active 不匹配 → 重置为首个匹配客户端（idB）。
+    bridge.setCurrentCwd("D:/projB");
+    expect(bridge.getStatus().activeClientId).toBe(idB);
+
+    // 显式切到 projA 的客户端 → 拒绝。
+    expect(bridge.setActiveClient(idA)).toBe(false);
+
+    mockA.close();
+    mockB.close();
+    await waitFor(() => bridge!.getStatus().clients === 0, "cleared");
   });
 }, 30000);

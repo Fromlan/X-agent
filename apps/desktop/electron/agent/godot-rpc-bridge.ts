@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from "node:net";
-import { join } from "node:path";
+import { join, normalize, resolve } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type {
@@ -67,6 +67,26 @@ const ENDPOINT_TOKEN_RE = /^[0-9a-f]{32}$/i;
 
 /** 桥接仅监听回环地址，endpoint 中的 host 也必须是回环。 */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
+
+/** 规范化项目 cwd：绝对路径 + 大小写归一（Windows NTFS）。 */
+export function normalizeProjectCwd(cwd: string): string {
+  const absolute = resolve(cwd);
+  return process.platform === "win32" ? absolute.toLowerCase() : absolute;
+}
+
+/** 比较两个项目路径是否指向同一项目（处理 Windows 大小写）。 */
+export function projectPathMatchesCwd(
+  projectPath: string | undefined,
+  cwd: string,
+): boolean {
+  if (!projectPath) return false;
+  const normalized = normalizeProjectCwd(projectPath);
+  if (normalized === cwd) return true;
+  // 兼容 Godot 端返回可能带尾斜杠 / 不同大小写的情况。
+  const trimmed = normalized.replace(/[\\/]+$/, "");
+  const cwdTrimmed = cwd.replace(/[\\/]+$/, "");
+  return trimmed === cwdTrimmed;
+}
 
 type EndpointFile = {
   host?: unknown;
@@ -143,6 +163,12 @@ export class GodotRpcBridge {
   private handshakeFailures = 0;
   private lastHandshakeFailure: GodotRpcHandshakeFailure | undefined;
   private lastAddonVersion: string | undefined;
+  /**
+   * 当前会话所属项目 cwd（规范化后）。已设置时，所有 RPC 路由仅在该 cwd
+   * 项目下生效：避免一次会话切换后，旧的 / 其它项目的 Godot 编辑器还能
+   * 接收/观察本会话的工具调用。
+   */
+  private currentCwd: string | null = null;
   private listeners = new Set<Listener>();
   private pending = new Map<
     string,
@@ -221,9 +247,47 @@ export class GodotRpcBridge {
     // C1: 只允许选中已鉴权客户端，避免把请求静默发往未完成握手的连接。
     const client = this.clients.get(clientId);
     if (!client || !client.authenticated) return false;
+    // C11: 切换目标必须与当前会话 cwd 项目匹配（否则 renderer 可把请求
+    // 改道到任意其它项目）。未匹配 → 拒绝并保留原 active，避免误判。
+    if (this.currentCwd && !projectPathMatchesCwd(client.projectPath, this.currentCwd)) {
+      this.lastWarning = `选中客户端 ${clientId} 所属项目与当前会话项目不一致，已拒绝`;
+      this.emitStatus();
+      return false;
+    }
     this.activeClientId = clientId;
     this.emitStatus();
     return true;
+  }
+
+  /**
+   * 绑定当前会话所属项目 cwd。已绑定时，桥接只接受该项目下的客户端
+   * 作为合法 RPC 接收方；其它客户端被视为「未匹配项目」，所有走默认路由
+   * 的请求都会被拦截（显式 clientId 同样会被拒绝）。
+   * 传 null 解除绑定（项目关闭 / 切换中）。
+   */
+  setCurrentCwd(cwd: string | null): void {
+    const normalized = cwd ? normalizeProjectCwd(cwd) : null;
+    if (normalized === this.currentCwd) return;
+    this.currentCwd = normalized;
+    // 若当前 active 客户端不再匹配新 cwd，重置为首个已匹配客户端；
+    // 没有匹配项则清空。
+    if (this.currentCwd) {
+      const active = this.activeClientId
+        ? this.clients.get(this.activeClientId)
+        : null;
+      if (!active || !projectPathMatchesCwd(active.projectPath, this.currentCwd)) {
+        const first = [...this.clients.values()].find((c) =>
+          projectPathMatchesCwd(c.projectPath, this.currentCwd!),
+        );
+        this.activeClientId = first?.id ?? null;
+      }
+    }
+    this.emitStatus();
+  }
+
+  /** 内部用：当前绑定的 cwd（已规范化）。null 表示未绑定。 */
+  getCurrentCwd(): string | null {
+    return this.currentCwd;
   }
 
   private emitStatus(): void {
@@ -312,6 +376,8 @@ export class GodotRpcBridge {
       socket.on("error", () => this.removeClient(socket));
     });
     this.server = server;
+    // 1.3 防御：server 不 unref 会在 Electron 退出时阻塞事件循环。
+    server.unref();
 
     try {
       await new Promise<void>((resolve, reject) => {
@@ -413,6 +479,7 @@ export class GodotRpcBridge {
   async stop(): Promise<void> {
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
+      // 优先 reject：避免 pending.resolve 二次返回（即便 Promise 静默忽略也避免污染）。
       pending.resolve({ id: "stopped", ok: false, error: "bridge stopped" });
     }
     this.pending.clear();
@@ -426,15 +493,29 @@ export class GodotRpcBridge {
     this.handshakeFailures = 0;
     this.lastHandshakeFailure = undefined;
     this.lastAddonVersion = undefined;
-    await new Promise<void>((resolve) => {
-      const server = this.server;
-      this.server = null;
-      if (!server) {
-        resolve();
-        return;
+    this.currentCwd = null;
+    // 1.3 防御：server.close() 在仍有 keep-alive 连接时可能挂住，这里加
+    // 1s 强制降级，避免 window-all-closed 后 Electron 进程被 socket 拖住。
+    const server = this.server;
+    this.server = null;
+    if (server) {
+      server.removeAllListeners();
+      try {
+        server.close();
+      } catch {
+        // ignore
       }
-      server.close(() => resolve());
-    });
+      await Promise.race([
+        new Promise<void>((resolve) => server.close(() => resolve())),
+        new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+      ]);
+      try {
+        // 实在释放不掉就 unref，保持进程不挂。
+        server.unref();
+      } catch {
+        // ignore
+      }
+    }
     // 故意不删除 endpoint 文件：
     //   - stop() 只在 window-all-closed 正常路径执行；崩溃 / taskkill 本来就不会清。
     //   - 保留文件让下次 start() 能复用旧 token，使已运行的 Godot 插件无需重装即可恢复。
@@ -540,29 +621,56 @@ export class GodotRpcBridge {
    * - 显式 `options.clientId`：必须存在且已鉴权，否则返回 null（不静默改道）。
    * - 默认（activeClientId / 首个已鉴权）：activeClientId 未鉴权/失效时回退到
    *   首个已鉴权客户端，并通过 `routedTo` 告知调用方实际送达目标。
+   * - C11: 若桥接已绑定 `currentCwd`，仅该项目下的客户端合法：
+   *   - 显式选中不在该 cwd → 拒绝（不静默改道到其他项目）。
+   *   - 默认路由在当前 cwd 项目内找不到任何客户端 → 拒绝。
    */
   private resolveClient(
     options?: GodotRpcRequestOptions,
-  ): { client: ClientState | null; routedTo?: string } {
-    if (this.clients.size === 0) return { client: null };
+  ): {
+    client: ClientState | null;
+    routedTo?: string;
+    reason?: string;
+  } {
+    if (this.clients.size === 0) {
+      return { client: null, reason: "no Godot editor connected" };
+    }
     const explicit = options?.clientId ?? null;
     const preferred = explicit ?? this.activeClientId;
+    const matchesCwd = (c: ClientState): boolean =>
+      !this.currentCwd || projectPathMatchesCwd(c.projectPath, this.currentCwd);
+
     if (preferred) {
       const hit = this.clients.get(preferred);
       if (hit && !hit.socket.destroyed && hit.authenticated) {
-        return { client: hit };
+        if (!matchesCwd(hit)) {
+          if (explicit) {
+            return {
+              client: null,
+              reason: `选中的 Godot 客户端不属于当前会话项目（${this.currentCwd}）`,
+            };
+          }
+        } else {
+          return { client: hit };
+        }
       }
       if (explicit) {
         // 显式选择的目标不可用 → 不静默改道，直接失败。
-        return { client: null };
+        return { client: null, reason: "Godot client not found or not authenticated" };
       }
     }
     for (const client of this.clients.values()) {
-      if (!client.socket.destroyed && client.authenticated) {
+      if (!client.socket.destroyed && client.authenticated && matchesCwd(client)) {
         return { client, routedTo: client.id };
       }
     }
-    return { client: null };
+    if (this.currentCwd) {
+      return {
+        client: null,
+        reason: `当前会话项目（${this.currentCwd}）下没有已连接的 Godot 编辑器`,
+      };
+    }
+    return { client: null, reason: "no Godot editor connected" };
   }
 
   async request(
@@ -570,21 +678,12 @@ export class GodotRpcBridge {
     timeoutMs = GODOT_RPC_BASE_TIMEOUT_MS,
     options?: GodotRpcRequestOptions,
   ): Promise<GodotRpcResponse> {
-    const { client, routedTo } = this.resolveClient(options);
+    const { client, routedTo, reason } = this.resolveClient(options);
     if (!client) {
       return {
         id: req.id,
         ok: false,
-        error: options?.clientId
-          ? `Godot client not found or not authenticated: ${options.clientId}`
-          : "no Godot editor connected",
-      };
-    }
-    if (options?.clientId && !this.clients.has(options.clientId)) {
-      return {
-        id: req.id,
-        ok: false,
-        error: `Godot client not found: ${options.clientId}`,
+        error: reason ?? "no Godot editor connected",
       };
     }
     const payload = `${JSON.stringify(req)}\n`;
