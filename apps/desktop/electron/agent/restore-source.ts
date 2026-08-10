@@ -150,23 +150,27 @@ export class CompositeRestoreSource {
     scan: RestoreSegmentScan,
   ): FileRestoreReport | undefined {
     if (!report) return report;
+    // 1.3 防御：返回新报告对象，避免在复合 fallback 路径里多次 push 同一个
+    // 引用造成重复 warning / skipped。
+    const skipped = [...report.skipped];
+    const warnings = [...report.warnings];
     if (scan.hasGodot) {
-      report.skipped.push({ reason: "godot" });
-      report.warnings.push(
+      skipped.push({ reason: "godot" });
+      warnings.push(
         "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
       );
     }
     if (scan.hasBash) {
       if (used === "shadow") {
-        report.warnings.push(
+        warnings.push(
           "该段包含 bash：cwd 内文件已尽量由 Shadow 还原；cwd 外副作用无法还原。",
         );
       } else {
-        report.skipped.push({ reason: "bash_unknown" });
-        report.warnings.push("该段包含 bash，命令副作用无法保证还原。");
+        skipped.push({ reason: "bash_unknown" });
+        warnings.push("该段包含 bash，命令副作用无法保证还原。");
       }
     }
-    return report;
+    return { ...report, skipped, warnings };
   }
 }
 
