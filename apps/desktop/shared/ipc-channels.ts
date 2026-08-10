@@ -107,6 +107,8 @@ export const IPC_CHANNELS = {
   getPrefsRecoveryNotice: "getPrefsRecoveryNotice",
   /** SafeStorage fallback status (keychain unavailable / encrypt failed) for UI banner. */
   getSecretCodecStatus: "getSecretCodecStatus",
+  /** 启动期失败摘要（recover / bridge / package install），renderer 在 ReadyChecklist 读取。 */
+  getStartupReport: "getStartupReport",
   /** Renderer signals first paint so splash can reveal the main window. */
   appReady: "appReady",
 } as const;

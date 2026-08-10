@@ -140,6 +140,8 @@ export interface BashCheckResult {
   message: string;
   /** Detected candidate that can be written to settings.json */
   suggestedShellPath?: string | null;
+  /** Non-fatal warning (e.g. path outside common trusted directories). */
+  warning?: string;
 }
 
 /**
@@ -1026,6 +1028,17 @@ export interface PrefsRecoveryNotice {
   error: string;
 }
 
+/** 1.3 启动期失败摘要（recover / bridge / package install）。 */
+export type StartupIssueStage =
+  | "shadow_recover"
+  | "godot_rpc"
+  | "godot_pi_install";
+
+export interface StartupIssue {
+  stage: StartupIssueStage;
+  message: string;
+}
+
 export type OpenProjectMode = "continue" | "new";
 
 /** Coarse workspace / session lifecycle facade (facade methods stay on window.xAgent). */
@@ -1147,6 +1160,8 @@ export type IpcInvokeMap = {
   setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
   /** Returns and clears the startup prefs-recovery notice, if any. */
   getPrefsRecoveryNotice: () => Promise<PrefsRecoveryNotice | null>;
+  /** Returns and clears the startup-issue queue (recover / bridge / package install). */
+  getStartupReport: () => Promise<StartupIssue[]>;
   getSecretCodecStatus: () => Promise<SecretCodecStatus>;
   checkBash: () => Promise<BashCheckResult>;
   checkBashLiveness: () => Promise<BashLivenessResult>;

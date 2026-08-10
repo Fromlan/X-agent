@@ -52,6 +52,8 @@ import {
   configureIpcSenderGuard,
   handle,
 } from "./ipc/register-ipc";
+import { dbgLog, dbgWarn } from "../shared/debug-log";
+import { cleanupOrphanTmpFiles } from "./agent/lib/orphan-cleanup";
 
 export type RuntimeHooks = {
   getMainWindow: () => BrowserWindow | null;
@@ -65,6 +67,26 @@ let godotRpc: GodotRpcBridge | null = null;
 let sessionHost: SessionHost | null = null;
 /** Cleared when renderer consumes via getPrefsRecoveryNotice. */
 let pendingPrefsRecovery: PrefsRecoveryNotice | null = null;
+/** 启动期失败摘要（recover / bridge / package install）。renderer 经 getStartupReport 读取。 */
+type StartupIssue = {
+  stage: "shadow_recover" | "godot_rpc" | "godot_pi_install";
+  message: string;
+};
+let startupIssues: StartupIssue[] = [];
+
+function pushStartupIssue(issue: StartupIssue): void {
+  startupIssues.push(issue);
+  // 限制条数，避免磁盘写错误 / 端口冲突等反复堆积。
+  if (startupIssues.length > 32) {
+    startupIssues = startupIssues.slice(-32);
+  }
+}
+
+function consumeStartupIssues(): StartupIssue[] {
+  const out = startupIssues;
+  startupIssues = [];
+  return out;
+}
 
 function consumePrefsRecoveryNotice(): PrefsRecoveryNotice | null {
   const notice = pendingPrefsRecovery;
@@ -269,6 +291,11 @@ function registerIpc(
   handle(ipcMain, IPC_CHANNELS.getPrefsRecoveryNotice, async () =>
     consumePrefsRecoveryNotice(),
   );
+  // 1.3 防御：暴露启动期失败摘要，让 renderer 在 ReadyChecklist 里提示
+  // 用户「上次启动有 X 失败」而不是默默成功。
+  handle(ipcMain, IPC_CHANNELS.getStartupReport, async () =>
+    consumeStartupIssues(),
+  );
   handle(ipcMain, IPC_CHANNELS.getSecretCodecStatus, async () =>
     getSecretCodecStatus(),
   );
@@ -295,21 +322,54 @@ export function bootRuntime(hooks: RuntimeHooks): void {
     try {
       // B8: 启动兜底 — 恢复上次崩溃残留的改名嵌套 .git。
       recoverAllDisabledNestedGit();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushStartupIssue({ stage: "shadow_recover", message });
+      dbgWarn("boot", "shadow_recover failed", message);
     }
     try {
-      await godotRpc.start();
-    } catch {
-      /* ignore */
+      // 1.3 清理：上会话残留的 .tmp / failed-* / 久未动 godot-rpc endpoint。
+      const orphanStats = cleanupOrphanTmpFiles();
+      if (
+        orphanStats.atomicTmp > 0 ||
+        orphanStats.bashProbes > 0 ||
+        orphanStats.oldEndpoints > 0
+      ) {
+        dbgLog(
+          "boot",
+          "orphan cleanup",
+          orphanStats,
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      dbgWarn("boot", "orphan cleanup failed", message);
+    }
+    try {
+      const bridgeStatus = await godotRpc.start();
+      if (!bridgeStatus.running && bridgeStatus.error) {
+        pushStartupIssue({ stage: "godot_rpc", message: bridgeStatus.error });
+        dbgWarn("boot", "godot_rpc start failed", bridgeStatus.error);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushStartupIssue({ stage: "godot_rpc", message });
+      dbgWarn("boot", "godot_rpc start threw", message);
     }
     try {
       const ensured = await ensureGodotPiPackageInstalled();
       if (ensured.attempted && ensured.installed) {
         await sessionHost.reloadResources();
       }
-    } catch {
-      /* Manual install remains under Settings → Plugins */
+      if (ensured.attempted && !ensured.installed) {
+        const msg = ensured.error ?? "内置 Package 安装失败";
+        pushStartupIssue({ stage: "godot_pi_install", message: msg });
+        dbgWarn("boot", "godot_pi_install failed", msg);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      pushStartupIssue({ stage: "godot_pi_install", message });
+      dbgWarn("boot", "godot_pi_install threw", message);
     }
   })();
 }
