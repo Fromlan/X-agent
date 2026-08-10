@@ -184,12 +184,20 @@ export function registerGodotIpc(
             windowsHide: false,
           });
           child.once("error", (err) => {
+            // 失败路径也要 unref，避免被拒后 child 句柄挂住事件循环。
+            try {
+              child.unref();
+            } catch {
+              // ignore
+            }
             rejectPromise(err);
           });
-          child.once("spawn", () => resolvePromise(child));
+          child.once("spawn", () => {
+            child.unref();
+            resolvePromise(child);
+          });
         },
       );
-      child.unref();
       return {
         ok: true,
         port: bridgeStatus.port,

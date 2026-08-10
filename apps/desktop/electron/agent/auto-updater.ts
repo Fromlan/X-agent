@@ -41,6 +41,7 @@ export class AppAutoUpdater {
   private status: AppUpdateStatus = { ...DEV_STATUS };
   private getWindow: () => BrowserWindow | null;
   private wired = false;
+  private startupCheckTimer: NodeJS.Timeout | null = null;
 
   constructor(getWindow: () => BrowserWindow | null) {
     this.getWindow = getWindow;
@@ -94,9 +95,21 @@ export class AppAutoUpdater {
   /** Silent check a few seconds after launch (packaged only). */
   scheduleStartupCheck(): void {
     if (!app.isPackaged) return;
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      this.startupCheckTimer = null;
       void this.check({ silent: true });
     }, STARTUP_CHECK_DELAY_MS);
+    // 1.3 防御：unref 避免 crash 时 setTimeout 一直把 event loop 拉住。
+    timer.unref();
+    this.startupCheckTimer = timer;
+  }
+
+  /** 取消待执行的启动检查（用于 shutdown 与测试）。 */
+  cancelStartupCheck(): void {
+    if (this.startupCheckTimer) {
+      clearTimeout(this.startupCheckTimer);
+      this.startupCheckTimer = null;
+    }
   }
 
   releasesPageUrl(): string {
