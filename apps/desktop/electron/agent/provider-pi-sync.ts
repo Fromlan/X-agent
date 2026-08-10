@@ -38,6 +38,13 @@ export async function syncProfileToPi(
   paths: ProviderPaths = defaultProviderPaths(),
   options: SyncProfileToPiOptions = {},
 ): Promise<ProviderActivateResult> {
+  if (SKIP_PI_SYNC_FOR_TESTS) {
+    // 测试模式:跳过真实 Pi 写盘,只返回 ok 让上层逻辑跑通。
+    const store = await loadStore(paths);
+    const profile = store.profiles.find((p) => p.id === id);
+    if (!profile) return { ok: false, error: "档案不存在" };
+    return { ok: true, provider: profile.providerId, model: profile.models[0]?.id ?? "" };
+  }
   const updatePrefs = options.updatePrefs === true;
   const setActiveId = options.setActiveId !== false;
 
@@ -130,6 +137,7 @@ export async function pruneProviderIdFromPi(
   providerId: string,
   paths: ProviderPaths = defaultProviderPaths(),
 ): Promise<void> {
+  if (SKIP_PI_SYNC_FOR_TESTS) return;
   const keep = providerId.trim();
   if (!keep) return;
   const keepLower = keep.toLowerCase();
@@ -219,4 +227,13 @@ export async function pruneProviderIdFromPi(
 export function shouldSeedPrefsOnSync(): boolean {
   const prefs = getCachedPrefs();
   return !prefs.provider || !prefs.model;
+}
+
+/** 测试闸：跳过 syncProfileToPi / pruneProviderIdFromPi 真实写盘。 */
+let SKIP_PI_SYNC_FOR_TESTS = false;
+export function setSkipPiSyncForTests(skip: boolean): void {
+  SKIP_PI_SYNC_FOR_TESTS = skip;
+}
+export function isSkipPiSyncForTests(): boolean {
+  return SKIP_PI_SYNC_FOR_TESTS;
 }
