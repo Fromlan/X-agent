@@ -11,6 +11,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveInsideCwd } from "../cwd-sandbox";
 import {
+  getReadablePluginRoots,
+  isAllowedPluginPath,
+} from "../plugin-host";
+import {
   bashCommandEscapesCwd,
   cwdEscapeBashBlockReason,
   isReadonlyBashCommand,
@@ -53,7 +57,11 @@ function normalizeToolPath(raw: string): string {
   return p;
 }
 
-/** Block a path-carrying read tool call that escapes the project cwd. */
+/**
+ * Block a path-carrying read tool call that escapes the read sandbox:
+ * project cwd, or read-only plugin roots (skills/prompts/extensions/themes,
+ * project .pi/*, installed packages — same roots the plugin browser can read).
+ */
 function blockEscapingPathToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
@@ -70,13 +78,14 @@ function blockEscapingPathToolCall(
   }
   const normalized = normalizeToolPath(raw);
   const res = resolveInsideCwd(cwd, normalized);
-  if (!res.ok) {
-    return {
-      block: true,
-      reason: `调研/Plan 模式禁止读取项目目录外路径（${toolName} ${raw.slice(0, 80)}）。`,
-    };
-  }
-  return { block: false };
+  if (res.ok) return { block: false };
+  // 技能 / 插件只读根（~/.pi/agent/skills、.pi/skills、已装 Packages 等）
+  // 对 Ask/Plan 只读研究放行 —— 所有模式都应能读取技能文件。
+  if (isAllowedPluginPath(normalized, cwd, "read")) return { block: false };
+  return {
+    block: true,
+    reason: `调研/Plan 模式禁止读取项目目录外路径（${toolName} ${raw.slice(0, 80)}）。`,
+  };
 }
 
 export function shouldBlockReadonlyModeToolCall(
@@ -106,7 +115,7 @@ export function shouldBlockReadonlyModeToolCall(
         reason: readonlyBashBlockReason(command || "(empty)"),
       };
     }
-    if (cwd && bashCommandEscapesCwd(command, cwd)) {
+    if (cwd && bashCommandEscapesCwd(command, cwd, getReadablePluginRoots(cwd))) {
       return { block: true, reason: cwdEscapeBashBlockReason(command) };
     }
     return { block: false };

@@ -14,6 +14,7 @@ import {
   truncateTranscript,
 } from "../../shared/transcript";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
+import { dbgWarn } from "../../shared/debug-log";
 import type { TurnFileTracker } from "./turn-file-tracker";
 import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
@@ -221,12 +222,13 @@ export function bridgeSessionEvents(
             const model = deps.getSession()?.model;
             if (model && !deps.usage.isCompactionRecording()) {
               // recordTurnUsage 改为 async (写盘走 atomic rename + 串行队列)。
-              // event-bridge 是 sync callback,fire-and-forget + 内层 try/catch 吞错。
+              // event-bridge 是 sync callback,fire-and-forget + 错误走 dbgWarn。
               void recordTurnUsage(
                 modelUsageKey(model.provider, model.id),
                 turnUsage,
-              ).catch(() => {
-                /* ignore persist errors */
+              ).catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                dbgWarn("usage", "recordTurnUsage failed", message);
               });
             }
           }

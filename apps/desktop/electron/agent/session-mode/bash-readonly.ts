@@ -215,7 +215,37 @@ function expandTilde(token: string): string {
   return token;
 }
 
-function pathEscapesCwd(cwd: string, pathToken: string): boolean {
+/**
+ * True when the resolved path is inside any of the allowed roots
+ * (case-normalized prefix check, win32-safe). Used to extend the Ask/Plan
+ * sandbox from project cwd to read-only plugin roots (skills/prompts/…).
+ */
+function isInsideAnyRoot(abs: string, roots: readonly string[]): boolean {
+  if (!roots || roots.length === 0) return false;
+  for (const rootRaw of roots) {
+    const root = normalize(resolve(rootRaw));
+    if (root === abs) return true;
+    const prefix = root.endsWith(sep) ? root : root + sep;
+    if (
+      process.platform === "win32"
+        ? abs.toLowerCase().startsWith(prefix.toLowerCase())
+        : abs.startsWith(prefix)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when the path token escapes the allowed read areas: project cwd plus
+ * optional read-only roots (e.g. plugin/skill dirs) that are always readable.
+ */
+function pathEscapesReadArea(
+  cwd: string,
+  pathToken: string,
+  allowedRoots?: readonly string[],
+): boolean {
   const cleaned = expandTilde(unquote(pathToken));
   if (!cleaned) return false;
   const root = normalize(resolve(cwd));
@@ -229,6 +259,9 @@ function pathEscapesCwd(cwd: string, pathToken: string): boolean {
   } catch {
     return true;
   }
+  // Paths inside a read-only plugin root (skills/prompts/extensions/themes,
+  // project .pi/*, installed packages) never escape the read sandbox.
+  if (isInsideAnyRoot(abs, allowedRoots ?? [])) return false;
   const rel = relative(root, abs);
   // Reject real `..` escapes only (`..foo` is a legal sibling-named dir).
   const firstSeg = rel.split(sep)[0];
@@ -248,10 +281,15 @@ function pathEscapesCwd(cwd: string, pathToken: string): boolean {
 }
 
 /**
- * True when the command references a path outside project cwd
- * (absolute escape, `..`, or `git -C` / `--git-dir` / `--work-tree` outside).
+ * True when the command references a path outside the read sandbox — project
+ * cwd, or any of the optional read-only roots (absolute escape, `..`, or
+ * `git -C` / `--git-dir` / `--work-tree` outside).
  */
-export function bashCommandEscapesCwd(command: string, cwd: string): boolean {
+export function bashCommandEscapesCwd(
+  command: string,
+  cwd: string,
+  allowedRoots?: readonly string[],
+): boolean {
   const root = (cwd ?? "").trim();
   if (!root) return false;
   const cleaned = stripShellNoise(command);
@@ -269,11 +307,13 @@ export function bashCommandEscapesCwd(command: string, cwd: string): boolean {
         lower === "--prefix"
       ) {
         const next = tokens[i + 1];
-        if (next && pathEscapesCwd(root, next)) return true;
+        if (next && pathEscapesReadArea(root, next, allowedRoots)) return true;
         i += 1;
         continue;
       }
-      if (isPathLikeToken(tok) && pathEscapesCwd(root, tok)) return true;
+      if (isPathLikeToken(tok) && pathEscapesReadArea(root, tok, allowedRoots)) {
+        return true;
+      }
     }
   }
   return false;
