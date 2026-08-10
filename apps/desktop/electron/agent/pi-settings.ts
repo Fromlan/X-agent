@@ -54,3 +54,17 @@ export function mutatePiSettingsSync(
     throw err;
   }
 }
+
+/** 读 settings.json 当前内容（仅供测试断言，生产路径请直接调用 `mutatePiSettingsSync`）。 */
+export function readPiSettingsSync(): Record<string, unknown> {
+  try {
+    const raw = readFileSync(piSettingsPath(), "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}

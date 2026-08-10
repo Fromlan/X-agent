@@ -111,8 +111,35 @@ function readRegistry(): RegistryFile {
 
 function writeRegistry(data: RegistryFile): void {
   mkdirSync(getAgentDirPath(), { recursive: true });
-  writeFileSync(registryPath(), JSON.stringify(data, null, 2), "utf8");
+  // 1.3 防御：registry 在 install / uninstall / prune 都会被并发改写，
+  // 同步入口下用自旋锁避免 read-modify-write 跨 IPC 边界被打散。
+  withSyncLock("registry", () => {
+    writeFileSync(registryPath(), JSON.stringify(data, null, 2), "utf8");
+  });
 }
+
+/** 进程内同步 per-key 自旋锁：避免 read-modify-write 链被并发入口打散。 */
+const syncLocks = new Map<string, boolean>();
+function withSyncLock(key: string, fn: () => void): void {
+  // Node 单线程内：同步 handler 不会在写盘中途被中断;但 install / uninstall
+  // 跨 IPC handler 边界并发时,第二个入口可读到第一个未写完的旧 registry。
+  // 极端情况下 install 误删用户刚装好的包。这里加 100ms 上限自旋,等到锁释放。
+  // 真实场景锁持有 < 5ms,不会真正 spin 到上限。
+  const start = Date.now();
+  while (syncLocks.get(key)) {
+    if (Date.now() - start > 100) {
+      break;
+    }
+  }
+  syncLocks.set(key, true);
+  try {
+    fn();
+  } finally {
+    syncLocks.set(key, false);
+  }
+}
+
+
 
 /** Paths recorded in Pi settings.json `packages` (same source as `pi list`). */
 export function readPiSettingsPackageSources(): string[] {
@@ -281,14 +308,36 @@ export function resolvePackageRoot(
   return null;
 }
 
+/**
+ * Short-TTL memo for installed package roots: Ask/Plan tool-call path checks
+ * call `getInstalledPackageRoots` on every bash/read attempt, and the
+ * underlying catalog read hits disk (settings.json + registry). A 5s TTL keeps
+ * the hot path disk-free while staying fresh enough after install/uninstall.
+ */
+let packageRootsCache: { at: number; roots: string[] } | null = null;
+const PACKAGE_ROOTS_CACHE_TTL_MS = 5_000;
+
 /** Absolute roots of locally-resolvable installed packages (for plugin listing). */
 export function getInstalledPackageRoots(): string[] {
+  const now = Date.now();
+  if (
+    packageRootsCache &&
+    now - packageRootsCache.at < PACKAGE_ROOTS_CACHE_TTL_MS
+  ) {
+    return packageRootsCache.roots;
+  }
   const roots: string[] = [];
   for (const pkg of listInstalledPackages()) {
     const root = resolvePackageRoot(pkg);
     if (root) roots.push(root);
   }
+  packageRootsCache = { at: now, roots };
   return roots;
+}
+
+/** Drop the root memo after install/uninstall so the next read sees the change. */
+export function invalidatePackageRootsCache(): void {
+  packageRootsCache = null;
 }
 
 /** Electron / OS temp extract paths — common debris from one-click install. */
@@ -587,6 +636,7 @@ export async function installPackage(source: string): Promise<PackageInstallResu
     next.push(entry);
     writeRegistry({ packages: next });
     reconcilePackageCatalog();
+    invalidatePackageRootsCache();
     return { ok: true, package: entry, output: preOutput.trim().slice(-400) };
   }
   const { code, output } = await runPiPackageCommand(
@@ -620,6 +670,7 @@ export async function installPackage(source: string): Promise<PackageInstallResu
   next.push(entry);
   writeRegistry({ packages: next });
   reconcilePackageCatalog();
+  invalidatePackageRootsCache();
   return {
     ok: true,
     package: entry,
@@ -701,6 +752,7 @@ export async function uninstallPackage(source: string): Promise<{
       trimmed,
     ),
   });
+  invalidatePackageRootsCache();
   return { ok: true, output: output.trim().slice(-400) || undefined };
 }
 
@@ -753,12 +805,14 @@ export function isGodotPiPackageInstalled(): boolean {
 export async function ensureGodotPiPackageInstalled(): Promise<{
   attempted: boolean;
   installed: boolean;
+  /** Failure reason when attempted=true but installed=false. */
+  error?: string;
   result?: PackageInstallResult;
 }> {
   pruneMissingPiPackageSources();
   const path = resolveGodotPiPackagePath();
   if (!path) {
-    return { attempted: false, installed: false };
+    return { attempted: false, installed: false, error: "无法定位内置 godot-pi 包路径" };
   }
   const live = findLivePackageSourcesByName(GODOT_PI_PACKAGE_NAME);
   const targetKey = normalizeSourceKey(path);
@@ -767,13 +821,18 @@ export async function ensureGodotPiPackageInstalled(): Promise<{
   }
   const cli = checkPiCli();
   if (!cli.ok) {
-    return { attempted: false, installed: false };
+    return {
+      attempted: false,
+      installed: false,
+      error: cli.message || "Pi CLI 未安装",
+    };
   }
   // installPackage uninstalls other same-name paths, then installs `path`.
   const result = await installGodotPiPackage();
   return {
     attempted: true,
     installed: result.ok,
+    ...(result.ok ? {} : { error: result.error ?? "内置 Package 安装失败" }),
     result,
   };
 }
