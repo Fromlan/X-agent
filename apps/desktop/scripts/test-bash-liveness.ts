@@ -133,8 +133,8 @@ async function withRealBash<T>(
 // AND that the fields toggled by execFile's catch path are wired up.
 // We also test the timeout path by writing a wrapper bash that sleeps.
 // We don't actually invoke timeouts in unit tests — that's covered by
-// the live `bash -lc` smoke (which proves the probe completes in <2s on
-// a healthy system).
+// the live `bash -lc` smoke (which proves the probe completes in <10s on
+// a healthy system; Windows cold-start + Defender can exceed 2s).
 //
 // TODO: when a 3rd-party IO harness is added, drive `execFile`'s
 // `killed: true` path directly.

@@ -34,7 +34,9 @@ import { promisify } from "node:util";
 import { BashLivenessResult } from "../../shared/ipc";
 
 const execFileAsync = promisify(execFile);
-const PROBE_TIMEOUT_MS = 2000;
+// 探针超时：Windows 上 Git for Windows 首次冷启动 + Defender 扫描可能超过
+// 2s，过激超时会把健康 bash 误报为 full_dead（CI 冷启动实测即触发）。
+const PROBE_TIMEOUT_MS = 10_000;
 
 function buildProbeScript(marker: string, probePath: string): string {
   return [
