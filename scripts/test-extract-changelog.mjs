@@ -102,10 +102,34 @@ const noDup = buildReleaseBody(
 );
 assert.equal((noDup.match(/0\.2\.x 累计变更/g) || []).length, 1);
 
+// 对真实 CHANGELOG 校验"最新 minor 线起点章节"含上一线累计汇总。
+// 早期线起点（如 0.3.0）已被归档进后续 minor 线的汇总段，硬编码断言已失效；
+// 动态取最新线起点保证脚本在 CHANGELOG 持续重组时仍可长期通过。
 const live = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
-const liveSection = extractChangelogSection(live, "0.3.0");
-assert.match(liveSection, /### 0\.2\.x 累计变更/);
-assert.match(liveSection, /#### 0\.2\.6/);
-assert.match(liveSection, /#### 0\.2\.0/);
+const liveVersions = [...live.matchAll(/^## (\d+\.\d+\.\d+)$/gm)].map(
+  (m) => m[1],
+);
+const liveMinorStart = liveVersions.find((v) => v.endsWith(".0"));
+assert.ok(liveMinorStart, "CHANGELOG 应至少有一个 minor 线起点章节");
+const [liveMajor, liveMinor] = liveMinorStart.split(".").map(Number);
+const livePrevLine = `${liveMajor}.${liveMinor - 1}.x`;
+const liveSection = extractChangelogSection(live, liveMinorStart);
+assert.ok(liveSection, `CHANGELOG 缺少章节 "## ${liveMinorStart}"`);
+assert.match(
+  liveSection,
+  new RegExp(`### ${livePrevLine.replace(/\./g, "\\.")} 累计变更`),
+);
+const liveSeries = listSeriesSections(live, {
+  major: liveMajor,
+  minor: liveMinor - 1,
+});
+assert.ok(
+  liveSeries.length > 0,
+  `上一线 ${livePrevLine} 应有可汇总的小版本章节`,
+);
+assert.match(
+  liveSection,
+  new RegExp(`#### ${liveSeries[0].version.replace(/\./g, "\\.")}`),
+);
 
 console.log("test-extract-changelog: ok");
