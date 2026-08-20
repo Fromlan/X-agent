@@ -8,7 +8,9 @@
 
 ## Unreleased
 
-（本版本已整理进 `## 0.5.3`。）
+### 修复
+
+- **一键安装本地 Packages 不再被静默删除**：pi CLI 会把本地包路径按 `~/.pi/agent` 相对化写入 `settings.json`（如 `..\..\AppData\...\resources\godot-pi`），而 X-agent 此前按进程 cwd 解析相对路径，导致安装记录被判为"包源缺失"，被 `pruneMissingPiPackageSources` 从 `settings.json` 与 `x-agent-packages.json` 一并清除（表现为"安装成功"提示后「技能 / 提示词 / 扩展」页签为空）。现包源解析统一以 `~/.pi/agent` 为基准（与 pi CLI 一致），相对路径正常解析，prune / 去重 / registry 镜像均保留安装记录。
 
 ## 0.5.3
 

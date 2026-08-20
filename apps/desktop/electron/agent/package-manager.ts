@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import type {
   InstalledPackageInfo,
@@ -64,12 +64,44 @@ function settingsPath(): string {
   return join(getAgentDirPath(), "settings.json");
 }
 
-function normalizeSourceKey(source: string): string {
+/**
+ * Resolve a package source to an absolute path containing package.json, or
+ * null. pi CLI records local installs in settings.json `packages` as paths
+ * relative to ~/.pi/agent (`normalizePackageSourceForSettings`), so relative
+ * sources MUST be resolved against the agent dir, not process.cwd() — resolving
+ * against cwd makes every pi-installed local package look "missing" and get
+ * pruned. Absolute paths pass through; a cwd-relative attempt is kept only as
+ * a legacy fallback for anything not written by pi.
+ */
+function resolvePackageSourcePath(source: string): string | null {
+  const trimmed = source.trim();
+  if (!trimmed) return null;
+  const candidates: string[] = [];
   try {
-    if (existsSync(source)) return resolve(source).replace(/\\/g, "/").toLowerCase();
+    if (isAbsolute(trimmed)) {
+      candidates.push(trimmed);
+    } else {
+      // pi CLI convention: relative sources are relative to ~/.pi/agent.
+      candidates.push(resolve(join(getAgentDirPath(), trimmed)));
+      // Legacy fallback: cwd-relative (pre-fix dev behavior).
+      candidates.push(resolve(trimmed));
+    }
   } catch {
-    // fall through
+    candidates.push(trimmed);
   }
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(join(candidate, "package.json"))) return resolve(candidate);
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+function normalizeSourceKey(source: string): string {
+  const abs = resolvePackageSourcePath(source);
+  if (abs) return abs.replace(/\\/g, "/").toLowerCase();
   return source.replace(/\\/g, "/").toLowerCase();
 }
 
@@ -166,14 +198,12 @@ export function writePiSettingsPackageSources(packages: string[]): void {
   });
 }
 
-/** True when `source` resolves to a directory with package.json. */
+/**
+ * True when `source` resolves to a directory with package.json (agent dir
+ * base for relative sources — see `resolvePackageSourcePath`).
+ */
 export function isResolvablePackageSource(source: string): boolean {
-  try {
-    const abs = resolve(source);
-    return existsSync(join(abs, "package.json"));
-  } catch {
-    return false;
-  }
+  return resolvePackageSourcePath(source) !== null;
 }
 
 /**
@@ -214,9 +244,9 @@ export function pruneMissingPiPackageSources(): {
 
 /** Resolve package.json `name` for a settings/source entry, or null. */
 export function packageNameForSource(source: string): string | null {
+  const abs = resolvePackageSourcePath(source);
+  if (!abs) return null;
   try {
-    const abs = resolve(source);
-    if (!existsSync(join(abs, "package.json"))) return null;
     const name = packageNameFromSource(abs, abs);
     return name || null;
   } catch {
@@ -298,12 +328,8 @@ export function resolvePackageRoot(
 ): string | null {
   for (const candidate of [pkg.path, pkg.source]) {
     if (!candidate) continue;
-    try {
-      const abs = resolve(candidate);
-      if (existsSync(join(abs, "package.json"))) return abs;
-    } catch {
-      // continue
-    }
+    const abs = resolvePackageSourcePath(candidate);
+    if (abs) return abs;
   }
   return null;
 }
@@ -355,11 +381,7 @@ function packageSourcePreferScore(source: string): number {
   let score = 0;
   if (/^(npm:|git\+|https?:|ssh:)/i.test(source.trim())) return 100;
   if (!looksLikeEphemeralPackagePath(source)) score += 50;
-  try {
-    if (existsSync(source)) score += 20;
-  } catch {
-    // ignore
-  }
+  if (resolvePackageSourcePath(source)) score += 20;
   return score;
 }
 
@@ -448,7 +470,7 @@ export function listInstalledPackages(): InstalledPackageInfo[] {
   for (const source of fromPi) {
     const key = normalizeSourceKey(source);
     const existing = byKey.get(key);
-    const abs = existsSync(source) ? resolve(source) : source;
+    const abs = resolvePackageSourcePath(source) ?? source;
     const base: InstalledPackageInfo = {
       name:
         existing?.name ??
