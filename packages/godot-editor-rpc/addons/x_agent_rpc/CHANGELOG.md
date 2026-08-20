@@ -1,5 +1,16 @@
 # X-agent RPC addon changelog
 
+## 0.6.4
+
+### 修复
+
+- `lint_scripts`：**`--check-only` 子进程无法解析全局单例 autoload**（`godot --headless --path <project> --check-only -s <script>` 的脚本模式不会把 autoload 注册进 GDScriptLanguage 的全局常量表——main.cpp 的注册循环只在 game 模式执行，且 `--check-only` 在到达该循环前就提前返回）。后果：含 `class_name` 且引用 autoload 的**合法**脚本被误报 `Compile Error: Identifier not found: <autoload>`（裸 reload 因 class_name 伪报错而转子进程判定，子进程又因不认 autoload 而误判），含真实错误且 autoload 引用在前的脚本也只显示 autoload 误报、掩盖真实错误。现在 `_parse_lint_output` 按 `ProjectSettings` 中已注册的 singleton autoload 名单（`[autoload]` 段带 `*` 前缀者）过滤 `Identifier not found: <name>` 误报：仅剩此类误报时整文件判通过，其余真实 Parse Error 原样保留。分析器先于编译器运行且能解析 autoload，因此真实错误总是先报 `Parse Error`，该过滤不会掩盖真实错误。
+- `plugin.cfg` version 升到 0.6.4。
+
+### 兼容性
+
+- 协议方法签名不变；仅修正 lint_scripts 的判定，旧桌面端完全兼容。
+
 ## 0.6.3
 
 ### 修复（对应第二轮工具测试反馈）

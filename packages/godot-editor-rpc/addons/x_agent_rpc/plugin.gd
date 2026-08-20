@@ -5,7 +5,7 @@ extends EditorPlugin
 ## Connects to the desktop TCP JSON-lines bridge
 ## (endpoint: ~/.pi/agent/x-agent-godot-rpc.json, fallback 127.0.0.1:8765).
 
-const ADDON_VERSION := "0.6.3"
+const ADDON_VERSION := "0.6.4"
 const DEFAULT_HOST := "127.0.0.1"
 const DEFAULT_PORT := 8765
 const CONNECT_TIMEOUT_SEC := 1.2
@@ -671,6 +671,8 @@ func _lint_worker(path: String, exe: String, res_root: String) -> Array:
 ## - exit 0 且无输出 → 脚本合法（裸 reload 对 class_name 脚本的伪报错在此消除）；
 ## - 有输出 → 提取 "SCRIPT ERROR: Parse Error..." 逐行 issue；
 ## - exit 非 0 且无输出/输出无法解析 → ok=false + 空 issues（调用方回退错误码文案）。
+## 额外过滤：脚本模式下子进程不注册全局单例 autoload（见 _singleton_autoload_names），
+## 合法脚本可能只报 "Compile Error: Identifier not found: <autoload>"，这类误报在此剔除。
 func _parse_lint_output(code: int, output: Array) -> Dictionary:
 	var issues: Array = []
 	if output.is_empty():
@@ -699,7 +701,54 @@ func _parse_lint_output(code: int, output: Array) -> Dictionary:
 				line = int(m.get_string(2))
 		var severity := "warning" if kind_match.get_string(1) == "Warning" else "error"
 		issues.append({"line": line, "column": 0, "message": message, "severity": severity})
+	# 子进程一次只报第一个错误：若它是 autoload 名误报，说明分析器已通过（真实错误由
+	# 分析器先报 Parse Error），脚本实际合法 → 整文件判通过。
+	var autoload_names := _singleton_autoload_names()
+	if not autoload_names.is_empty():
+		var real: Array = []
+		var dropped := false
+		for issue in issues:
+			if _is_autoload_identifier_false_positive(str(issue.get("message", "")), autoload_names):
+				dropped = true
+				continue
+			real.append(issue)
+		if dropped and real.is_empty():
+			return {"ok": true, "issues": []}
+		issues = real
 	return {"ok": issues.is_empty() and code == 0, "issues": issues}
+
+## 收集项目里已注册的全局单例 autoload 名（project.godot [autoload] 段带 `*` 前缀者）。
+## 这类名字在编辑器 / 正常运行时是合法全局标识符，但 `--check-only` 脚本模式不会把
+## autoload 注册进 GDScriptLanguage 的全局常量表（main.cpp 的注册循环只在 game 模式
+## 执行，且 --check-only 在到达该循环前已提前返回），于是编译器把合法引用误报为
+## "Compile Error: Identifier not found: <name>"。此处按 ProjectSettings 名单过滤。
+func _singleton_autoload_names() -> Array:
+	var names: Array = []
+	for prop in ProjectSettings.get_property_list():
+		var key := str(prop.get("name", ""))
+		if not key.begins_with("autoload/"):
+			continue
+		if str(ProjectSettings.get_setting(key)).begins_with("*"):
+			names.append(key.substr("autoload/".length()))
+	return names
+
+## 判断 issue message 是否为「全局单例 autoload 在脚本模式下解析失败」的误报。
+## 只认已注册的 singleton autoload 名：真正未定义的标识符由分析器先报
+## "Parse Error: Identifier ... not declared in the current scope."（分析器读
+## ProjectSettings 能解析 autoload，不会为它们报错），编译器只在分析通过后运行，
+## 因此编译器的 "Identifier not found: <已注册 autoload 名>" 必然是注册缺口所致。
+func _is_autoload_identifier_false_positive(message: String, autoload_names: Array) -> bool:
+	if autoload_names.is_empty():
+		return false
+	var needle := "Identifier not found: "
+	var idx := message.find(needle)
+	if idx == -1:
+		return false
+	var candidate := message.substr(idx + needle.length())
+	for name in autoload_names:
+		if candidate == str(name):
+			return true
+	return false
 
 func _collect_files(root: String) -> Array[String]:
 	var out: Array[String] = []
