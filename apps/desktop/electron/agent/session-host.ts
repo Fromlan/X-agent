@@ -911,13 +911,18 @@ export class SessionHost {
     }
   }
 
-  async setThinkingLevel(level: ThinkingLevel): Promise<{ ok: boolean }> {
+  async setThinkingLevel(
+    level: ThinkingLevel,
+  ): Promise<{ ok: boolean; thinkingLevel?: ThinkingLevel }> {
     if (!this.bundle) return { ok: false };
     this.bundle.session.setThinkingLevel(level);
     // Persist the model-clamped effective level so prefs / TopBar / Settings stay
     // aligned (e.g. DeepSeek V4 maps medium→high; unsupported → nearest).
     const effective = this.bundle.session.thinkingLevel as ThinkingLevel;
-    void patchPrefs({ thinkingLevel: effective });
+    // Await the persist: renderer follows this IPC with `prefs.get()`, and a
+    // fire-and-forget write can leave a stale cache that clobbers the effective
+    // level it just received via session_info (composer snap-back bug).
+    await patchPrefs({ thinkingLevel: effective });
     this.emit({
       type: "session_info",
       sessionId: this.bundle.session.sessionId,
@@ -926,7 +931,7 @@ export class SessionHost {
       thinkingLevel: effective,
       sessionPath: this.bundle.sessionPath,
     });
-    return { ok: true };
+    return { ok: true, thinkingLevel: effective };
   }
 
   /**

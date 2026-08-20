@@ -549,8 +549,13 @@ export default function App() {
       setError("切换 Thinking 失败（请先打开项目）");
       return;
     }
-    const next = await window.xAgent.prefs.get();
-    setPrefs(next);
+    // Use the model-clamped effective level the host returned instead of a
+    // racy `prefs.get()` round trip: the prefs cache can lag the session apply
+    // and would snap the composer select back to the stale level.
+    const effective = result.thinkingLevel ?? level;
+    setPrefs((prev) =>
+      prev ? { ...prev, thinkingLevel: effective } : prev,
+    );
   };
 
   const toggleThinking = async () => {

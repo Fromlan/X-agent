@@ -196,15 +196,17 @@ export function GeneralSettingsPage({
                           const level = v as ThinkingLevel;
                           // Persist preference first so it survives even when no
                           // session is open (setThinkingLevel requires a session).
-                          let next = await window.xAgent.prefs.set({
+                          const next = await window.xAgent.prefs.set({
                             thinkingLevel: level,
                           });
                           const applied =
                             await window.xAgent.setThinkingLevel(level);
                           if (applied.ok) {
-                            // Session path may clamp (e.g. DeepSeek V4 medium→high).
-                            next = await window.xAgent.prefs.get();
-                            onPrefsChanged?.(next);
+                            // Session path may clamp (e.g. DeepSeek V4 medium→high):
+                            // use the host's effective level directly instead of a
+                            // racy `prefs.get()` that can read a stale cache.
+                            const effective = applied.thinkingLevel ?? level;
+                            onPrefsChanged?.({ ...prefs, thinkingLevel: effective });
                             setGeneralMsg(null);
                             return;
                           }

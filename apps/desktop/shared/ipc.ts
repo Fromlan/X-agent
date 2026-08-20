@@ -1145,7 +1145,9 @@ export type IpcInvokeMap = {
   regenerateFromUser: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
   newSession: () => Promise<OpenProjectResult>;
   setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
-  setThinkingLevel: (level: ThinkingLevel) => Promise<{ ok: boolean }>;
+  setThinkingLevel: (
+    level: ThinkingLevel,
+  ) => Promise<{ ok: boolean; thinkingLevel?: ThinkingLevel }>;
   setSessionMode: (mode: AgentSessionMode) => Promise<SessionModeResult>;
   getSessionMode: () => Promise<SessionModeInfo>;
   buildPlan: () => Promise<PromptResult>;
