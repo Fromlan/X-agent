@@ -2,28 +2,15 @@ import type {
   AgentSessionMode,
   AgentStatus,
   GoalInfo,
-  ModelInfo,
-  SessionSlashItem,
-  ThinkingLevel,
 } from "@shared/ipc";
 import { isRestorableGoalStatus } from "@shared/ipc";
+import type { GameStage } from "@shared/game-stage";
 import type { ChatItem } from "../stores/chat-store";
 import { isPendingUserId } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
 import { AtMenu } from "./AtMenu";
-import { SelectMenu } from "./SelectMenu";
-import {
-  Bot,
-  Brain,
-  ClipboardList,
-  Flag,
-  Hammer,
-  Search,
-  Send,
-  Square,
-  Target,
-} from "lucide-react";
+import { Flag, Send, Square } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -35,6 +22,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useSlashMenu } from "../hooks/useSlashMenu";
+import { GameStageBar } from "./GameStageBar";
 import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
 import { ThinkingOrb } from "./ThinkingOrb";
 
@@ -69,6 +57,8 @@ interface Props {
   readinessHints?: { label: string; onClick: () => void }[];
   onPickStarter?: (prompt: string) => void;
   sessionMode?: AgentSessionMode;
+  gameStage?: GameStage | null;
+  onGameStageChange?: (stage: GameStage) => void;
   planPath?: string | null;
   goal?: GoalInfo | null;
   onSessionModeChange?: (mode: AgentSessionMode) => void;
@@ -79,14 +69,8 @@ interface Props {
   /** Cycle Agent → 调研 → Plan → 目标 (Shift+Tab). */
   onCycleSessionMode?: () => void;
   onClarifySelect?: (reply: string) => void;
-  /** 模型 / Thinking / 展示思考 —— 由底部工具条承载 */
-  models: ModelInfo[];
-  currentModelKey: string;
-  thinkingLevel: ThinkingLevel;
-  thinkingLevels: ThinkingLevel[];
-  onModelChange: (value: string) => void;
-  onThinkingChange: (level: ThinkingLevel) => void;
-  onToggleThinking: () => void;
+  // 模式 / 模型 / Thinking / 展示思考 已迁到 TopBar（控制线），
+  // Composer 视觉聚焦在「输入 + 发送」。
 }
 
 /** Render an "已等待 12s" suffix when the wait exceeds 3 seconds. */
@@ -96,33 +80,13 @@ function formatWait(waitedMs?: number): string {
   return `（已等待 ${sec}s）`;
 }
 
-/** Thinking level 标签首字母大写展示。 */
-function capitalizeLabel(text: string): string {
-  if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 function ChatPanelImpl(props: Props) {
   const streaming =
     props.status === "streaming" || props.status === "retrying";
   const composerLocked = props.disabled || Boolean(props.editingEntryId);
   const sessionMode = props.sessionMode ?? "agent";
+  // 模式切换条件：editing / streaming / 无 cwd 时禁用 —— 仅作为 Shift+Tab 与 GameStage 禁用依据
   const modeSwitchDisabled = composerLocked || streaming;
-
-  // 底部工具条：模型 / Thinking SelectMenu 的派生数据
-  const modelOptions =
-    props.models.length === 0
-      ? [{ value: "", label: "无可用模型", disabled: true }]
-      : props.models.map((m) => {
-          const key = `${m.provider}/${m.id}`;
-          return { value: key, label: m.name?.trim() || m.id };
-        });
-  const thinkingOptions = props.thinkingLevels.map((level) => ({
-    value: level,
-    label: capitalizeLabel(level),
-  }));
-  const modelDisabled = props.disabled || streaming || props.models.length === 0;
-  const thinkingDisabled = props.disabled || streaming;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [cursor, setCursor] = useState(0);
@@ -273,6 +237,11 @@ function ChatPanelImpl(props: Props) {
 
   return (
     <section className="chat-panel">
+      <GameStageBar
+        stage={props.gameStage ?? null}
+        onChange={props.onGameStageChange}
+        disabled={modeSwitchDisabled}
+      />
       <ChatTranscript
         items={props.items}
         showThinking={props.showThinking}
@@ -436,6 +405,15 @@ function ChatPanelImpl(props: Props) {
                 ? "请先打开项目…"
                 : props.editingEntryId
                   ? "正在编辑历史消息…"
+                  : props.gameStage === "planning"
+                    ? "策划：描述灵感或方案，我来帮你完善…"
+                    : props.gameStage === "prototype"
+                      ? "原型：告诉我你想先验证的核心机制…"
+                      : props.gameStage === "testing"
+                        ? "测试：描述你玩到的 bug 或反馈…"
+                        : props.gameStage === "expansion"
+                          ? "扩充：描述要开发的功能…"
+
                   : sessionMode === "ask"
                     ? "调研：只读问答…"
                     : sessionMode === "plan"
@@ -456,127 +434,18 @@ function ChatPanelImpl(props: Props) {
             aria-autocomplete="list"
             aria-expanded={menuOpen}
           />
-          <div className="composer-toolbar" role="toolbar" aria-label="会话控制">
-            <div className="composer-mode-row" role="group" aria-label="会话模式">
-              <button
-                type="button"
-                className={
-                  sessionMode === "agent"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="agent"
-                aria-pressed={sessionMode === "agent"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("agent")}
-                title="执行任务并修改文件"
-              >
-                <Bot size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">智能体</span>
-              </button>
-              <button
-                type="button"
-                className={
-                  sessionMode === "ask"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="ask"
-                aria-pressed={sessionMode === "ask"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("ask")}
-                title="只读研究与问答，不改文件"
-              >
-                <Search size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">调研</span>
-              </button>
-              <button
-                type="button"
-                className={
-                  sessionMode === "plan"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="plan"
-                aria-pressed={sessionMode === "plan"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("plan")}
-                title="只读研究并写出计划"
-              >
-                <ClipboardList size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">计划</span>
-              </button>
-              <button
-                type="button"
-                className={
-                  sessionMode === "goal"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="goal"
-                aria-pressed={sessionMode === "goal"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("goal")}
-                title="设定完成条件并自动续轮"
-              >
-                <Target size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">目标</span>
-              </button>
-              {sessionMode === "plan" && props.planPath && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm composer-build-plan"
-                  onClick={props.onBuildPlan}
-                  disabled={streaming || !props.onBuildPlan}
-                  title={props.planPath}
-                >
-                  <Hammer size={14} />
-                  执行计划
-                </button>
-              )}
-            </div>
-            <div className="composer-model-row">
-              <div className="field" title="模型">
-                <span className="field-label">模型</span>
-                <SelectMenu
-                  variant="pill"
-                  className="select-menu-centered"
-                  value={props.currentModelKey}
-                  options={modelOptions}
-                  onChange={props.onModelChange}
-                  disabled={modelDisabled}
-                  aria-label="模型"
-                  placeholder="选择模型"
-                />
-              </div>
-              <div className="field" title="Thinking">
-                <span className="field-label">Thinking</span>
-                <SelectMenu
-                  variant="pill"
-                  className="select-menu-compact select-menu-centered"
-                  value={props.thinkingLevel}
-                  options={thinkingOptions}
-                  onChange={(v) =>
-                    props.onThinkingChange(v as ThinkingLevel)
-                  }
-                  disabled={thinkingDisabled}
-                  aria-label="Thinking"
-                />
-              </div>
-              <button
-                type="button"
-                className={`thinking-toggle${props.showThinking ? " is-on" : ""}`}
-                onClick={props.onToggleThinking}
-                title={props.showThinking ? "关闭展示思考" : "开启展示思考"}
-                aria-pressed={props.showThinking}
-                aria-label="切换展示思考"
-              >
-                <Brain size={14} strokeWidth={2} />
-                <span className="thinking-toggle-label">展示思考</span>
-                <span className="thinking-toggle-state" aria-hidden="true">
-                  {props.showThinking ? "开" : "关"}
-                </span>
-              </button>
+          <div className="composer-toolbar" role="toolbar" aria-label="发送">
+            <div className="composer-hint" aria-hidden>
+              {streaming
+                ? "运行中 · Enter 发送 steer"
+                : sessionMode === "ask"
+                  ? "调研模式 · 只读"
+                  : sessionMode === "plan"
+                    ? "计划模式 · 只读研究"
+                    : sessionMode === "goal"
+                      ? "目标模式 · 自动续轮"
+                      : "智能体模式 · 可读写"}
+              <span className="composer-hint-kbd">Enter 发送 · Shift+Enter 换行</span>
             </div>
             <div className="composer-actions">
               {streaming && (

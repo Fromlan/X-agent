@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import type { GameStage } from "@shared/game-stage";
 import {
   useCallback,
   useEffect,
@@ -103,6 +104,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
+  const [gameStage, setGameStage] = useState<GameStage | null>(null);
   const [planPath, setPlanPath] = useState<string | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -287,6 +289,7 @@ export default function App() {
     setEditingEntryId,
     setItems,
     setSessionMode,
+    setGameStage,
     setPlanPath,
     setGoal,
     refreshSessions,
@@ -440,6 +443,14 @@ export default function App() {
     [setError, setSessionMode, setPlanPath, setGoal, setInput, setFollowNonce],
   );
 
+  const onGameStageChange = useCallback(async (stage: GameStage) => {
+    const result = await window.xAgent.game.set(stage);
+    if (!result.ok) {
+      setError(result.error ?? "切换游戏阶段失败");
+      return;
+    }
+    if (result.info) setGameStage(result.info.stage);
+  }, [setError, setGameStage]);
   const onBuildPlan = useCallback(async () => {
     setError(null);
     const result = await window.xAgent.plan.build();
@@ -930,6 +941,27 @@ export default function App() {
         rightPanelOpen={prefs?.rightPanelOpen ?? false}
         compacting={compacting}
         busy={busy}
+        // —— 会话级控制（项目-会话线 与 控制线 拆开） ——
+        sessionMode={sessionMode}
+        modeSwitchDisabled={
+          !cwd ||
+          status === "streaming" ||
+          status === "retrying" ||
+          retractBusy ||
+          Boolean(editingEntryId)
+        }
+        onSessionModeChange={onSessionModeChange}
+        planPath={planPath}
+        onBuildPlan={onBuildPlan}
+        // —— 模型 / Thinking / 展示思考 ——
+        models={models}
+        currentModelKey={currentModelKey}
+        onModelChange={onModelChange}
+        thinkingLevel={prefs?.thinkingLevel ?? "high"}
+        thinkingLevels={THINKING_LEVELS}
+        onThinkingChange={onThinkingChange}
+        showThinking={prefs?.showThinking ?? true}
+        onToggleThinking={toggleThinking}
       />
       {showUpdateBanner && updateStatus && (
         <UpdateBanner
@@ -1123,26 +1155,21 @@ export default function App() {
           onRetract={onRetract}
           onRegenerate={onRegenerate}
           sessionMode={sessionMode}
+          gameStage={gameStage}
+          onGameStageChange={onGameStageChange}
           planPath={planPath}
-          goal={goal}
-          onSessionModeChange={onSessionModeChange}
           onBuildPlan={onBuildPlan}
+          goal={goal}
           onClearGoal={onClearGoal}
           onPauseGoal={onPauseGoal}
           onResumeGoal={onResumeGoal}
           onCycleSessionMode={onCycleSessionMode}
           onClarifySelect={onClarifySelect}
-          models={models}
-          currentModelKey={currentModelKey}
-          thinkingLevel={prefs?.thinkingLevel ?? "high"}
-          thinkingLevels={THINKING_LEVELS}
-          onModelChange={onModelChange}
-          onThinkingChange={onThinkingChange}
-          onToggleThinking={toggleThinking}
         />
         {prefs?.rightPanelOpen && (
           <RightPanel
             cwd={cwd}
+            gameStage={gameStage}
             items={items}
             enabledTools={prefs?.tools ?? []}
             usage={sessionUsage}

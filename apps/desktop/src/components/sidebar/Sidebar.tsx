@@ -32,6 +32,20 @@ interface Props {
   resizing?: boolean;
 }
 
+const STATUS_LABEL: Record<AgentStatus, string> = {
+  idle: "空闲",
+  streaming: "运行中",
+  retrying: "重试中",
+  error: "出错",
+};
+
+function projectLabel(cwd: string | null): string {
+  if (!cwd) return "未打开项目";
+  // 与 SidebarGroupList 内 group label 保持一致：取路径末段
+  const parts = cwd.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? cwd;
+}
+
 function SidebarImpl({
   sessions,
   hiddenProjectKeys,
@@ -68,10 +82,33 @@ function SidebarImpl({
     agentStatus === "streaming" ||
     agentStatus === "retrying";
 
+  const statusClass = compacting
+    ? "compacting"
+    : agentStatus === "error"
+      ? "error"
+      : agentStatus === "retrying"
+        ? "retrying"
+        : agentStatus === "streaming"
+          ? "streaming"
+          : "idle";
+  const statusText = compacting
+    ? "压缩中"
+    : STATUS_LABEL[agentStatus] ?? "空闲";
+
   return (
     <aside className={`sidebar${state.menuOpen ? " is-context-menu-open" : ""}`}>
       <div className="sidebar-head">
-        <h2>会话</h2>
+        <div className="sidebar-head-info">
+          <span className="sidebar-head-kicker">项目</span>
+          <span
+            className={`sidebar-head-project status-${statusClass}`}
+            title={activeCwd ?? "未打开项目"}
+          >
+            <span className="sidebar-head-dot" aria-hidden />
+            <span className="sidebar-head-name">{projectLabel(activeCwd)}</span>
+            <span className="sidebar-head-status">{statusText}</span>
+          </span>
+        </div>
         <button
           type="button"
           className="btn btn-ghost btn-icon"
