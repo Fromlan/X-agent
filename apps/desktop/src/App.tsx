@@ -21,6 +21,8 @@ import type {
   PrefsRecoveryNotice,
   SecretCodecStatus,
   SessionInfo,
+  StageId,
+  StageInfo,
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS, THINKING_LEVELS, isRestorableGoalStatus } from "@shared/ipc";
@@ -39,6 +41,7 @@ import {
   type SettingsTabTarget,
 } from "./components/ReadyChecklist";
 import { TopBar } from "./components/TopBar";
+import { StageBar } from "./components/StageBar";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
@@ -105,6 +108,7 @@ export default function App() {
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
   const [planPath, setPlanPath] = useState<string | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
+  const [stageInfo, setStageInfo] = useState<StageInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
     undefined,
@@ -296,6 +300,47 @@ export default function App() {
   useEffect(() => {
     setReadyNotice(null);
   }, [cwd]);
+
+  // Project-level stage workflow: subscribe to changes and bootstrap.
+  useEffect(() => {
+    let cancelled = false;
+    const off = window.xAgent.stage.onChanged((info) => {
+      if (cancelled) return;
+      setStageInfo(info);
+      if (info?.definition?.defaultMode) {
+        setSessionMode(info.definition.defaultMode);
+      }
+    });
+    (async () => {
+      const initial = await window.xAgent.stage.get();
+      if (cancelled) return;
+      setStageInfo(initial);
+      if (initial?.definition?.defaultMode) {
+        setSessionMode(initial.definition.defaultMode);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
+
+  const onSwitchStage = useCallback(async (target: StageId) => {
+    const result = await window.xAgent.stage.set(target);
+    if (!result.ok) {
+      setError(result.error ?? "切换阶段失败");
+    } else if (result.warning) {
+      setError(result.warning);
+    }
+    return result;
+  }, []);
+
+  const onToggleStageCheck = useCallback(
+    (checkId: string, value: boolean) => {
+      void window.xAgent.stage.toggleManualCheck(checkId, value);
+    },
+    [],
+  );
 
   const chatStarters = useMemo(
     () => startersForProject(isGodotProject),
@@ -931,6 +976,12 @@ export default function App() {
         compacting={compacting}
         busy={busy}
       />
+      <StageBar
+        stageInfo={stageInfo}
+        busy={busy}
+        onSwitch={onSwitchStage}
+        onToggleCheck={onToggleStageCheck}
+      />
       {showUpdateBanner && updateStatus && (
         <UpdateBanner
           status={updateStatus}
@@ -1150,6 +1201,7 @@ export default function App() {
             sessionId={sessionId}
             planPath={planPath}
             autoCompactPercent={prefs?.autoCompactPercent ?? 0}
+            stageInfo={stageInfo}
             onAutoCompactPercentChange={(percent) => {
               void (async () => {
                 const next = await window.xAgent.prefs.set({
@@ -1170,6 +1222,7 @@ export default function App() {
               void onBuildPlan();
             }}
             onPlanPathChange={setPlanPath}
+            onToggleStageCheck={onToggleStageCheck}
             onResizePointerDown={onRightPanelResizePointerDown}
             onResizeDoubleClick={onRightPanelResizeDoubleClick}
             resizing={rightPanelResizing}

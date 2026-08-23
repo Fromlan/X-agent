@@ -5932,3 +5932,303 @@ body.is-resizing-column * {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================== */
+/*  Game development stage workflow (策划 / 原型 / 测试 / 扩充)   */
+/* ============================================================== */
+
+/* Stage-specific design tokens — bound to existing accent palette. */
+:root {
+  --stage-design: var(--accent-yellow);
+  --stage-prototype: var(--accent-blue);
+  --stage-test: var(--accent-purple);
+  --stage-expand: var(--accent-green);
+}
+
+.stage-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.stage-bar--empty {
+  color: var(--text-muted);
+}
+
+.stage-bar-hint {
+  font-style: italic;
+}
+
+.stage-bar-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.stage-bar-step:hover:not(:disabled) {
+  background: var(--bg-list-hover);
+  color: var(--text-primary);
+}
+
+.stage-bar-step:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.stage-bar-step--current {
+  border-color: var(--stage-color, var(--accent-blue));
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--stage-color, var(--accent-blue)) 14%, transparent);
+  font-weight: 600;
+}
+
+.stage-bar-step--done {
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.stage-bar-step--future {
+  color: var(--text-muted);
+}
+
+.stage-bar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-list-selected);
+}
+
+.stage-bar-step--current .stage-bar-icon {
+  background: var(--stage-color, var(--accent-blue));
+  color: var(--bg-app);
+}
+
+.stage-bar-progress {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-list-selected);
+}
+
+/* Stage tab in the right panel — sits next to the existing tabs. */
+.rp-tab--stage {
+  border-left: 2px solid var(--stage-color, transparent);
+}
+
+.rp-tab--stage[data-stage="design"] {
+  --stage-color: var(--stage-design);
+}
+
+.rp-tab--stage[data-stage="prototype"] {
+  --stage-color: var(--stage-prototype);
+}
+
+.rp-tab--stage[data-stage="test"] {
+  --stage-color: var(--stage-test);
+}
+
+/* Stage tab body. */
+.stage-tab {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.stage-tab-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-tab-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stage-tab-description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.stage-tab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stage-tab-section h4 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.stage-tab-empty,
+.stage-tab-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.stage-checks,
+.stage-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stage-checks li,
+.stage-files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--bg-list-hover);
+}
+
+.stage-checks li.is-passed,
+.stage-files li.is-passed {
+  color: var(--text-primary);
+}
+
+.stage-checks li.is-pending,
+.stage-files li.is-pending {
+  color: var(--text-secondary);
+}
+
+.stage-check-label,
+.stage-files code {
+  flex: 1;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.stage-check-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stage-check-toggle,
+.stage-switch-check-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-primary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.stage-check-toggle:hover:not(:disabled),
+.stage-switch-check-toggle:hover:not(:disabled) {
+  background: var(--bg-list-selected);
+  color: var(--text-primary);
+}
+
+.stage-files-more {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* Stage switch modal. */
+.stage-switch-modal {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.stage-switch-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stage-switch-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stage-switch-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stage-switch-checks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-primary);
+}
+
+.stage-switch-checks li.is-passed {
+  border-color: var(--accent-green);
+}
+
+.stage-switch-checks li.is-pending {
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+}
+
+.stage-switch-check-label {
+  flex: 1;
+}
+
+.stage-switch-check-detail {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stage-switch-progress {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stage-switch-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--accent-yellow);
+}
+
