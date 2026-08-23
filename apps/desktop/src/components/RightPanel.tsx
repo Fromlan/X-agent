@@ -4,11 +4,13 @@ import {
   Box,
   ClipboardList,
   FolderTree,
+  Gamepad2,
   PanelRightClose,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { ChatItem } from "../stores/chat-store";
+import type { GameStage } from "@shared/game-stage";
 import type { SessionUsageSnapshot } from "@shared/ipc";
 import {
   extractToolPath,
@@ -24,17 +26,20 @@ import { FilesTab } from "./right-panel/FilesTab";
 import { GodotTab } from "./right-panel/GodotTab";
 import { ContextTab } from "./right-panel/ContextTab";
 import { PlanTab } from "./right-panel/PlanTab";
+import { GameStageTab } from "./right-panel/GameStageTab";
 
 const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
   { id: "context", label: "上下文", icon: BarChart3 },
   { id: "plan", label: "计划", icon: ClipboardList },
   { id: "tools", label: "工具", icon: Wrench },
   { id: "files", label: "文件", icon: FolderTree },
+  { id: "game-stage", label: "阶段", icon: Gamepad2 },
   { id: "godot", label: "Godot", icon: Box },
 ];
 
 interface Props {
   cwd: string | null;
+  gameStage?: GameStage | null;
   items: ChatItem[];
   enabledTools: string[];
   usage: SessionUsageSnapshot | null;
@@ -55,6 +60,7 @@ interface Props {
 
 export function RightPanel({
   cwd,
+  gameStage = null,
   items,
   enabledTools,
   usage,
@@ -164,6 +170,9 @@ export function RightPanel({
             previewPath={state.previewPath}
             onAddPathToChat={onAddPathToChat}
           />
+        )}
+        {state.tab === "game-stage" && (
+          <GameStageTab cwd={cwd} stage={gameStage} />
         )}
         {state.tab === "godot" && (
           <GodotTab active={state.tab === "godot"} items={items} />

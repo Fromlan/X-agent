@@ -7,6 +7,7 @@ import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { SessionHost } from "../agent/session-host";
 import { getCachedPrefs, patchPrefs } from "../agent/prefs";
 import { installGodotRpcAddon } from "../agent/godot-addon-install";
+import { isStageAutoGodotTool } from "../agent/game-stage/stage-tools";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
 import {
@@ -76,7 +77,7 @@ export function registerGodotIpc(
     if (!res.ok) return { ok: false, error: res.error };
     return { ok: true, result: res.result };
   });
-  handle(ipcMain, 
+  handle(ipcMain,
     IPC_CHANNELS.godotRpcRequest,
     async (
       _e,
@@ -92,7 +93,8 @@ export function registerGodotIpc(
       // 工具开关硬闸：GODOT_TOOLS 默认关闭，未勾选对应工具时拒绝调用
       // （否则「设置 → 工具」开关退化为纯 UI 偏好）。
       const gateTool = godotRpcMethodTool(call.method);
-      if (gateTool && !getCachedPrefs().tools.includes(gateTool)) {
+      const stage = sessionHost.getGameStage();
+      if (gateTool && !getCachedPrefs().tools.includes(gateTool) && !isStageAutoGodotTool(stage, gateTool)) {
         return {
           ok: false,
           error: `未启用 Godot 工具 ${gateTool}，请先在 设置 → 工具 中勾选`,

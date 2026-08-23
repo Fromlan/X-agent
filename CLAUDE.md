@@ -6,7 +6,7 @@
 
 X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.4.0`）。
 
-**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
+**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、**Game Stage 工作流**（项目级 4 阶段：策划 / 原型 / 测试 / 扩充，独立 system append + 阶段化工具白名单 + `game-*` 技能集）、右栏（上下文压缩 / 计划 / 工具 / 文件 / 阶段 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
 
 运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
@@ -50,7 +50,8 @@ npm run release:dist           # 可选：本地 typecheck + test + 打 Windows 
 
 `test-history-mapper`、`test-transcript-golden`、`test-turn-file-tracker`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-bash-liveness`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-provider-last-enabled`、`test-auth-cache-invalidation`、`test-model-fetch`、`test-model-context`、`test-godot-addon-install`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-debug-log`、`test-error-i18n`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-user-message-files`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-chat-markdown-streaming`、`test-chat-scroll-throttle`、`test-chat-virtual-cache`、`test-debug-mode`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-tool-batches`、`test-confirm-provider`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-slash-items`、`test-prompt-slash-wrap`、`test-extension-ui`、`test-session-event-bridge-stale`、`test-external-url`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
-> 0.4.0 起 cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints 的覆盖已收敛到 Vitest（`*.test.ts`），不再双写离线脚本。
+> 0.4.0 起 cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints 的覆盖已收敛到 Vitest（`*.test.ts`），不再双写离线脚本。  
+> Game Stage（`shared/game-stage.test.ts` + `electron/agent/game-stage/stage-tools.test.ts`）一并走 Vitest；`npm run test:unit` 独立跑 29 文件 355 测试。
 
 冒烟（需本机认证）：
 
@@ -73,8 +74,8 @@ Electron 三进程边界：
 |---|---|
 | TopBar | 打开项目 / 新会话、设置、右栏开关、主题、状态 |
 | Sidebar | 按项目分组会话；重命名 / 删除；「从侧栏移除」写 `hiddenProjectKeys` |
-| Chat | 流式、steer、中止；撤回 / 编辑重发 / 重新生成；`@路径` 展开；底部工具条承载模式（智能体 / 调研 / 计划 / 目标）、模型 / Thinking / 展示思考、发送 |
-| RightPanel | 上下文（占用拆解 + 手动压缩）、工具、文件树、Godot 桥状态 |
+| Chat | 流式、steer、中止；撤回 / 编辑重发 / 重新生成；`@路径` 展开；顶部 `<GameStageBar>`（项目级 4 阶段 chip）；底部工具条承载模式（智能体 / 调研 / 计划 / 目标）、模型 / Thinking / 展示思考、发送 |
+| RightPanel | 上下文（占用拆解 + 手动压缩）、工具、文件树、阶段（`GameStageTab` 展示各阶段产物）、Godot 桥状态 |
 | Settings | 通用 / 供应商 / 用量 / 工具 / 插件 / Godot（编辑器连接） |
 
 ### Agent 与事件
@@ -104,6 +105,19 @@ Electron 三进程边界：
 - `plugin-host.ts`：Prompt / Skill / Extension / Theme（全局与项目 `.pi`）
 - `package-manager.ts`：`pi install` / `pi uninstall` + `x-agent-packages.json`；一键安装 `godot-pi`
 - UI：设置 → 插件（[`PluginsPage.tsx`](apps/desktop/src/components/PluginsPage.tsx)）
+
+### Game Stage 工作流
+
+- 与会话模式（智能体 / 调研 / 计划 / 目标）正交，按 **项目（cwd）** 维度叠加 4 阶段流程层
+- 类型与提示词：`shared/game-stage.ts`（`GAME_STAGES` / `GAME_STAGE_LABELS` / `buildGameStageSystemAppend`）；阶段化工具白名单：`electron/agent/game-stage/stage-tools.ts`（`computePlanningStageTools` / `computeModeToolsWithStage`，策划阶段禁 `edit` / `write`，测试阶段自动启用全部 Godot 工具）
+- 主流程编排：`session-mode/controller.ts` 的 `setGameStage` / `applyGameStage` / `restoreGameStageFromJournal`；切换阶段时同步刷新 system append、工具集并 emit `game_stage` 事件
+- 持久化：`electron/agent/game-stage/journal.ts` → `~/.pi/agent/x-agent-game-stage.json`（按 cwd key，schemaVersion=1）；会话创建 / 恢复时自动 hydrate
+- 自定义工具：`electron/agent/game-stage/game-doc-tool.ts` 提供 `write_game_doc`（策划阶段专属，写 `.game/design/*.md` 与 `.game/config/*.{json,yaml,toml}`）
+- 产物结构（每阶段独立目录）：`.game/design/`（gdd / config）→ `.game/prototype/NOTES.md` → `.game/test/{bugs.md, playtest-checklist.md}` → `.game/backlog/expansion.md`，由 `electron/agent/game-stage/artifacts.ts` 按首次进入阶段时确保创建
+- IPC：`electron/ipc/register-game-stage-ipc.ts`（`getGameStage` / `setGameStage`）；事件：`UiAgentEvent["game_stage"]`；hook 端 `useAgentEventRouter.setGameStage`
+- 配套技能：`packages/godot-pi/skills/{game-plan, game-prototype, game-test, game-expand}/SKILL.md`，按阶段自动索引
+- UI：`<GameStageBar>` 顶部 4 chip + 当前阶段说明 + 「进入下一阶段」按钮；右栏「阶段」tab（[`GameStageTab.tsx`](apps/desktop/src/components/right-panel/GameStageTab.tsx)）展示阶段产物
+- 测试：`shared/game-stage.test.ts` + `electron/agent/game-stage/stage-tools.test.ts`
 
 ### Godot RPC 与文档
 
@@ -144,6 +158,7 @@ Electron 三进程边界：
 | `~/.pi/agent/x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离） |
 | `~/.pi/agent/x-agent/plans/` | Plan Mode 默认写出的 Markdown 计划（可「保存到项目」迁至 `<cwd>/.pi/plans/`） |
 | `~/.pi/agent/x-agent/goals/` | Goal Mode 跨恢复日记（按 session 路径哈希） |
+| `~/.pi/agent/x-agent-game-stage.json` | Game Stage 当前阶段（按 cwd 维度持久化，schemaVersion=1） |
 | `auth.json` / `models.json` | Pi 认证与模型（密钥明文，与 Pi CLI 共用） |
 
 会话列表只读 X-agent 会话目录；恢复须拒绝目录外路径。

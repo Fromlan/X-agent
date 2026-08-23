@@ -117,6 +117,10 @@ const exposed: XAgentApi = {
     clearGoal: api.clearGoal,
     getGoal: api.getGoal,
   },
+  game: {
+    get: api.getGameStage,
+    set: api.setGameStage,
+  },
   session: {
     setModel: api.setModel,
     setThinkingLevel: api.setThinkingLevel,

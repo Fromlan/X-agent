@@ -12,6 +12,7 @@ import {
   type AgentSessionMode,
   type AgentStatus,
   type ClientPrefs,
+  type GameStageResult,
   type CompactSessionResult,
   type GoalInfo,
   type GoalResult,
@@ -35,6 +36,7 @@ import {
   type TurnUsage,
   type UiAgentEvent,
 } from "../../shared/ipc";
+import type { GameStage, GameStageInfo } from "../../shared/game-stage";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
 import { getAgentDirPath, getCachedPrefs, patchPrefs } from "./prefs";
 import {
@@ -637,6 +639,17 @@ export class SessionHost {
     return this.sessionMode.getInfo();
   }
 
+  getGameStageInfo(): GameStageInfo | null {
+    return this.sessionMode.getGameStageInfo();
+  }
+
+  getGameStage(): GameStage | null {
+    return this.sessionMode.getGameStage();
+  }
+
+  async setGameStage(stage: GameStage): Promise<GameStageResult> {
+    return this.sessionMode.setGameStage(stage);
+  }
   getGoal(): GoalInfo | null {
     return this.sessionMode.getGoal();
   }
