@@ -35,12 +35,12 @@ import {
 import {
   clearGoalJournal,
   clearPlanJournal,
+  computeAskModeTools,
+  computePlanModeTools,
   createWritePlanTools,
   createPlanModeGuardExtension,
   type SessionModeController,
 } from "./session-mode/index";
-import { createWriteGameDocTools } from "./game-stage/game-doc-tool";
-import { computeModeToolsWithStage } from "./game-stage/stage-tools";
 import type { TurnFileTracker } from "./turn-file-tracker";
 import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
@@ -181,10 +181,9 @@ export class SessionLifecycle {
           getAllowedTools: () => {
             const prefsTools = getCachedPrefs().tools;
             const mode = this.a().sessionMode.getMode();
-            const stage = this.a().sessionMode.getGameStage();
-            if (mode === "ask") return computeModeToolsWithStage(stage, "ask", prefsTools);
-            if (mode === "plan") return computeModeToolsWithStage(stage, "plan", prefsTools);
-            return computeModeToolsWithStage(stage, mode, prefsTools);
+            if (mode === "ask") return computeAskModeTools(prefsTools);
+            if (mode === "plan") return computePlanModeTools(prefsTools);
+            return prefsTools;
           },
           getCwd: () => this.a().getBundle()?.cwd ?? null,
         }),
@@ -241,9 +240,6 @@ export class SessionLifecycle {
       tools: [...SESSION_TOOL_REGISTRY],
       customTools: [
         ...((rpc) => (rpc ? createGodotTools(rpc) : []))(this.a().godotRpc),
-        ...createWriteGameDocTools(
-          () => this.a().getBundle()?.cwd ?? null,
-        ),
         ...createWritePlanTools(
           (path) => {
             this.a().sessionMode.onPlanWritten(path);
@@ -300,8 +296,6 @@ export class SessionLifecycle {
     // Restore the plan reference so the right panel shows the plan again
     // after restarting the app (plan files persist on disk).
     this.a().sessionMode.restorePlanFromJournal();
-    // Restore the project game stage so the stage UI returns after restart.
-    this.a().sessionMode.restoreGameStageFromJournal();
 
     const sessionPath = this.sessionFileOf(session);
     if (session.model) {
@@ -608,7 +602,6 @@ export class SessionLifecycle {
       thinkingLevel: getCachedPrefs().thinkingLevel,
       sessionPath: null,
     });
-    this.a().emit({ type: "game_stage", info: null });
     this.a().setStatus("idle");
     // C11: 关闭项目后解除 Godot RPC cwd 绑定，避免下一次会话被上次的项目拦截。
     this.a().godotRpc?.setCurrentCwd(null);

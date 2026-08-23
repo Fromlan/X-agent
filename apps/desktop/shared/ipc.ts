@@ -149,7 +149,7 @@ export interface BashCheckResult {
  * - live       round-trip works (commands + stdout both observable)
  * - half_dead  commands run (file side-effects) but stdout is not returned
  * - ull_dead  bash did not produce the probe (timeout / non-zero / wrong)
- * -
+ * - 
 o_bash    no usable bash binary on this machine
  */
 export type BashLivenessKind = "live" | "half_dead" | "full_dead" | "no_bash";
@@ -249,24 +249,15 @@ export {
   PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS,
 } from "./mode-tools";
 import { WRITE_PLAN_TOOL } from "./mode-tools";
-import {
-  WRITE_GAME_DOC_TOOL,
-  type GameStage,
-  type GameStageInfo,
-} from "./game-stage";
 
 /** Full tool registry names for createAgentSession (toggleable + write_plan). */
 export const SESSION_TOOL_REGISTRY = [
-  WRITE_GAME_DOC_TOOL,
   ...ALL_TOGGLEABLE_TOOLS,
   WRITE_PLAN_TOOL,
 ] as const;
 
 /** Session interaction mode — mutually exclusive. */
 export type AgentSessionMode = "agent" | "ask" | "plan" | "goal";
-
-/** Project-level game development workflow stage. */
-export type { GameStage, GameStageInfo } from "./game-stage";
 
 export type GoalStatus =
   | "pursuing"
@@ -339,13 +330,6 @@ export interface SessionModeResult {
   needGoalCondition?: boolean;
 }
 
-/** Result of switching the active project game stage. */
-export interface GameStageResult {
-  ok: boolean;
-  error?: string;
-  info?: GameStageInfo | null;
-}
-
 export interface GoalResult {
   ok: boolean;
   error?: string;
@@ -371,7 +355,6 @@ export const THEME_LABELS: Record<ThemeId, string> = {
   paper: "Warm Paper",
   contrast: "High Contrast",
 };
-
 
 export function isThemeId(value: unknown): value is ThemeId {
   return (
@@ -400,14 +383,11 @@ export function normalizeThemePrefs(raw: {
   }
   if (isColorMode(raw.colorMode)) {
     return { themeId, colorMode: raw.colorMode };
-
   }
   if (isColorMode(raw.theme)) {
     return { themeId, colorMode: raw.theme };
-
   }
   return { themeId, colorMode: "dark" };
-
 }
 
 export interface ClientPrefs {
@@ -493,7 +473,6 @@ export const DEFAULT_PREFS: ClientPrefs = {
   goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
   goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
 };
-
 
 /**
  * Runtime validation schemas for IPC `setPrefs` payloads.
@@ -611,7 +590,6 @@ export type HistoryItem =
       /** When set, a later notice with the same key replaces this bubble. */
       replaceKey?: string;
     };
-
 
 export type FileRestoreSkipReason =
   | "bash_unknown"
@@ -795,14 +773,9 @@ export type UiAgentEvent =
       tools: string[];
     }
   | {
-      type: "game_stage";
-      info: GameStageInfo | null;
-    }
-  | {
       type: "goal_update";
       goal: GoalInfo | null;
     };
-
 
 export interface HostStatus {
   status: AgentStatus;
@@ -1102,7 +1075,6 @@ export type WorkspaceApi = {
   getStatus: IpcInvokeMap["getStatus"];
 };
 
-
 /** Coarse turn / composer facade (facade methods stay on window.xAgent). */
 export type TurnApi = {
   prompt: IpcInvokeMap["prompt"];
@@ -1112,7 +1084,6 @@ export type TurnApi = {
   editAndResend: IpcInvokeMap["editAndResend"];
   regenerate: IpcInvokeMap["regenerateFromUser"];
 };
-
 
 /** Coarse plan / goal mode facade (facade methods stay on window.xAgent). */
 export type PlanApi = {
@@ -1130,12 +1101,6 @@ export type PlanApi = {
   getGoal: IpcInvokeMap["getGoal"];
 };
 
-/** Game development stage workflow facade. */
-export type GameStageApi = {
-  get: IpcInvokeMap["getGameStage"];
-  set: IpcInvokeMap["setGameStage"];
-};
-
 /** Active session tuning / context facade. Prefer over flat in new code. */
 export type SessionApi = {
   setModel: IpcInvokeMap["setModel"];
@@ -1147,7 +1112,6 @@ export type SessionApi = {
   reloadResources: IpcInvokeMap["reloadResources"];
   listSessionSlashItems: IpcInvokeMap["listSessionSlashItems"];
 };
-
 
 /** Client prefs + runtime dependency checks. */
 export type PrefsApi = {
@@ -1164,7 +1128,6 @@ export type PrefsApi = {
   checkPiCli: IpcInvokeMap["checkPiCli"];
   installPiCli: IpcInvokeMap["installPiCli"];
 };
-
 
 /**
  * Authoritative invoke-channel signatures: every key is one `ipcRenderer.invoke`
@@ -1187,8 +1150,6 @@ export type IpcInvokeMap = {
   ) => Promise<{ ok: boolean; thinkingLevel?: ThinkingLevel }>;
   setSessionMode: (mode: AgentSessionMode) => Promise<SessionModeResult>;
   getSessionMode: () => Promise<SessionModeInfo>;
-  getGameStage: () => Promise<GameStageInfo | null>;
-  setGameStage: (stage: GameStage) => Promise<GameStageResult>;
   buildPlan: () => Promise<PromptResult>;
   getPlanContent: () => Promise<PlanContentResult>;
   savePlanContent: (markdown: string) => Promise<PlanMutateResult>;
@@ -1312,7 +1273,6 @@ export type IpcInvokeMap = {
   appReady: () => Promise<{ ok: boolean }>;
 };
 
-
 /**
  * Flat channel methods removed from `window.xAgent` — their functionality lives
  * on the workspace / turn / plan / session / prefs facades. Removing an entry
@@ -1328,8 +1288,6 @@ export const DELETED_FLAT_KEYS = [
   "setModel",
   "setSessionMode",
   "getSessionMode",
-  "getGameStage",
-  "setGameStage",
   "buildPlan",
   "getPlanContent",
   "savePlanContent",
@@ -1365,14 +1323,12 @@ export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
 /** Every invoke channel keyed by channel name — the generated preload surface. */
 export type FlatInvokeApi = { [K in IpcChannelKey]: IpcInvokeMap[K] };
 
-
 /** Flat IPC surface exposed directly on `window.xAgent` (legacy; prefer facades). */
 export type XAgentApiFlat = Omit<FlatInvokeApi, DeletedFlatKey> & {
   notifyAppReady: () => Promise<{ ok: boolean }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
 };
-
 
 /** Compile-time gate: IpcInvokeMap keys must exactly cover IPC_CHANNELS keys. */
 declare const _assertInvokeMapCoverage: Exclude<
@@ -1396,7 +1352,6 @@ export interface XAgentApi extends XAgentApiFlat {
   workspace: WorkspaceApi;
   turn: TurnApi;
   plan: PlanApi;
-  game: GameStageApi;
   session: SessionApi;
   prefs: PrefsApi;
   updates: UpdatesApi;

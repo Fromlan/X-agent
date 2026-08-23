@@ -11,7 +11,6 @@ import type {
   GoalInfo,
   UiAgentEvent,
 } from "@shared/ipc";
-import type { GameStage } from "@shared/game-stage";
 import type { ChatItem } from "../stores/chat-store";
 import { applyAgentEvent } from "../stores/chat-store";
 import {
@@ -42,7 +41,6 @@ type EventRouterDeps = {
   setEditingEntryId: Dispatch<SetStateAction<string | null>>;
   setItems: Dispatch<SetStateAction<ChatItem[]>>;
   setSessionMode: Dispatch<SetStateAction<AgentSessionMode>>;
-  setGameStage: Dispatch<SetStateAction<GameStage | null>>;
   setPlanPath: Dispatch<SetStateAction<string | null>>;
   setGoal: Dispatch<SetStateAction<GoalInfo | null>>;
   refreshSessions: () => Promise<void>;
@@ -67,7 +65,6 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setEditingEntryId,
     setItems,
     setSessionMode,
-    setGameStage,
     setPlanPath,
     setGoal,
     refreshSessions,
@@ -141,10 +138,6 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
         void refreshSessions();
         return;
       }
-      if (event.type === "game_stage") {
-        setGameStage(event.info?.stage ?? null);
-        return;
-      }
       if (event.type === "session_mode") {
         setSessionMode(event.mode);
         setPlanPath(event.planPath);
@@ -200,7 +193,6 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setQueuedSteering,
     setSessionId,
     setSessionMode,
-    setGameStage,
     setStatus,
     usageFetchGen,
   ]);

@@ -17,8 +17,6 @@ export const IPC_CHANNELS = {
   setThinkingLevel: "setThinkingLevel",
   setSessionMode: "setSessionMode",
   getSessionMode: "getSessionMode",
-  setGameStage: "setGameStage",
-  getGameStage: "getGameStage",
   buildPlan: "buildPlan",
   getPlanContent: "getPlanContent",
   savePlanContent: "savePlanContent",

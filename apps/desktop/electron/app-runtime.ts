@@ -44,7 +44,6 @@ import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { registerWorkspaceIpc } from "./ipc/register-workspace-ipc";
 import { registerTurnIpc } from "./ipc/register-turn-ipc";
 import { registerPlanIpc } from "./ipc/register-plan-ipc";
-import { registerGameStageIpc } from "./ipc/register-game-stage-ipc";
 import { registerSessionConfigIpc } from "./ipc/register-session-config-ipc";
 import { registerProviderIpc } from "./ipc/register-provider-ipc";
 import { registerGodotIpc } from "./ipc/register-godot-ipc";
@@ -124,7 +123,7 @@ function registerIpc(
   );
   const cwdOf = () => host.getStatus().cwd;
 
-  handle(ipcMain,
+  handle(ipcMain, 
     IPC_CHANNELS.openProject,
     async (_e, path?: string, mode?: "continue" | "new") => {
     let projectPath =
@@ -153,7 +152,6 @@ function registerIpc(
   registerWorkspaceIpc(ipcMain, host);
   registerTurnIpc(ipcMain, host);
   registerPlanIpc(ipcMain, host);
-  registerGameStageIpc(ipcMain, host);
   registerSessionConfigIpc(ipcMain, host);
 
   handle(ipcMain, IPC_CHANNELS.getPrefs, async () => loadPrefs());

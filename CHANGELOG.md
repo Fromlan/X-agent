@@ -8,10 +8,6 @@
 
 ## Unreleased
 
-### 新增
-
-- **Game Stage 工作流（项目级流程层）**：与现有会话级模式（智能体 / 调研 / 计划 / 目标）正交，在「项目」粒度上叠加 4 阶段工作流 —— `策划`（灵感 / GDD / 配置，read-only 工具集）→ `原型`（最小可玩切片，垂直拆分）→ `测试`（playtest / debug，启用全部 Godot 工具）→ `扩充`（正式制作，按 `x-review` / `x-tdd` / `x-safe-edit` 推进）。Chat 顶部新增 `<GameStageBar>`（4 chip + 当前阶段说明 + 「进入下一阶段」按钮），右栏新增「阶段」tab 展示各阶段产物（`.game/design/*.md`、`.game/prototype/NOTES.md`、`.game/test/bugs.md` 等）。每阶段独立 system append（`buildGameStageSystemAppend`），并按阶段重算可用工具集（`computePlanningStageTools` / `computeModeToolsWithStage`）—— 策划阶段禁止写代码、测试阶段自动启用 Godot 全套工具。状态按 `cwd` 持久化到 `~/.pi/agent/x-agent-game-stage.json`，会话重启 / 切换项目时由 `restoreGameStageFromJournal` 自动恢复。新增 `game-plan` / `game-prototype` / `game-test` / `game-expand` 4 个技能配合四阶段工作流。
-
 ### 修复
 
 - **一键安装本地 Packages 不再被静默删除**：pi CLI 会把本地包路径按 `~/.pi/agent` 相对化写入 `settings.json`（如 `..\..\AppData\...\resources\godot-pi`），而 X-agent 此前按进程 cwd 解析相对路径，导致安装记录被判为"包源缺失"，被 `pruneMissingPiPackageSources` 从 `settings.json` 与 `x-agent-packages.json` 一并清除（表现为"安装成功"提示后「技能 / 提示词 / 扩展」页签为空）。现包源解析统一以 `~/.pi/agent` 为基准（与 pi CLI 一致），相对路径正常解析，prune / 去重 / registry 镜像均保留安装记录。

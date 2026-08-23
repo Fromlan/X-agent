@@ -23,7 +23,6 @@ pi install /绝对路径/X-agent/packages/godot-pi
 | 类型 | 名称 |
 |---|---|
 | Skills · Core | `x-grill`、`x-diagnose`、`x-tdd`、`x-change-brief`、`x-handoff`、`x-glossary`、`x-review`、`x-safe-edit` |
-| Skills · Game Flow | `game-plan`、`game-prototype`、`game-test`、`game-expand` |
 | Skills · Godot | 仅 Godot 项目索引：见下表 |
 | Prompt | `/x-next`、`/godot-next` |
 | Extension | `godot_detect_project` 工具、`/godot-rpc-status` 命令 |
@@ -40,16 +39,6 @@ pi install /绝对路径/X-agent/packages/godot-pi
 | `x-glossary` | 维护 `CONTEXT.md` 术语 |
 | `x-review` | 单代理 Standards / Spec 审查 |
 | `x-safe-edit` | 小步可逆编辑 + 验证 |
-
-
-### Skills · Game Flow（始终索引，配合四阶段工作流）
-
-| Skill | 用途 |
-|---|---|
-| `game-plan` | 策划阶段：灵感/GDD/配置 |
-| `game-prototype` | 原型阶段：最小可玩切片 |
-| `game-test` | 测试阶段：debug/playtest |
-| `game-expand` | 扩充阶段：正式制作/发布 |
 
 ### Skills · Godot（仅 `project.godot` 存在时索引）
 

@@ -2,7 +2,6 @@ import type { AgentSession, DefaultResourceLoader, ModelRuntime } from "@earendi
 import { existsSync } from "node:fs";
 import type {
   AgentSessionMode,
-  GameStageResult,
   GoalInfo,
   GoalResult,
   GoalStatus,
@@ -19,14 +18,12 @@ import {
   isRestorableGoalStatus,
 } from "../../../shared/ipc";
 import { getCachedPrefs } from "../prefs";
-import type { GameStage, GameStageInfo } from "../../../shared/game-stage";
-import { buildGameStageSystemAppend } from "../../../shared/game-stage";
-import { loadGameStageJournal, saveGameStageJournal } from "../game-stage/journal";
-import { computeModeToolsWithStage, computePlanningStageTools } from "../game-stage/stage-tools";
-import { ensureGameStageArtifacts } from "../game-stage/artifacts";
 import {
   buildImplementPrompt,
   classifyPlanLocation,
+  computeAskModeTools,
+  computeModeTools,
+  computePlanModeTools,
   isAllowedPlanPath,
   isReadonlySessionMode,
   readPlanMarkdown,
@@ -106,7 +103,6 @@ function clampMaxTokens(n: number | undefined): number {
 
 export class SessionModeController {
   private agentMode: AgentSessionMode = "agent";
-  private gameStage: GameStage | null = null;
   private savedTools: string[] | null = null;
   private planPath: string | null = null;
   private goal: GoalInfo | null = null;
@@ -123,23 +119,6 @@ export class SessionModeController {
 
   getPlanPath(): string | null {
     return this.planPath;
-  }
-
-  /** Active project game stage (null when not using the staged workflow). */
-  getGameStage(): GameStage | null {
-    return this.gameStage;
-  }
-
-  /** Serializable stage info for the renderer. */
-  getGameStageInfo(): GameStageInfo | null {
-    if (!this.gameStage) return null;
-    const cwd = this.host().getBundle()?.cwd ?? "";
-    return {
-      stage: this.gameStage,
-      cwd,
-      updatedAt: Date.now(),
-      schemaVersion: 1,
-    };
   }
 
   setPlanPath(path: string | null): void {
@@ -171,89 +150,7 @@ export class SessionModeController {
     ) {
       out.push(buildGoalModeSystemAppend(this.goal.condition));
     }
-    if (this.gameStage) {
-      out.push(buildGameStageSystemAppend(this.gameStage));
-    }
     return out;
-  }
-
-  /** Restore the project stage after creating/resuming a session. */
-  restoreGameStageFromJournal(): void {
-    const cwd = this.host().getBundle()?.cwd;
-    if (!cwd) return;
-    const stored = loadGameStageJournal(cwd);
-    if (!stored) return;
-    this.applyGameStage(stored, { persist: false, notify: false, clearGoal: false });
-  }
-
-  /** Switch the active project stage and update tools/mode accordingly. */
-  async setGameStage(stage: GameStage): Promise<GameStageResult> {
-    const bundle = this.host().getBundle();
-    if (!bundle) {
-      return { ok: false, error: "尚未打开项目" };
-    }
-    if (bundle.session.isStreaming) {
-      return { ok: false, error: "请等待当前回合结束后再切换阶段" };
-    }
-    if (this.gameStage === stage) {
-      return { ok: true, info: this.getGameStageInfo() };
-    }
-    this.applyGameStage(stage, { persist: true, notify: true });
-    return { ok: true, info: this.getGameStageInfo() };
-  }
-
-  emitGameStage(): void {
-    this.host().emit({ type: "game_stage", info: this.getGameStageInfo() });
-  }
-
-  private applyGameStage(
-    stage: GameStage,
-    opts: { persist: boolean; notify: boolean; clearGoal?: boolean },
-  ): void {
-    const bundle = this.host().getBundle();
-    if (!bundle) return;
-    const cwd = bundle.cwd;
-    const prefs = getCachedPrefs();
-
-    // Planning behaves like Plan mode: read-only core, write_plan, write_game_doc.
-    if (stage === "planning") {
-      this.captureSavedToolsFromSession();
-      this.agentMode = "plan";
-    } else {
-      // Leave read-only modes and restore the base toolset before widening it.
-      if (isReadonlySessionMode(this.agentMode)) {
-        const restored = this.takeRestoredTools();
-        this.agentMode = "agent";
-        this.refreshSystemPrompt(restored);
-      } else {
-        this.agentMode = "agent";
-      }
-      this.savedTools = null;
-    }
-
-    if (opts.clearGoal !== false) {
-      this.clearGoalState("cleared", { silent: true });
-    }
-    this.gameStage = stage;
-
-    const tools = stage === "planning"
-      ? computePlanningStageTools(prefs.tools)
-      : computeModeToolsWithStage(stage, this.agentMode, prefs.tools);
-    this.refreshSystemPrompt(tools);
-
-    ensureGameStageArtifacts(cwd, stage);
-    if (opts.persist) saveGameStageJournal(cwd, stage);
-    this.emitGameStage();
-    this.emitSessionMode();
-    this.emitGoal();
-
-    if (opts.notify) {
-      const label = stage === "planning" ? "策划" : stage === "prototype" ? "原型" : stage === "testing" ? "测试" : "扩充";
-      this.host().emitReplaceableNotice(
-        "session_mode",
-        `已进入${label}阶段。${stage === "planning" ? "已切换为只读策划工作流。" : stage === "testing" || stage === "expansion" ? "已自动开启 Godot 编辑器/调试工具。" : "已切换为原型制作工具集。"}`,
-      );
-    }
   }
 
   /** Capture prefs-era tools before entering ask/plan; keep if already readonly. */
@@ -365,7 +262,6 @@ export class SessionModeController {
 
   reset(opts?: { emit?: boolean }): void {
     this.agentMode = "agent";
-    this.gameStage = null;
     this.savedTools = null;
     this.planPath = null;
     this.goal = null;
@@ -414,7 +310,7 @@ export class SessionModeController {
       this.captureSavedToolsFromSession();
       const prefs = getCachedPrefs();
       this.agentMode = "ask";
-      this.refreshSystemPrompt(computeModeToolsWithStage(this.gameStage, "ask", prefs.tools));
+      this.refreshSystemPrompt(computeAskModeTools(prefs.tools));
       this.emitSessionMode();
       this.emitGoal();
       this.emitModeNotice(
@@ -430,7 +326,7 @@ export class SessionModeController {
       this.captureSavedToolsFromSession();
       const prefs = getCachedPrefs();
       this.agentMode = "plan";
-      this.refreshSystemPrompt(computeModeToolsWithStage(this.gameStage, "plan", prefs.tools));
+      this.refreshSystemPrompt(computePlanModeTools(prefs.tools));
       const active = bundle.session.getActiveToolNames();
       if (!active.includes("write_plan")) {
         const restore = this.takeRestoredTools();
@@ -465,7 +361,7 @@ export class SessionModeController {
         tools = this.takeRestoredTools();
       }
       this.agentMode = "goal";
-      this.refreshSystemPrompt(tools ? computeModeToolsWithStage(this.gameStage, "goal", tools) : computeModeToolsWithStage(this.gameStage, "goal", getCachedPrefs().tools));
+      this.refreshSystemPrompt(tools);
       this.emitSessionMode();
       const needGoalCondition = !isRestorableGoalStatus(this.goal?.status);
       let notice = "已进入目标模式。请输入可验证的完成条件后发送。";
@@ -494,7 +390,7 @@ export class SessionModeController {
     }
     this.clearGoalState("cleared", { silent: true });
     this.agentMode = "agent";
-    this.refreshSystemPrompt(tools ? computeModeToolsWithStage(this.gameStage, "agent", tools) : computeModeToolsWithStage(this.gameStage, "agent", getCachedPrefs().tools));
+    this.refreshSystemPrompt(tools);
     this.emitSessionMode();
     this.emitGoal();
     this.emitModeNotice(
@@ -600,13 +496,10 @@ export class SessionModeController {
       return { ok: false, error: "请等待当前回合结束后再执行计划" };
     }
     const planPath = this.planPath;
-    if (this.gameStage === "planning") {
-      this.applyGameStage("prototype", { persist: true, notify: true });
-    }
     const restore = this.savedTools ?? getCachedPrefs().tools;
     this.agentMode = "agent";
     this.savedTools = null;
-    this.refreshSystemPrompt(computeModeToolsWithStage(this.gameStage, "agent", restore));
+    this.refreshSystemPrompt(restore);
     this.emitSessionMode();
     this.emitModeNotice(`开始按计划实施：${planPath}`);
     return this.host().prompt(buildImplementPrompt(planPath));
@@ -1046,7 +939,7 @@ export class SessionModeController {
   ): { ok: true } | { ok: false; error: string } {
     this.savedTools = [...tools];
     const mode = this.agentMode === "ask" ? "ask" : "plan";
-    const modeTools = computeModeToolsWithStage(this.gameStage, mode, tools);
+    const modeTools = computeModeTools(mode, tools);
     const label = mode === "ask" ? "调研" : "Plan";
     try {
       this.refreshSystemPrompt(modeTools);
@@ -1071,11 +964,11 @@ export class SessionModeController {
   refreshAfterResourceReload(): void {
     const prefs = getCachedPrefs();
     if (this.agentMode === "ask") {
-      this.refreshSystemPrompt(computeModeToolsWithStage(this.gameStage, "ask", prefs.tools));
+      this.refreshSystemPrompt(computeAskModeTools(prefs.tools));
     } else if (this.agentMode === "plan") {
-      this.refreshSystemPrompt(computeModeToolsWithStage(this.gameStage, "plan", prefs.tools));
+      this.refreshSystemPrompt(computePlanModeTools(prefs.tools));
     } else {
-      this.refreshSystemPrompt(computeModeToolsWithStage(this.gameStage, "agent", prefs.tools));
+      this.refreshSystemPrompt(prefs.tools);
     }
     this.emitSessionMode();
   }

@@ -13,10 +13,6 @@ const skillsRoot = join(pkgRoot, "skills");
 const readmePath = join(pkgRoot, "README.md");
 
 const CORE_SKILLS = [
-  "game-plan",
-  "game-prototype",
-  "game-test",
-  "game-expand",
   "x-grill",
   "x-diagnose",
   "x-tdd",
@@ -99,7 +95,7 @@ const readme = readFileSync(readmePath, "utf8");
 const mentioned = new Set();
 for (const m of readme.matchAll(/`([a-z0-9-]+)`/g)) {
   const id = m[1];
-  if (id.startsWith("godot-") || id.startsWith("x-") || id.startsWith("game-")) {
+  if (id.startsWith("godot-") || id.startsWith("x-")) {
     mentioned.add(id);
   }
 }

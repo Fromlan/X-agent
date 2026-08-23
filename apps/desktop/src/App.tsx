@@ -24,7 +24,6 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS, THINKING_LEVELS, isRestorableGoalStatus } from "@shared/ipc";
-import type { GameStage } from "@shared/game-stage";
 import { dbgLog, dbgTimer } from "@shared/debug-log";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
@@ -105,7 +104,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
   const [planPath, setPlanPath] = useState<string | null>(null);
-  const [gameStage, setGameStage] = useState<GameStage | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
@@ -289,7 +287,6 @@ export default function App() {
     setEditingEntryId,
     setItems,
     setSessionMode,
-    setGameStage,
     setPlanPath,
     setGoal,
     refreshSessions,
@@ -454,15 +451,6 @@ export default function App() {
     }
     await refreshSessions();
   }, [refreshSessions, setError, setSessionMode, setPlanPath]);
-
-  const onGameStageChange = useCallback(
-    async (stage: GameStage) => {
-      const result = await window.xAgent.game.set(stage);
-      if (!result.ok) setError(result.error ?? "切换游戏阶段失败");
-      else if (result.info) setGameStage(result.info.stage);
-    },
-    [setError, setGameStage],
-  );
 
   const onClearGoal = useCallback(async () => {
     const result = await window.xAgent.plan.clearGoal();
@@ -1135,8 +1123,6 @@ export default function App() {
           onRetract={onRetract}
           onRegenerate={onRegenerate}
           sessionMode={sessionMode}
-          gameStage={gameStage}
-          onGameStageChange={onGameStageChange}
           planPath={planPath}
           goal={goal}
           onSessionModeChange={onSessionModeChange}
@@ -1157,7 +1143,6 @@ export default function App() {
         {prefs?.rightPanelOpen && (
           <RightPanel
             cwd={cwd}
-            gameStage={gameStage}
             items={items}
             enabledTools={prefs?.tools ?? []}
             usage={sessionUsage}

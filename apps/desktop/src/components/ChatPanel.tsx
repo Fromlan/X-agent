@@ -7,11 +7,9 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { isRestorableGoalStatus } from "@shared/ipc";
-import type { GameStage } from "@shared/game-stage";
 import type { ChatItem } from "../stores/chat-store";
 import { isPendingUserId } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
-import { GameStageBar } from "./GameStageBar";
 import { SlashMenu } from "./SlashMenu";
 import { AtMenu } from "./AtMenu";
 import { SelectMenu } from "./SelectMenu";
@@ -71,8 +69,6 @@ interface Props {
   readinessHints?: { label: string; onClick: () => void }[];
   onPickStarter?: (prompt: string) => void;
   sessionMode?: AgentSessionMode;
-  gameStage?: GameStage | null;
-  onGameStageChange?: (stage: GameStage) => void;
   planPath?: string | null;
   goal?: GoalInfo | null;
   onSessionModeChange?: (mode: AgentSessionMode) => void;
@@ -277,11 +273,6 @@ function ChatPanelImpl(props: Props) {
 
   return (
     <section className="chat-panel">
-      <GameStageBar
-        stage={props.gameStage ?? null}
-        onChange={props.onGameStageChange}
-        disabled={composerLocked}
-      />
       <ChatTranscript
         items={props.items}
         showThinking={props.showThinking}
