@@ -1,23 +1,14 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BarChart3,
   Box,
   ClipboardList,
   FolderTree,
-  Gamepad2,
-  MoreHorizontal,
   PanelRightClose,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { ChatItem } from "../stores/chat-store";
-import type { GameStage } from "@shared/game-stage";
 import type { SessionUsageSnapshot } from "@shared/ipc";
 import {
   extractToolPath,
@@ -33,28 +24,17 @@ import { FilesTab } from "./right-panel/FilesTab";
 import { GodotTab } from "./right-panel/GodotTab";
 import { ContextTab } from "./right-panel/ContextTab";
 import { PlanTab } from "./right-panel/PlanTab";
-import { GameStageTab } from "./right-panel/GameStageTab";
 
 const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
   { id: "context", label: "上下文", icon: BarChart3 },
   { id: "plan", label: "计划", icon: ClipboardList },
   { id: "tools", label: "工具", icon: Wrench },
   { id: "files", label: "文件", icon: FolderTree },
-  { id: "game-stage", label: "阶段", icon: Gamepad2 },
   { id: "godot", label: "Godot", icon: Box },
 ];
 
-/** 主行固定 4 个常用 tab；其余收纳到「··」菜单。 */
-const PRIMARY_TAB_IDS: ReadonlySet<RightPanelTab> = new Set([
-  "context",
-  "plan",
-  "tools",
-  "files",
-]);
-
 interface Props {
   cwd: string | null;
-  gameStage?: GameStage | null;
   items: ChatItem[];
   enabledTools: string[];
   usage: SessionUsageSnapshot | null;
@@ -75,7 +55,6 @@ interface Props {
 
 export function RightPanel({
   cwd,
-  gameStage = null,
   items,
   enabledTools,
   usage,
@@ -108,32 +87,6 @@ export function RightPanel({
     selectToolInPanel(toolId, path);
   };
 
-  const primaryTabs = TABS.filter((t) => PRIMARY_TAB_IDS.has(t.id));
-  const overflowTabs = TABS.filter((t) => !PRIMARY_TAB_IDS.has(t.id));
-  const activeOverflowTab = overflowTabs.find((t) => t.id === state.tab);
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const overflowRef = useRef<HTMLDivElement | null>(null);
-
-  // 点击外部或 Esc 关闭「··」菜单
-  useEffect(() => {
-    if (!overflowOpen) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const root = overflowRef.current;
-      if (!root) return;
-      if (e.target instanceof Node && root.contains(e.target)) return;
-      setOverflowOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setOverflowOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [overflowOpen]);
-
   return (
     <aside className="right-panel" aria-label="工具面板">
       {onResizePointerDown && (
@@ -160,16 +113,14 @@ export function RightPanel({
         </button>
       </div>
       <nav className="rp-tabs" aria-label="面板页签">
-        {primaryTabs.map((t) => {
+        {TABS.map((t) => {
           const Icon = t.icon;
-          const isActive = state.tab === t.id;
           return (
             <button
               key={t.id}
               type="button"
-              className={`rp-tab${isActive ? " active" : ""}`}
+              className={`rp-tab${state.tab === t.id ? " active" : ""}`}
               onClick={() => setRightPanelTab(t.id)}
-              aria-current={isActive ? "page" : undefined}
             >
               <Icon size={13} aria-hidden strokeWidth={2} />
               <span className="rp-tab-label">{t.label}</span>
@@ -179,55 +130,8 @@ export function RightPanel({
             </button>
           );
         })}
-        {overflowTabs.length > 0 && (
-          <div className="rp-overflow" ref={overflowRef}>
-            <button
-              type="button"
-              className={`rp-tab rp-overflow-trigger${activeOverflowTab ? " active" : ""}`}
-              onClick={() => setOverflowOpen((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={overflowOpen}
-              aria-label="更多面板"
-              title="更多面板"
-            >
-              <MoreHorizontal size={13} aria-hidden strokeWidth={2} />
-              <span className="rp-tab-label">··</span>
-              {activeOverflowTab ? (
-                <span className="rp-tab-dot" aria-hidden />
-              ) : null}
-            </button>
-            {overflowOpen && (
-              <div className="rp-overflow-menu" role="menu">
-                {overflowTabs.map((t) => {
-                  const Icon = t.icon;
-                  const isActive = state.tab === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      role="menuitem"
-                      className={`rp-overflow-item${isActive ? " active" : ""}`}
-                      onClick={() => {
-                        setRightPanelTab(t.id);
-                        setOverflowOpen(false);
-                      }}
-                    >
-                      <Icon
-                        size={13}
-                        aria-hidden
-                        strokeWidth={2}
-                      />
-                      <span>{t.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </nav>
       <div className="right-panel-body has-tabs">
-        {state.tab === "game-stage" && <GameStageTab cwd={cwd} stage={gameStage} />}
         {state.tab === "context" && (
           <ContextTab
             usage={usage}
