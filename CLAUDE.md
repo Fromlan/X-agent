@@ -6,7 +6,7 @@
 
 X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.4.0`）。
 
-**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
+**当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、**游戏开发四阶段工作流**（策划 / 原型 / 测试 / 扩充，项目级持久化 `<cwd>/.x-agent/stage.json`，跟随后随 git 共享）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot / 阶段专属）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
 
 运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
@@ -89,6 +89,34 @@ Electron 三进程边界：
 6. 用量经 `usage_update` / `usage-store`；右栏可 `compactSession` → `session.compact()`。
 7. `session_info` / status / prefs（如 `lastSessionPath`）写入顶栏与偏好。
 
+### 游戏开发四阶段工作流
+
+每个项目（cwd）持久化一个当前阶段到 `<cwd>/.x-agent/stage.json`（跟随 git 共享）。阶段作为"项目级工作流层"叠加在现有会话级 mode（智能体 / 调研 / 计划 / 目标）之上：
+
+| 阶段 | 标识 | 默认 mode | 工具白名单 | 阶段产物 | 毕业条件（建议不强制） |
+|---|---|---|---|---|---|
+| 策划 | `design` | plan | 只读 + write_plan | `.x-agent/design/`（GDD.md / 数据表） | GDD + 数据表 + 核心玩法段落 |
+| 原型 | `prototype` | agent | 写工具 + Godot 写类 | `.x-agent/prototype/`（NOTES.md） | main scene + 核心循环脚本 + 引用过 GDD |
+| 测试 | `test` | agent | Godot 调试/内省 + 受限 edit | `.x-agent/test/`（bugs.md / playtest-checklist.md） | 玩通 1 轮 + ≥3 个 bug 已修复 |
+| 扩充 | `expand` | agent | 全部 | `.x-agent/expand/`（backlog.md） | 无 |
+
+**关键模块**：
+- `shared/stage.ts` / `shared/stage-defs.ts` / `shared/stage-prompt.ts` / `shared/stage-tools.ts` —— 数据模型、静态定义、system append、工具白名单派生
+- `electron/agent/stage/` —— `StageController` + `persistence`（原子写） + `graduation`（4 类检查：file-exists / file-count / glob-count / manual）+ `artifacts`（首次进入阶段时建默认模板）
+- `shared/stage-tools.ts:computeStageTools` —— 在现有 mode 派生之上叠加阶段（ask/plan 始终只读；design 阶段即使是 agent 模式也限制为只读；agent + prototype/test/expand 自动追加 Godot 写/调试工具集）
+- `electron/agent/filter-stage-skills.ts` —— 阶段化 skill 过滤层（design 屏蔽 `gdscript-*` / `godot-tscn` 等；prototype 屏蔽 `godot-asset-path`）
+- `electron/agent/session-host.ts:onStageChanged` —— 阶段切换后重算工具白名单 + 注入 stage.append 到 system prompt 头部 + 推送 `stage:changed` 事件给 renderer
+- `src/components/StageBar.tsx` —— 顶栏 4 步进度条（icon + label + 毕业进度）
+- `src/components/StageSwitchModal.tsx` —— 阶段切换弹窗（毕业清单 + 警告 + 手动勾选 manual 项）
+- `src/components/right-panel/{Design,Prototype,Test}Tab.tsx` —— 阶段专属右栏 tab
+
+**重要约束**：
+- 现有 4 mode 完全不破坏；阶段是叠加在 mode 之上的"工作流节点"
+- 阶段切换在流式中拒绝（`isStreaming` 保护，沿用 mode 切换的语义）
+- 毕业条件**建议但不强制**（用户明确选择）；手动勾选 manual 项后立即持久化
+- 阶段切换时自动同步默认 mode（如切到 prototype → 切到 agent 模式）
+- 阶段文件 < cwd >/.x-agent/stage.json 跟随 git，团队成员 clone 后阶段状态共享
+
 流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)，**按 diff 路径还原**，不整库 reset）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
 
 上下文组装细节见 [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)。
@@ -140,6 +168,7 @@ Electron 三进程边界：
 | `~/.pi/agent/x-agent-godot-rpc.json` | Godot RPC endpoint（host/port/token/version/updatedAt；`stop()` 不再删除，下次启动复用） |
 | `~/.pi/agent/x-agent-packages.json` | Packages 安装记录 |
 | `~/.pi/agent/x-agent-usage.json` | 用量汇总 |
+| `<cwd>/.x-agent/stage.json` | 项目级游戏开发阶段（current / history / manualChecks；**跟随 git**，团队共享） |
 | `~/.pi/agent/x-agent/sessions/` | 本应用会话 |
 | `~/.pi/agent/x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离） |
 | `~/.pi/agent/x-agent/plans/` | Plan Mode 默认写出的 Markdown 计划（可「保存到项目」迁至 `<cwd>/.pi/plans/`） |

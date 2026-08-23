@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+### 改进
+
+- **游戏开发四阶段工作流（策划 / 原型 / 测试 / 扩充）**：把"做一个游戏"拆成 4 个项目级阶段，每个项目（cwd）持久化当前阶段到 `<cwd>/.x-agent/stage.json`（跟随 git，团队共享）。阶段决定了 AI 的 system prompt 附录、推荐工具白名单、推荐 skill 子集与右栏 tab。顶栏新增 4 步进度条，鼠标点击切换阶段时弹出毕业条件清单（建议但不强制，未达标可"忽略警告继续切换"）。阶段切换会自动同步默认会话 mode（如策划 → plan / 原型 → agent）。新阶段专属右栏 tab（策划 / 原型 / 测试）展示毕业清单、产物文件树和引导提示。现有会话级 mode（智能体 / 调研 / 计划 / 目标）行为不受影响——阶段在其之上叠加"工作流节点"层。
+
 ### 修复
 
 - **一键安装本地 Packages 不再被静默删除**：pi CLI 会把本地包路径按 `~/.pi/agent` 相对化写入 `settings.json`（如 `..\..\AppData\...\resources\godot-pi`），而 X-agent 此前按进程 cwd 解析相对路径，导致安装记录被判为"包源缺失"，被 `pruneMissingPiPackageSources` 从 `settings.json` 与 `x-agent-packages.json` 一并清除（表现为"安装成功"提示后「技能 / 提示词 / 扩展」页签为空）。现包源解析统一以 `~/.pi/agent` 为基准（与 pi CLI 一致），相对路径正常解析，prune / 去重 / registry 镜像均保留安装记录。
