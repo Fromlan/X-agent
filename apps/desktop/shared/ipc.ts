@@ -2,6 +2,12 @@
 
 import { Type } from "typebox";
 import type {
+  GraduationStatus,
+  StageId,
+  StageInfo,
+  StageSwitchResult,
+} from "./stage";
+import type {
   GodotRpcBridgeStatus,
   GodotRpcCall,
 } from "./godot-rpc";
@@ -258,6 +264,24 @@ export const SESSION_TOOL_REGISTRY = [
 
 /** Session interaction mode — mutually exclusive. */
 export type AgentSessionMode = "agent" | "ask" | "plan" | "goal";
+
+// Re-export the public surface of the stage workflow so consumers (preload /
+// renderer / main IPC handlers) can keep importing from shared/ipc.
+export type {
+  ArtifactSummary,
+  GraduationCheck,
+  GraduationCheckResult,
+  GraduationStatus,
+  ProjectStage,
+  RightPanelTab,
+  StageDefinition,
+  StageHistoryEntry,
+  StageId,
+  StageInfo,
+  StageSwitchResult,
+  StageToolPreset,
+  StageSkillPreset,
+} from "./stage";
 
 export type GoalStatus =
   | "pursuing"
@@ -1101,6 +1125,16 @@ export type PlanApi = {
   getGoal: IpcInvokeMap["getGoal"];
 };
 
+/** Project-level game stage workflow facade. */
+export type StageApi = {
+  get: IpcInvokeMap["getStage"];
+  set: IpcInvokeMap["setStage"];
+  getGraduation: IpcInvokeMap["getGraduation"];
+  toggleManualCheck: IpcInvokeMap["toggleManualCheck"];
+  /** Subscribe to push updates (open project / stage switch / manual check toggle). */
+  onChanged: (handler: (info: StageInfo | null) => void) => () => void;
+};
+
 /** Active session tuning / context facade. Prefer over flat in new code. */
 export type SessionApi = {
   setModel: IpcInvokeMap["setModel"];
@@ -1160,6 +1194,11 @@ export type IpcInvokeMap = {
   resumeGoal: () => Promise<GoalResult>;
   clearGoal: () => Promise<GoalResult>;
   getGoal: () => Promise<GoalInfo | null>;
+  // Project-level stage workflow (see register-stage-ipc.ts).
+  getStage: () => Promise<StageInfo | null>;
+  setStage: (stage: StageId) => Promise<StageSwitchResult>;
+  getGraduation: (stage?: StageId) => Promise<GraduationStatus>;
+  toggleManualCheck: (checkId: string, value: boolean) => Promise<GraduationStatus | null>;
   listModels: () => Promise<ModelInfo[]>;
   listSessions: () => Promise<SessionInfo[]>;
   resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;
@@ -1328,6 +1367,7 @@ export type XAgentApiFlat = Omit<FlatInvokeApi, DeletedFlatKey> & {
   notifyAppReady: () => Promise<{ ok: boolean }>;
   onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
   onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
+  onStageChanged: (handler: (info: StageInfo | null) => void) => () => void;
 };
 
 /** Compile-time gate: IpcInvokeMap keys must exactly cover IPC_CHANNELS keys. */
@@ -1352,6 +1392,7 @@ export interface XAgentApi extends XAgentApiFlat {
   workspace: WorkspaceApi;
   turn: TurnApi;
   plan: PlanApi;
+  stage: StageApi;
   session: SessionApi;
   prefs: PrefsApi;
   updates: UpdatesApi;

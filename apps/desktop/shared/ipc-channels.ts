@@ -27,6 +27,12 @@ export const IPC_CHANNELS = {
   resumeGoal: "resumeGoal",
   clearGoal: "clearGoal",
   getGoal: "getGoal",
+
+  // project-level stage workflow (see electron/ipc/register-stage-ipc.ts)
+  getStage: "getStage",
+  setStage: "setStage",
+  getGraduation: "getGraduation",
+  toggleManualCheck: "toggleManualCheck",
   listModels: "listModels",
   listSessions: "listSessions",
   resumeSession: "resumeSession",
@@ -122,6 +128,7 @@ export type IpcChannelKey = keyof typeof IPC_CHANNELS;
 export const IPC_EVENTS = {
   agentEvent: "agent:event",
   updateStatus: "update:status",
+  stageChanged: "stage:changed",
 } as const;
 
 export type IpcEventChannel = (typeof IPC_EVENTS)[keyof typeof IPC_EVENTS];
