@@ -1,0 +1,45 @@
+name: dependabot-auto-merge
+
+# 让 dependabot 提的 semver-patch PR 在 CI 通过后自动合；
+# minor / major 仍走人工 review。
+# 仓库 Settings → General → Allow auto-merge 必须保持打开。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for semver-patch
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+      - name: Comment for non-patch (informational)
+        if: |
+          steps.meta.outputs.update-type != 'version-update:semver-patch' &&
+          steps.meta.outputs.update-type != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR_URL" --body "🤖 Auto-merge skipped: \`${{ steps.meta.outputs.update-type }}\`. Patch-only auto-merge is enabled; minor/major updates need a human review."
