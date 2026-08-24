@@ -1,0 +1,97 @@
+name: Bug 报告
+description: 报告一个可重现的问题,或在使用中遇到的错误
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈!请尽量提供足够信息以便复现:具体步骤、期望行为、实际行为、环境。
+        安全/隐私问题请改用邮件(fromlan@qq.com),不要公开提 Issue。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么?
+      description: 一句话描述问题
+      placeholder: |
+        例:打开项目后选择 Godot 工具,编辑器内出现 SCRIPT ERROR
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 从打开应用到出现问题的最小步骤
+      placeholder: |
+        1. 打开 X-agent 0.5.3
+        2. 选择项目 D:\Projects\demo
+        3. 设置 → 工具 → 勾选 "godot_*" 全部
+        4. 输入 "列出所有场景"
+        5. 看到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你觉得应该发生什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么(贴报错文本/截图)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: X-agent 版本
+      description: 设置 → 通用 / 顶栏"关于"可看
+      placeholder: "0.5.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 操作系统
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS(暂未在 CI 矩阵)
+        - Linux(暂未在 CI 矩阵)
+    validations:
+      required: true
+
+  - type: input
+    id: godot-version
+    attributes:
+      label: Godot 版本(如使用)
+      placeholder: "4.3 / 4.4 / 4.5 ..."
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 关键日志 / 截图
+      description: 设置 → 通用 → 打开日志目录,挑相关条目贴上来;截图拖到这里
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 自检
+      options:
+        - label: 我已在最新 `Unreleased` 与已发版 CHANGELOG 中搜索,确认未有人报告过相同问题
+          required: false
+        - label: 我已尝试在设置里关掉 Godot 工具 / 切到"调研"模式,问题是否仍存在
+          required: false
