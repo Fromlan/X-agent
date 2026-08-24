@@ -28,7 +28,7 @@ npm run debug            # 同上但置 X_AGENT_DEBUG=1
 npm run dist             # electron-builder --win（仅 NSIS 安装包；不产便携版）
 ```
 
-根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。发版由 maintainer 执行，Agent 不要主动打 tag / 提交 `apps/desktop/release/`（构建产物，CI 的 GitHub Releases 才是权威发布源）。
+根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。本仓库采用 [GitHub Flow](CLAUDE.md#3-分支策略-github-flow)：改动走 feature 分支 + PR 合并；发版时 maintainer 在 main 上打 tag 触发 `release.yml`。**Agent 不直接 push `main`、不主动打 tag、不提交 `apps/desktop/release/`**（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
 
 真实模型冒烟：`npm run desktop:smoke`（需本机 Pi 认证，`~/.pi/agent/auth.json`），不是 CI 检查。
 
@@ -98,4 +98,5 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 ## 提交前自检
 
 - 在 `apps/desktop` 内：`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`（CI 会再跑一遍 + E2E）。
+- 然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR：CI 三 job（`desktop` / `unit-test` / `e2e`）全绿、≥1 approve 后 squash merge 回 `main`。
 - 不要提交：`docs/`、`.scratch/`、`apps/desktop/release/`、`out/`、`node_modules.broken-*/`。

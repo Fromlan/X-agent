@@ -1,0 +1,66 @@
+name: 功能请求
+description: 提议一个新功能或对现有功能的改进
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先描述**动机**和**用户场景**,再讲实现思路。
+        改写一份完整设计可考虑用"Plan"模式,或在评论区展开讨论后再开实施。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你在做什么 / 卡在哪里?
+      description: 用一两段描述当前使用中的痛点或工作流缺口
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的解决方案
+      description: 你理想中这个功能长什么样、用起来什么节奏
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+      description: 有没有别的实现路径?为什么没选?
+    validations:
+      required: false
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响面
+      description: |
+        谁会用?(Godot 开发者 / 非 Godot 用户 / 所有人)
+        会改变哪些现有行为?(撤回 / 工具白名单 / 数据格式 / UI 布局)
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级(你的判断,可能调整)
+      options:
+        - P0 - 影响核心功能 / 数据安全
+        - P1 - 重要改进,纳入近期路线图
+        - P2 - 锦上添花,有空再做
+        - P3 - 想法阶段,先放着
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 范围自检
+      options:
+        - label: 不在 README「定位」表的"不是什么"清单里
+        - label: 不与 ROADMAP 中 P0 里程碑冲突(如有冲突请说明)

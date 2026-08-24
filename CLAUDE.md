@@ -12,6 +12,105 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 **技能发现**：`DefaultResourceLoader` 经 `skillsOverride` 排除 `~/.agents/skills`；仅用 `~/.pi/agent/skills`、项目 `.pi/skills` 与已安装 Packages。
 
+## 开发流程
+
+> 本仓库采用 **GitHub Flow**,配合完整 Issue 流程、Conventional Commits、自动化 CI 与语义化发版。Agent 与 maintainer 共同遵守。
+
+### 1. 定位与边界
+
+- **是什么**:Godot 4 专用桌面编码 Agent(Electron 客户端 + Pi SDK)
+- **不是什么**:通用 IDE 替代品;云端协作产品;移动端应用
+- **路线图**:[`ROADMAP.md`](ROADMAP.md) 22 个里程碑 / 4 个 Phase
+- **非目标 / 已定边界**:见 README「定位」表 + ROADMAP §1.2
+
+### 2. Issue 与规划
+
+- **所有想法 / 任务 / Bug 都开 Issue**——不脑记、不漂在聊天里
+- **标签**(`gh issue list --label <name> --repo Fromlan/X-agent`):
+  - 角色:`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`
+  - 类型:`bug` / `enhancement` / `documentation` / `refactor` / `test` / `chore`
+  - 优先级:`P0` / `P1` / `P2` / `P3`(里程碑粒度)
+- **里程碑**:与 ROADMAP 同步,大块变更归入对应 Phase;无需里程碑的随手小修不强制
+- **整理节奏**:每周清理积压(关闭过时 / 合并重复 / 打 `wontfix`),每月回顾
+
+### 3. 分支策略:GitHub Flow
+
+- **`main` 始终可发布**(CI 必绿;`Unreleased` 可空)
+- **每个任务一个分支**,命名 `<type>/<short-desc>`:
+  - `feature/<name>` 新功能(关联 issue 时 `feature/issue-123-xxx`)
+  - `fix/<name>` 修复 · `docs/<name>` 文档 · `refactor/<name>` 重构 · `chore/<name>` 杂项 · `test/<name>` 测试
+- **路径**:从 `main` 拉 → 改完 → 提交 PR → CI 全绿 → review → squash merge 回 `main` → 删除远端分支
+- **分支保护**(推荐):`main` 设 required checks(`desktop` / `unit-test` / `e2e`)+ ≥1 review
+
+### 4. 提交规范:Conventional Commits
+
+- **格式**:`<type>(<scope>): <subject>`
+- **type**:`feat` / `fix` / `docs` / `style` / `refactor` / `perf` / `test` / `build` / `ci` / `chore` / `revert`
+- **scope**(可选):模块名,如 `godot` / `provider` / `session` / `ipc` / `roadmap` / `release` / `agent`
+- **subject**:中文或英文,< 50 字,无句号
+- **body**:说明「为什么」与「影响面」,可空
+- **footer**:关联 Issue(`Closes #123` / `Refs #456`);`BREAKING CHANGE: ...` 单独一行
+- 示例:
+  ```
+  feat(provider): 支持 DeepSeek 代理 baseUrl DNS 闸
+
+  防止本地 LLM 经私网绕道,挡掉 *.nip.io / localtest.me。
+
+  Closes #142
+  ```
+
+### 5. Pull Request 流程
+
+- **标题**:遵循 Conventional Commits(可与首个 commit 一致)
+- **描述**:关联 issue / 变更摘要 / 截图(UI 类)/ 测试要点 / 影响面 / 回滚方案
+- **CI 全绿**([`.github/workflows/ci.yml`](.github/workflows/ci.yml) 三 job):
+  - `desktop`: typecheck + 离线 test + lint + build
+  - `unit-test`: vitest + 覆盖率门槛(`lines: 60, functions: 55, branches: 50`)
+  - `e2e`: Playwright Electron 冒烟
+- **review**:≥1 approve(单人项目 self-approve;多人显式邀请)
+- **合并**:默认 squash merge(保持 `main` 历史清爽);合并后删除远端分支
+- **禁止**带 ✗ 合并
+
+### 6. CI 自动化
+
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 监听 push / PR,三 job 并行
+- `concurrency: cancel-in-progress: true`(同 ref 旧运行自动取消)
+- 失败必须修;依赖更新暂不启用 Dependabot(避免噪音),改用 `npm outdated` 季度手工检查
+- [`.github/workflows/release.yml`](.github/workflows/release.yml) 仅在 tag push / workflow_dispatch 触发,见 §7
+
+### 7. 发版流程
+
+> 发版 ≠ 每个 PR。累积的变更值得对外发布时才发版。
+
+- **前置**(在 main 上):
+  1. 整理 [`CHANGELOG.md`](CHANGELOG.md) `## Unreleased` → 对应 `## x.y.z` 章节(按 `改进` / `修复` / `安全` / `测试 & 质量` 等小节归类)
+  2. `npm run release:prepare -- x.y.z` 改版本号 + 校验 CHANGELOG 抽取
+  3. 通过 PR 合并到 `main`(与功能 PR 走同一条流程)
+- **发版**:
+  1. `git tag vX.Y.Z && git push origin vX.Y.Z`(在 main HEAD)
+  2. `.github/workflows/release.yml` 自动 typecheck + lint + test + electron-builder + 上传 GitHub Release
+  3. GitHub Release 正文来自 CHANGELOG 章节(`scripts/extract-changelog.mjs` 抽取)
+- **冒烟**(可选):打 tag 前 `npm run release:dist`(本机 typecheck + test + 打 Windows exe;CI 仍会重建,本地 exe 不是发布源)
+- **签名**(可选):CI 或本地设 `CSC_LINK` + `CSC_KEY_PASSWORD`(或 `WIN_CSC_LINK`);未设置则产出未签名包
+- **minor 线起点**(patch=0 且 minor>0,如 `0.3.0`):`prepare-release` 会把上一线全部 patch(`0.2.0…0.2.x`)汇总进当前章节;`npm run release:notes -- 0.x.0` 预览,`--no-aggregate` 关闭汇总
+- **不提交**:`apps/desktop/release/`(已在 `.gitignore`)
+
+### 8. 文档与社区
+
+- **现有**:`README.md` / `README.en.md` / `ROADMAP.md` / `CHANGELOG.md` / `CONTEXT.md` / `AGENT.md` / `AGENTS.md` / `DESIGN.md` / `CLAUDE.md` / `CONTRIBUTING.md` / `LICENSE`(MIT)
+- **已配模板**:
+  - `.github/ISSUE_TEMPLATE/bug.yml` / `feature.yml`:Issue 提交规范
+  - `.github/PULL_REQUEST_TEMPLATE.md`:PR 描述规范(改动类型 / 测试 / 影响面 / 回滚)
+- **待补**:
+  - `CODE_OF_CONDUCT.md`:正式社区行为准则(目前以 `CONTRIBUTING.md` §一 为约束,体量够大时再单独建)
+
+### 9. 定期回顾
+
+- **每周**:清理 Issue 积压;更新里程碑进度;扫 PR 漏 review
+- **每月**:重构技术债;`npm outdated` 查依赖;回顾上线功能
+- **每个 Phase 末**(ROADMAP):综合回归 + 文档同步 + CHANGELOG 整理;决定是否发版
+- **每年**:审视定位 / 非目标是否仍成立;路线图方向是否调整
+
 ## 常用命令
 
 锁文件在 `apps/desktop/package-lock.json`，安装在该目录执行：
@@ -38,13 +137,19 @@ npm run release:test-changelog # 可选：验证 CHANGELOG 抽取 / 汇总
 npm run release:dist           # 可选：本地 typecheck + test + 打 Windows exe（冒烟）
 ```
 
-### 发版流程
+### 发版命令速查
 
-1. `npm run release:prepare -- x.y.z`（改版本号、校验 CHANGELOG）
-2. 提交并打标签：`git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z`
-3. [`.github/workflows/release.yml`](.github/workflows/release.yml) 在 CI 构建并上传 **GitHub Releases**（用户下载的权威产物：安装包 + `latest.yml`；勿提交 `apps/desktop/release/`）
-4. （可选）打 tag 前本机 `npm run release:dist` 冒烟；CI 仍会重建，本地 exe 不是发布源
-5. Windows 代码签名（可选）：本地或 Actions 设置 `CSC_LINK` + `CSC_KEY_PASSWORD`（或 `WIN_CSC_LINK`）；未设置则产出未签名包
+> 完整流程见 [§7 发版流程](#7-发版流程)。这里只列命令。
+
+```bash
+npm run release:prepare -- x.y.z   # 改版本号 + 校验 CHANGELOG
+npm run release:notes -- x.y.z     # 预览 GitHub Release 正文
+npm run release:test-changelog     # 校验 CHANGELOG 抽取/汇总
+npm run release:dist               # 本机 typecheck + test + 打 Windows exe(冒烟用)
+```
+
+- 发版:PR 合并到 main → `git tag vX.Y.Z && git push origin vX.Y.Z` → CI 自动构建并上传 GitHub Release
+- **不提交** `apps/desktop/release/`(已在 `.gitignore`);发布源是 CI 的 GitHub Release,本地 exe 不是
 
 `npm test`（在 `apps/desktop`）串联：
 

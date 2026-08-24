@@ -179,14 +179,11 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 
 布局壳：`TopBar → [banners] → main-row`（`Sidebar` / `Chat` / `RightPanel`，≤960px 隐藏右栏）。右栏五页签：**上下文 / 计划 / 工具 / 文件 / Godot**。
 
-## 十一、发版流程（参考即可，发布由 maintainer 执行）
+## 十一、发版流程
 
-1. `npm run release:prepare -- x.y.z` 改版本号、校验 CHANGELOG
-2. 提交并打 tag：`git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z`
-3. CI `.github/workflows/release.yml` 构建 + 上传 **GitHub Releases**（用户下载的权威产物：**安装包 + `latest.yml`**；勿提交 `apps/desktop/release/`）
-4. 可选：打 tag 前本机 `npm run release:dist` 冒烟；CI 仍会重建
-5. Windows 代码签名：CI 或本地设 `CSC_LINK` + `CSC_KEY_PASSWORD`（或 `WIN_CSC_LINK`）；未设置则未签名包
-6. **minor 线起点**（如 `0.3.0`，patch=0 且 minor>0）：`prepare-release` 会把上一线全部 patch（`0.2.0`…`0.2.x`）汇总进当前章节；GitHub Release 正文直接用该章节
+完整流程见 [`CLAUDE.md` §7 开发流程](CLAUDE.md#7-发版流程)。本仓库采用 **GitHub Flow**——改动走 feature 分支 + PR 合并，发版时 maintainer 在 main 上打 tag → CI 自动构建并上传 GitHub Release。
+
+**Agent 约定**:不直接 push `main`、不主动打 tag、不提交 `apps/desktop/release/`（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
 
 ## 十二、排障速查
 
@@ -221,7 +218,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - 函数级注释 / 关键决策注释保留；新模块头部补一句"做什么 + 为什么"
 - 中文用户面文案以 `README.md` / 设置页为准；注释 / 标识符英文为主
 - **不要**在 `docs/` 下写对外约定（已 `.gitignore` 排除，CI 不可见）
-- 提交前：`npm run desktop:typecheck` + `npm test`（在 `apps/desktop` 内）；CI 会再跑一遍
+- 提交前：`npm run desktop:typecheck` + `npm test`（在 `apps/desktop` 内）；然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR，CI 三 job（`desktop` / `unit-test` / `e2e`）全绿后合并
 
 ---
 
