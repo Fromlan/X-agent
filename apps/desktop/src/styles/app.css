@@ -405,15 +405,23 @@ input:not([type]):-webkit-autofill {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  padding: 8px 12px;
-  background: var(--bg-app);
+  padding: var(--space-chrome) 14px;
+  background: var(--bg-chrome);
   border-bottom: 1px solid var(--border-primary);
-  min-height: 48px;
+  min-height: 52px;
   flex-shrink: 0;
+  transition: box-shadow 0.2s ease;
+}
+
+.topbar[data-elevated="true"] {
+  box-shadow: var(--shadow-soft);
 }
 
 .topbar-left,

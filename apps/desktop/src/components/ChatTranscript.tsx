@@ -17,7 +17,15 @@
  * virtualizer 配置已拆到 `../lib/chat-transcript-virtual.ts`,
  * 批次合并逻辑在 `../lib/chat-tool-batches.ts`。
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { AgentSessionMode, AgentStatus } from "@shared/ipc";
 import type { ChatItem } from "../stores/chat-store";
 import {
@@ -114,6 +122,12 @@ export interface ChatTranscriptProps {
   planPath?: string | null;
   onBuildPlan?: () => void;
   onClarifySelect?: (reply: string) => void;
+  /**
+   * Optional external ref for the scrollable stream element.
+   * Used by parent to track scroll position (e.g. mount TopBar shadow
+   * when transcript is below the fold). Falls back to an internal ref.
+   */
+  externalStreamRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function ChatTranscript(props: ChatTranscriptProps) {
@@ -122,7 +136,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   const streaming =
     props.status === "streaming" || props.status === "retrying";
 
-  const streamRef = useRef<HTMLDivElement>(null);
+  const internalStreamRef = useRef<HTMLDivElement>(null);
+  const streamRef = props.externalStreamRef ?? internalStreamRef;
   const contentRef = useRef<HTMLDivElement>(null);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const pinStateRef = useRef<ChatScrollPinState>(initialChatScrollPinState());

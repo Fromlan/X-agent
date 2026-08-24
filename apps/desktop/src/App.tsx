@@ -70,6 +70,7 @@ import { usePlanSessionAutoOpen } from "./hooks/usePlanSession";
 import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
 import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
+import { useScrollElevated } from "./hooks/useScrollElevated";
 import {
   appendPendingUser,
   createEmptyState,
@@ -144,6 +145,8 @@ export default function App() {
   );
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
+  const chatStreamRef = useRef<HTMLDivElement | null>(null);
+  const topbarElevated = useScrollElevated(chatStreamRef);
   const usageVersion = useSyncExternalStore(
     subscribeSessionUsageStore,
     getSessionUsageStoreVersion,
@@ -930,6 +933,7 @@ export default function App() {
         rightPanelOpen={prefs?.rightPanelOpen ?? false}
         compacting={compacting}
         busy={busy}
+        elevated={topbarElevated}
       />
       {showUpdateBanner && updateStatus && (
         <UpdateBanner
@@ -1083,6 +1087,7 @@ export default function App() {
           status={status}
           apiStatus={apiStatusView}
           input={input}
+          externalStreamRef={chatStreamRef}
           setInput={setInput}
           onSend={send}
           onAbort={abort}
