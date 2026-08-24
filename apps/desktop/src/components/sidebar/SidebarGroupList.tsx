@@ -10,6 +10,8 @@ interface Props {
   locked: boolean;
   /** True while `listSessions` is in flight; renders skeleton rows. */
   loading?: boolean;
+  /** Sidebar collapsed to icon-only mode. */
+  collapsed?: boolean;
   onResume: (path: string) => void;
 }
 
@@ -26,6 +28,7 @@ export function SidebarGroupList({
   agentStatus,
   locked,
   loading = false,
+  collapsed: sidebarCollapsed = false,
   onResume,
 }: Props) {
   const {
@@ -48,6 +51,15 @@ export function SidebarGroupList({
   } = state;
 
   if (groups.length === 0) {
+    if (sidebarCollapsed) {
+      return (
+        <ul className="session-list session-list-collapsed" ref={listRef}>
+          <li className="session-empty-collapsed" aria-label="暂无会话">
+            —
+          </li>
+        </ul>
+      );
+    }
     return (
       <ul className="session-list" ref={listRef}>
         {loading ? (
@@ -60,6 +72,40 @@ export function SidebarGroupList({
         ) : (
           <li className="session-empty">暂无会话记录</li>
         )}
+      </ul>
+    );
+  }
+
+  if (sidebarCollapsed) {
+    return (
+      <ul className="session-list session-list-collapsed" ref={listRef}>
+        {groups.map((group: Group) => {
+          const isActiveProject = group.key === activeKey && activeKey !== "";
+          const initial = (group.label || "?").trim().charAt(0).toUpperCase();
+          // 折叠态下点 project bubble：展开并跳到该项目最近一个 session
+          const target = group.sessions[0];
+          return (
+            <li key={group.key || "__unknown__"} className="project-group-collapsed">
+              <button
+                type="button"
+                className={`project-avatar${isActiveProject ? " is-active" : ""}`}
+                title={`${group.label} · ${group.sessions.length} 个会话`}
+                aria-label={`${group.label} · ${group.sessions.length} 个会话`}
+                disabled={!target || locked}
+                onClick={() => {
+                  if (target) onResume(target.path);
+                }}
+              >
+                <span aria-hidden>{initial}</span>
+                {group.sessions.length > 1 && (
+                  <span className="project-avatar-count tabular" aria-hidden>
+                    {group.sessions.length}
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     );
   }

@@ -71,6 +71,7 @@ import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
 import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
 import { useScrollElevated } from "./hooks/useScrollElevated";
+import { useNarrowWindow } from "./hooks/useNarrowWindow";
 import {
   appendPendingUser,
   createEmptyState,
@@ -583,6 +584,15 @@ export default function App() {
     setPrefs(next);
   }, []);
 
+  const commitSidebarCollapsed = useCallback(async (sidebarCollapsed: boolean) => {
+    setPrefs((prev) => (prev ? { ...prev, sidebarCollapsed } : prev));
+    const next = await window.xAgent.prefs.set({ sidebarCollapsed });
+    setPrefs(next);
+  }, []);
+
+  const narrowWindow = useNarrowWindow(960);
+  const sidebarCollapsed = !narrowWindow && (prefs?.sidebarCollapsed ?? false);
+
   const commitRightPanelWidth = useCallback(async (rightPanelWidth: number) => {
     setPrefs((prev) => (prev ? { ...prev, rightPanelWidth } : prev));
     const next = await window.xAgent.prefs.set({ rightPanelWidth });
@@ -631,18 +641,30 @@ export default function App() {
   }, []);
 
   const layoutWidths = useMemo(
-    () =>
-      fitColumnWidths({
+    () => {
+      if (sidebarCollapsed) {
+        // 折叠态：sidebar 固定 56，fit 只决定 right panel 收缩
+        return fitColumnWidths({
+          viewportWidth,
+          sidebarWidth: 56,
+          rightPanelWidth,
+          rightPanelOpen: prefs?.rightPanelOpen ?? false,
+          sidebarFloor: 56,
+        });
+      }
+      return fitColumnWidths({
         viewportWidth,
         sidebarWidth,
         rightPanelWidth,
         rightPanelOpen: prefs?.rightPanelOpen ?? false,
-      }),
+      });
+    },
     [
       viewportWidth,
       sidebarWidth,
       rightPanelWidth,
       prefs?.rightPanelOpen,
+      sidebarCollapsed,
     ],
   );
 
@@ -1071,14 +1093,16 @@ export default function App() {
           busy={busy}
           compacting={compacting}
           sessionsLoading={sessionsLoading}
+          collapsed={sidebarCollapsed}
           onResume={resumeSession}
           onDelete={deleteSession}
           onDeleteProjectSessions={deleteProjectSessions}
           onHideProject={hideProject}
           onRename={renameSession}
           onRefresh={refreshSessions}
-          onResizePointerDown={onSidebarResizePointerDown}
-          onResizeDoubleClick={onSidebarResizeDoubleClick}
+          onToggleCollapsed={() => void commitSidebarCollapsed(!sidebarCollapsed)}
+          onResizePointerDown={sidebarCollapsed ? undefined : onSidebarResizePointerDown}
+          onResizeDoubleClick={sidebarCollapsed ? undefined : onSidebarResizeDoubleClick}
           resizing={sidebarResizing}
         />
         <ChatPanel
