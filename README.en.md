@@ -125,6 +125,20 @@ The desktop UI is currently **Chinese-only**. This English README documents the 
 
 See [`CHANGELOG.md`](CHANGELOG.md) for release notes, [`CLAUDE.md`](CLAUDE.md) for development guidance, and [`CONTEXT.md`](CONTEXT.md) for Plan / Goal design notes.
 
+## Feedback & Contributing
+
+- **Bug / feature requests**: open an Issue using one of the templates
+  (Bug report / Feature request / Question). Skim [`CHANGELOG.md`](CHANGELOG.md)
+  and existing Issues first.
+- **Security**: see [`SECURITY.md`](SECURITY.md). **Do not** post
+  reproduction details in a public Issue.
+- **Contributing**: read [`CONTRIBUTING.md`](CONTRIBUTING.md); use
+  Conventional Commits and the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
+- **Maintenance cadence** (releases, weekly triage, Dependabot): see
+  [`MAINTENANCE.md`](MAINTENANCE.md).
+- **Code of conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+- **License**: [`LICENSE`](LICENSE) (MIT).
+
 ## Contact & feedback
 
 | Channel | Details |

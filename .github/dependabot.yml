@@ -1,0 +1,71 @@
+# Dependabot configuration for X-agent
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options
+#
+# Strategy: weekly cadence on Monday mornings, capped to 5 open PRs per
+# ecosystem, with major-version bumps held back so they get a human eye.
+
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/apps/desktop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "area: ci"
+    groups:
+      pi-sdk:
+        patterns:
+          - "@earendil-works/*"
+      electron:
+        patterns:
+          - "electron"
+          - "electron-builder"
+          - "electron-updater"
+      test:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "playwright"
+          - "@playwright/*"
+    # Hold back major versions of high-risk packages so they get a
+    # human-driven spike instead of an auto-PR.
+    ignore:
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "electron-builder"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@earendil-works/pi-coding-agent"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@earendil-works/pi-agent-core"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@earendil-works/pi-ai"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "build"
+      prefix-development: "build"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "area: ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

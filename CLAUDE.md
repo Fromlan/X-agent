@@ -218,3 +218,10 @@ Single-context: root [`CONTEXT.md`](CONTEXT.md) 描述了核心架构与持久�
 - `docs/code-review-2026-08-01.md` — 0.3.8 全量审查,分诊结论已落入 CHANGELOG 与 ADR
 
 约定:对外约定请写在本 `CLAUDE.md` 或 `CONTEXT.md`;`docs/` 内容不进 release、不参与协作,清理后下次会话可重建。
+
+## 维护节奏 / 社区入口
+
+- 维护节奏（周 Issue 处理 / 月度 ROADMAP 回顾 / 季度大依赖 spike / 发版流程）见 [`MAINTENANCE.md`](MAINTENANCE.md)
+- 社区入口：Issue 模板 `.github/ISSUE_TEMPLATE/` + PR 模板 `.github/PULL_REQUEST_TEMPLATE.md`；协议 [`LICENSE`](LICENSE)（MIT）；行为准则 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)；安全报告 [`SECURITY.md`](SECURITY.md)
+- 贡献流程（分支命名 / Conventional Commits / 本地钩子）见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；commit-msg 钩 `scripts/commit-msg-lint.mjs`，pre-commit 钩 `scripts/commit-author-guard.sh`，通过 `git config core.hooksPath scripts/git-hooks` 装上
+- 自动依赖更新：[`.github/dependabot.yml`](.github/dependabot.yml)（npm + GitHub Actions，周一上午）

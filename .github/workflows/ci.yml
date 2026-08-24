@@ -11,8 +11,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  actionlint:
+    # 校验 .github/workflows/*.yml 自身语法 + 字段拼写，零依赖、毫秒级
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: reviewdog/action-actionlint@v1
+        with:
+          fail_level: error
+          level: error
+
   desktop:
     runs-on: windows-latest
+    needs: actionlint
     defaults:
       run:
         working-directory: apps/desktop
@@ -32,6 +44,7 @@ jobs:
   unit-test:
     # ROADMAP 1.1 —— Vitest 单元测试 + 覆盖率门槛（与 desktop job 并行）
     runs-on: windows-latest
+    needs: actionlint
     defaults:
       run:
         working-directory: apps/desktop
@@ -48,6 +61,7 @@ jobs:
   e2e:
     # ROADMAP 1.1 —— Playwright E2E（构建后启动 Electron，跑壳渲染 + 模式切换契约）
     runs-on: windows-latest
+    needs: actionlint
     defaults:
       run:
         working-directory: apps/desktop

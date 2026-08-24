@@ -21,7 +21,11 @@ jobs:
       run:
         working-directory: apps/desktop
     steps:
+      # fetch-depth: 0 ensures git tag/diff operations see the full history
+      # (e.g. for scripts that compare against the previous tag).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:

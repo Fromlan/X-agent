@@ -1,0 +1,50 @@
+# CODEOWNERS
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Each line is a file pattern followed by one or more owners. The last
+# matching pattern wins, so order is significant: put the most specific
+# rules first, the default fallback last.
+#
+# Today X-agent has a single maintainer (@fromlan). This file pins the
+# default owner and seeds path-level rules so adding collaborators in the
+# future is a one-line change.
+
+# Default owner for everything that doesn't have a more specific match
+# below. Keep this as the LAST line.
+*                                               @fromlan
+
+# Release engineering
+/.github/workflows/                             @fromlan
+/scripts/prepare-release.mjs                    @fromlan
+/scripts/extract-changelog.mjs                  @fromlan
+
+# Core Agent / session / mode hard-gates
+/apps/desktop/electron/agent/session-host.ts    @fromlan
+/apps/desktop/electron/agent/retract-orchestrator.ts  @fromlan
+/apps/desktop/electron/agent/filter-stage-skills.ts   @fromlan
+/apps/desktop/electron/agent/atomic-write.ts    @fromlan
+/apps/desktop/electron/agent/cwd-sandbox.ts     @fromlan
+/apps/desktop/shared/mode-tools.ts              @fromlan
+/apps/desktop/shared/mode-prompt.ts             @fromlan
+/apps/desktop/shared/godot-rpc.ts               @fromlan
+/apps/desktop/shared/godot-project-setting.ts   @fromlan
+/apps/desktop/shared/stage.ts                   @fromlan
+/apps/desktop/shared/stage-defs.ts              @fromlan
+/apps/desktop/shared/stage-tools.ts             @fromlan
+/apps/desktop/shared/stage-prompt.ts            @fromlan
+
+# Godot RPC bridge (network / security surface)
+/apps/desktop/electron/agent/godot-rpc-bridge.ts   @fromlan
+/apps/desktop/electron/agent/godot-tools.ts         @fromlan
+/apps/desktop/electron/agent/godot-addon-install.ts @fromlan
+/apps/desktop/electron/agent/provider-store.ts      @fromlan
+/apps/desktop/electron/agent/auto-updater.ts        @fromlan
+
+# Godot addon + Pi package
+/packages/godot-editor-rpc/                    @fromlan
+/packages/godot-pi/                             @fromlan
+/packages/godot-pi/skills/                      @fromlan
+/packages/godot-pi/prompts/                     @fromlan
+
+# Preload (sandbox boundary)
+/apps/desktop/electron/preload.ts               @fromlan

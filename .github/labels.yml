@@ -1,0 +1,70 @@
+# GitHub Labels for X-agent
+#
+# Synced with `github-label-sync` (https://github.com/Financial-Times/github-label-sync)
+# or any equivalent. Run from the repo root:
+#
+#   npx github-label-sync --access-token $GITHUB_TOKEN \
+#     --labels .github/labels.yml --owner Fromlan --repo X-agent
+#
+# This file is the **single source of truth** for label names, colors,
+# and descriptions. Do not create labels ad-hoc in the GitHub UI; update
+# this file and re-run the sync instead.
+
+- name: bug
+  color: d73a4a
+  description: Something is broken or behaving incorrectly
+- name: enhancement
+  color: a2eeef
+  description: New feature or improvement
+- name: documentation
+  color: 0075ca
+  description: Improvements or additions to documentation
+- name: question
+  color: d876e3
+  description: User-facing usage question
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers; small in scope, clear acceptance criteria
+- name: help wanted
+  color: 008672
+  description: The maintainer explicitly wants help on this
+- name: wontfix
+  color: ffffff
+  description: This will not be worked on (cite the non-goal in a comment)
+- name: duplicate
+  color: cfd3d7
+  description: Already exists; closing in favor of the original issue
+- name: needs-triage
+  color: fbca04
+  description: Awaiting maintainer triage in the weekly pass
+- name: needs-info
+  color: ededed
+  description: Awaiting more information from the reporter
+
+# Phase / area labels (optional, applied manually during triage)
+- name: area: agent
+  color: c5def5
+  description: Touches session-host, mode-controller, or Agent hard-gates
+- name: area: godot-rpc
+  color: c5def5
+  description: Touches the Godot editor RPC bridge or addon
+- name: area: ui
+  color: c5def5
+  description: Renderer / React / settings UI
+- name: area: i18n
+  color: c5def5
+  description: Translations or locale handling
+- name: area: ci
+  color: c5def5
+  description: Build, test, or release workflow
+
+# Priority (applied after triage, never auto)
+- name: priority: high
+  color: b60205
+  description: Blocking or security-relevant; release-blocker
+- name: priority: medium
+  color: fbca04
+  description: Should land within the current phase
+- name: priority: low
+  color: 0e8a16
+  description: Nice-to-have; no fixed timeline

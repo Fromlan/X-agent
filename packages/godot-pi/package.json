@@ -4,6 +4,20 @@
   "description": "X-agent native Pi package: core engineering skills + Godot 4.7 docs skill, prompts, and helpers",
   "keywords": ["pi-package", "godot", "x-agent"],
   "license": "MIT",
+  "author": {
+    "name": "Fromlan",
+    "email": "fromlan@qq.com"
+  },
+  "homepage": "https://github.com/Fromlan/X-agent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fromlan/X-agent.git",
+    "directory": "packages/godot-pi"
+  },
+  "bugs": {
+    "url": "https://github.com/Fromlan/X-agent/issues",
+    "email": "fromlan@qq.com"
+  },
   "pi": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],

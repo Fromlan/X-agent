@@ -5,6 +5,7 @@
 > 来源：上一轮项目整体审查识别出的 20 项优化方向；本文件在其基础上做了依赖梳理与粒度拆分。
 > 维护：每个里程碑完成后更新对应行的「完成度」与「最终交付」；新增方向请直接补到对应 Phase 末或下一 Phase。
 > 关联：[`CONTEXT.md`](CONTEXT.md)（领域词表）/ [`CLAUDE.md`](CLAUDE.md)（工程约定）/ [`DESIGN.md`](DESIGN.md)（设计 token）/ [`AGENT.md`](AGENT.md)（Agent 协作约定）。
+> 维护节奏（周 Issue 处理 / Dependabot / 月度回顾 / 发版）见 [`MAINTENANCE.md`](MAINTENANCE.md)。
 
 
 

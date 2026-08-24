@@ -2,11 +2,21 @@
   "name": "x-agent-desktop",
   "version": "0.5.3",
   "description": "Pi Agent desktop client (X-agent)",
+  "license": "MIT",
+  "author": {
+    "name": "Fromlan",
+    "email": "fromlan@qq.com"
+  },
+  "homepage": "https://github.com/Fromlan/X-agent",
   "main": "./out/main/index.js",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/Fromlan/X-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Fromlan/X-agent/issues",
+    "email": "fromlan@qq.com"
   },
   "scripts": {
     "predev": "tsx scripts/inject-splash-version.ts",

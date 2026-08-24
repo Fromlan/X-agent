@@ -2,6 +2,23 @@
   "name": "x-agent",
   "private": true,
   "description": "Pi-based Electron agent desktop (Godot RPC)",
+  "license": "MIT",
+  "author": {
+    "name": "Fromlan",
+    "email": "fromlan@qq.com"
+  },
+  "homepage": "https://github.com/Fromlan/X-agent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fromlan/X-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Fromlan/X-agent/issues",
+    "email": "fromlan@qq.com"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "desktop:dev": "npm run dev --prefix apps/desktop",
     "desktop:debug": "npm run debug --prefix apps/desktop",
@@ -15,6 +32,7 @@
     "release:prepare": "node scripts/prepare-release.mjs",
     "release:notes": "node scripts/extract-changelog.mjs",
     "release:test-changelog": "node scripts/test-extract-changelog.mjs",
-    "release:dist": "npm run desktop:typecheck && npm run desktop:lint && npm run desktop:test && npm run desktop:dist"
+    "release:dist": "npm run desktop:typecheck && npm run desktop:lint && npm run desktop:test && npm run desktop:dist",
+    "test:commit-msg": "node scripts/test-commit-msg-lint.mjs"
   }
 }

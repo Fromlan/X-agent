@@ -1,0 +1,34 @@
+name: Question
+description: Ask a usage question about X-agent
+title: "[question] <short summary>"
+labels: ["question", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening, please skim:
+        - [`README.md`](../../README.md) / [`README.en.md`](../../README.en.md)
+        - [`CHANGELOG.md`](../../CHANGELOG.md) (most recent version)
+        - [`CLAUDE.md`](../../CLAUDE.md) (development / internals)
+        - [`CONTEXT.md`](../../CONTEXT.md) (domain glossary)
+        - Existing [Issues](../../issues) (your question may already be
+          answered)
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Be specific. Include what you tried, what version you
+        are on, and what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Links to docs you read, screenshots, the exact command
+        you ran, etc.
+    validations:
+      required: false

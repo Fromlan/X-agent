@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# commit-msg hook: enforce Conventional Commits format on the subject line.
+# Installed via `git config core.hooksPath scripts/git-hooks`.
+# Companion to scripts/commit-author-guard.sh (pre-commit).
+set -euo pipefail
+
+MSG_FILE="$1"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+LINT="$REPO_ROOT/scripts/commit-msg-lint.mjs"
+
+if [ ! -f "$LINT" ]; then
+  echo "[commit-msg] lint script not found: $LINT" >&2
+  exit 1
+fi
+
+node "$LINT" "$MSG_FILE"
