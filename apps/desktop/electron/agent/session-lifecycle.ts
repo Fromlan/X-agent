@@ -372,6 +372,9 @@ export class SessionLifecycle {
   }
 
   async openProject(cwd: string, mode: "continue" | "new" = "continue"): Promise<OpenProjectResult> {
+    if (!cwd || !existsSync(cwd)) {
+      return failOpen("项目路径不存在", cwd);
+    }
     return this.a().runReplaceExclusive(async () => {
       try {
         const root = getXAgentSessionsRoot();
