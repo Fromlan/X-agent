@@ -74,7 +74,7 @@ jobs:
           cache-dependency-path: apps/desktop/package-lock.json
       # 缓存 Playwright 浏览器,避免每次重下
       - name: Playwright Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/ms-playwright
