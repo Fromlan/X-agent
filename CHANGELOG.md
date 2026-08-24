@@ -10,7 +10,6 @@
 
 ### 改进
 
-- **游戏开发四阶段工作流（策划 / 原型 / 测试 / 扩充）**：把"做一个游戏"拆成 4 个项目级阶段，每个项目（cwd）持久化当前阶段到 `<cwd>/.x-agent/stage.json`（跟随 git，团队共享）。阶段决定了 AI 的 system prompt 附录、推荐工具白名单、推荐 skill 子集与右栏 tab。顶栏新增 4 步进度条，鼠标点击切换阶段时弹出毕业条件清单（建议但不强制，未达标可"忽略警告继续切换"）。阶段切换会自动同步默认会话 mode（如策划 → plan / 原型 → agent）。新阶段专属右栏 tab（策划 / 原型 / 测试）展示毕业清单、产物文件树和引导提示。现有会话级 mode（智能体 / 调研 / 计划 / 目标）行为不受影响——阶段在其之上叠加"工作流节点"层。
 - **仓库健康流程落地（社区化与流程自动化）**：补齐开源项目健康流程所需文件——`LICENSE` (MIT)、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md` (Contributor Covenant v2.1)、`SECURITY.md`、`MAINTENANCE.md`；`.github/CODEOWNERS` 锁定路径 owner；`.github/dependabot.yml` 启用 npm + GitHub Actions 周更；`.github/ISSUE_TEMPLATE/` 三个 YAML（bug / feature / question）+ `.github/PULL_REQUEST_TEMPLATE.md` + `.github/labels.yml`（19 个标签）；commit-msg 钩 `scripts/commit-msg-lint.mjs`（17 个 case 配套测试）锁 Conventional Commits 格式；CI `actionlint` job 校验 workflow YAML；`prepare-release.mjs` 加 tag 漂移硬闸（package.json > 最新 tag 时拒绝；支持 `--force`）；`release.yml` checkout `fetch-depth: 0`；根 / `apps/desktop` / `packages/godot-pi` 的 `package.json` 补 `license` / `author` / `repository` / `bugs` / `engines`；README 中英加「反馈与贡献」小节，CLAUDE / ROADMAP 加对 `MAINTENANCE.md` 的引用。
 
 ### 修复
