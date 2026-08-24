@@ -12,24 +12,18 @@
 
 ### 改进
 
-- **UI 主次分明与简洁直观改版（v1.1 设计语言落地）**：原"全窗单 Surface + 1px Board 切边 + 页面内 0 阴影"的扁平网格感，改为 elevation 驱动的层级式布局——Composer / 输入区作为整窗唯一主元素（`--bg-card-elev` + `--shadow-strong` + `--radius-floating` 双层阴影 + 16-20px 圆角 + 上下 16-20px 呼吸区），三栏壳层（TopBar / Sidebar / RightPanel）降为低调 chrome（统一 `--bg-chrome` 底）。
-  - **新增 5 个 elevation token + 2 个 spacing token**（`apps/desktop/src/styles/themes.css` + `app.css`）：`--bg-card-elev` / `--bg-chrome` / `--shadow-soft` / `--shadow-strong` / `--shadow-modal` / `--radius-floating` / `--space-section` / `--space-chrome`。`--shadow-sm/md/lg` 保留为 alias 指向新 token，向后兼容。10 个主题族（default / nord / tokyo / paper / contrast × dark/light）全部补齐；`contrast` 强制 `none` 保持硬边，`paper` 走最轻一档。
-  - **TopBar 浮起条**：高度 48→52px，背景 `--bg-app` → `--bg-chrome`，新增 `useScrollElevated` hook 监听 chat transcript 滚动状态，滚动时挂 `--shadow-soft`（默认 0 阴影避免常驻压感）；"打开项目"按钮提为 `btn-cta`（最高强调），其余按钮保留 ghost。
-  - **Sidebar 可折叠**：`prefs.sidebarCollapsed: boolean`（默认 false）持久化；新增 `useNarrowWindow` hook，窗口 ≤960px 时自动展开避免无入口。折叠态 56px 宽，仅显示项目首字母圆形 avatar + count badge（点击切到该项目最近会话）；展开态 group 间距从 4px 拉大到 12px，呼吸感更强；背景 `--bg-sidebar` → `--bg-chrome`。
-  - **RightPanel 垂直 nav + Context hero 提级**：水平 5 tabs → 左侧 56px 垂直 nav（`--accent-blue` 左侧 2px 高亮条 + 选中态 `--bg-card` 底），删除"工具面板"标题与头部；Context tab 的 `rp-context-hero` 单独提为主卡（`--bg-card-elev` + `--radius-floating` + `--shadow-soft`），其余 sections 退到普通 card 底，section 间 1px 横线删除改 4px gap。
-  - **Composer 升级为唯一主元素**：圆角 12px → 16-18px，背景 `--bg-input` → `--bg-card-elev`，去掉 1px color-mix mode 边线（阴影 + 提色已够强），默认 `--shadow-soft` / focus-within & streaming 升级到 `--shadow-strong`，外层 padding 12/14/14 → 18/14/16。Mode pill active 态加 1.5px inset 模式色边 + 字重 500，与 Composer 同步主次。
-  - **Chat transcript 间距 + 工具卡提级**：行间距 16px → 20px（ROW_GAP_PX + .message-stream-inner gap）；展开态 tool card / tool batch 加 `--shadow-soft` + `--bg-card` 底，折叠态 pill 模式保留原视觉不抢戏。
-  - **设置弹窗几何同步**：`.modal-panel` 圆角 12px → 16-18px，阴影 `--shadow-lg` → `--shadow-modal`，与主卡保持一致"主焦点"语义。
-  - **DESIGN.md 改稿**：§一.4 扁平分层 → elevation 分层；§五 0 阴影 → token 控制；§六 布局壳层 ASCII 图重画；§九 加 §九.7 主元素唯一性反模式；§一附主题族表更新。
-- **仓库健康流程落地（社区化与流程自动化）**：补齐开源项目健康流程所需文件——`LICENSE` (MIT)、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md` (Contributor Covenant v2.1)、`SECURITY.md`、`MAINTENANCE.md`；`.github/CODEOWNERS` 锁定路径 owner；`.github/dependabot.yml` 启用 npm + GitHub Actions 周更；`.github/ISSUE_TEMPLATE/` 三个 YAML（bug / feature / question）+ `.github/PULL_REQUEST_TEMPLATE.md` + `.github/labels.yml`（19 个标签）；commit-msg 钩 `scripts/commit-msg-lint.mjs`（17 个 case 配套测试）锁 Conventional Commits 格式；CI `actionlint` job 校验 workflow YAML；`prepare-release.mjs` 加 tag 漂移硬闸（package.json > 最新 tag 时拒绝；支持 `--force`）；`release.yml` checkout `fetch-depth: 0`；根 / `apps/desktop` / `packages/godot-pi` 的 `package.json` 补 `license` / `author` / `repository` / `bugs` / `engines`；README 中英加「反馈与贡献」小节，CLAUDE / ROADMAP 加对 `MAINTENANCE.md` 的引用。
+- **UI 主次分明改版（v1.1 设计语言）**：告别"全窗单 Surface + 1px 边线切一切"的扁平网格感，改为 elevation 驱动的层级式布局。Composer / 输入区是整窗唯一主元素，三栏壳层（TopBar / Sidebar / RightPanel）降为低调 chrome。10 主题族（default / nord / tokyo / paper / contrast × dark/light）全部补齐新 token；`contrast` 仍走硬边、`paper` 阴影最轻。
+- **Sidebar 可折叠**：新增折叠按钮，56px 图标态 ↔ 260px 完整态，偏好记忆化；窗口 ≤960px 自动展开。
+- **RightPanel 改版**：水平 tabs 改左侧垂直 nav；上下文占用区提为唯一主卡，section 间 1px 横线删除。
+- **仓库健康流程落地**：补齐 LICENSE / CONTRIBUTING / CODE_OF_CONDUCT / SECURITY / MAINTENANCE 等开源协议与协作流程文件；启用 dependabot 周更 + actionlint + commit-msg 钩。
 
 ### 移除
 
-- **游戏开发四阶段工作流（策划 / 原型 / 测试 / 扩充）**：2026-08-23 引入的 4 阶段项目级工作流（含顶栏阶段进度条、阶段切换 modal、阶段专属右栏 tab、`<cwd>/.x-agent/stage.json` 持久化、`StageController`、阶段化 skill 过滤层）整体回滚。该功能仍在实验、没在实际项目里跑通完整流程，与核心 4 mode（agent / ask / plan / goal）解耦不彻底。现回到 4 模式独享工作流的设计。如有用户本机上的 `<cwd>/.x-agent/stage.json` 与 `.x-agent/{design,prototype,test,expand}/` 产物目录残留可手工删除，不会被自动清理。
+- **游戏开发四阶段工作流**：2026-08-23 引入的策划 / 原型 / 测试 / 扩充 4 阶段项目级工作流（顶栏进度条、阶段 modal、阶段化 skill 过滤）整体回滚，回到核心 4 mode（agent / 调研 / 计划 / 目标）独享工作流。
 
 ### 修复
 
-- **一键安装本地 Packages 不再被静默删除**：pi CLI 会把本地包路径按 `~/.pi/agent` 相对化写入 `settings.json`（如 `..\..\AppData\...\resources\godot-pi`），而 X-agent 此前按进程 cwd 解析相对路径，导致安装记录被判为"包源缺失"，被 `pruneMissingPiPackageSources` 从 `settings.json` 与 `x-agent-packages.json` 一并清除（表现为"安装成功"提示后「技能 / 提示词 / 扩展」页签为空）。现包源解析统一以 `~/.pi/agent` 为基准（与 pi CLI 一致），相对路径正常解析，prune / 去重 / registry 镜像均保留安装记录。
+- **一键安装本地 Packages 不再被静默删除**：路径解析统一以 `~/.pi/agent` 为基准（与 pi CLI 一致），安装记录不再被 `pruneMissingPiPackageSources` 误判清除。
 
 ## 0.5.3
 
