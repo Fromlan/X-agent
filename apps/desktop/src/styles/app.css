@@ -4662,75 +4662,71 @@ body.is-resizing-column * {
 .right-panel {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  background: var(--bg-sidebar);
+  background: var(--bg-chrome);
   border-left: 1px solid var(--border-primary);
 }
 
-.right-panel-head {
+.rp-nav {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-primary);
-  background: var(--bg-app);
-  flex-shrink: 0;
-}
-
-.right-panel-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.rp-tabs {
-  display: flex;
   gap: 4px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-primary);
+  padding: 10px 6px;
+  width: 56px;
   flex-shrink: 0;
-  background: var(--bg-app);
+  background: var(--bg-chrome);
+  border-right: 1px solid var(--border-primary);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.rp-tab {
+.rp-nav-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   border: 1px solid transparent;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
-  border-radius: var(--radius-pill);
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.rp-tab svg {
+.rp-nav-tab svg {
   flex-shrink: 0;
   opacity: 0.85;
 }
 
-.rp-tab.active svg {
-  opacity: 1;
-}
-
-.rp-tab:hover {
+.rp-nav-tab:hover {
   background: var(--bg-list-hover);
   color: var(--text-primary);
 }
 
-.rp-tab.active {
-  background: var(--surface-chip);
-  border-color: var(--border-primary);
+.rp-nav-tab.active {
+  background: var(--bg-card);
   color: var(--text-primary);
+  border-color: var(--border-primary);
+  box-shadow: inset 2px 0 0 var(--accent-blue);
+}
+
+.rp-nav-tab.active svg {
+  opacity: 1;
+}
+
+.rp-nav-spacer {
+  flex: 1 1 auto;
+  min-height: 8px;
+}
+
+.rp-nav-close {
+  margin-top: 4px;
 }
 
 .rp-tab-dot {
@@ -5149,16 +5145,11 @@ body.is-resizing-column * {
 .right-panel-body {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   color: var(--text-muted);
-}
-
-.right-panel-body.has-tabs {
-  align-items: stretch;
-  justify-content: flex-start;
-  padding: 0;
-  text-align: left;
+  background: var(--bg-app);
 }
 
 .rp-empty {
@@ -5174,11 +5165,16 @@ body.is-resizing-column * {
   min-height: 0;
   overflow-y: auto;
   color: var(--text-primary);
+  gap: 4px;
 }
 
 .rp-context-hero {
-  padding: 14px 12px 16px;
-  border-bottom: 1px solid var(--border-primary);
+  margin: 12px 12px 16px;
+  padding: 16px 16px 18px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-floating);
+  background: var(--bg-card-elev);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -5254,8 +5250,8 @@ body.is-resizing-column * {
 }
 
 .rp-context-section {
-  padding: 14px 12px 16px;
-  border-bottom: 1px solid var(--border-primary);
+  padding: 12px 12px 16px;
+  border-bottom: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;

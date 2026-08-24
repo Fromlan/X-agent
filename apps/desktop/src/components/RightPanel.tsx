@@ -100,38 +100,38 @@ export function RightPanel({
           title="拖动调整宽度 · 双击恢复默认"
         />
       )}
-      <div className="right-panel-head">
-        <h2 className="right-panel-title">工具面板</h2>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm btn-icon"
-          onClick={onClose}
-          title="收起工具面板"
-          aria-label="收起工具面板"
-        >
-          <PanelRightClose size={14} />
-        </button>
-      </div>
-      <nav className="rp-tabs" aria-label="面板页签">
+      <nav className="rp-nav" aria-label="面板页签">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
             <button
               key={t.id}
               type="button"
-              className={`rp-tab${state.tab === t.id ? " active" : ""}`}
+              className={`rp-nav-tab${state.tab === t.id ? " active" : ""}`}
               onClick={() => setRightPanelTab(t.id)}
+              title={t.label}
+              aria-label={t.label}
+              aria-pressed={state.tab === t.id}
             >
-              <Icon size={13} aria-hidden strokeWidth={2} />
-              <span className="rp-tab-label">{t.label}</span>
+              <Icon size={16} aria-hidden strokeWidth={2} />
               {t.id === "plan" && planPath ? (
                 <span className="rp-tab-dot" aria-hidden />
               ) : null}
             </button>
           );
         })}
+        <div className="rp-nav-spacer" aria-hidden />
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm btn-icon rp-nav-close"
+          onClick={onClose}
+          title="收起工具面板"
+          aria-label="收起工具面板"
+        >
+          <PanelRightClose size={14} />
+        </button>
       </nav>
-      <div className="right-panel-body has-tabs">
+      <div className="right-panel-body">
         {state.tab === "context" && (
           <ContextTab
             usage={usage}
