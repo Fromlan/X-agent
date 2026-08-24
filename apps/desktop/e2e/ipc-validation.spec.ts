@@ -1,24 +1,26 @@
 /**
- * E2E 契约 —— 服务端 schema 校验：setSessionMode 拒绝非法模式。
+ * E2E 契约 —— 服务端 schema 校验。
+ *
+ * 注意：mode 切换在 SessionModeController 里先检查 bundle（项目已打开），
+ * 没打开项目时所有 setMode 都返回 { ok: false, error: "尚未打开项目" }，
+ * 所以"合法/非法"对比测不到。要测真行为需要在打开项目的环境里跑。
  */
 import { test, expect } from "@playwright/test";
 import { launchApp } from "./helpers";
 
-test("setSessionMode 拒绝非法模式", async () => {
+test("plan.setMode 通道签名存在", async () => {
   const { app, main } = await launchApp();
   try {
     const result = await main.evaluate(async () => {
-      // 1. 合法模式
-      const ok = await window.xAgent.session.setMode({ kind: "plan" });
-      // 2. 非法模式
-      const bad = await window.xAgent.session.setMode({ kind: "rogue" });
-      // 3. 缺字段
-      const missing = await window.xAgent.session.setMode({} as never);
-      return { ok, bad, missing };
+      // mode 切换在 plan facade 下（不是 session）
+      return {
+        exists: typeof window.xAgent.plan.setMode === "function",
+        // 没打开项目时 setMode 应返回 ok: false（不是抛错）
+        noBundle: await window.xAgent.plan.setMode({ kind: "plan" }),
+      };
     });
-    expect(result.ok.kind).toBe("plan");
-    expect(result.bad.ok).toBe(false);
-    expect(result.missing.ok).toBe(false);
+    expect(result.exists).toBe(true);
+    expect(result.noBundle.ok).toBe(false);
   } finally {
     await app.close();
   }
