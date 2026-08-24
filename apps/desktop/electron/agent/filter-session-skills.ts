@@ -1,8 +1,6 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
-import { filterSkillsForStage } from "./filter-stage-skills";
-import type { StageId } from "../../shared/stage";
 
 /** Max skill description length injected into `<available_skills>` (chars). */
 export const SKILL_INDEX_DESCRIPTION_MAX = 240;
@@ -95,8 +93,7 @@ export function filterDisabledSkills<
 /**
  * X-agent DefaultResourceLoader skillsOverride pipeline:
  * exclude ~/.agents/skills → hide godot-* outside Godot projects →
- * drop user-disabled skills → drop stage-irrelevant skills →
- * dedupe by name → truncate descriptions for the index.
+ * drop user-disabled skills → dedupe by name → truncate descriptions for the index.
  */
 export function applyXAgentSkillsFilter<
   T extends { name?: string; filePath: string; description?: string },
@@ -104,12 +101,10 @@ export function applyXAgentSkillsFilter<
   skills: T[],
   cwd: string,
   disabledSkills: readonly string[] = [],
-  stage: StageId | null = null,
 ): T[] {
   const filtered = filterDisabledSkills(
     filterGodotSkillsForCwd(excludeUserAgentsHomeSkills(skills), cwd),
     disabledSkills,
   );
-  const stageFiltered = filterSkillsForStage(filtered, stage);
-  return truncateSkillsForIndex(dedupeSkillsByName(stageFiltered));
+  return truncateSkillsForIndex(dedupeSkillsByName(filtered));
 }

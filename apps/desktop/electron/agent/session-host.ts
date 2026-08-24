@@ -36,9 +36,6 @@ import {
   type UiAgentEvent,
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
-import { StageController } from "./stage";
-import { STAGE_DEFINITIONS } from "../../shared/stage-defs";
-import { computeStageTools } from "../../shared/stage-tools";
 import { getAgentDirPath, getCachedPrefs, patchPrefs } from "./prefs";
 import {
   dedupeModelInfosForUi,
@@ -126,8 +123,6 @@ export class SessionHost {
   private compactionRecording = false;
   /** Plan/Goal session mode orchestration. */
   private sessionMode: SessionModeController;
-  /** Project-level game stage workflow controller. */
-  private stageController: StageController;
   /** Workspace open/resume/dispose orchestration. */
   private lifecycle: SessionLifecycle;
   /** 撤回撤销 pipeline orchestration. */
@@ -144,8 +139,6 @@ export class SessionHost {
     this.getWindow = getWindow;
     this.godotRpc = godotRpc;
     this.sessionMode = new SessionModeController(() => this.asModeHost());
-    this.stageController = new StageController();
-    this.stageController.subscribe(() => this.onStageChanged());
     this.retractOrchestrator = new RetractOrchestrator(() =>
       this.asRetractHost(),
     );
@@ -386,71 +379,11 @@ export class SessionHost {
   }
 
   getBaseAppendPrompt(): string[] {
-    // Stage append is prepended so it appears before any mode append in the
-    // final system prompt (stage first, then mode instructions).
-    const stage = this.stageController?.getCurrent();
-    const def = stage ? STAGE_DEFINITIONS[stage] : null;
-    const stageAppend = def?.systemAppend ? [def.systemAppend] : [];
-    return [...stageAppend, ...this.baseAppendPrompt];
+    return this.baseAppendPrompt;
   }
 
   setBaseAppendPrompt(base: string[]): void {
     this.baseAppendPrompt = base;
-  }
-
-  /** Public access to the project-level stage controller. */
-  getStageController(): StageController {
-    return this.stageController;
-  }
-
-  /**
-   * Stage change hook: refresh the system prompt (mode append re-derived) and
-   * recompute the active tool whitelist (stage preset ∩ mode derived ∩ prefs).
-   * Also emits a `stage:changed` IPC event so the UI can update StageBar and
-   * the right panel.
-   */
-  private onStageChanged(): void {
-    // Refresh system prompt — setActiveToolsByName triggers Pi to re-read
-    // getAppendSystemPrompt() which our getBaseAppendPrompt() now augments.
-    this.refreshSystemPromptAndTools();
-    // Push to renderer.
-    const win = this.getWindow();
-    if (win && !win.isDestroyed()) {
-      const info = this.stageController.getInfo();
-      win.webContents.send(IPC_EVENTS.stageChanged, info);
-    }
-  }
-
-  private refreshSystemPromptAndTools(): void {
-    if (!this.bundle) return;
-    const stage = this.stageController.getCurrent();
-    const mode = this.sessionMode.getMode();
-    const prefsTools = getCachedPrefs().tools;
-    const tools = computeStageTools(stage, mode, prefsTools);
-    try {
-      this.bundle.session.setActiveToolsByName(tools);
-    } catch (err) {
-      dbgWarn(
-        "stage",
-        "setActiveToolsByName failed",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    // Re-derive system append by triggering the same code path as mode toggle.
-    try {
-      this.sessionMode.refreshSystemPrompt();
-    } catch (err) {
-      dbgWarn(
-        "stage",
-        "refreshSystemPrompt failed",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    dbgLog(
-      "stage",
-      "stage applied",
-      { stage, mode, tools: tools.length },
-    );
   }
 
   private setStatus(status: AgentStatus, error?: string): void {
@@ -749,13 +682,7 @@ export class SessionHost {
   }
 
   async openProject(cwd: string, mode: "continue" | "new" = "continue"): Promise<OpenProjectResult> {
-    const result = await this.lifecycle.openProject(cwd, mode);
-    if (result.ok) {
-      this.stageController.bind(cwd);
-      this.refreshSystemPromptAndTools();
-      this.pushStageInfo();
-    }
-    return result;
+    return this.lifecycle.openProject(cwd, mode);
   }
 
   async newSession(): Promise<OpenProjectResult> {
@@ -777,20 +704,7 @@ export class SessionHost {
   }
 
   async closeWorkspace(): Promise<{ ok: boolean; error?: string }> {
-    const result = await this.lifecycle.closeWorkspace();
-    if (result.ok) {
-      this.stageController.bind(null);
-      this.pushStageInfo();
-    }
-    return result;
-  }
-
-  /** Send the current StageInfo to the renderer (or null if no project bound). */
-  private pushStageInfo(): void {
-    const win = this.getWindow();
-    if (!win || win.isDestroyed()) return;
-    const info = this.stageController.getInfo();
-    win.webContents.send(IPC_EVENTS.stageChanged, info);
+    return this.lifecycle.closeWorkspace();
   }
 
   async renameSession(
@@ -1127,7 +1041,6 @@ export class SessionHost {
     const cwd = this.bundle?.cwd;
     if (!cwd) return [];
     const skillItems = listPlugins(cwd).filter((p) => p.kind === "skill");
-    const stage = this.stageController.getCurrent();
     const filtered = applyXAgentSkillsFilter(
       skillItems.map((p) => ({
         name: p.name,
@@ -1136,7 +1049,6 @@ export class SessionHost {
       })),
       cwd,
       getCachedPrefs().disabledSkills,
-      stage,
     );
     const byName = new Map<string, SessionSkillInfo>();
     for (const s of filtered) {

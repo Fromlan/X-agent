@@ -6,7 +6,6 @@ import type {
   FlatInvokeApi,
   IpcChannelKey,
   IpcInvokeMap,
-  StageInfo,
   UiAgentEvent,
   XAgentApi,
   XAgentApiFlat,
@@ -69,15 +68,6 @@ const flatApi: XAgentApiFlat = {
       ipcRenderer.removeListener(IPC_EVENTS.updateStatus, listener);
     };
   },
-  onStageChanged: (handler: (info: StageInfo | null) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, info: StageInfo | null) => {
-      handler(info);
-    };
-    ipcRenderer.on(IPC_EVENTS.stageChanged, listener);
-    return () => {
-      ipcRenderer.removeListener(IPC_EVENTS.stageChanged, listener);
-    };
-  },
 };
 
 function pickInvokeApi(source: FlatInvokeApi): Omit<FlatInvokeApi, DeletedFlatKey> {
@@ -126,13 +116,6 @@ const exposed: XAgentApi = {
     resumeGoal: api.resumeGoal,
     clearGoal: api.clearGoal,
     getGoal: api.getGoal,
-  },
-  stage: {
-    get: api.getStage,
-    set: api.setStage,
-    getGraduation: api.getGraduation,
-    toggleManualCheck: api.toggleManualCheck,
-    onChanged: flatApi.onStageChanged,
   },
   session: {
     setModel: api.setModel,

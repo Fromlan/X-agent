@@ -45,7 +45,6 @@ import { registerWorkspaceIpc } from "./ipc/register-workspace-ipc";
 import { registerTurnIpc } from "./ipc/register-turn-ipc";
 import { registerPlanIpc } from "./ipc/register-plan-ipc";
 import { registerSessionConfigIpc } from "./ipc/register-session-config-ipc";
-import { registerStageIpc } from "./ipc/register-stage-ipc";
 import { registerProviderIpc } from "./ipc/register-provider-ipc";
 import { registerGodotIpc } from "./ipc/register-godot-ipc";
 import { registerUpdateIpc } from "./ipc/register-update-ipc";
@@ -154,7 +153,6 @@ function registerIpc(
   registerTurnIpc(ipcMain, host);
   registerPlanIpc(ipcMain, host);
   registerSessionConfigIpc(ipcMain, host);
-  registerStageIpc(ipcMain, host);
 
   handle(ipcMain, IPC_CHANNELS.getPrefs, async () => loadPrefs());
   handle(ipcMain, IPC_CHANNELS.setPrefs, async (_e, patch: unknown) => {

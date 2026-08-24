@@ -23,16 +23,10 @@ test("打开项目后模式药丸 enable/disabled 状态切换", async () => {
 
     await expect(main.locator('[data-mode="plan"]')).toBeEnabled();
 
-    // 打开项目后 sessionMode 由 stage defaultMode 决定（design 阶段默认 plan，
-    // 所以 plan pill 已经是 pressed）。先显式切到 agent，建立干净的起点。
-    await main.locator('[data-mode="agent"]').click();
+    // 默认是 agent 模式
     await expect(main.locator('[data-mode="agent"]')).toHaveAttribute(
       "aria-pressed",
       "true",
-    );
-    await expect(main.locator('[data-mode="plan"]')).toHaveAttribute(
-      "aria-pressed",
-      "false",
     );
 
     // 切到 plan

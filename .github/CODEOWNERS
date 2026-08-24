@@ -21,17 +21,12 @@
 # Core Agent / session / mode hard-gates
 /apps/desktop/electron/agent/session-host.ts    @fromlan
 /apps/desktop/electron/agent/retract-orchestrator.ts  @fromlan
-/apps/desktop/electron/agent/filter-stage-skills.ts   @fromlan
 /apps/desktop/electron/agent/atomic-write.ts    @fromlan
 /apps/desktop/electron/agent/cwd-sandbox.ts     @fromlan
 /apps/desktop/shared/mode-tools.ts              @fromlan
 /apps/desktop/shared/mode-prompt.ts             @fromlan
 /apps/desktop/shared/godot-rpc.ts               @fromlan
 /apps/desktop/shared/godot-project-setting.ts   @fromlan
-/apps/desktop/shared/stage.ts                   @fromlan
-/apps/desktop/shared/stage-defs.ts              @fromlan
-/apps/desktop/shared/stage-tools.ts             @fromlan
-/apps/desktop/shared/stage-prompt.ts            @fromlan
 
 # Godot RPC bridge (network / security surface)
 /apps/desktop/electron/agent/godot-rpc-bridge.ts   @fromlan
