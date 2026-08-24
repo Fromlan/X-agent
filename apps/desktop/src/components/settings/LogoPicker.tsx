@@ -176,11 +176,6 @@ export function LogoPicker({
           </span>
         </span>
       </div>
-
-      <p className="modal-hint logo-scope-hint">
-        仅应用 favicon 与窗口图标。splash 启动屏与打包后的 .exe 安装包图标
-        需要重新打包才会更新（<code>npm run dist</code>）。
-      </p>
     </div>
   );
 }
