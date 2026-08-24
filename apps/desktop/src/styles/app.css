@@ -6223,19 +6223,10 @@ body.is-resizing-column * {
 .logo-active-hint {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   color: var(--text-muted);
   font-size: 11px;
   margin-left: auto;
-}
-
-.logo-active-hint .logo-active-thumb {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
-  border-radius: 3px;
-  background: var(--bg-input);
-  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {
