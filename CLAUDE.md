@@ -71,6 +71,10 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 - **合并**:默认 squash merge(保持 `main` 历史清爽);合并后删除远端分支
 - **禁止**带 ✗ 合并
 
+#### 5.1 GitHub 认证
+
+- **本机特殊环境（Windows + GCM Core 缺失）的 PAT 落地 / push 绕坑方法**在本地文件 [`docs/agents/env-credentials.md`](docs/agents/env-credentials.md)（gitignored，仅本机留存）。其他机器 / CI 不需要该文件，按自己正常 env 配即可。
+
 ### 6. CI 自动化
 
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 监听 push / PR,三 job 并行
