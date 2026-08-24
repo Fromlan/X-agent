@@ -75,7 +75,7 @@ jobs:
       - run: npm run dist
 
       - name: Upload GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: X-agent ${{ steps.version.outputs.tag }}
