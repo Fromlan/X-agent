@@ -3300,8 +3300,8 @@ body.is-resizing-column * {
   width: min(440px, calc(100vw - 32px));
   background: var(--bg-modal);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-floating);
+  box-shadow: var(--shadow-modal);
 }
 
 .modal-panel.settings-modal {
