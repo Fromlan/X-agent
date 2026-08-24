@@ -46,6 +46,14 @@ function applyFaviconHref(href: string): void {
 export type UseLogoResult = {
   list: LogoList | null;
   loading: boolean;
+  /**
+   * The id currently in effect. Owned by useLogo so the picker highlight
+   * and the bottom "当前：…" label stay in sync with the IPC call,
+   * even if App.tsx's `prefs` state hasn't propagated yet.
+   * Falls back to `prefs?.clientLogoId ?? "default"` while the first
+   * IPC response is in flight.
+   */
+  activeId: string;
   upload: () => Promise<LogoUploadResult>;
   clear: (customId: string) => Promise<LogoClearResult>;
   setActive: (id: string) => Promise<void>;
@@ -55,7 +63,19 @@ export type UseLogoResult = {
 export function useLogo(prefs: ClientPrefs | null): UseLogoResult {
   const [list, setList] = useState<LogoList | null>(null);
   const [loading, setLoading] = useState(false);
+  // 单一权威：先取 prefs,空时回退 default。setActive 后立即覆盖,不等
+  // App.tsx 那边 React state 慢慢追过来(IPC 走的是 Promise,不会反向
+  // 自动 setState)。
+  const [activeId, setActiveId] = useState<string>(
+    prefs?.clientLogoId ?? "default",
+  );
   const lastAppliedRef = useRef<string | null>(null);
+
+  // prefs 改变(主题/外观模式/其他)时,把 activeId 跟 prefs 重新对齐;
+  // 切 logo 走 setActive 不经过这里。
+  useEffect(() => {
+    if (prefs) setActiveId(prefs.clientLogoId);
+  }, [prefs?.clientLogoId]);
 
   const refresh = useCallback(async (): Promise<LogoList | null> => {
     setLoading(true);
@@ -72,21 +92,25 @@ export function useLogo(prefs: ClientPrefs | null): UseLogoResult {
   useEffect(() => {
     void refresh();
     const off = window.xAgent.logo.onChanged(async (payload: { id: string }) => {
-      // 主进程已 patch 了 prefs,这里再 pull 一次拿到最新 customs 清单。
       await refresh();
-      // 把 favicon 切到新 id
-      const fresh = await window.xAgent.prefs.get();
-      const url = resolveLogoUrl(list, fresh.clientLogoId);
-      if (url !== lastAppliedRef.current) {
-        applyFaviconHref(url);
-        lastAppliedRef.current = url;
+      // 主进程在 setPrefs handler 里已经把新 clientLogoId 写盘,
+      // 这里直接 pull 一次,保持 activeId 与磁盘一致。
+      try {
+        const fresh = await window.xAgent.prefs.get();
+        setActiveId(fresh.clientLogoId);
+        const url = resolveLogoUrl(list, fresh.clientLogoId);
+        if (url !== lastAppliedRef.current) {
+          applyFaviconHref(url);
+          lastAppliedRef.current = url;
+        }
+      } catch {
+        /* ignore */
       }
       void payload;
     });
     return () => {
       off();
     };
-    // 我们只在 mount 时订阅 + 初次拉取,后续刷新由 onChanged 触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -100,21 +124,28 @@ export function useLogo(prefs: ClientPrefs | null): UseLogoResult {
     }
   }, [prefs, list]);
 
-  const upload = useCallback(async () => {
+  const upload = useCallback(async (): Promise<LogoUploadResult> => {
     const result = await window.xAgent.logo.uploadCustom();
     if (result.ok) {
-      // 拉新清单,然后把新 logo 激活（prefs.set 会触发 logo:changed 推送,UI 自动刷新）
+      // 立即把 activeId 切到新 logo,不依赖 App.tsx 那边 React state 追过来
+      setActiveId(result.logo.id);
       await window.xAgent.prefs.set({ clientLogoId: result.logo.id });
     }
     return result;
   }, []);
 
   const clear = useCallback(
-    async (customId: string) => {
+    async (customId: string): Promise<LogoClearResult> => {
       const result = await window.xAgent.logo.clearCustom(customId);
       if (result.ok) {
-        // main 已经在 clearCustom 内部 revert 了 active（如果需要）
+        // main 端如果 revert 了 active,这里拉一次 prefs 对齐本地 activeId
         await refresh();
+        try {
+          const fresh = await window.xAgent.prefs.get();
+          setActiveId(fresh.clientLogoId);
+        } catch {
+          /* ignore */
+        }
       }
       return result;
     },
@@ -122,8 +153,15 @@ export function useLogo(prefs: ClientPrefs | null): UseLogoResult {
   );
 
   const setActive = useCallback(async (id: string) => {
-    await window.xAgent.prefs.set({ clientLogoId: id });
+    // 立即 setActiveId 让 UI 立刻高亮,不等 IPC roundtrip;若 IPC 失败再
+    // 通过 onChanged / 下一次 refresh 兜底对齐。
+    setActiveId(id);
+    try {
+      await window.xAgent.prefs.set({ clientLogoId: id });
+    } catch {
+      /* 上层已显示错误,favicon 也不会变;无副作用 */
+    }
   }, []);
 
-  return { list, loading, upload, clear, setActive, refresh };
+  return { list, loading, activeId, upload, clear, setActive, refresh };
 }

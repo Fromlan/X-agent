@@ -179,7 +179,7 @@ export function GeneralSettingsPage({
                   </p>
                   <LogoPicker
                     list={logo.list}
-                    activeId={prefs.clientLogoId}
+                    activeId={logo.activeId}
                     busy={logo.loading}
                     controller={logo}
                     onError={setGeneralMsg}

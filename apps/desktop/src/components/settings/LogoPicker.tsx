@@ -167,27 +167,7 @@ export function LogoPicker({
           <span className="btn-label">恢复默认</span>
         </button>
         <span className="logo-active-hint" aria-live="polite">
-          {(() => {
-            // 解析当前 logo 缩略图 URL（与 src/hooks/useLogo.ts#resolveLogoUrl
-            // 镜像，但只取 list 的本地视图；renderer 端不依赖 hook 工具函数）。
-            const activePreset = list?.presets.find((p) => p.id === activeId);
-            const activeCustom = list?.customs.find((c) => c.id === activeId);
-            const thumb = activePreset?.url ?? activeCustom?.url;
-            if (thumb) {
-              return (
-                <img
-                  src={thumb}
-                  alt=""
-                  width={16}
-                  height={16}
-                  className="logo-active-thumb"
-                  draggable={false}
-                />
-              );
-            }
-            // activeId === "default" 或清单还没拉到：兜底用通用图标。
-            return <ImageIcon size={12} aria-hidden="true" />;
-          })()}
+          <ImageIcon size={12} />
           <span>
             当前：
             {list?.presets.find((p) => p.id === activeId)?.label ??
