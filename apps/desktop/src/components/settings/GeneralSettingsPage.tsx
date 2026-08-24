@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SelectMenu } from "../SelectMenu";
 import { SettingsNotice, useAutoClearNotice } from "../SettingsNotice";
+import { LogoPicker } from "./LogoPicker";
 import {
   THEME_IDS,
   THEME_LABELS,
@@ -19,10 +20,12 @@ import {
   NODE_JS_DOWNLOAD_URL,
 } from "@shared/runtime-deps";
 import { useAppUpdate } from "../../hooks/useAppUpdate";
+import type { UseLogoResult } from "../../hooks/useLogo";
 
 type Props = {
   open: boolean;
   prefs: ClientPrefs;
+  logo: UseLogoResult;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onBashChanged?: (bash: BashCheckResult) => void;
   onGitChanged?: (git: GitCheckResult) => void;
@@ -33,6 +36,7 @@ type Props = {
 export function GeneralSettingsPage({
   open,
   prefs,
+  logo,
   onPrefsChanged,
   onBashChanged,
   onGitChanged,
@@ -165,6 +169,21 @@ export function GeneralSettingsPage({
                       aria-label="外观模式"
                     />
                   </div>
+                </div>
+
+                <div className="settings-block">
+                  <h4 className="settings-block-title">品牌</h4>
+                  <p className="modal-hint">
+                    切换窗口图标、favicon；可上传自己的图片（PNG / JPG，
+                    ≤ 4 MB，64–4096 px）。
+                  </p>
+                  <LogoPicker
+                    list={logo.list}
+                    activeId={prefs.clientLogoId}
+                    busy={logo.loading}
+                    controller={logo}
+                    onError={setGeneralMsg}
+                  />
                 </div>
 
                 <div className="settings-block">

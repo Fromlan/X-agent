@@ -5,7 +5,7 @@ import { probeBashLiveness } from "./agent/bash-liveness";
 import { checkAuth } from "./agent/auth-check";
 import { checkGit } from "./agent/git-exec";
 import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
-import { loadPrefs, loadPrefsWithRecovery, patchPrefs } from "./agent/prefs";
+import { loadPrefs, loadPrefsWithRecovery, patchPrefs, getCachedPrefs } from "./agent/prefs";
 import type { PrefsLoadResult } from "./agent/prefs";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
 import { SessionHost } from "./agent/session-host";
@@ -34,13 +34,19 @@ import {
 import { clearUsageSummary, getUsageSummary } from "./agent/usage-store";
 import { getSecretCodecStatus } from "./agent/secret-codec";
 import {
+  deleteCustomLogo,
+  listLogos,
+  resolveLogoFilePath,
+  saveCustomLogo,
+} from "./agent/agent-logos";
+import {
   ClientPrefs,
   ClientPrefsPatchSchema,
   PluginCreateInput,
   PrefsRecoveryNotice,
 } from "../shared/ipc";
 import { ALL_TOGGLEABLE_TOOLS } from "../shared/ipc";
-import { IPC_CHANNELS } from "../shared/ipc-channels";
+import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 import { registerWorkspaceIpc } from "./ipc/register-workspace-ipc";
 import { registerTurnIpc } from "./ipc/register-turn-ipc";
 import { registerPlanIpc } from "./ipc/register-plan-ipc";
@@ -171,6 +177,8 @@ function registerIpc(
       );
     }
     const typedPatch = patch as Partial<ClientPrefs>;
+    const logoTouched = typedPatch.clientLogoId !== undefined;
+    const prevLogoId = logoTouched ? getCachedPrefs().clientLogoId : null;
     if (typedPatch.tools) {
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
       await host.applyTools(typedPatch.tools.filter((t) => allowed.has(t)));
@@ -180,11 +188,17 @@ function registerIpc(
       if (rest.disabledSkills !== undefined) {
         await host.reloadResources();
       }
+      if (logoTouched && next.clientLogoId !== prevLogoId) {
+        notifyLogoChange(next.clientLogoId, hooks.getMainWindow());
+      }
       return next;
     }
     const next = await patchPrefs(typedPatch);
     if (typedPatch.disabledSkills !== undefined) {
       await host.reloadResources();
+    }
+    if (logoTouched && next.clientLogoId !== prevLogoId) {
+      notifyLogoChange(next.clientLogoId, hooks.getMainWindow());
     }
     return next;
   });
@@ -307,6 +321,72 @@ function registerIpc(
     hooks.revealMainWindow();
     return { ok: true as const };
   });
+
+  // ===== client logo assets =====
+  handle(ipcMain, IPC_CHANNELS.logoListPresets, async () => {
+    const active = getCachedPrefs().clientLogoId;
+    return listLogos(active);
+  });
+  handle(ipcMain, IPC_CHANNELS.logoUploadCustom, async () => {
+    // Native picker keeps the renderer sandbox-pure; we still validate
+    // (size / format / dim) in `saveCustomLogo` before accepting.
+    const result = await dialog.showOpenDialog({
+      title: "选择自定义 logo",
+      properties: ["openFile"],
+      filters: [
+        { name: "图片", extensions: ["png", "jpg", "jpeg"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false as const, error: "已取消", code: "INVALID_FILE" as const };
+    }
+    return saveCustomLogo(result.filePaths[0]!);
+  });
+  handle(ipcMain, IPC_CHANNELS.logoClearCustom, async (_e, customId: unknown) => {
+    if (typeof customId !== "string" || !customId) {
+      return { ok: false, error: "无效 id" };
+    }
+    const wasActive = getCachedPrefs().clientLogoId === customId;
+    const result = deleteCustomLogo(customId);
+    let revertedActive = false;
+    if (wasActive && result.ok) {
+      // Revert to default so the next render / IPC pull does not point at a
+      // deleted file. patchPrefs will clamp + emit logo:changed via us below.
+      await patchPrefs({ clientLogoId: "default" });
+      revertedActive = true;
+    } else if (!result.ok) {
+      return { ok: false, error: result.error ?? "删除失败" };
+    }
+    if (revertedActive) {
+      // Reuse the prefs-cached active id (just patched to "default") for the broadcast.
+      const next = getCachedPrefs().clientLogoId;
+      notifyLogoChange(next, hooks.getMainWindow());
+    }
+    return { ok: true, revertedActive };
+  });
+}
+
+/**
+ * Push a `logo:changed` event to the renderer and (best-effort) refresh the
+ * BrowserWindow title-bar / taskbar icon. Falls back silently if the window
+ * is gone or the resolved file is missing.
+ */
+export function notifyLogoChange(logoId: string, win: BrowserWindow | null): void {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.send(IPC_EVENTS.logoChanged, { id: logoId });
+  } catch (err) {
+    dbgWarn("logo", "send logo:changed failed", err instanceof Error ? err.message : String(err));
+  }
+  const file = resolveLogoFilePath(logoId);
+  if (file) {
+    try {
+      win.setIcon(file);
+    } catch (err) {
+      dbgWarn("logo", "setIcon failed", err instanceof Error ? err.message : String(err));
+    }
+  }
 }
 
 /** Call only after splash is visible. */
