@@ -158,6 +158,21 @@ const exposed: XAgentApi = {
     checkPiCli: api.checkPiCli,
     installPiCli: api.installPiCli,
   },
+  appReport: {
+    getStartupReport: api.getStartupReport,
+  },
+  godot: {
+    status: api.godotRpcStatus,
+    start: api.godotRpcStart,
+    stop: api.godotRpcStop,
+    ping: api.godotRpcPing,
+    request: api.godotRpcRequest,
+    setActiveClient: api.godotRpcSetActiveClient,
+    installAddon: api.installGodotRpcAddon,
+    launchEditor: api.launchGodotEditor,
+    pickEditor: api.pickGodotEditor,
+    pickScene: api.pickGodotScene,
+  },
   updates: {
     getStatus: api.getUpdateStatus,
     check: api.checkForUpdates,

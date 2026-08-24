@@ -55,7 +55,7 @@ test("打开项目后模式药丸 enable/disabled 状态切换", async () => {
     const mode = await main.evaluate(async () => {
       return window.xAgent.session.getMode();
     });
-    expect(mode.kind).toBe("ask");
+    expect(mode.mode).toBe("ask");
   } finally {
     await main.evaluate(() => window.xAgent.workspace.close()).catch(() => {});
     await app.close();

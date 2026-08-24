@@ -1163,6 +1163,26 @@ export type PrefsApi = {
   installPiCli: IpcInvokeMap["installPiCli"];
 };
 
+/** Application-level diagnostics surfaced to the renderer (consumed-once). */
+export type AppReportApi = {
+  /** Drain and clear the boot-time issue queue (shadow_recover / godot_rpc / package install). */
+  getStartupReport: IpcInvokeMap["getStartupReport"];
+};
+
+/** Godot editor RPC + addon lifecycle facade. */
+export type GodotApi = {
+  status: IpcInvokeMap["godotRpcStatus"];
+  start: IpcInvokeMap["godotRpcStart"];
+  stop: IpcInvokeMap["godotRpcStop"];
+  ping: IpcInvokeMap["godotRpcPing"];
+  request: IpcInvokeMap["godotRpcRequest"];
+  setActiveClient: IpcInvokeMap["godotRpcSetActiveClient"];
+  installAddon: IpcInvokeMap["installGodotRpcAddon"];
+  launchEditor: IpcInvokeMap["launchGodotEditor"];
+  pickEditor: IpcInvokeMap["pickGodotEditor"];
+  pickScene: IpcInvokeMap["pickGodotScene"];
+};
+
 /**
  * Authoritative invoke-channel signatures: every key is one `ipcRenderer.invoke`
  * channel (key name == channel name, enforced at compile time against
@@ -1395,6 +1415,8 @@ export interface XAgentApi extends XAgentApiFlat {
   stage: StageApi;
   session: SessionApi;
   prefs: PrefsApi;
+  appReport: AppReportApi;
+  godot: GodotApi;
   updates: UpdatesApi;
 }
 
