@@ -289,6 +289,11 @@ export class SessionModeController {
   }
 
   async setMode(mode: AgentSessionMode): Promise<SessionModeResult> {
+    // 白名单校验：拒绝非合法 mode 字符串（"agent" | "ask" | "plan" | "goal"）。
+    // 防止 renderer 端类型逃逸后端，写错持久化 / 误发 system prompt 补丁。
+    if (mode !== "agent" && mode !== "ask" && mode !== "plan" && mode !== "goal") {
+      return { ok: false, error: `非法 mode：${String(mode)}` };
+    }
     const bundle = this.host().getBundle();
     if (!bundle) {
       return { ok: false, error: "尚未打开项目" };
