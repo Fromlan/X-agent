@@ -23,6 +23,8 @@ interface Props {
   compacting?: boolean;
   updateStatus?: AppUpdateStatus | null;
   updateActionBusy?: boolean;
+  /** When true, mount --shadow-soft on the sticky bar (set by parent scroll listener). */
+  elevated?: boolean;
   onOpenProject: () => void;
   onNewSession: () => void;
   onToggleTheme: () => void;
@@ -34,11 +36,14 @@ interface Props {
 
 function TopBarImpl(props: Props) {
   return (
-    <header className="topbar">
+    <header
+      className="topbar"
+      data-elevated={props.elevated ? "true" : undefined}
+    >
       <div className="topbar-left">
         <button
           type="button"
-          className="btn btn-secondary btn-sm"
+          className="btn btn-cta btn-sm"
           onClick={() => props.onOpenProject()}
           disabled={props.busy}
           title="打开项目"

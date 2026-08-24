@@ -13,7 +13,7 @@ import {
 export const ESTIMATE_ROW_PX = 72;
 /** Streaming estimate: markdown is still growing + tool cards can be tall. */
 export const ESTIMATE_ROW_PX_STREAMING = 120;
-export const ROW_GAP_PX = 16;
+export const ROW_GAP_PX = 20;
 /**
  * 贴底补偿阈值(px):视口距底部 ≤ 该值即视为"贴底",
  * 此后任何行的测量/尺寸变化都会同步补偿 scrollTop。

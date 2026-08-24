@@ -415,6 +415,11 @@ export interface ClientPrefs {
   rightPanelOpen: boolean;
   /** Left session sidebar width in px. */
   sidebarWidth: number;
+  /**
+   * Whether the left session sidebar is collapsed to icon-only mode (56px).
+   * Auto-expands below the narrow-window threshold (≤960px).
+   */
+  sidebarCollapsed?: boolean;
   /** Right tool panel width in px. */
   rightPanelWidth: number;
   /**
@@ -465,6 +470,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   godotEditorPath: null,
   rightPanelOpen: false,
   sidebarWidth: 260,
+  sidebarCollapsed: false,
   rightPanelWidth: 360,
   hiddenProjectKeys: [],
   dismissedReadyChecklistKeys: [],
@@ -508,6 +514,7 @@ export const ClientPrefsSchema = Type.Object({
   godotEditorPath: Type.Union([Type.Null(), Type.String()]),
   rightPanelOpen: Type.Boolean(),
   sidebarWidth: Type.Number(),
+  sidebarCollapsed: Type.Optional(Type.Boolean()),
   rightPanelWidth: Type.Number(),
   hiddenProjectKeys: Type.Array(Type.String()),
   dismissedReadyChecklistKeys: Type.Array(Type.String()),

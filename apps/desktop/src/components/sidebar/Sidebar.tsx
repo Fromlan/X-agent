@@ -4,7 +4,7 @@
  */
 import { memo } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { RefreshCw } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, RefreshCw } from "lucide-react";
 import type { AgentStatus, SessionInfo } from "@shared/ipc";
 import { useSidebarState } from "./useSidebarState";
 import { SidebarGroupList } from "./SidebarGroupList";
@@ -21,12 +21,15 @@ interface Props {
   compacting?: boolean;
   /** True while `listSessions` is in flight; surfaces skeleton in the list. */
   sessionsLoading?: boolean;
+  /** Collapsed to icon-only mode (56px). */
+  collapsed?: boolean;
   onResume: (path: string) => void;
   onDelete: (path: string) => void;
   onDeleteProjectSessions: (cwd: string) => void;
   onHideProject: (cwd: string, label: string) => void;
   onRename: (path: string, name: string) => void | Promise<void>;
   onRefresh: () => void;
+  onToggleCollapsed?: () => void;
   onResizePointerDown?: (e: ReactPointerEvent) => void;
   onResizeDoubleClick?: () => void;
   resizing?: boolean;
@@ -41,12 +44,14 @@ function SidebarImpl({
   busy,
   compacting = false,
   sessionsLoading = false,
+  collapsed = false,
   onResume,
   onDelete,
   onDeleteProjectSessions,
   onHideProject,
   onRename,
   onRefresh,
+  onToggleCollapsed,
   onResizePointerDown,
   onResizeDoubleClick,
   resizing = false,
@@ -68,18 +73,47 @@ function SidebarImpl({
     agentStatus === "streaming" ||
     agentStatus === "retrying";
 
+  const className = [
+    "sidebar",
+    state.menuOpen ? "is-context-menu-open" : "",
+    collapsed ? "is-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <aside className={`sidebar${state.menuOpen ? " is-context-menu-open" : ""}`}>
+    <aside className={className} data-collapsed={collapsed ? "true" : undefined}>
       <div className="sidebar-head">
-        <h2>会话</h2>
-        <button
-          type="button"
-          className="btn btn-ghost btn-icon"
-          onClick={onRefresh}
-          title="刷新"
-        >
-          <RefreshCw size={13} />
-        </button>
+        {!collapsed && <h2>会话</h2>}
+        <div className="sidebar-head-actions">
+          {!collapsed && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              onClick={onRefresh}
+              title="刷新"
+              aria-label="刷新会话列表"
+            >
+              <RefreshCw size={13} />
+            </button>
+          )}
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              onClick={onToggleCollapsed}
+              title={collapsed ? "展开会话栏" : "折叠会话栏"}
+              aria-label={collapsed ? "展开会话栏" : "折叠会话栏"}
+              aria-pressed={collapsed}
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={13} />
+              ) : (
+                <PanelLeftClose size={13} />
+              )}
+            </button>
+          )}
+        </div>
       </div>
       <SidebarGroupList
         state={state}
@@ -88,9 +122,10 @@ function SidebarImpl({
         locked={locked}
         loading={sessionsLoading}
         onResume={onResume}
+        collapsed={collapsed}
       />
       <SidebarItemMenu state={state} busy={busy} locked={locked} renaming={false} />
-      {onResizePointerDown && (
+      {!collapsed && onResizePointerDown && (
         <div
           className={`column-resize-handle column-resize-handle--right${resizing ? " is-dragging" : ""}`}
           onPointerDown={onResizePointerDown}

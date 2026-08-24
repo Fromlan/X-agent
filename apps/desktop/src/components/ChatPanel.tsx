@@ -37,6 +37,7 @@ import {
 import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
 import { ThinkingOrb } from "./ThinkingOrb";
+import type { RefObject } from "react";
 
 /** @-补全 path 候选暂未接入 file-tree IPC；空数组常量化避免每次渲染新建引用。 */
 const EMPTY_PATH_CANDIDATES: AtPathCandidate[] = [];
@@ -87,6 +88,11 @@ interface Props {
   onModelChange: (value: string) => void;
   onThinkingChange: (level: ThinkingLevel) => void;
   onToggleThinking: () => void;
+  /**
+   * Optional external ref for the chat transcript scroll container.
+   * Used by parent to track scroll position (e.g. mount TopBar shadow).
+   */
+  externalStreamRef?: RefObject<HTMLDivElement | null>;
 }
 
 /** Render an "已等待 12s" suffix when the wait exceeds 3 seconds. */
@@ -295,6 +301,7 @@ function ChatPanelImpl(props: Props) {
         planPath={props.planPath}
         onBuildPlan={props.onBuildPlan}
         onClarifySelect={props.onClarifySelect}
+        externalStreamRef={props.externalStreamRef}
       />
 
       {props.queuedSteering && props.queuedSteering.length > 0 && (
@@ -360,7 +367,11 @@ function ChatPanelImpl(props: Props) {
       )}
 
       <div className="composer">
-        <div className="composer-shell" data-session-mode={sessionMode}>
+        <div
+          className="composer-shell"
+          data-session-mode={sessionMode}
+          data-streaming={streaming ? "true" : undefined}
+        >
           <SlashMenu
             open={menuOpen}
             items={filtered}
