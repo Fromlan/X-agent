@@ -1304,7 +1304,7 @@ body.is-resizing-column * {
 .message-stream-inner {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   min-height: 100%;
 }
 
@@ -2300,6 +2300,13 @@ body.is-resizing-column * {
   border-right: 1px solid var(--border-primary);
   border-bottom: 1px solid var(--border-primary);
   line-height: 1.3;
+  transition: box-shadow 0.15s ease;
+}
+
+/* 展开态 tool card 提为软 elevation，与 Composer 主元素呼应 */
+.bubble-tool[open] {
+  box-shadow: var(--shadow-soft);
+  background: var(--bg-card);
 }
 
 /* Collapsed: compact single-row chips so tool chains stay short */
@@ -2357,6 +2364,12 @@ body.is-resizing-column * {
   border-left: 3px solid var(--warning-accent);
   max-width: 82%;
   border-radius: var(--radius-container);
+  transition: box-shadow 0.15s ease;
+}
+
+.bubble-tool-batch[open] {
+  box-shadow: var(--shadow-soft);
+  background: var(--bg-card);
 }
 
 /* 折叠: 单行 pill */
