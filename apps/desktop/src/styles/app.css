@@ -97,6 +97,17 @@
   --shadow-md: none;
   --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.28);
 
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #33332f;
+  --bg-chrome: #1a1a1a;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 6%);
+  --shadow-strong: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 12%);
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 12%), 0 12px 36px rgb(0 0 0 / 18%);
+  --radius-floating: 16px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
+
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "PingFang SC",
     "Hiragino Sans", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,

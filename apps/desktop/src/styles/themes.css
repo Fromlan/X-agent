@@ -76,6 +76,17 @@ body[data-theme="default-dark"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.28);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #33332f;
+  --bg-chrome: #1a1a1a;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 6%);
+  --shadow-strong: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 12%);
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 12%), 0 12px 36px rgb(0 0 0 / 18%);
+  --radius-floating: 16px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 body[data-theme="default-light"] {
@@ -148,6 +159,17 @@ body[data-theme="default-light"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.12);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #fbfbf7;
+  --bg-chrome: #ededeb;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 4%), 0 2px 8px rgb(0 0 0 / 4%);
+  --shadow-strong: 0 1px 2px rgb(0 0 0 / 5%), 0 8px 24px rgb(0 0 0 / 6%);
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 8%), 0 12px 36px rgb(0 0 0 / 10%);
+  --radius-floating: 16px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 /* ---------- Nord (cool arctic blue-gray) ---------- */
@@ -222,6 +244,17 @@ body[data-theme="nord-dark"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 10px 28px rgb(0 0 0 / 0.35);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #383f50;
+  --bg-chrome: var(--bg-app);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 6%);
+  --shadow-strong: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 12%);
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 12%), 0 12px 36px rgb(0 0 0 / 18%);
+  --radius-floating: 16px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 body[data-theme="nord-light"] {
@@ -294,6 +327,17 @@ body[data-theme="nord-light"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 10px 28px rgb(46 52 64 / 0.14);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #f5f7fa;
+  --bg-chrome: #e0e3e8;
+  --shadow-soft: 0 1px 2px rgb(46 52 64 / 4%), 0 2px 8px rgb(46 52 64 / 4%);
+  --shadow-strong: 0 1px 2px rgb(46 52 64 / 5%), 0 8px 24px rgb(46 52 64 / 8%);
+  --shadow-modal: 0 1px 2px rgb(46 52 64 / 8%), 0 12px 36px rgb(46 52 64 / 10%);
+  --radius-floating: 16px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 /* ---------- Tokyo Night (deep blue + saturated accents) ---------- */
@@ -368,6 +412,17 @@ body[data-theme="tokyo-dark"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 8px 28px rgb(0 0 0 / 0.4);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #2f334d;
+  --bg-chrome: var(--bg-app);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 12%), 0 2px 8px rgb(0 0 0 / 10%);
+  --shadow-strong: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 18%);
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 16%), 0 12px 36px rgb(0 0 0 / 24%);
+  --radius-floating: 18px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 body[data-theme="tokyo-light"] {
@@ -440,6 +495,17 @@ body[data-theme="tokyo-light"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 8px 28px rgb(42 43 61 / 0.16);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #f7f7fb;
+  --bg-chrome: #dedfe7;
+  --shadow-soft: 0 1px 2px rgb(42 43 61 / 6%), 0 2px 8px rgb(42 43 61 / 6%);
+  --shadow-strong: 0 1px 2px rgb(42 43 61 / 7%), 0 8px 24px rgb(42 43 61 / 10%);
+  --shadow-modal: 0 1px 2px rgb(42 43 61 / 10%), 0 12px 36px rgb(42 43 61 / 14%);
+  --radius-floating: 18px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 /* ---------- Warm Paper (cream / ink) ---------- */
@@ -514,6 +580,17 @@ body[data-theme="paper-dark"] {
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.2);
   --shadow-md: 0 2px 8px rgb(0 0 0 / 0.22);
   --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.4);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #2a2520;
+  --bg-chrome: var(--bg-app);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.18), 0 2px 8px rgb(0 0 0 / 0.18);
+  --shadow-strong: 0 1px 2px rgb(0 0 0 / 0.2), 0 8px 24px rgb(0 0 0 / 0.28);
+  --shadow-modal: 0 1px 2px rgb(0 0 0 / 0.24), 0 12px 36px rgb(0 0 0 / 0.34);
+  --radius-floating: 14px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 body[data-theme="paper-light"] {
@@ -586,6 +663,17 @@ body[data-theme="paper-light"] {
   --shadow-sm: 0 1px 2px rgb(44 36 28 / 0.06);
   --shadow-md: 0 2px 8px rgb(44 36 28 / 0.08);
   --shadow-lg: 0 12px 32px rgb(44 36 28 / 0.14);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #fbf8f2;
+  --bg-chrome: #ebe5d8;
+  --shadow-soft: 0 1px 2px rgb(44 36 28 / 0.05), 0 2px 8px rgb(44 36 28 / 0.06);
+  --shadow-strong: 0 1px 2px rgb(44 36 28 / 0.06), 0 8px 24px rgb(44 36 28 / 0.10);
+  --shadow-modal: 0 1px 2px rgb(44 36 28 / 0.1), 0 12px 36px rgb(44 36 28 / 0.14);
+  --radius-floating: 14px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 /* ---------- High Contrast (hard edges, max contrast) ---------- */
@@ -660,6 +748,17 @@ body[data-theme="contrast-dark"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 0 0 1px #555555, 0 8px 24px rgb(0 0 0 / 0.6);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #0a0a0a;
+  --bg-chrome: var(--bg-app);
+  --shadow-soft: none;
+  --shadow-strong: none;
+  --shadow-modal: 0 0 0 1px #555555, 0 8px 24px rgb(0 0 0 / 0.6);
+  --radius-floating: 6px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
 
 body[data-theme="contrast-light"] {
@@ -732,4 +831,15 @@ body[data-theme="contrast-light"] {
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: 0 0 0 1px #000000, 0 8px 24px rgb(0 0 0 / 0.18);
+
+  /* —— Elevation 分层（design system v1.1）—— */
+  --bg-card-elev: #ffffff;
+  --bg-chrome: #f5f5f5;
+  --shadow-soft: none;
+  --shadow-strong: none;
+  --shadow-modal: 0 0 0 1px #000000, 0 8px 24px rgb(0 0 0 / 0.18);
+  --radius-floating: 6px;
+  --radius-card: var(--radius-container);
+  --space-section: 20px;
+  --space-chrome: 12px;
 }
