@@ -80,8 +80,10 @@ describe("agent-logos / listPresets", () => {
     expect(presets).toHaveLength(8);
     expect(presets[0]!.id).toBe("preset:01-neon-cyber");
     expect(presets[0]!.label).toBe("霓虹赛博");
-    expect(presets[0]!.url).toBe("./logos/preset-01-neon-cyber.png");
+    expect(presets[0]!.url).toBe("./logos/preset-01-neon-cyber-1024.webp");
+    expect(presets[0]!.thumbnailUrl).toBe("./logos/preset-01-neon-cyber-256.webp");
     expect(presets[7]!.id).toBe("preset:08-cosmic-nebula");
+    expect(presets[7]!.url).toBe("./logos/preset-08-cosmic-nebula-1024.webp");
   });
 });
 
