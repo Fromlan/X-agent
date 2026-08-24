@@ -12,6 +12,10 @@
 
 - **仓库健康流程落地（社区化与流程自动化）**：补齐开源项目健康流程所需文件——`LICENSE` (MIT)、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md` (Contributor Covenant v2.1)、`SECURITY.md`、`MAINTENANCE.md`；`.github/CODEOWNERS` 锁定路径 owner；`.github/dependabot.yml` 启用 npm + GitHub Actions 周更；`.github/ISSUE_TEMPLATE/` 三个 YAML（bug / feature / question）+ `.github/PULL_REQUEST_TEMPLATE.md` + `.github/labels.yml`（19 个标签）；commit-msg 钩 `scripts/commit-msg-lint.mjs`（17 个 case 配套测试）锁 Conventional Commits 格式；CI `actionlint` job 校验 workflow YAML；`prepare-release.mjs` 加 tag 漂移硬闸（package.json > 最新 tag 时拒绝；支持 `--force`）；`release.yml` checkout `fetch-depth: 0`；根 / `apps/desktop` / `packages/godot-pi` 的 `package.json` 补 `license` / `author` / `repository` / `bugs` / `engines`；README 中英加「反馈与贡献」小节，CLAUDE / ROADMAP 加对 `MAINTENANCE.md` 的引用。
 
+### 移除
+
+- **游戏开发四阶段工作流（策划 / 原型 / 测试 / 扩充）**：2026-08-23 引入的 4 阶段项目级工作流（含顶栏阶段进度条、阶段切换 modal、阶段专属右栏 tab、`<cwd>/.x-agent/stage.json` 持久化、`StageController`、阶段化 skill 过滤层）整体回滚。该功能仍在实验、没在实际项目里跑通完整流程，与核心 4 mode（agent / ask / plan / goal）解耦不彻底。现回到 4 模式独享工作流的设计。如有用户本机上的 `<cwd>/.x-agent/stage.json` 与 `.x-agent/{design,prototype,test,expand}/` 产物目录残留可手工删除，不会被自动清理。
+
 ### 修复
 
 - **一键安装本地 Packages 不再被静默删除**：pi CLI 会把本地包路径按 `~/.pi/agent` 相对化写入 `settings.json`（如 `..\..\AppData\...\resources\godot-pi`），而 X-agent 此前按进程 cwd 解析相对路径，导致安装记录被判为"包源缺失"，被 `pruneMissingPiPackageSources` 从 `settings.json` 与 `x-agent-packages.json` 一并清除（表现为"安装成功"提示后「技能 / 提示词 / 扩展」页签为空）。现包源解析统一以 `~/.pi/agent` 为基准（与 pi CLI 一致），相对路径正常解析，prune / 去重 / registry 镜像均保留安装记录。
