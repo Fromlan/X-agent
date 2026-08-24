@@ -1096,8 +1096,10 @@ export interface LogoPreset {
   id: string;
   /** Human-readable Chinese label, e.g. "霓虹赛博". */
   label: string;
-  /** Renderer-relative path served by Vite from `public/`. */
+  /** Renderer-relative path to the 1024×1024 webp (favicon / full-size). */
   url: string;
+  /** Renderer-relative path to the 256×256 webp thumbnail (settings grid). */
+  thumbnailUrl: string;
   width: number;
   height: number;
   sizeBytes: number;

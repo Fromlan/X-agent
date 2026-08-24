@@ -33,14 +33,14 @@ interface PresetSpec {
 }
 
 const PRESET_SPECS: PresetSpec[] = [
-  { id: "preset:01-neon-cyber", label: "霓虹赛博", filename: "preset-01-neon-cyber.png" },
-  { id: "preset:02-lava-burn", label: "熔岩灼烧", filename: "preset-02-lava-burn.png" },
-  { id: "preset:03-plasma-thunder", label: "电浆雷霆", filename: "preset-03-plasma-thunder.png" },
-  { id: "preset:04-holographic-rainbow", label: "全息彩虹", filename: "preset-04-holographic-rainbow.png" },
-  { id: "preset:05-rose-gold-metal", label: "玫瑰金金属", filename: "preset-05-rose-gold-metal.png" },
-  { id: "preset:06-pixel-8bit", label: "像素 8-bit", filename: "preset-06-pixel-8bit.png" },
-  { id: "preset:07-glitch-error", label: "故障 Glitch", filename: "preset-07-glitch-error.png" },
-  { id: "preset:08-cosmic-nebula", label: "宇宙星云", filename: "preset-08-cosmic-nebula.png" },
+  { id: "preset:01-neon-cyber", label: "霓虹赛博", filename: "preset-01-neon-cyber-1024.webp" },
+  { id: "preset:02-lava-burn", label: "熔岩灼烧", filename: "preset-02-lava-burn-1024.webp" },
+  { id: "preset:03-plasma-thunder", label: "电浆雷霆", filename: "preset-03-plasma-thunder-1024.webp" },
+  { id: "preset:04-holographic-rainbow", label: "全息彩虹", filename: "preset-04-holographic-rainbow-1024.webp" },
+  { id: "preset:05-rose-gold-metal", label: "玫瑰金金属", filename: "preset-05-rose-gold-metal-1024.webp" },
+  { id: "preset:06-pixel-8bit", label: "像素 8-bit", filename: "preset-06-pixel-8bit-1024.webp" },
+  { id: "preset:07-glitch-error", label: "故障 Glitch", filename: "preset-07-glitch-error-1024.webp" },
+  { id: "preset:08-cosmic-nebula", label: "宇宙星云", filename: "preset-08-cosmic-nebula-1024.webp" },
 ];
 
 /** Custom protocol name (registered in electron/main.ts). */
@@ -119,11 +119,17 @@ function resolvePresetPath(filename: string): string {
   return join(app.getAppPath(), "public", "logos", filename);
 }
 
-/** Build the renderer-relative URL for a built-in preset. */
+/** Build the renderer-relative URL for a built-in preset (1024 webp). */
 function presetUrl(filename: string): string {
   // Vite dev server serves `public/` at root; packaged renderer is loaded
   // from `renderer/index.html` so a relative `./logos/<file>` works in both.
   return `./logos/${filename}`;
+}
+
+/** Thumbnail URL (256 webp) for the same preset. */
+function presetThumbUrl(filename: string): string {
+  // Replace the trailing `-1024.webp` with `-256.webp` to derive the thumb filename.
+  return `./logos/${filename.replace(/-1024\.webp$/, "-256.webp")}`;
 }
 
 /** List built-in presets that actually exist on disk (graceful if a file is missing). */
@@ -145,6 +151,7 @@ export function listPresets(): LogoPreset[] {
       id: spec.id,
       label: spec.label,
       url: presetUrl(spec.filename),
+      thumbnailUrl: presetThumbUrl(spec.filename),
       width,
       height,
       sizeBytes,

@@ -85,7 +85,7 @@ export function LogoPicker({
             title={preset.label}
           >
             <img
-              src={preset.url}
+              src={preset.thumbnailUrl ?? preset.url}
               alt={preset.label}
               width={64}
               height={64}
