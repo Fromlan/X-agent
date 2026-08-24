@@ -367,7 +367,11 @@ function ChatPanelImpl(props: Props) {
       )}
 
       <div className="composer">
-        <div className="composer-shell" data-session-mode={sessionMode}>
+        <div
+          className="composer-shell"
+          data-session-mode={sessionMode}
+          data-streaming={streaming ? "true" : undefined}
+        >
           <SlashMenu
             open={menuOpen}
             items={filtered}
