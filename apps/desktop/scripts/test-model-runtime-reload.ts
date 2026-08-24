@@ -57,15 +57,10 @@ try {
     "utf8",
   );
 
-  await runtime.refresh();
-  const afterConfigOnly = await runtime.getAvailable();
-  assert(
-    !afterConfigOnly.some(
-      (m) => m.provider === "test-relay" && m.id === "model-a",
-    ),
-    "refresh alone must not expose test-relay (auth cache stale)",
-  );
-
+  // Pi SDK 0.84 changed ModelRuntime.refresh() to also reload the auth
+  // cache (it used to only reload models.json). So a single refresh() after
+  // writing auth.json is now enough to expose the new provider; the previous
+  // "refresh alone must not expose" guard no longer holds.
   reloadAuthStorageCache(runtime);
   await runtime.refresh();
   const available = await runtime.getAvailable();
