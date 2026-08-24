@@ -381,10 +381,31 @@ export function notifyLogoChange(logoId: string, win: BrowserWindow | null): voi
   }
   const file = resolveLogoFilePath(logoId);
   if (file) {
+    // Windows taskbar 经常把 AUMID 关联的图标缓存住;直接 setIcon(file)
+    // 偶尔不会立刻刷新。两次调用 + 短暂 setIcon(null) 触发 Explorer
+    // 重读磁盘上的新图标。setIcon(null) 在某些 Electron 版本上
+    // 签名不收,失败被 catch 吞掉。
     try {
       win.setIcon(file);
     } catch (err) {
       dbgWarn("logo", "setIcon failed", err instanceof Error ? err.message : String(err));
+    }
+    if (process.platform === "win32") {
+      setTimeout(() => {
+        if (!win || win.isDestroyed()) return;
+        try {
+          // null = 退回 default (app 入口处的 build/icon.ico),让 Explorer
+          // 视为新图标,下一帧再 setIcon(file) 写入新文件。
+          (win.setIcon as unknown as (img: string | null) => void)(null);
+        } catch {
+          /* setIcon(null) 可能签名不收,忽略 */
+        }
+        try {
+          win.setIcon(file);
+        } catch {
+          /* 同上 */
+        }
+      }, 60);
     }
   }
 }

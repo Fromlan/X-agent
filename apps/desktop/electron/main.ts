@@ -323,6 +323,13 @@ async function bootApp(): Promise<void> {
   }
 }
 
+// Windows taskbar 用 AUMID 识别应用并缓存图标。设置稳定 AUMID 之后,
+// 运行时 BrowserWindow.setIcon 才会被 taskbar 接受,否则系统会一直用
+// 打包时的 .ico (electron-builder 烘焙的那张)。
+if (process.platform === "win32") {
+  app.setAppUserModelId("works.earendil.x-agent");
+}
+
 app.whenReady().then(() => {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock && process.env[ALLOW_MULTI_INSTANCE_ENV] !== "1") {
