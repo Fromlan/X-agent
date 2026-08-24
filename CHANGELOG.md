@@ -8,6 +8,8 @@
 
 ## Unreleased
 
+## 0.5.4
+
 ### 改进
 
 - **UI 主次分明与简洁直观改版（v1.1 设计语言落地）**：原"全窗单 Surface + 1px Board 切边 + 页面内 0 阴影"的扁平网格感，改为 elevation 驱动的层级式布局——Composer / 输入区作为整窗唯一主元素（`--bg-card-elev` + `--shadow-strong` + `--radius-floating` 双层阴影 + 16-20px 圆角 + 上下 16-20px 呼吸区），三栏壳层（TopBar / Sidebar / RightPanel）降为低调 chrome（统一 `--bg-chrome` 底）。
