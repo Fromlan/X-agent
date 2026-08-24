@@ -10,6 +10,15 @@
 
 ### 改进
 
+- **UI 主次分明与简洁直观改版（v1.1 设计语言落地）**：原"全窗单 Surface + 1px Board 切边 + 页面内 0 阴影"的扁平网格感，改为 elevation 驱动的层级式布局——Composer / 输入区作为整窗唯一主元素（`--bg-card-elev` + `--shadow-strong` + `--radius-floating` 双层阴影 + 16-20px 圆角 + 上下 16-20px 呼吸区），三栏壳层（TopBar / Sidebar / RightPanel）降为低调 chrome（统一 `--bg-chrome` 底）。
+  - **新增 5 个 elevation token + 2 个 spacing token**（`apps/desktop/src/styles/themes.css` + `app.css`）：`--bg-card-elev` / `--bg-chrome` / `--shadow-soft` / `--shadow-strong` / `--shadow-modal` / `--radius-floating` / `--space-section` / `--space-chrome`。`--shadow-sm/md/lg` 保留为 alias 指向新 token，向后兼容。10 个主题族（default / nord / tokyo / paper / contrast × dark/light）全部补齐；`contrast` 强制 `none` 保持硬边，`paper` 走最轻一档。
+  - **TopBar 浮起条**：高度 48→52px，背景 `--bg-app` → `--bg-chrome`，新增 `useScrollElevated` hook 监听 chat transcript 滚动状态，滚动时挂 `--shadow-soft`（默认 0 阴影避免常驻压感）；"打开项目"按钮提为 `btn-cta`（最高强调），其余按钮保留 ghost。
+  - **Sidebar 可折叠**：`prefs.sidebarCollapsed: boolean`（默认 false）持久化；新增 `useNarrowWindow` hook，窗口 ≤960px 时自动展开避免无入口。折叠态 56px 宽，仅显示项目首字母圆形 avatar + count badge（点击切到该项目最近会话）；展开态 group 间距从 4px 拉大到 12px，呼吸感更强；背景 `--bg-sidebar` → `--bg-chrome`。
+  - **RightPanel 垂直 nav + Context hero 提级**：水平 5 tabs → 左侧 56px 垂直 nav（`--accent-blue` 左侧 2px 高亮条 + 选中态 `--bg-card` 底），删除"工具面板"标题与头部；Context tab 的 `rp-context-hero` 单独提为主卡（`--bg-card-elev` + `--radius-floating` + `--shadow-soft`），其余 sections 退到普通 card 底，section 间 1px 横线删除改 4px gap。
+  - **Composer 升级为唯一主元素**：圆角 12px → 16-18px，背景 `--bg-input` → `--bg-card-elev`，去掉 1px color-mix mode 边线（阴影 + 提色已够强），默认 `--shadow-soft` / focus-within & streaming 升级到 `--shadow-strong`，外层 padding 12/14/14 → 18/14/16。Mode pill active 态加 1.5px inset 模式色边 + 字重 500，与 Composer 同步主次。
+  - **Chat transcript 间距 + 工具卡提级**：行间距 16px → 20px（ROW_GAP_PX + .message-stream-inner gap）；展开态 tool card / tool batch 加 `--shadow-soft` + `--bg-card` 底，折叠态 pill 模式保留原视觉不抢戏。
+  - **设置弹窗几何同步**：`.modal-panel` 圆角 12px → 16-18px，阴影 `--shadow-lg` → `--shadow-modal`，与主卡保持一致"主焦点"语义。
+  - **DESIGN.md 改稿**：§一.4 扁平分层 → elevation 分层；§五 0 阴影 → token 控制；§六 布局壳层 ASCII 图重画；§九 加 §九.7 主元素唯一性反模式；§一附主题族表更新。
 - **仓库健康流程落地（社区化与流程自动化）**：补齐开源项目健康流程所需文件——`LICENSE` (MIT)、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md` (Contributor Covenant v2.1)、`SECURITY.md`、`MAINTENANCE.md`；`.github/CODEOWNERS` 锁定路径 owner；`.github/dependabot.yml` 启用 npm + GitHub Actions 周更；`.github/ISSUE_TEMPLATE/` 三个 YAML（bug / feature / question）+ `.github/PULL_REQUEST_TEMPLATE.md` + `.github/labels.yml`（19 个标签）；commit-msg 钩 `scripts/commit-msg-lint.mjs`（17 个 case 配套测试）锁 Conventional Commits 格式；CI `actionlint` job 校验 workflow YAML；`prepare-release.mjs` 加 tag 漂移硬闸（package.json > 最新 tag 时拒绝；支持 `--force`）；`release.yml` checkout `fetch-depth: 0`；根 / `apps/desktop` / `packages/godot-pi` 的 `package.json` 补 `license` / `author` / `repository` / `bugs` / `engines`；README 中英加「反馈与贡献」小节，CLAUDE / ROADMAP 加对 `MAINTENANCE.md` 的引用。
 
 ### 移除
