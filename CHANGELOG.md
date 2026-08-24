@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+### 改进
+
+- **可切换的客户端 logo**：在「设置 → 通用 → 品牌」新增 logo 选择器，8 套内置预设（霓虹赛博 / 熔岩灼烧 / 电浆雷霆 / 全息彩虹 / 玫瑰金金属 / 像素 8-bit / 故障 Glitch / 宇宙星云）+ 自定义上传（PNG / JPG，64–4096 px，≤ 4 MB）。切换即时生效：favicon、BrowserWindow 标题栏 / 任务栏图标。splash 启动屏与打包后的 .exe / NSIS 安装包图标不在运行时替换范围内（需要 `npm run dist` 重新打包）；自定义 logo 存到 `~/.pi/agent/x-agent-logos/<uuid>.png`，由新注册的 `x-agent-logos://` 自定义协议对外提供；删除自定义且其是当前活跃项时自动回退到默认。
+
 ## 0.5.4
 
 ### 改进

@@ -6055,3 +6055,182 @@ body.is-resizing-column * {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* ===== Logo picker (设置 → 通用 → 品牌) ===== */
+.logo-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.logo-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.logo-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.logo-tile:hover:not(:disabled) {
+  border-color: var(--border-strong, var(--border-primary));
+  background: var(--bg-list-hover);
+}
+
+.logo-tile.is-active {
+  border-color: var(--accent-blue, #4f8cff);
+  background: var(--surface-chip);
+  color: var(--text-primary);
+}
+
+.logo-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.logo-tile img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+.logo-tile-label {
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logo-tile-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-blue, #4f8cff);
+  color: var(--text-on-accent, #fff);
+}
+
+.logo-customs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-primary);
+}
+
+.logo-customs-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.logo-customs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.logo-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 6px);
+  background: transparent;
+}
+
+.logo-custom-row.is-active {
+  border-color: var(--accent-blue, #4f8cff);
+  background: var(--surface-chip);
+}
+
+.logo-custom-thumb-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.logo-custom-thumb-btn:hover:not(:disabled) {
+  background: var(--bg-list-hover);
+}
+
+.logo-custom-thumb-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.logo-custom-thumb-btn img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  border-radius: 4px;
+}
+
+.logo-custom-label {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.logo-active-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .logo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

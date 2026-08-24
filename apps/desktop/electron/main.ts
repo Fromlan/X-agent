@@ -2,12 +2,15 @@
  * Thin entry: Electron + splash only.
  * Heavy agent/IPC loads via dynamic import after splash is visible.
  */
-import { app, BrowserWindow, Menu, shell } from "electron";
+import { app, BrowserWindow, Menu, net, protocol, shell } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateExternalHttpUrl } from "./agent/external-url";
 import { invalidateAuthCache } from "./agent/auth-check";
+import { LOGO_PROTOCOL, customFilePath } from "./agent/agent-logos";
+import { getCachedPrefs } from "./agent/prefs";
+import { dbgWarn } from "../shared/debug-log";
 
 const BG = "#141414";
 const SPLASH_TIMEOUT_MS = 30_000;
@@ -44,6 +47,24 @@ function hasDebugEnvironment(): boolean {
 // 未打包运行时默认开启，打包后的安装版仅在 --x-agent-debug 或 X_AGENT_DEBUG 下开启。
 let debugMode =
   !app.isPackaged || hasDebugArgument(process.argv) || hasDebugEnvironment();
+
+/**
+ * 注册 `x-agent-logos://` 自定义协议，让 renderer 可以请求
+ * `~/.pi/agent/x-agent-logos/<uuid>.png` 而不走 `file://`（CSP 友好）。
+ * 必须在 app.whenReady 之前声明 privileges，handle() 必须在 ready 之后。
+ */
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: LOGO_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: false,
+      stream: true,
+    },
+  },
+]);
 
 /**
  * 打开当前窗口的独立 DevTools 窗口。
@@ -291,6 +312,22 @@ async function bootApp(): Promise<void> {
     });
   }
   createMain();
+  // 启动期一次性同步预热的 prefs cache 已就绪 (bootRuntime 入口),把保存的
+  // logo 应用到主窗口 (title bar / taskbar) 并推送给 renderer。renderer 也会
+  // 在 useLogo() 挂载时再读 prefs 一次,这里是双保险。
+  try {
+    const active = getCachedPrefs().clientLogoId;
+    runtime.notifyLogoChange(active, mainWindow);
+  } catch (err) {
+    dbgWarn("boot", "apply startup logo failed", err instanceof Error ? err.message : String(err));
+  }
+}
+
+// Windows taskbar 用 AUMID 识别应用并缓存图标。设置稳定 AUMID 之后,
+// 运行时 BrowserWindow.setIcon 才会被 taskbar 接受,否则系统会一直用
+// 打包时的 .ico (electron-builder 烘焙的那张)。
+if (process.platform === "win32") {
+  app.setAppUserModelId("works.earendil.x-agent");
 }
 
 app.whenReady().then(() => {
@@ -312,6 +349,27 @@ app.whenReady().then(() => {
   });
 
   Menu.setApplicationMenu(null);
+  // 自定义协议：把 x-agent-logos://custom/<uuid> 映射到本地 PNG。
+  // 仅解析 `custom/<uuid>` 形态；任何其它路径返回 404。
+  protocol.handle(LOGO_PROTOCOL, async (request) => {
+    try {
+      const url = new URL(request.url);
+      // host 期望为 `custom`；pathname 形如 `/<uuid>`
+      if (url.host !== "custom") {
+        return new Response("not found", { status: 404 });
+      }
+      const uuid = url.pathname.replace(/^\/+/, "");
+      const file = customFilePath(`custom:${uuid}`);
+      if (!file || !existsSync(file)) {
+        return new Response("not found", { status: 404 });
+      }
+      // net.fetch 支持 file:// 与 path，传给 net.fetch 让 Electron 处理缓存/Range。
+      return net.fetch(pathToFileURL(file).href);
+    } catch {
+      return new Response("bad request", { status: 400 });
+    }
+  });
+
   createSplash();
   setImmediate(() => void bootApp());
 
