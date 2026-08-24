@@ -7,8 +7,8 @@
 1. **深色优先**：`:root` 为深色回退；`body[data-theme="{themeId}-{colorMode}"]` 覆盖完整 token。
 2. **近单色**：默认灰阶；彩度仅用于已登记的语义信号（focus、running/warning、status、diff）。实验主题族可提高语义色饱和度。
 3. **Token 驱动**：颜色 / 圆角 / 阴影走 CSS 变量；改主题只改 token（见 `apps/desktop/src/styles/themes.css`）。
-4. **扁平分层**：全窗 Surface 底 + 1px Board 分割；抬起控件用 Card，不用背景色块切页。
-5. **零阴影**：深度靠边框与 Surface/Card 差；仅 modal 浮层可用 gated shadow。实验包可启用更强的 `--shadow-`*。
+4. **Elevation 分层（v1.1）**：以 surface / card / card-elevated / floating 四级拉开主次——全窗 Surface 底是 chrome（TopBar / Sidebar / RightPanel 外壳），Card 承载常规内容，Card-elevated + 阴影是**唯一主元素**（Composer / 右栏 Context hero），不再用"靠 1px 边线切一切"的网格式表达。
+5. **页面内温和阴影**：通过 `--shadow-soft` / `--shadow-strong` / `--shadow-modal` token 控制强度，≤ 200ms 缓动；`contrast` 主题族强制为 `none` 保持硬边。
 6. **Pill 优先**：按钮、chip、单行 input、tab 用 `9999px`；容器 12px；多行控件 8px。主题族可覆盖 `--radius-`*。
 7. **字重克制**：UI 仅 400 / 500；不用 600+。
 8. **图标**：优先 `lucide-react`；状态用色点 / 语义色，不用 emoji。
@@ -22,13 +22,13 @@
 偏好字段：`ClientPrefs.themeId` + `ClientPrefs.colorMode`（旧字段 `theme: light|dark` 读入时映射为 `default` + 对应模式；旧 `themeId: cindy` 映射为 `default`）。
 
 
-| themeId    | 说明           | 样式令牌倾向                         |
-| ---------- | ------------ | ------------------------------ |
-| `default`  | **默认**；近单色扁平 | 半径 8/12；pill 9999；页面内无阴影       |
-| `nord`     | 冷灰蓝极光        | 半径 10/14；modal 阴影略强            |
-| `tokyo`    | 深蓝夜 + 彩强调    | 半径同默认；focus 光晕更强               |
-| `paper`    | 暖纸 / 墨水      | 半径 10/14；可有极轻 `--shadow-sm/md` |
-| `contrast` | 高对比选型        | 半径 4/8；pill 弱化为 8；Board 更硬     |
+| themeId    | 说明             | 样式令牌倾向                                        |
+| ---------- | -------------- | --------------------------------------------- |
+| `default`  | **默认**；近单色 + 主次分明 | 半径 8/12/16；pill 9999；card-elev + 双层阴影；`--radius-floating: 16px` |
+| `nord`     | 冷灰蓝极光          | 半径 10/14/16；阴影同 default；card-elev 跟随冷色调           |
+| `tokyo`    | 深蓝夜 + 彩强调      | 半径同 default；focus 光晕更强；`--radius-floating: 18px`    |
+| `paper`    | 暖纸 / 墨水        | 半径 10/14/14；**阴影最轻**（`/ 5-6%`）；card-elev 暖色         |
+| `contrast` | 高对比选型          | 半径 4/8/**6**；**所有阴影 `none`**；pill 弱化为 8；Board 更硬       |
 
 
 可变样式令牌：`--radius-control` / `--radius-container` / `--radius-pill`、`--shadow-sm` / `--shadow-md` / `--shadow-lg`、全部颜色 token。字体栈不变。
@@ -45,18 +45,20 @@
 
 
 
-### 2.1 三层 Surface
+### 2.1 四层 Surface（v1.1 Elevation 分层）
 
 
-| 角色          | Light     | Dark      | Token 映射                                                          |
-| ----------- | --------- | --------- | ----------------------------------------------------------------- |
-| **Surface** | `#f8f8f6` | `#141414` | `--bg-app` / `--bg-sidebar` / `--bg-main`                         |
-| **Card**    | `#ffffff` | `#2c2c2a` | `--bg-header` / `--bg-input` / `--bg-modal` / composer            |
-| **Board**   | `#d7d7d4` | `#3c3c3a` | `--border-primary` / `--border-input`                             |
-| **Chip**    | `#e5e5e5` | `#3c3c3a` | `--bg-list-hover` / `--surface-chip`；选中用略抬升的 `--bg-list-selected` |
+| 角色              | Light     | Dark      | Token 映射                                                          | 用途                              |
+| --------------- | --------- | --------- | ----------------------------------------------------------------- | ------------------------------- |
+| **Surface**     | `#f8f8f6` | `#141414` | `--bg-app` / `--bg-sidebar` / `--bg-main`                         | 全窗底；chrome 外壳                 |
+| **Card**        | `#ffffff` | `#2c2c2a` | `--bg-header` / `--bg-input` / `--bg-modal`                       | 常规内容（气泡、tool card、settings 弹窗） |
+| **Card-elev**   | `#fbfbf7` | `#33332f` | `--bg-card-elev`                                                  | **主元素**底（Composer / 右栏 Context hero） |
+| **Chrome**      | `#ededeb` | `#1a1a1a` | `--bg-chrome`                                                     | TopBar / Sidebar / RightPanel 外壳   |
+| **Board**       | `#d7d7d4` | `#3c3c3a` | `--border-primary` / `--border-input`                             | 1px 分隔边                        |
+| **Chip**        | `#e5e5e5` | `#3c3c3a` | `--bg-list-hover` / `--surface-chip`；选中用略抬升的 `--bg-list-selected` | 次要控件底                          |
 
 
-全窗应用结构用单一 Surface，区域边界只用 1px Board，不用背景色差切页。其他主题族保持同一三层角色，仅换色值。
+主元素 = **Card-elev + 阴影 + 圆角增大**，唯一性由 token + 单一焦点区保证，不再"靠 1px 边线切一切"。其他主题族保持同一四层角色，仅换色值。
 
 ### 2.2 文本
 
@@ -172,17 +174,20 @@
 
 
 
-## 四、圆角（Cindy 默认三档；主题可覆盖）
+## 四、圆角（Cindy 默认四档；主题可覆盖）
 
 
-| Token                | Cindy  | 用途                            |
-| -------------------- | ------ | ----------------------------- |
-| `--radius-control`   | 8px    | textarea、气泡、菜单行高亮             |
-| `--radius-container` | 12px   | 卡片、代码块、模态、工具卡                 |
-| `--radius-pill`      | 9999px | 按钮、chip、单行 input、tab、nav cell |
+| Token                | Cindy  | 用途                                          |
+| -------------------- | ------ | ------------------------------------------- |
+| `--radius-control`   | 8px    | textarea、气泡、菜单行高亮                           |
+| `--radius-container` | 12px   | 卡片、代码块、模态、工具卡                              |
+| `--radius-floating`  | 16px   | **主元素**（Composer / 右栏 Context hero）        |
+| `--radius-pill`      | 9999px | 按钮、chip、单行 input、tab、nav cell             |
 
 
-兼容别名：`--radius-sm` / `--radius-md` → control；`--radius-lg` → control（气泡）；`--radius-xl` / `--radius-2xl` → container。
+兼容别名：`--radius-sm` / `--radius-md` → control；`--radius-lg` → control（气泡）；`--radius-xl` / `--radius-2xl` → container；`--radius-card` → container（v1.1 alias）。
+
+`contrast` 主题族：`--radius-floating: 6px`（高对比，pill 弱化）。
 
 ---
 
@@ -191,13 +196,17 @@
 ## 五、阴影
 
 
-| Token                         | Cindy 用途                  |
-| ----------------------------- | ------------------------- |
-| `--shadow-sm` / `--shadow-md` | `none`（页面内禁止）             |
-| `--shadow-lg`                 | 仅 settings / confirm 模态浮层 |
+| Token             | 用途 / 强度                                   |
+| ----------------- | ----------------------------------------- |
+| `--shadow-soft`   | 页面内 hover / focus 软阴影；双层 `0 1px 2px / 8%, 0 2px 8px / 6%` |
+| `--shadow-strong` | floating 主元素阴影；双层 `0 1px 2px / 8%, 0 8px 24px / 12%` |
+| `--shadow-modal`  | settings / confirm 模态浮层；`0 1px 2px / 12%, 0 12px 36px / 18%` |
+| `--shadow-sm`     | 旧 alias → `--shadow-soft`（保留兼容）           |
+| `--shadow-md`     | 旧 alias → `--shadow-strong`（保留兼容）         |
+| `--shadow-lg`     | 旧 alias → `--shadow-modal`（保留兼容）          |
 
 
-Focus 光晕用 `--focus-ring-soft`，不算装饰阴影。实验主题可调整 `--shadow-*` 数值。
+页面内阴影 ≤ 200ms 缓动，强度由 token 控制；`contrast` 主题族强制 `none` 保持硬边。Focus 光晕用 `--focus-ring-soft`，不算装饰阴影。
 
 ---
 
@@ -206,16 +215,33 @@ Focus 光晕用 `--focus-ring-soft`，不算装饰阴影。实验主题可调整
 ## 六、布局壳层
 
 ```
-TopBar → [banners] → main-row
-  ├── Sidebar（会话列表，~260px）
-  ├── Chat（模式 pill：Agent | 调研 | Plan | 目标；Shift+Tab 循环）
-  └── RightPanel（可选，~360px；默认折叠；上下文 / 计划 / 工具 / 文件 / Godot 五页签）
+┌─ TopBar（sticky 浮起条；52px；默认 0 阴影，滚动挂载 --shadow-soft）──┐
+│  [打开项目] [新会话]    <cwd 路径>           [设置] [更新] [右栏] [主题] │
+└────────────────────────────────────────────────────────────┘
+↓
+[ banners · update · retract / retract confirm ]
+↓
+┌─ Sidebar ─────┐  ┌─ Chat ──────────────────┐  ┌─ RightPanel ───┐
+│  ~260px       │  │  transcript + bubbles    │  │  56px 垂直 nav  │
+│  (可折叠到 56) │  │                          │  │  ~360px body    │
+│  视觉降权：     │  │                          │  │                 │
+│  --bg-chrome  │  │                          │  │                 │
+│               │  │  ┌─ Composer ──────────┐ │  │                 │
+│               │  │  │ 主元素: card-elev     │ │  │                 │
+│               │  │  │ + shadow-strong      │ │  │                 │
+│               │  │  │ + radius-floating    │ │  │                 │
+│               │  │  └────────────────────┘ │  │                 │
+└───────────────┘  └──────────────────────────┘  └─────────────────┘
 ```
 
-- 区域分割：`1px solid var(--border-primary)`。
-- Settings：仍为居中模态（非全屏路由）；左侧 nav 用 pill 选中态（通用 / 供应商 / 用量 / 工具 / 插件 / Godot）。
-- 右栏：`ClientPrefs.rightPanelOpen`；窄窗（≤960px）隐藏右栏。
-  - **上下文**：占用进度、组成拆解、本轮 / 会话用量；手动压缩
+- **TopBar**：sticky 浮起条；背景 `--bg-chrome`；滚动 chat transcript 时挂 `--shadow-soft`；52px 高。
+- **Sidebar**：默认 260px；`prefs.sidebarCollapsed: boolean`（默认 false）切换 56px 折叠态；视觉降权为 `--bg-chrome`；group 间距 12px；session card hover 浮起。窄窗（≤960px）强制展开。
+- **ChatPanel**：transcript + composer 垂直布局；transcript 与 composer 之间留 `--space-section`（20px）呼吸。
+- **Composer**：**唯一主元素**——`--bg-card-elev` + `--shadow-soft`（默认）→ `--shadow-strong`（focus-within） + `--radius-floating`（16-18px） + 上下 16-20px 呼吸；模式色边仅在 streaming 状态加挂。
+- **RightPanel**：head 简化为关闭按钮；56px 左侧垂直 nav（图标 + tooltip 文字），选中态加 2px mode 色条 + `--bg-card` 底；Context tab 的 hero 区单独提为 `--bg-card-elev` + `--radius-floating` + `--shadow-soft` 主卡；其余 sections 退到 `--bg-card` 底，section 间 12px 间距不再用 1px 横线。
+- **Settings**：居中模态（非全屏路由）；几何与主壳层一致（`--radius-floating`）；左侧 nav 用 pill 选中态（通用 / 供应商 / 用量 / 工具 / 插件 / Godot）。
+- **右栏**：`ClientPrefs.rightPanelOpen`；窄窗（≤960px）隐藏右栏。
+  - **上下文**：占用进度（hero 主卡）、组成拆解、本轮 / 会话用量；手动压缩
   - **计划**：Markdown 编辑、todos 勾选、保存到项目、执行计划
   - **工具**：已启用工具分组与调用详情
   - **文件**：项目文件树、预览、右键（加入对话 / 资源管理器 / 复制路径）
@@ -277,8 +303,9 @@ TopBar → [banners] → main-row
 
 1. 组件内硬编码颜色 → 用 token。
 2. 用 emoji 当 UI 图标。
-3. 页面内 `box-shadow`（除 modal / focus ring；实验主题经 token 启用的阴影除外）。
+3. 页面内 `box-shadow` 必须走 `--shadow-soft` / `--shadow-strong` / `--shadow-modal` token；硬编码 shadow 值或 `0 1px 1px` 这类临时值都属反模式（`contrast` 主题族强制 `none`）。
 4. 任意硬编码圆角（须用 `--radius-*`）或蓝实心主按钮铺满工具栏。
 5. 字重 ≥600。
 6. 渐变背景装饰。
+7. 多个元素同时抢"主元素"视觉焦点——主元素只有一个：Composer + 当前的 RightPanel hero。其它区域保持低调 chrome。
 
