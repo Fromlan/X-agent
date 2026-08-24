@@ -10,10 +10,10 @@ conventions, see:
 
 - [`CLAUDE.md`](CLAUDE.md) — engineering conventions (Chinese)
 - [`AGENTS.md`](AGENTS.md) — Agent entry-point guidance
-- [`CONTEXT.md`](CONTEXT.md) — domain glossary and design notes
-- [`DESIGN.md`](DESIGN.md) — UI/design tokens
+- [`docs/context.md`](docs/context.md) — domain glossary and design notes
+- [`docs/design.md`](docs/design.md) — UI/design tokens
 
-For the maintenance cadence, see [`MAINTENANCE.md`](MAINTENANCE.md).
+For the maintenance cadence, see [`docs/maintenance.md`](docs/maintenance.md).
 
 ## Quick Checklist
 
@@ -93,7 +93,7 @@ chars on the first line.
 A pre-commit hook (`scripts/commit-author-guard.sh`) and a commit-msg hook
 (`scripts/commit-msg-lint.mjs`) enforce author identity and message format
 locally. To install them, run the setup in
-[`MAINTENANCE.md`](MAINTENANCE.md).
+[`docs/maintenance.md`](docs/maintenance.md).
 
 ## Pull Requests
 
@@ -143,7 +143,7 @@ security-sensitive reports.
 
 ## Release Process
 
-See [`MAINTENANCE.md`](MAINTENANCE.md#release-cadence). The short version:
+See [`docs/maintenance.md`](docs/maintenance.md#release-cadence). The short version:
 
 1. Update `## Unreleased` in `CHANGELOG.md`
 2. `npm run release:prepare -- 0.6.0` (validates the changelog, bumps

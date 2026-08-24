@@ -123,7 +123,7 @@ This is a coding agent with substantial local power—tighten as needed:
 
 The desktop UI is currently **Chinese-only**. This English README documents the product; an in-app locale switch is not shipped yet. macOS/Linux installers are not shipped yet (Windows-first).
 
-See [`CHANGELOG.md`](CHANGELOG.md) for release notes, [`CLAUDE.md`](CLAUDE.md) for development guidance, and [`CONTEXT.md`](CONTEXT.md) for Plan / Goal design notes.
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes, [`CLAUDE.md`](CLAUDE.md) for development guidance, and [`docs/context.md`](docs/context.md) for Plan / Goal design notes.
 
 ## Feedback & Contributing
 
@@ -135,7 +135,7 @@ See [`CHANGELOG.md`](CHANGELOG.md) for release notes, [`CLAUDE.md`](CLAUDE.md) f
 - **Contributing**: read [`CONTRIBUTING.md`](CONTRIBUTING.md); use
   Conventional Commits and the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
 - **Maintenance cadence** (releases, weekly triage, Dependabot): see
-  [`MAINTENANCE.md`](MAINTENANCE.md).
+  [`docs/maintenance.md`](docs/maintenance.md).
 - **Code of conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 - **License**: [`LICENSE`](LICENSE) (MIT).
 

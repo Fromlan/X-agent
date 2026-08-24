@@ -120,14 +120,14 @@
 | Packages | `pi install` 可安装任意来源包，注意供应链风险 |
 | 会话 | 仅存储在 `~/.pi/agent/x-agent/sessions/`，与 Pi CLI 会话隔离；Goal journal 在 `~/.pi/agent/x-agent/goals/` |
 
-变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。Plan / Goal 设计见 [`CONTEXT.md`](CONTEXT.md)。
+变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。开发与贡献说明见 [`CLAUDE.md`](CLAUDE.md)。Plan / Goal 设计见 [`docs/context.md`](docs/context.md)。
 
 ## 反馈与贡献
 
 - **Bug / 功能请求**：在 [Issues](../../issues) 用模板（Bug report / Feature request / Question）发起。提交前先看 [`CHANGELOG.md`](CHANGELOG.md) 与 [已有 Issue](../../issues)。
 - **安全漏洞**：见 [`SECURITY.md`](SECURITY.md)，**不要**在公开 Issue 里贴复现细节。
 - **参与开发**：先读 [`CONTRIBUTING.md`](CONTRIBUTING.md)；commit 用 Conventional Commits，PR 用 `.github/PULL_REQUEST_TEMPLATE.md`。
-- **维护节奏**（发版、Issue 周维护、Dependabot）：见 [`MAINTENANCE.md`](MAINTENANCE.md)。
+- **维护节奏**（发版、Issue 周维护、Dependabot）：见 [`docs/maintenance.md`](docs/maintenance.md)。
 - **行为准则**：[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
 - **协议**：[`LICENSE`](LICENSE) (MIT)。
 

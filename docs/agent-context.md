@@ -2,7 +2,7 @@
 
 本文说明 X-agent 里 **模型实际看到的上下文** 如何组织与生效。受众：维护本仓库的开发者、排查「模型到底知道什么」的人。
 
-相关文档：[`CLAUDE.md`](CLAUDE.md)（项目指引）、[`Pi插件指导文档.md`](Pi插件指导文档.md)（插件类型）、[Pi SDK](https://pi.dev/docs/latest/sdk)。
+相关文档：[`CLAUDE.md`](CLAUDE.md)（项目指引）、[`pi-plugin-guide.md`](pi-plugin-guide.md)（插件类型）、[Pi SDK](https://pi.dev/docs/latest/sdk)。
 
 ---
 
@@ -173,7 +173,7 @@ session.setActiveToolsByName(prefs.tools);
 - [`plugin-host.ts`](apps/desktop/electron/agent/plugin-host.ts)：在全局 `~/.pi/agent/{prompts,skills,extensions,themes}` 与项目 `cwd/.pi/...` 做 CRUD；写入的是 **Pi 会扫描的文件树**，不是另一套注入 API。
 - 插件变更后：IPC → `SessionHost.reloadResources()` → `session.reload()`。
 - [`package-manager.ts`](apps/desktop/electron/agent/package-manager.ts)：封装 `pi install` / `pi uninstall`，并在 `x-agent-packages.json` 记账；**真正加载**仍是 Pi loader。
-- 类型语义见上表；主题不进 LLM。细节见 [`Pi插件指导文档.md`](Pi插件指导文档.md)。
+- 类型语义见上表；主题不进 LLM。细节见 [`pi-plugin-guide.md`](pi-plugin-guide.md)。
 
 ---
 

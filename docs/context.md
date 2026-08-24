@@ -16,4 +16,4 @@
 | **计划会话** | 右栏计划 CRUD、脏保存、执行计划、自动打开 Plan 页 | `usePlanSession.ts`、`PlanTab.tsx` |
 | **应用更新 UX** | 打包版检查 / 下载 / 安装 / 横幅 dismiss | `useAppUpdate.ts`；主进程 `auto-updater.ts` + `update-feed.ts`；IPC `register-update-ipc.ts` |
 
-相关：[`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)（模型上下文如何组装）、[`CLAUDE.md`](CLAUDE.md)（仓库指引）。项目内不再保留 `docs/adr/` 子目录。
+相关：[`agent-context.md`](agent-context.md)（模型上下文如何组装）、[`CLAUDE.md`](CLAUDE.md)（仓库指引）。项目内不再保留 `docs/adr/` 子目录。

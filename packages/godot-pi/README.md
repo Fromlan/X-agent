@@ -36,7 +36,7 @@ pi install /绝对路径/X-agent/packages/godot-pi
 | `x-tdd` | red-green-refactor |
 | `x-change-brief` | 对话收成本地改动简报 |
 | `x-handoff` | 会话交接文档 |
-| `x-glossary` | 维护 `CONTEXT.md` 术语 |
+| `x-glossary` | 维护 `../../docs/context.md` 术语 |
 | `x-review` | 单代理 Standards / Spec 审查 |
 | `x-safe-edit` | 小步可逆编辑 + 验证 |
 

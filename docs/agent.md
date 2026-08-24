@@ -1,10 +1,10 @@
-# AGENT.md
+# agent.md
 
-> 通用编码 Agent 在本仓库工作时的入口文档。Pi 的 `DefaultResourceLoader` 会将本文件与 `CONTEXT.md`、`CLAUDE.md` 一起作为 `<project_context>` 注入到系统提示（**全文**，非索引；见 `AGENT_CONTEXT.md` 第 3 节）。
+> 通用编码 Agent 在本仓库工作时的入口文档。Pi 的 `DefaultResourceLoader` 会将本文件与 `context.md`、`CLAUDE.md` 一起作为 `<project_context>` 注入到系统提示（**全文**，非索引；见 `agent-context.md` 第 3 节）。
 >
-> 本文不重复 `CLAUDE.md`（开发者向）和 `AGENT_CONTEXT.md`（模型上下文原理）的细节，只点出 Agent 工作中**反复需要用到**的事实。
+> 本文不重复 `CLAUDE.md`（开发者向）和 `agent-context.md`（模型上下文原理）的细节，只点出 Agent 工作中**反复需要用到**的事实。
 >
-> 维护原则：对外约定请写在本文件、`CONTEXT.md` 或 `CLAUDE.md`；`docs/` 下的 ADR / 调研 / code-review 草稿不入 git、不参与协作，清理后下次会话可重建。
+> 维护原则：对外约定请写在本文件、`context.md` 或 `CLAUDE.md`；`docs/` 下的 ADR / 调研 / code-review 草稿不入 git、不参与协作，清理后下次会话可重建。
 
 ---
 
@@ -37,7 +37,7 @@
 
 - **Electron** ^43 + **electron-vite** ^5 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
 - **React** 19 + **TypeScript** ^7.0 + **Vite** ^7；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
-- **@earendil-works/pi-coding-agent** ^0.83（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `AGENT_CONTEXT.md`）
+- **@earendil-works/pi-coding-agent** ^0.83（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
 - **Node.js 22+**（开发时需要；运行时 Electron 自带）
 - Windows + Godot 4.x 为当前发布平台；macOS / Linux 不在 CI 矩阵内
@@ -165,7 +165,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 
 ## 十、UI 约束（Cindy 设计语言）
 
-完整规范见 `DESIGN.md`。要点：
+完整规范见 `design.md`。要点：
 
 - 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 覆盖 token；主题族：`default`（默认）/`nord` / `tokyo` / `paper` / `contrast`
 - **三层 Surface**：Surface / Card / Board + 1px 边；页面内**无阴影**（modal 除外）
@@ -189,7 +189,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 
 | 现象 | 去哪里看 |
 |---|---|
-| "模型怎么会知道 / 不知道 X？" | `AGENT_CONTEXT.md` 第 7 节（按层排查：AGENTS.md → 技能 → 工具 → 会话 → Packages） |
+| "模型怎么会知道 / 不知道 X？" | `agent-context.md` 第 7 节（按层排查：AGENTS.md → 技能 → 工具 → 会话 → Packages） |
 | Plan / Ask bash 被拒 | `session-mode/bash-readonly.ts`；按换行切段；拒 `$()` / 反引号 / `{}`；`godot` / `dotnet` 不视为只读 |
 | 撤回后文件没还原 | `shadow-checkpoints.ts` 是否生效；无 Git 时 `turn-file-tracker.ts`；检查时序绑定 |
 | 供应商密钥报错 | `provider-store` 同步；DeepSeek 代理看 `deepseekProxyModelExtras`；safeStorage probe 横幅 |
@@ -202,14 +202,14 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 | 想了解… | 看哪里 |
 |---|---|
 | 给开发者的仓库指引 | `CLAUDE.md` |
-| 模型实际看到的上下文如何组装 | `AGENT_CONTEXT.md` |
-| 领域词表 / 模块边界 | `CONTEXT.md` |
-| 设计系统（颜色 / 圆角 / 字体 / 动效） | `DESIGN.md` |
+| 模型实际看到的上下文如何组装 | `agent-context.md` |
+| 领域词表 / 模块边界 | `context.md` |
+| 设计系统（颜色 / 圆角 / 字体 / 动效） | `design.md` |
 | 用户面功能与使用流程 | `README.md`（中文） / `README.en.md`（英文） |
 | 变更与升级说明 | `CHANGELOG.md`（发版前需整理 `Unreleased`） |
 | Godot 插件协议与工具表 | `packages/godot-editor-rpc/README.md` |
 | 原生 Pi Package（Core + Godot 4.7 文档） | `packages/godot-pi/README.md` |
-| Pi 插件类型 | `Pi插件指导文档.md` |
+| Pi 插件类型 | `pi-plugin-guide.md` |
 
 ## 十四、编码风格
 
@@ -222,4 +222,4 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 
 ---
 
-最后更新：与 `apps/desktop/package.json` 版本同步维护；新增对外约定（模式 / 工具 / 持久化 / 安全）请同步更新本文、`CONTEXT.md` 与 `CHANGELOG.md`。
+最后更新：与 `apps/desktop/package.json` 版本同步维护；新增对外约定（模式 / 工具 / 持久化 / 安全）请同步更新本文、`context.md` 与 `CHANGELOG.md`。

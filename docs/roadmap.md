@@ -4,8 +4,8 @@
 
 > 来源：上一轮项目整体审查识别出的 20 项优化方向；本文件在其基础上做了依赖梳理与粒度拆分。
 > 维护：每个里程碑完成后更新对应行的「完成度」与「最终交付」；新增方向请直接补到对应 Phase 末或下一 Phase。
-> 关联：[`CONTEXT.md`](CONTEXT.md)（领域词表）/ [`CLAUDE.md`](CLAUDE.md)（工程约定）/ [`DESIGN.md`](DESIGN.md)（设计 token）/ [`AGENT.md`](AGENT.md)（Agent 协作约定）。
-> 维护节奏（周 Issue 处理 / Dependabot / 月度回顾 / 发版）见 [`MAINTENANCE.md`](MAINTENANCE.md)。
+> 关联：[`context.md`](context.md)（领域词表）/ [`CLAUDE.md`](CLAUDE.md)（工程约定）/ [`design.md`](design.md)（设计 token）/ [`agent.md`](agent.md)（Agent 协作约定）。
+> 维护节奏（周 Issue 处理 / Dependabot / 月度回顾 / 发版）见 [`maintenance.md`](maintenance.md)。
 
 
 
@@ -123,7 +123,7 @@ flowchart LR
   - `apps/desktop/src/locales/zh-CN.json` / `en.json`：首批覆盖 ChatPanel / Sidebar / TopBar / SettingsPanel / ReadyChecklist / ConfirmDialog
   - `apps/desktop/src/lib/i18n.ts`：初始化；首跑用 `navigator.language`，回退 `zh-CN`
   - 设置 → 通用加「语言」下拉；偏好 `ClientPrefs.locale` 持久化
-  - `DESIGN.md` 加一节「i18n 文案约定」：占位、复数、时间格式
+  - `design.md` 加一节「i18n 文案约定」：占位、复数、时间格式
 - **验收**：
   - 切换语言后整个 UI 即时刷新（不需重启）
   - 设置中可手动覆盖
@@ -363,8 +363,8 @@ flowchart LR
 - **回归**：跑全量 Vitest + Playwright E2E + 真实模型冒烟（`smoke-session.ts`）
 - **契约**：CHANGELOG.md 已整理；git tag 与 `apps/desktop/package.json` 一致
 - **文档**：
-  - 同步 `CLAUDE.md` / `CONTEXT.md` 中模块路径与发版约定
-  - 同步 `DESIGN.md` 中新增的 token / 组件（如 1.3 i18n）
+  - 同步 `CLAUDE.md` / `context.md` 中模块路径与发版约定
+  - 同步 `design.md` 中新增的 token / 组件（如 1.3 i18n）
   - `README.md` / `README.en.md` 中能力列表对齐（双语文案）
 - **发布**：`npm run release:prepare -- x.y.z` + tag 触发 CI
 - **回滚预案**：每个 P0 改动配 `git revert` 演练记录
@@ -408,7 +408,7 @@ flowchart LR
 - 每个里程碑完成后由负责人：
   1. 在 `CHANGELOG.md` 的 `## Unreleased` 加条目
   2. 在本表对应行更新「完成度」与「最终交付（PR 链接）」
-  3. 同步 `CLAUDE.md` / `CONTEXT.md` 中路径变更
+  3. 同步 `CLAUDE.md` / `context.md` 中路径变更
 - 新增方向请直接补到对应 Phase 末或下一 Phase，不要重排整体顺序
 - Phase 切换需在 issue / discussion 中说明触发条件（度量指标达标 + 无 P0 缺陷）
 - 本文件不进 `docs/`（个人草稿区），根目录作为对外可见的发布物随版本演进

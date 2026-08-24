@@ -4,7 +4,8 @@ out
 release
 .DS_Store
 *.log
-docs/
+# docs/ 是公开文档目录（自 2026-08-24 整理起）
+# 本地 notes 走 .scratch/notes/（已 gitignored）
 apps/desktop/node_modules
 apps/desktop/node_modules.broken*
 apps/desktop/out

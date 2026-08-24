@@ -20,7 +20,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 - **是什么**:Godot 4 专用桌面编码 Agent(Electron 客户端 + Pi SDK)
 - **不是什么**:通用 IDE 替代品;云端协作产品;移动端应用
-- **路线图**:[`ROADMAP.md`](ROADMAP.md) 22 个里程碑 / 4 个 Phase
+- **路线图**:[`docs/roadmap.md`](docs/roadmap.md) 22 个里程碑 / 4 个 Phase
 - **非目标 / 已定边界**:见 README「定位」表 + ROADMAP §1.2
 
 ### 2. Issue 与规划
@@ -101,7 +101,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 ### 8. 文档与社区
 
-- **现有**:`README.md` / `README.en.md` / `ROADMAP.md` / `CHANGELOG.md` / `CONTEXT.md` / `AGENT.md` / `AGENTS.md` / `DESIGN.md` / `CLAUDE.md` / `CONTRIBUTING.md` / `LICENSE`(MIT)
+- **现有**:`README.md` / `README.en.md` / `docs/roadmap.md` / `CHANGELOG.md` / `docs/context.md` / `docs/agent.md` / `AGENTS.md` / `docs/design.md` / `CLAUDE.md` / `CONTRIBUTING.md` / `LICENSE`(MIT)
 - **已配模板**:
   - `.github/ISSUE_TEMPLATE/bug.yml` / `feature.yml`:Issue 提交规范
   - `.github/PULL_REQUEST_TEMPLATE.md`:PR 描述规范(改动类型 / 测试 / 影响面 / 回滚)
@@ -200,7 +200,7 @@ Electron 三进程边界：
 
 流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)，**按 diff 路径还原**，不整库 reset）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
 
-上下文组装细节见 [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md)。
+上下文组装细节见 [`docs/agent-context.md`](docs/agent-context.md)。
 
 ### 供应商
 
@@ -266,7 +266,7 @@ Electron 三进程边界：
 
 ## UI 约束
 
-以 [`DESIGN.md`](DESIGN.md) 为准（Cindy 近单色扁平语言）：
+以 [`docs/design.md`](docs/design.md) 为准（Cindy 近单色扁平语言）：
 
 - 深色默认；浅色 `body[data-theme="light"]`
 - Surface / Card / Board + 语义色 token；组件与 JS 不硬编码色值
@@ -288,20 +288,20 @@ Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready
 
 ### Domain docs
 
-Single-context: root [`CONTEXT.md`](CONTEXT.md) 描述了核心架构与持久化路径(对应 ADR 摘要)。
+Single-context: root [`docs/context.md`](docs/context.md) 描述了核心架构与持久化路径(对应 ADR 摘要)。
 
 本地 `docs/` 仅供个人维护 ADR / 调研 / code-review 草稿(已被 `.gitignore` 排除,不入 git 也不发布):
 
-- `docs/adr/*.md` — 单条 ADR(对应于 git 历史 commit 摘要,新决策请直接补到本文或 CONTEXT.md)
+- `docs/adr/*.md` — 单条 ADR(对应于 git 历史 commit 摘要,新决策请直接补到本文或 docs/context.md)
 - `docs/agents/{domain,issue-tracker,triage-labels}.md` — 给 skills 读的领域/协作规则,与本节同步更新
 - `docs/Godot-Tileset-结构格式调研.md` 与 `docs/research-plan-goal-modes.md` — 历史调研沉淀
 - `docs/code-review-2026-08-01.md` — 0.3.8 全量审查,分诊结论已落入 CHANGELOG 与 ADR
 
-约定:对外约定请写在本 `CLAUDE.md` 或 `CONTEXT.md`;`docs/` 内容不进 release、不参与协作,清理后下次会话可重建。
+约定:对外约定请写在本 `CLAUDE.md` 或 `docs/context.md`;`docs/` 内容不进 release、不参与协作,清理后下次会话可重建。
 
 ## 维护节奏 / 社区入口
 
-- 维护节奏（周 Issue 处理 / 月度 ROADMAP 回顾 / 季度大依赖 spike / 发版流程）见 [`MAINTENANCE.md`](MAINTENANCE.md)
+- 维护节奏（周 Issue 处理 / 月度 ROADMAP 回顾 / 季度大依赖 spike / 发版流程）见 [`docs/maintenance.md`](docs/maintenance.md)
 - 社区入口：Issue 模板 `.github/ISSUE_TEMPLATE/` + PR 模板 `.github/PULL_REQUEST_TEMPLATE.md`；协议 [`LICENSE`](LICENSE)（MIT）；行为准则 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)；安全报告 [`SECURITY.md`](SECURITY.md)
 - 贡献流程（分支命名 / Conventional Commits / 本地钩子）见 [`CONTRIBUTING.md`](CONTRIBUTING.md)；commit-msg 钩 `scripts/commit-msg-lint.mjs`，pre-commit 钩 `scripts/commit-author-guard.sh`，通过 `git config core.hooksPath scripts/git-hooks` 装上
 - 自动依赖更新：[`.github/dependabot.yml`](.github/dependabot.yml)（npm + GitHub Actions，周一上午）

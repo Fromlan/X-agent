@@ -1,8 +1,8 @@
 # AGENTS.md
 
 > OpenCode 在本仓库工作时的入口指引。只记录「不查就会猜错 / 容易踩坑」的事实，不再重复各文档全文。
-> 更完整的指引：开发者向 `CLAUDE.md`、模型上下文原理 `AGENT_CONTEXT.md`、领域词表 `CONTEXT.md`、设计规范 `DESIGN.md`。
-> 注意：Pi SDK 会把 `AGENT.md`、`CONTEXT.md`、`CLAUDE.md` **全文**注入到模型的项目上下文（见 `AGENT_CONTEXT.md` 第 3 节）——改它们会影响 Agent 实际看到的内容。
+> 更完整的指引：开发者向 `CLAUDE.md`、模型上下文原理 `docs/agent-context.md`、领域词表 `docs/context.md`、设计规范 `docs/design.md`。
+> 注意：Pi SDK 会把 `docs/agent.md`、`docs/context.md`、`CLAUDE.md` **全文**注入到模型的项目上下文（见 `docs/agent-context.md` 第 3 节）——改它们会影响 Agent 实际看到的内容。
 
 ## 仓库结构（先记住这两点）
 
@@ -85,7 +85,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 - 仅 Windows 在开发/CI 矩阵（Node 22+，CI 为 windows-latest）。
 - Pi `bash` 在 Windows 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。
-- `docs/` 与 `.scratch/` 被 `.gitignore` 排除，**不入 git 也不参与协作**——对外约定写 `CLAUDE.md` / `AGENT.md` / `CONTEXT.md`，不要写进 `docs/`。
+- `docs/` 与 `.scratch/` 被 `.gitignore` 排除，**不入 git 也不参与协作**——对外约定写 `CLAUDE.md` / `docs/agent.md` / `docs/context.md`，不要写进 `docs/`。
 - 仓库目前没有 `opencode.json`。
 
 ## 编码与 UI 约定（与框架默认不同之处）
@@ -93,7 +93,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 - TypeScript 严格模式；生成代码时**加函数级注释**（新模块头部一句「做什么 + 为什么」）；注释/标识符以英文为主，用户面文案以 `README.md` / 设置页中文为准。
 - 主题颜色 / 圆角 / 阴影全走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**色值；图标用 `lucide-react` 不用 emoji；字重仅 400 / 500。
 - 几何：按钮 / chip / 单行 input 用 pill（`9999px`）；容器 12px、多行 8px；1px Board 边框；页面内无阴影（modal 除外）。设置页内容区需 `min-height: 0` + `overflow-y: auto`。
-- 完整规范见 `DESIGN.md`（深色默认，`body[data-theme]` 覆盖浅色）。
+- 完整规范见 `docs/design.md`（深色默认，`body[data-theme]` 覆盖浅色）。
 
 ## 提交前自检
 

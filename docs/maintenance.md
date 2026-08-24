@@ -15,7 +15,7 @@ it is "the things the maintainer does on a clock".
 | Weekly    | 15 min | Dependabot PR sweep: merge trivial, escalate big               | `.github/dependabot.yml`                 |
 | Weekly    | 15 min | `git fetch --prune` + scan open PRs for stuck reviews          | GitHub PR list                           |
 | Per release | —    | `release:prepare` → review CHANGELOG → tag → push              | `scripts/prepare-release.mjs`            |
-| Monthly   | 1 h    | ROADMAP review: close finished, re-prioritise, add new items   | `ROADMAP.md`                             |
+| Monthly   | 1 h    | ROADMAP review: close finished, re-prioritise, add new items   | `roadmap.md`                             |
 | Monthly   | 30 min | Secret/key rotation: API key re-encrypt (safeStorage sanity)   | `provider-store.ts`                      |
 | Quarterly | 2 h    | Major dependency spike: Pi SDK / Electron / React              | `npm outdated` → spike issue             |
 | Yearly    | 1 h    | Audit community files (this file, CONTRIBUTING, SECURITY, COC)  | All governance files                     |
@@ -28,7 +28,7 @@ it is "the things the maintainer does on a clock".
    - `needs-info` if more details are needed (ask the user, then wait)
    - `needs-triage` if you're not sure
    - `wontfix` if the project is out of scope (cite a non-goal from
-     `ROADMAP.md` §1.2 or `README.md` "What it is not")
+     `roadmap.md` §1.2 or `README.md` "What it is not")
    - `duplicate` and close with a link to the original
 3. Anything clearly worth doing gets put on the **Next** milestone
 4. Anything stale (>30 days with no response) gets a friendly ping or close
@@ -50,7 +50,7 @@ There is **no fixed schedule**. Release when one of the following is true:
 
 - ≥ 3 user-visible changes accumulated in `CHANGELOG.md` `## Unreleased`
 - A P0 / security fix has shipped
-- A milestone is complete (see `ROADMAP.md`)
+- A milestone is complete (see `roadmap.md`)
 
 The procedure:
 
@@ -73,7 +73,7 @@ The procedure:
 
 ## Monthly ROADMAP Review (1 h)
 
-1. Open `ROADMAP.md` Phase tables
+1. Open `roadmap.md` Phase tables
 2. For each row, update **Status** (`进行中` / `已完成` / `待启动` / `已废弃`)
 3. Move finished rows to the bottom with their `完成度与最终交付` block
    filled in (a few bullets + commit refs)
@@ -93,7 +93,7 @@ Pick the most-stale top-level dependency, ideally one of:
 2. Open a spike Issue with the upgrade scope, breaking changes, and
    required test plan
 3. Land in a `feat/upgrade-<name>` branch; do **not** mix with other work
-4. After the spike is merged, add a `ROADMAP.md` entry for any
+4. After the spike is merged, add a `roadmap.md` entry for any
    follow-up cleanups it revealed
 
 ## Yearly Governance Audit (1 h)

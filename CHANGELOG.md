@@ -115,7 +115,7 @@
 - bash 诊断状态 emoji 改 `settings-status` 色点 chip；bash 诊断块硬编码色值 / 未定义 token 全部 token 化（`--accent-*` + color-mix）。
 - 4 个未定义 CSS 变量修正（starter chip / 计划 todo 背景透明问题）；字重统一 400/500（4 处 600 降级）；硬编码圆角（999px×10 / 6px / 8px / 4px）全部走 `--radius-*`。
 - ready-strip 的 inset 阴影改 `border-left`；设置页脚渐隐改纯色（skeleton shimmer 按规范豁免保留）；sidebar 冲突的 overflow 声明修复。
-- 右栏宽度默认/下限统一 360（与 prefs 默认及 DESIGN.md 一致）。
+- 右栏宽度默认/下限统一 360（与 prefs 默认及 docs/design.md 一致）。
 - IPC promise 未捕获 rejection ×5 补齐；会话切换清空过期排队 steer；大文件预览截断提示。
 - 21 处扁平 `setPrefs` / `getPrefs` / `checkAuth` 等迁移到 `window.xAgent.prefs.*` 分面。
 
@@ -219,7 +219,7 @@
 - **Plan 澄清面板重设计**：多题 clarify 选项面板重构选中态 / 间距 / 布局，误触率下降、可见性提升。
 - **bash 健康探针 + 设置诊断**：设置页新增 bash 环境诊断，显示 liveness 探测结果与 shell 路径问题，排查更快。
 - **工程化 · CI 门槛**：引入 Vitest 单测（node 环境，含 cwd-sandbox / retract-orchestrator / shadow-checkpoints / usage-store / godot-rpc-bridge 关键模块）+ Playwright E2E 基础用例（应用外壳 / 模式切换），CI 增加测试与覆盖率门槛。
-- **文档**：新增 `AGENTS.md` 仓库协作入口 + `ROADMAP.md`（1.1 / 1.6 完成标记），开发者与 Agent 上手路径补齐。
+- **文档**：新增 `AGENTS.md` 仓库协作入口 + `docs/roadmap.md`（1.1 / 1.6 完成标记），开发者与 Agent 上手路径补齐。
 
 #### 0.3.13
 
@@ -253,7 +253,7 @@
 - **供应商启用约束**：始终保留至少一个启用档案；最后一个启用档案不能被关闭、删除或保存为禁用，设置页会直接解释原因，避免模型列表被清空。
 - **发版流程**：本机 `release:dist` 改为可选冒烟；用户下载的权威产物以 CI GitHub Release 为准。
 - **工程化**：新增 `apps/desktop/.editorconfig`（UTF-8 / LF / 2 空格缩进 / 去行尾空格 / 末尾换行），停止跟踪 `*.tsbuildinfo`，并将供应商认证缓存回归测试纳入完整测试链。
-- **开发文档**：新增 `AGENT.md` 仓库协作指南；同步 `CONTEXT.md` / `CLAUDE.md` 的模块路径与发版约定；补充 Godot TileSet 结构格式调研，并明确本地 ADR / 调研草稿不参与发布。
+- **开发文档**：新增 `docs/agent.md` 仓库协作指南；同步 `docs/context.md` / `CLAUDE.md` 的模块路径与发版约定；补充 Godot TileSet 结构格式调研，并明确本地 ADR / 调研草稿不参与发布。
 
 ### 修复
 
@@ -639,7 +639,7 @@
 - **Plan 澄清面板重设计**：多题 clarify 选项面板重构选中态 / 间距 / 布局，误触率下降、可见性提升。
 - **bash 健康探针 + 设置诊断**：设置页新增 bash 环境诊断，显示 liveness 探测结果与 shell 路径问题，排查更快。
 - **工程化 · CI 门槛**：引入 Vitest 单测（node 环境，含 cwd-sandbox / retract-orchestrator / shadow-checkpoints / usage-store / godot-rpc-bridge 关键模块）+ Playwright E2E 基础用例（应用外壳 / 模式切换），CI 增加测试与覆盖率门槛。
-- **文档**：新增 `AGENTS.md` 仓库协作入口 + `ROADMAP.md`（1.1 / 1.6 完成标记），开发者与 Agent 上手路径补齐。
+- **文档**：新增 `AGENTS.md` 仓库协作入口 + `docs/roadmap.md`（1.1 / 1.6 完成标记），开发者与 Agent 上手路径补齐。
 
 #### 0.3.13
 
@@ -673,7 +673,7 @@
 - **供应商启用约束**：始终保留至少一个启用档案；最后一个启用档案不能被关闭、删除或保存为禁用，设置页会直接解释原因，避免模型列表被清空。
 - **发版流程**：本机 `release:dist` 改为可选冒烟；用户下载的权威产物以 CI GitHub Release 为准。
 - **工程化**：新增 `apps/desktop/.editorconfig`（UTF-8 / LF / 2 空格缩进 / 去行尾空格 / 末尾换行），停止跟踪 `*.tsbuildinfo`，并将供应商认证缓存回归测试纳入完整测试链。
-- **开发文档**：新增 `AGENT.md` 仓库协作指南；同步 `CONTEXT.md` / `CLAUDE.md` 的模块路径与发版约定；补充 Godot TileSet 结构格式调研，并明确本地 ADR / 调研草稿不参与发布。
+- **开发文档**：新增 `docs/agent.md` 仓库协作指南；同步 `docs/context.md` / `CLAUDE.md` 的模块路径与发版约定；补充 Godot TileSet 结构格式调研，并明确本地 ADR / 调研草稿不参与发布。
 
 ### 修复
 
