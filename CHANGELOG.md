@@ -8,6 +8,16 @@
 
 ## Unreleased
 
+## 0.5.6
+
+### 改进
+
+- **Node 22 → 24 升级（基础设施）**：跟随 GitHub runner 默认升级（Node 20 已于 2025-09-19 deprecated，新默认 Node 24）。仓库内 `engines.node` 与 `.github/workflows/ci.yml`（desktop / unit-test / e2e 三个 job）+ `.github/workflows/release.yml` 的 `setup-node` 全部从 22 升到 24；本机 Node < 24 启动会触发 `EBADENGINE` 警告（不阻断 install）。CI 上 `actions/checkout@4` / `setup-node@7` 内部仍标 Node 20 deprecated 警告，留后续 major 升 v5 时处理。
+
+### 修复
+
+- **bash-check WSL cold start + PATH shim 误抓**：`whichBashOnPath` 对每个 file-exists 的 `bash.exe` candidate 做 banner probe，只返回真 GNU bash 的路径——之前只检查文件存在，本机 nvm 装的 `bash.exe` shim（实际是 node 启动的转发器）会被错抓为 bash 候选（#24 PR 描述的 pre-existing bash-check flake 多数由此类 PATH shim 导致）。同时 `probeBash` timeout 从 2s 升到 5s——Windows 11 自带 `C:\Windows\system32\bash.exe`（WSL bash launcher）首次启动要 ~2.2s（WSL infrastructure 初始化），2s timeout 在 Node 24 runner 上会被 kill 导致 `spawn_failed`，CI 升 Node 24 后稳定暴露此问题。production 路径（`applyBashShellPath` happy path 走 CANDIDATES 已知 Git for Windows 路径）不受影响。
+
 ## 0.5.5
 
 ### 改进
