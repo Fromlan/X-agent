@@ -50,8 +50,10 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     const chatPanelBox = await main.locator(".chat-panel").evaluate(
       (el) => window.getComputedStyle(el).boxShadow,
     );
-    // 浏览器序列化可能为 "inset 3px 0px 0px rgb(...)" 或 "rgba(...)"
-    expect(chatPanelBox).toMatch(/inset\s+3px/);
+    // Chromium 把 "inset 3px 0 0 0 rgb(...)" 序列化为
+    // "rgb(...) 3px 0px 0px 0px inset" (inset 在末尾). 匹配关键词对即可.
+    expect(chatPanelBox).toMatch(/3px/);
+    expect(chatPanelBox).toMatch(/inset/);
     expect(chatPanelBox).toMatch(/rgb/);
 
     // 空对话中央徽章: 应显示 "策划模式" + data-session-type="design"
@@ -89,7 +91,7 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     const chatPanelBoxCode = await main.locator(".chat-panel").evaluate(
       (el) => window.getComputedStyle(el).boxShadow,
     );
-    expect(chatPanelBoxCode).not.toMatch(/inset\s+3px/);
+    expect(chatPanelBoxCode).not.toMatch(/inset/);
 
     // 切回 code 后空对话徽章应显示 "代码模式"
     const codeBadge = main.locator(".empty-state-session-type");
