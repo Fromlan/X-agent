@@ -58,10 +58,18 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     expect(chatPanelBox).toMatch(/rgb/);
 
     // 策划会话 chips: 应是策划专属 (含 "设计一个角色"), 不应是代码模式 chips
-    // 同步策略:先等 .empty-state-starters 容器渲染(意味着 React 树已 re-render
-    // 到 design 状态,chip 必然在 DOM 里),再断言 chip 文本。
-    // 之前用 chip 自身当同步点,CI 上 18s 才 fail,是 flake 源。
-    await expect(main.locator(".empty-state-starters")).toBeVisible();
+    // 同步策略: CI 上 .empty-state-starters / starter-chip 容器出现有 race,
+    // 直接轮询 page.evaluate 看 #message-stream > .empty-state-starters 是否已挂载,
+    // 比 toBeVisible 的 auto-retry 更稳. 拿到 chip 文本后再继续.
+    await main.waitForFunction(
+      () =>
+        document.querySelectorAll('.starter-chip').length > 0 &&
+        Array.from(document.querySelectorAll('.starter-chip')).some(
+          (el) => (el.textContent || '').includes('设计一个角色'),
+        ),
+      null,
+      { timeout: 20_000, polling: 100 },
+    );
     await expect(
       main.locator('.starter-chip:has-text("设计一个角色")'),
     ).toBeVisible();
@@ -102,8 +110,19 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     // 切回 code 后 chips 应回到代码模式 — tmp 目录不是 Godot 项目,
     // 走非 godotOnly 路径:只显示「了解项目结构」「帮我修一个问题」。
     // 注意:「审查当前脚本」是 godotOnly, 这里不能用; 想测全量 chip 请在 fixture 里塞 project.godot。
-    // 同步策略同前: 先等容器再查 chip。
-    await expect(main.locator(".empty-state-starters")).toBeVisible();
+    // 同步策略同前: waitForFunction 直接轮询 DOM, 拿到 chip 文本后再继续.
+    await main.waitForFunction(
+      () =>
+        document.querySelectorAll('.starter-chip').length > 0 &&
+        Array.from(document.querySelectorAll('.starter-chip')).some(
+          (el) => (el.textContent || '').includes('了解项目结构'),
+        ) &&
+        Array.from(document.querySelectorAll('.starter-chip')).every(
+          (el) => !(el.textContent || '').includes('设计一个角色'),
+        ),
+      null,
+      { timeout: 20_000, polling: 100 },
+    );
     await expect(
       main.locator('.starter-chip:has-text("了解项目结构")'),
     ).toBeVisible();
