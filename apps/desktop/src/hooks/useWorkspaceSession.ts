@@ -231,6 +231,12 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
           await syncFromHost();
           return;
         }
+        // Re-clear after IPC. The pre-IPC clear races with history_replace
+        // events that may arrive during the await; the new session must
+        // always start with an empty transcript, so commit a second clear
+        // in the same batch as setSessionId/setSessionType. This guarantees
+        // the empty-state container is rendered for e2e flake fix.
+        setItems(createEmptyState());
         clearComposerEditState();
         setInput("");
         setSessionId(result.sessionId);
