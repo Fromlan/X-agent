@@ -78,35 +78,22 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
         const chatPanel = document.querySelector('.chat-panel');
         const transcript = document.querySelector('.chat-transcript');
         const messageStream = document.querySelector('.message-stream');
+        const inner = messageStream?.firstElementChild ?? null;
+        const disabledEmptyProbe = document.querySelector(
+          '.empty-state:not(.empty-state-starters)',
+        );
         const allChips = Array.from(
           document.querySelectorAll('.starter-chip'),
         ).map((el) => el.textContent || '');
-        const allBadges = Array.from(
-          document.querySelectorAll('.empty-state-session-type'),
-        ).map((el) => ({
-          text: el.textContent,
-          type: el.getAttribute('data-session-type'),
-        }));
         return {
           bodySessionType: body.getAttribute('data-session-type'),
-          chatPanelExists: !!chatPanel,
-          transcriptExists: !!transcript,
-          messageStreamChildren: messageStream
-            ? messageStream.children.length
-            : -1,
-          messageStreamInnerChildren: messageStream
-            ? messageStream.firstElementChild
-              ? messageStream.firstElementChild.children.length
-              : -1
-            : -1,
-          chatPanelClass: chatPanel ? chatPanel.className : null,
-          emptyStateStarters: document.querySelectorAll(
-            '.empty-state-starters',
-          ).length,
+          messageStreamInnerClass: inner ? inner.className : null,
+          innerChildren: inner ? Array.from(inner.children).map((c) => c.className) : null,
+          disabledEmptyText: disabledEmptyProbe
+            ? disabledEmptyProbe.textContent
+            : null,
           starterChipsCount: allChips.length,
           starterChips: allChips,
-          emptyStateSessionTypeCount: allBadges.length,
-          emptyStateSessionType: allBadges,
         };
       });
       throw new Error(
