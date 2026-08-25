@@ -68,13 +68,30 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     // 侧栏新条目应有 design 徽标
     // (新会话在侧栏最上; locator 选 first 即可)
     // 用 waitForFunction 等侧栏刷新, 而不是直接 toBeVisible.
-    await main.waitForFunction(
-      () =>
-        document.querySelectorAll('.session-card-main[data-session-type="design"]')
-          .length > 0,
-      null,
-      { timeout: 20_000, polling: 100 },
-    );
+    try {
+      await main.waitForFunction(
+        () =>
+          document.querySelectorAll(
+            '.session-card-main[data-session-type="design"]',
+          ).length > 0,
+        null,
+        { timeout: 20_000, polling: 200 },
+      );
+    } catch (e) {
+      const dump = await main.evaluate(() => ({
+        bodySessionType: document.body.getAttribute('data-session-type'),
+        allSessionCards: Array.from(
+          document.querySelectorAll('.session-card-main'),
+        ).map((el) => ({
+          dataType: el.getAttribute('data-session-type'),
+          hasBadge: !!el.querySelector('.session-type-badge'),
+          text: (el.textContent || '').slice(0, 50),
+        })),
+      }));
+      throw new Error(
+        `design sidebar card not found. dump=${JSON.stringify(dump)} err=${String(e)}`,
+      );
+    }
     const designCard = main
       .locator('.session-card-main[data-session-type="design"]')
       .first();
