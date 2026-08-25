@@ -75,25 +75,23 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
       // 调试: dump 实际 DOM 状态帮助定位 CI 跟本机的差异
       const domDump = await main.evaluate(() => {
         const body = document.body;
-        const chatPanel = document.querySelector('.chat-panel');
-        const transcript = document.querySelector('.chat-transcript');
         const messageStream = document.querySelector('.message-stream');
         const inner = messageStream?.firstElementChild ?? null;
-        const disabledEmptyProbe = document.querySelector(
-          '.empty-state:not(.empty-state-starters)',
-        );
-        const allChips = Array.from(
-          document.querySelectorAll('.starter-chip'),
-        ).map((el) => el.textContent || '');
+        const transcriptRows = Array.from(
+          document.querySelectorAll('.transcript-flow-row, .virtual-row'),
+        ).map((el) => {
+          const firstChild = el.firstElementChild;
+          return {
+            cls: el.className,
+            childCls: firstChild ? firstChild.className : null,
+            text: (el.textContent || '').slice(0, 80),
+            kind: firstChild ? firstChild.getAttribute('data-bubble-kind') : null,
+          };
+        });
         return {
           bodySessionType: body.getAttribute('data-session-type'),
           messageStreamInnerClass: inner ? inner.className : null,
-          innerChildren: inner ? Array.from(inner.children).map((c) => c.className) : null,
-          disabledEmptyText: disabledEmptyProbe
-            ? disabledEmptyProbe.textContent
-            : null,
-          starterChipsCount: allChips.length,
-          starterChips: allChips,
+          transcriptRows,
         };
       });
       throw new Error(
