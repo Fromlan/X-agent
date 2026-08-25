@@ -56,19 +56,21 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     expect(chatPanelBox).toMatch(/inset/);
     expect(chatPanelBox).toMatch(/rgb/);
 
-    // 空对话中央徽章: 应显示 "策划模式" + data-session-type="design"
-    const designBadge = main.locator(".empty-state-session-type");
-    await expect(designBadge).toBeVisible();
-    await expect(designBadge).toHaveAttribute("data-session-type", "design");
-    await expect(designBadge).toHaveText(/策划模式/);
-
     // 策划会话 chips: 应是策划专属 (含 "设计一个角色"), 不应是代码模式 chips
+    // 先等策划 chip 出现 (强信号: 设计态完全激活, React 树已 re-render)
     await expect(
       main.locator('.starter-chip:has-text("设计一个角色")'),
     ).toBeVisible();
     await expect(
       main.locator('.starter-chip:has-text("审查当前脚本")'),
     ).toHaveCount(0);
+
+    // 空对话中央徽章: 应显示 "策划模式" + data-session-type="design"
+    // 紧跟 chips 断言后, 此时 React 树已就绪, badge 必定在 DOM.
+    const designBadge = main.locator(".empty-state-session-type");
+    await expect(designBadge).toBeVisible();
+    await expect(designBadge).toHaveAttribute("data-session-type", "design");
+    await expect(designBadge).toHaveText(/策划模式/);
 
     // 侧栏新条目应有 design 徽标
     // (新会话在侧栏最上; locator 选 first 即可)
@@ -93,17 +95,19 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     );
     expect(chatPanelBoxCode).not.toMatch(/inset/);
 
+    // 切回 code 后 chips 应回到代码模式 (含 "审查当前脚本" 等) — 强信号 React 已 re-render
+    await expect(
+      main.locator('.starter-chip:has-text("审查当前脚本")'),
+    ).toBeVisible();
+    await expect(
+      main.locator('.starter-chip:has-text("设计一个角色")'),
+    ).toHaveCount(0);
+
     // 切回 code 后空对话徽章应显示 "代码模式"
     const codeBadge = main.locator(".empty-state-session-type");
     await expect(codeBadge).toBeVisible();
     await expect(codeBadge).toHaveAttribute("data-session-type", "code");
     await expect(codeBadge).toHaveText(/代码模式/);
-
-    // 切回 code 后 chips 应回到代码模式 (含 "审查当前脚本" 等)
-    await expect(main.locator('.starter-chip:has-text("审查当前脚本")')).toBeVisible();
-    await expect(
-      main.locator('.starter-chip:has-text("设计一个角色")'),
-    ).toHaveCount(0);
 
     // 新代码会话的侧栏条目不应有 design 徽标
     const codeCard = main
