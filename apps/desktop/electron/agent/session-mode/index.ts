@@ -10,6 +10,7 @@ export {
   computeAskModeTools,
   computePlanModeTools,
   computeModeTools,
+  computeModeToolsForType,
   createWritePlanTools,
   isReadonlySessionMode,
   buildImplementPrompt,

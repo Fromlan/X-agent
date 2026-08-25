@@ -55,6 +55,27 @@ export function buildGoalModeSystemAppend(condition: string): string {
   ].join("\n");
 }
 
+/**
+ * Design session type system append. Injected BEFORE the mode-level append
+ * (ask/plan/goal) so the type constraint is always visible. Appended only
+ * when the active SessionType is "design".
+ */
+export const DESIGN_SESSION_TYPE_INSTRUCTIONS = [
+  "You are in a Design session: produce structured game design documents.",
+  "Read: any project file (you can navigate the existing code as a reference).",
+  "Write: only inside <cwd>/game-design/ — markdown documents, data tables, or config snippets for design assets.",
+  "Do NOT use write/edit/bash to modify game code, scenes, project.godot, or any file outside game-design/.",
+  "If the user asks for code changes, tell them to open a Code session (新代码会话) — do not attempt to mutate code in this session.",
+  "You may use ask/plan/agent/goal modes internally; the game-design write constraint is always active regardless of mode.",
+  "write_plan is disabled in this session: write design documents directly into <cwd>/game-design/ instead of plan files.",
+].join("\n");
+
+export function buildDesignSessionTypeAppend(): string {
+  return ["# X-agent Design session type", DESIGN_SESSION_TYPE_INSTRUCTIONS].join(
+    "\n",
+  );
+}
+
 export function wrapWithModeBlock(
   name: SessionModePromptName,
   instructions: string,

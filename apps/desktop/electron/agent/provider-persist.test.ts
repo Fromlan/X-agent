@@ -127,12 +127,15 @@ describe("validateUpsertAsync", () => {
 
 describe("upsertProviderProfile", () => {
   it("新建档案 + 写入文件", async () => {
+    // CI Windows runner 上 setSkipDnsForTests 仍会走少量异步路径
+    // (atomic-write + JSON 序列化), 5s 默认 timeout 偶发不够。
+    // 10s 留足余量, 本机仍 ~1.3s 完成。
     const r = await upsertProviderProfile(makeInput(), paths);
     expect(r.ok).toBe(true);
     expect(r.profile?.enabled).toBe(true);
     const stored = readFileSync(paths.storePath, "utf8");
     expect(stored).toContain("test-provider");
-  });
+  }, 10_000);
 
   it("baseUrl 尾斜杠被剥离", async () => {
     const r = await upsertProviderProfile(

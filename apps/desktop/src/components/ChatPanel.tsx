@@ -7,6 +7,7 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { isRestorableGoalStatus } from "@shared/ipc";
+import type { SessionType } from "@shared/session-type";
 import type { ChatItem } from "../stores/chat-store";
 import { isPendingUserId } from "../stores/chat-store";
 import { ChatTranscript } from "./ChatTranscript";
@@ -70,6 +71,8 @@ interface Props {
   readinessHints?: { label: string; onClick: () => void }[];
   onPickStarter?: (prompt: string) => void;
   sessionMode?: AgentSessionMode;
+  /** Session type (会话类型: code / design). 在空对话时显示. */
+  sessionType?: SessionType;
   planPath?: string | null;
   goal?: GoalInfo | null;
   onSessionModeChange?: (mode: AgentSessionMode) => void;
@@ -287,6 +290,7 @@ function ChatPanelImpl(props: Props) {
         starters={props.starters}
         readinessHints={props.readinessHints}
         onPickStarter={props.onPickStarter}
+        sessionType={props.sessionType}
         forceFollowKey={props.forceFollowKey}
         onOpenToolInPanel={props.onOpenToolInPanel}
         editingEntryId={props.editingEntryId}

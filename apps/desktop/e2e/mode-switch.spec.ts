@@ -36,6 +36,12 @@ test("打开项目后可在 Plan / Agent 间切换会话模式", async () => {
       "false",
     );
 
+    // 默认会话类型应为 "code" (策划会话类型 baseline)
+    await expect(main.locator("body")).toHaveAttribute(
+      "data-session-type",
+      "code",
+    );
+
     await main.locator('[data-mode="agent"]').click();
     await expect(main.locator('[data-mode="agent"]')).toHaveAttribute(
       "aria-pressed",

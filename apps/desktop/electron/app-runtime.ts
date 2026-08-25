@@ -47,6 +47,7 @@ import {
 } from "../shared/ipc";
 import { ALL_TOGGLEABLE_TOOLS } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
+import { coerceSessionType } from "../shared/session-type";
 import { registerWorkspaceIpc } from "./ipc/register-workspace-ipc";
 import { registerTurnIpc } from "./ipc/register-turn-ipc";
 import { registerPlanIpc } from "./ipc/register-plan-ipc";
@@ -129,9 +130,9 @@ function registerIpc(
   );
   const cwdOf = () => host.getStatus().cwd;
 
-  handle(ipcMain, 
+  handle(ipcMain,
     IPC_CHANNELS.openProject,
-    async (_e, path?: string, mode?: "continue" | "new") => {
+    async (_e, path?: string, mode?: "continue" | "new", sessionType?: unknown) => {
     let projectPath =
       typeof path === "string" && path.trim() ? path.trim() : undefined;
     if (!projectPath) {
@@ -146,12 +147,17 @@ function registerIpc(
           sessionId: "",
           model: null,
           thinkingLevel: "off",
+          sessionType: "code" as const,
           error: "已取消",
         };
       }
       projectPath = result.filePaths[0];
     }
-    return host.openProject(projectPath, mode === "new" ? "new" : "continue");
+    return host.openProject(
+      projectPath,
+      mode === "new" ? "new" : "continue",
+      coerceSessionType(sessionType),
+    );
   },
   );
 

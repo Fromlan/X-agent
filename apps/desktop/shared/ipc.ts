@@ -7,6 +7,15 @@ import type {
 } from "./godot-rpc";
 import type { IpcChannelKey } from "./ipc-channels";
 export type { IpcChannelKey } from "./ipc-channels";
+import type { SessionType } from "./session-type";
+export {
+  SESSION_TYPES,
+  SESSION_TYPE_LABELS,
+  DEFAULT_SESSION_TYPE,
+  isSessionType,
+  coerceSessionType,
+} from "./session-type";
+export type { SessionType } from "./session-type";
 
 export type AgentStatus = "idle" | "streaming" | "retrying" | "error";
 
@@ -132,6 +141,11 @@ export interface SessionInfo {
   path: string;
   cwd: string;
   updatedAt: string;
+  /**
+   * Session type (see shared/session-type.ts). Legacy sessions without a
+   * persisted sidecar are reported as "code".
+   */
+  sessionType: SessionType;
 }
 
 export interface BashCheckResult {
@@ -555,6 +569,8 @@ export interface OpenProjectResult {
   sessionId: string;
   model: ModelInfo | null;
   thinkingLevel: ThinkingLevel;
+  /** Session type chosen at creation time; immutable for this session. */
+  sessionType: SessionType;
   warning?: string;
   error?: string;
 }
@@ -747,6 +763,8 @@ export type UiAgentEvent =
       cwd: string;
       model: ModelInfo | null;
       thinkingLevel: ThinkingLevel;
+      /** Active session type (locked at creation). */
+      sessionType?: SessionType;
       sessionPath?: string | null;
     }
   | {
@@ -1262,7 +1280,7 @@ export type IpcInvokeMap = {
   retractToUserMessage: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
   editAndResend: (entryId: string, text: string, options?: RetractOptions) => Promise<RetractResult>;
   regenerateFromUser: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
-  newSession: () => Promise<OpenProjectResult>;
+  newSession: (sessionType?: SessionType) => Promise<OpenProjectResult>;
   setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
   setThinkingLevel: (
     level: ThinkingLevel,

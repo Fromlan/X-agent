@@ -843,3 +843,56 @@ body[data-theme="contrast-light"] {
   --space-section: 20px;
   --space-chrome: 12px;
 }
+
+/* =============================================================
+ * Session type accent (策划会话描边)
+ * -------------------------------------------------------------
+ * body[data-session-type="design"] 切换到一个 per-theme 描边色
+ * --session-design-accent, 不改 --bg-* / 不破坏现有主题.
+ * 描边用在 .chat-panel 左边条 + .composer-shell 边框, 提示用户
+ * 处于策划会话 (写只允许 <cwd>/game-design/).
+ *
+ * 每个主题给一对 (accent + 浅色背景); 缺省 fallback 走 var 默认值
+ * (color-mix 在父组件内部用, 主题没有该 token 时仍渲染).
+ * ============================================================= */
+
+body[data-theme="default-dark"][data-session-type="design"] {
+  --session-design-accent: #d59c5b;
+  --session-design-accent-soft: rgba(213, 156, 91, 0.16);
+}
+body[data-theme="default-light"][data-session-type="design"] {
+  --session-design-accent: #b85c2a;
+  --session-design-accent-soft: rgba(184, 92, 42, 0.10);
+}
+body[data-theme="nord-dark"][data-session-type="design"] {
+  --session-design-accent: #d8a657;
+  --session-design-accent-soft: rgba(216, 166, 87, 0.16);
+}
+body[data-theme="nord-light"][data-session-type="design"] {
+  --session-design-accent: #8a4a1a;
+  --session-design-accent-soft: rgba(138, 74, 26, 0.10);
+}
+body[data-theme="tokyo-dark"][data-session-type="design"] {
+  --session-design-accent: #e0a060;
+  --session-design-accent-soft: rgba(224, 160, 96, 0.16);
+}
+body[data-theme="tokyo-light"][data-session-type="design"] {
+  --session-design-accent: #a04a1a;
+  --session-design-accent-soft: rgba(160, 74, 26, 0.10);
+}
+body[data-theme="paper-dark"][data-session-type="design"] {
+  --session-design-accent: #d4a373;
+  --session-design-accent-soft: rgba(212, 163, 115, 0.18);
+}
+body[data-theme="paper-light"][data-session-type="design"] {
+  --session-design-accent: #a04a1a;
+  --session-design-accent-soft: rgba(160, 74, 26, 0.10);
+}
+body[data-theme="contrast-dark"][data-session-type="design"] {
+  --session-design-accent: #ffb74d;
+  --session-design-accent-soft: rgba(255, 183, 77, 0.18);
+}
+body[data-theme="contrast-light"][data-session-type="design"] {
+  --session-design-accent: #7a2a00;
+  --session-design-accent-soft: rgba(122, 42, 0, 0.10);
+}

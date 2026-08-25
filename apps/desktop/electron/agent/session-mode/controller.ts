@@ -17,12 +17,13 @@ import {
   DEFAULT_GOAL_MAX_TURNS,
   isRestorableGoalStatus,
 } from "../../../shared/ipc";
+import { DEFAULT_SESSION_TYPE, type SessionType } from "../../../shared/session-type";
 import { getCachedPrefs } from "../prefs";
 import {
   buildImplementPrompt,
   classifyPlanLocation,
   computeAskModeTools,
-  computeModeTools,
+  computeModeToolsForType,
   computePlanModeTools,
   isAllowedPlanPath,
   isReadonlySessionMode,
@@ -49,6 +50,7 @@ import {
 } from "./plan-journal";
 import {
   buildAskModeSystemAppend,
+  buildDesignSessionTypeAppend,
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
 } from "../../../shared/mode-prompt";
@@ -58,6 +60,7 @@ export type SessionModeHost = {
     session: AgentSession;
     cwd: string;
     sessionPath?: string | null;
+    sessionType?: SessionType;
   } | null;
   getResourceLoader(): DefaultResourceLoader | null;
   getBaseAppendPrompt(): string[];
@@ -137,8 +140,19 @@ export class SessionModeController {
     );
   }
 
+  /** Resolve the active session type from the host bundle. Defaults to code. */
+  getSessionType(): SessionType {
+    return (
+      this.host().getBundle()?.sessionType ?? DEFAULT_SESSION_TYPE
+    );
+  }
+
   composeModeAppend(base: string[]): string[] {
     const out = [...base];
+    // Type-level append FIRST (策划会话下, 任何 mode 都要看到写约束说明).
+    if (this.getSessionType() === "design") {
+      out.push(buildDesignSessionTypeAppend());
+    }
     if (this.agentMode === "ask") {
       out.push(buildAskModeSystemAppend());
     } else if (this.agentMode === "plan") {
@@ -315,7 +329,9 @@ export class SessionModeController {
       this.captureSavedToolsFromSession();
       const prefs = getCachedPrefs();
       this.agentMode = "ask";
-      this.refreshSystemPrompt(computeAskModeTools(prefs.tools));
+      this.refreshSystemPrompt(
+        computeModeToolsForType(this.getSessionType(), "ask", prefs.tools),
+      );
       this.emitSessionMode();
       this.emitGoal();
       this.emitModeNotice(
@@ -331,7 +347,9 @@ export class SessionModeController {
       this.captureSavedToolsFromSession();
       const prefs = getCachedPrefs();
       this.agentMode = "plan";
-      this.refreshSystemPrompt(computePlanModeTools(prefs.tools));
+      this.refreshSystemPrompt(
+        computeModeToolsForType(this.getSessionType(), "plan", prefs.tools),
+      );
       const active = bundle.session.getActiveToolNames();
       if (!active.includes("write_plan")) {
         const restore = this.takeRestoredTools();
@@ -944,7 +962,7 @@ export class SessionModeController {
   ): { ok: true } | { ok: false; error: string } {
     this.savedTools = [...tools];
     const mode = this.agentMode === "ask" ? "ask" : "plan";
-    const modeTools = computeModeTools(mode, tools);
+    const modeTools = computeModeToolsForType(this.getSessionType(), mode, tools);
     const label = mode === "ask" ? "调研" : "Plan";
     try {
       this.refreshSystemPrompt(modeTools);
@@ -968,10 +986,13 @@ export class SessionModeController {
 
   refreshAfterResourceReload(): void {
     const prefs = getCachedPrefs();
+    const type = this.getSessionType();
     if (this.agentMode === "ask") {
-      this.refreshSystemPrompt(computeAskModeTools(prefs.tools));
+      this.refreshSystemPrompt(computeModeToolsForType(type, "ask", prefs.tools));
     } else if (this.agentMode === "plan") {
-      this.refreshSystemPrompt(computePlanModeTools(prefs.tools));
+      this.refreshSystemPrompt(computeModeToolsForType(type, "plan", prefs.tools));
+    } else if (type === "design") {
+      this.refreshSystemPrompt(computeModeToolsForType(type, "agent", prefs.tools));
     } else {
       this.refreshSystemPrompt(prefs.tools);
     }

@@ -36,6 +36,7 @@ import {
   type UiAgentEvent,
 } from "../../shared/ipc";
 import { IPC_EVENTS } from "../../shared/ipc-channels";
+import type { SessionType } from "../../shared/session-type";
 import { getAgentDirPath, getCachedPrefs, patchPrefs } from "./prefs";
 import {
   dedupeModelInfosForUi,
@@ -681,12 +682,16 @@ export class SessionHost {
     return this.sessionMode.clearGoal();
   }
 
-  async openProject(cwd: string, mode: "continue" | "new" = "continue"): Promise<OpenProjectResult> {
-    return this.lifecycle.openProject(cwd, mode);
+  async openProject(
+    cwd: string,
+    mode: "continue" | "new" = "continue",
+    sessionType?: SessionType,
+  ): Promise<OpenProjectResult> {
+    return this.lifecycle.openProject(cwd, mode, sessionType);
   }
 
-  async newSession(): Promise<OpenProjectResult> {
-    return this.lifecycle.newSession();
+  async newSession(sessionType?: SessionType): Promise<OpenProjectResult> {
+    return this.lifecycle.newSession(sessionType);
   }
 
   async resumeSession(sessionPath: string): Promise<OpenProjectResult> {

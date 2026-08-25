@@ -2,13 +2,19 @@ import type { IpcMain } from "electron";
 import type { SessionHost } from "../agent/session-host";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
 import { handle } from "./register-ipc";
+import { coerceSessionType, type SessionType } from "../../shared/session-type";
 
 /** Workspace / session lifecycle IPC — thin forwards to SessionHost. */
 export function registerWorkspaceIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
-  handle(ipcMain, IPC_CHANNELS.newSession, async () => sessionHost.newSession());
+  handle(
+    ipcMain,
+    IPC_CHANNELS.newSession,
+    async (_e, sessionType?: unknown) =>
+      sessionHost.newSession(coerceSessionType(sessionType) as SessionType),
+  );
   handle(ipcMain, IPC_CHANNELS.listSessions, async () => sessionHost.listSessions());
   handle(ipcMain, IPC_CHANNELS.resumeSession, async (_e, sessionPath: string) =>
     sessionHost.resumeSession(sessionPath),
