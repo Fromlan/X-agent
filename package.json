@@ -17,7 +17,7 @@
     "email": "fromlan@qq.com"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "desktop:dev": "npm run dev --prefix apps/desktop",
