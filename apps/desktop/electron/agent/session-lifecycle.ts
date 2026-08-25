@@ -64,6 +64,7 @@ import {
   sessionPathsForProject,
 } from "../../shared/project-path";
 import { applyXAgentSkillsFilter } from "./filter-session-skills";
+import { ensureBuiltinDesignSkillsInstalledSafe } from "./builtin-skills-installer";
 import {
   failOpen,
   modelFromSession,
@@ -430,7 +431,13 @@ export class SessionLifecycle {
             ? SessionManager.create(cwd, root)
             : SessionManager.continueRecent(cwd, root);
         const result = await this.createSession(cwd, sessionManager, sessionType);
-        if (result.ok) this.unhideProjectKey(cwd);
+        if (result.ok) {
+          this.unhideProjectKey(cwd);
+          // Fire-and-forget: 兜底 install 5 个 builtin design skill.
+          // 启动时已预热, 正常情况 hit 缓存, 不会真做写盘.
+          // 失败由 installer 内部静默吞, 不影响 session start 返回.
+          void ensureBuiltinDesignSkillsInstalledSafe();
+        }
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
