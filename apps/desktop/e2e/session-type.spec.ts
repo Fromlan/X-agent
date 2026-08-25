@@ -61,15 +61,58 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     // 同步策略: CI 上 .empty-state-starters / starter-chip 容器出现有 race,
     // 直接轮询 page.evaluate 看 #message-stream > .empty-state-starters 是否已挂载,
     // 比 toBeVisible 的 auto-retry 更稳. 拿到 chip 文本后再继续.
-    await main.waitForFunction(
-      () =>
-        document.querySelectorAll('.starter-chip').length > 0 &&
-        Array.from(document.querySelectorAll('.starter-chip')).some(
-          (el) => (el.textContent || '').includes('设计一个角色'),
-        ),
-      null,
-      { timeout: 20_000, polling: 100 },
-    );
+    try {
+      await main.waitForFunction(
+        () =>
+          document.querySelectorAll('.starter-chip').length > 0 &&
+          Array.from(document.querySelectorAll('.starter-chip')).some(
+            (el) => (el.textContent || '').includes('设计一个角色'),
+          ),
+        null,
+        { timeout: 20_000, polling: 100 },
+      );
+    } catch (e) {
+      // 调试: dump 实际 DOM 状态帮助定位 CI 跟本机的差异
+      const domDump = await main.evaluate(() => {
+        const body = document.body;
+        const chatPanel = document.querySelector('.chat-panel');
+        const transcript = document.querySelector('.chat-transcript');
+        const messageStream = document.querySelector('.message-stream');
+        const allChips = Array.from(
+          document.querySelectorAll('.starter-chip'),
+        ).map((el) => el.textContent || '');
+        const allBadges = Array.from(
+          document.querySelectorAll('.empty-state-session-type'),
+        ).map((el) => ({
+          text: el.textContent,
+          type: el.getAttribute('data-session-type'),
+        }));
+        return {
+          bodySessionType: body.getAttribute('data-session-type'),
+          chatPanelExists: !!chatPanel,
+          transcriptExists: !!transcript,
+          messageStreamChildren: messageStream
+            ? messageStream.children.length
+            : -1,
+          messageStreamInnerChildren: messageStream
+            ? messageStream.firstElementChild
+              ? messageStream.firstElementChild.children.length
+              : -1
+            : -1,
+          chatPanelClass: chatPanel ? chatPanel.className : null,
+          emptyStateStarters: document.querySelectorAll(
+            '.empty-state-starters',
+          ).length,
+          starterChipsCount: allChips.length,
+          starterChips: allChips,
+          emptyStateSessionTypeCount: allBadges.length,
+          emptyStateSessionType: allBadges,
+        };
+      });
+      throw new Error(
+        `design chip wait timed out. dom=${JSON.stringify(domDump)} err=${String(e)}`,
+      );
+    }
     await expect(
       main.locator('.starter-chip:has-text("设计一个角色")'),
     ).toBeVisible();
