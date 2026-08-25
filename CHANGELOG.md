@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+### 改进
+
+- **策划会话类型（Design Session Type）**：新增 `code` / `design` 两种会话级不可变抽象，与现有 4 mode（agent / 调研 / 计划 / 目标）正交。`code` 是现有默认行为；`design` 锁写只允许落到 `<cwd>/game-design/`，会话内仍可切 4 mode。TopBar 双按钮「+ 新代码会话 / + 新策划会话」二选一创建；UI 通过 `body[data-session-type="design"]` 给 `.chat-panel` 加 3px 左侧 inset 描边 + 极淡背景色，给 `.composer-shell` 加同色描边 + 浅色 glow（不覆盖现有 mode pill 颜色）。空对话中央新增「代码模式 / 策划模式」徽标 + per-theme 描边色。每个主题各出一套 `--session-design-accent` / `--session-design-accent-soft` token（10 主题 × dark/light 全覆盖），自适应深浅。侧栏条目显示「策」徽标。SessionType 通过 sidecar `<sessionPath>.session-type.json` 持久化（原子写），旧会话无 sidecar 自动 fallback 到 `code`。策划专用 skills 独立 PR，本次不预装。详见 [issue #21](https://github.com/Fromlan/X-agent/issues/21)。
+
 ## 0.5.4
 
 ### 改进
