@@ -8,10 +8,14 @@
 
 ## Unreleased
 
+## 0.5.5
+
 ### 改进
 
+- **策划会话类型 code / design（issue #22）**：在原有 4 个 AgentSessionMode（agent / 调研 / 计划 / 目标）之上，新增会话级 `sessionType` 抽象——`code`（默认，写入无限制）与 `design`（策划会话，写操作硬约束到 `<cwd>/game-design/`，UI 切暖色主题）。design 类型的工具集为「read + 写/编辑 + readonly bash」，不包含 `write_plan`（策划文档应直接 write 到 game-design/），且对 `write` / `edit` / godot-mutating 工具的路径参数做强约束：相对路径自动补 `<cwd>/game-design/`，绝对路径 / `..` / UNC / 盘符越界 / `~` 展开 / `file://` 全部拒绝。type 信息通过 `<sessionPath>.session-type.json` sidecar 持久化（旧会话自动回退到 `code`）；顶栏新增会话类型切换按钮、Sidebar / ReadyChecklist 加 design 徽标；35 个 vitest 用例覆盖路径规范化、逃逸尝试、godot 工具、bash 只读与扩展 hookup。
 - **策划会话预装 5 个内置 skill（issue #23）**：首次打开策划会话（或 main 进程启动预热）自动懒写 5 个 SKILL.md 到 `~/.pi/agent/skills/design-*/SKILL.md`：`design-initiation`（立项策划工作坊）、`design-process`（开发流程 5 阶段 + 想法池 + 周节奏）、`design-systems`（角色 / 世界观 / 关卡系统设计）、`design-numerical`（数值表 + 平衡方法）、`design-core-loop`（30s 循环 + 乐趣四象限）。由 Pi 的 `DefaultResourceLoader` 自动发现并入 `<available_skills>` 顶部，**body 不入 system prompt**——agent 通过 `read` 工具按需加载完整方法论，0 token 浪费在「用不上的方法论」上。懒写幂等：内容一致则跳过，用户改过则不覆盖（sha256 记录到 `~/.pi/agent/x-agent/builtin-skills-installed.json`），`force: true` 可强制重写。6 个 design chat starter id 保持不变（`design-character` / `design-world` / `design-core-loop` / `design-data-table` / `design-level` / `design-gdd-scaffold`），prompt 文案显式点名对应 skill（5-loose 映射：character/world/level 共享 `design-systems`）。
-- **可切换的客户端 logo**：在「设置 → 通用 → 品牌」新增 logo 选择器，8 套内置预设（霓虹赛博 / 熔岩灼烧 / 电浆雷霆 / 全息彩虹 / 玫瑰金金属 / 像素 8-bit / 故障 Glitch / 宇宙星云）+ 自定义上传（PNG / JPG，64–4096 px，≤ 4 MB）。切换即时生效：favicon、BrowserWindow 标题栏 / 任务栏图标。splash 启动屏与打包后的 .exe / NSIS 安装包图标不在运行时替换范围内（需要 `npm run dist` 重新打包）；自定义 logo 存到 `~/.pi/agent/x-agent-logos/<uuid>.png`，由新注册的 `x-agent-logos://` 自定义协议对外提供；删除自定义且其是当前活跃项时自动回退到默认。
+- **可切换的客户端 logo（issue #19 + #20）**：在「设置 → 通用 → 品牌」新增 logo 选择器，8 套内置预设（霓虹赛博 / 熔岩灼烧 / 电浆雷霆 / 全息彩虹 / 玫瑰金金属 / 像素 8-bit / 故障 Glitch / 宇宙星云）+ 自定义上传（PNG / JPG，64–4096 px，≤ 4 MB）。切换即时生效：favicon、BrowserWindow 标题栏 / 任务栏图标；内置 logo 资产从 PNG 1024 改为 webp 双尺寸，体积节省 88%。splash 启动屏与打包后的 .exe / NSIS 安装包图标不在运行时替换范围内（需要 `npm run dist` 重新打包）；自定义 logo 存到 `~/.pi/agent/x-agent-logos/<uuid>.png`，由新注册的 `x-agent-logos://` 自定义协议对外提供；删除自定义且其是当前活跃项时自动回退到默认。
+- **仓库文档归位**：根目录的领域文档（roadmap / context / agent / design / maintenance / adr 等）统一搬到 `docs/`，README 链接同步更新，CLAUDE.md 指引仍指向唯一权威 `docs/context.md` + `docs/maintenance.md`。
 
 ## 0.5.4
 
