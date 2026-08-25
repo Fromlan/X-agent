@@ -111,6 +111,11 @@ export const IPC_CHANNELS = {
   getStartupReport: "getStartupReport",
   /** Renderer signals first paint so splash can reveal the main window. */
   appReady: "appReady",
+
+  // client logo assets (see electron/agent/agent-logos.ts + app-runtime.ts)
+  logoListPresets: "logoListPresets",
+  logoUploadCustom: "logoUploadCustom",
+  logoClearCustom: "logoClearCustom",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -122,6 +127,8 @@ export type IpcChannelKey = keyof typeof IPC_CHANNELS;
 export const IPC_EVENTS = {
   agentEvent: "agent:event",
   updateStatus: "update:status",
+  /** Emitted when `clientLogoId` changes (either via setPrefs or a clearCustom revert). */
+  logoChanged: "logo:changed",
 } as const;
 
 export type IpcEventChannel = (typeof IPC_EVENTS)[keyof typeof IPC_EVENTS];

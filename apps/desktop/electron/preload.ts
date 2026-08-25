@@ -163,6 +163,20 @@ const exposed: XAgentApi = {
     install: api.installUpdate,
     onStatus: flatApi.onUpdateStatus,
   },
+  logo: {
+    listPresets: api.logoListPresets,
+    uploadCustom: api.logoUploadCustom,
+    clearCustom: api.logoClearCustom,
+    onChanged: (handler: (payload: { id: string }) => void) => {
+      const listener = (_: Electron.IpcRendererEvent, payload: { id: string }) => {
+        handler(payload);
+      };
+      ipcRenderer.on(IPC_EVENTS.logoChanged, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_EVENTS.logoChanged, listener);
+      };
+    },
+  },
 } as XAgentApi;
 
 contextBridge.exposeInMainWorld("xAgent", exposed);

@@ -31,6 +31,7 @@ assert.deepEqual(DEFAULT_PREFS.disabledSkills, []);
 assert.equal(DEFAULT_PREFS.autoCompactPercent, 0);
 assert.equal(DEFAULT_PREFS.goalMaxTurns, 20);
 assert.equal(DEFAULT_PREFS.goalMaxTokens, 500_000);
+assert.equal(DEFAULT_PREFS.clientLogoId, "default", "DEFAULT_PREFS.clientLogoId");
 assert.ok(!("updateSource" in DEFAULT_PREFS));
 assert.deepEqual(DEFAULT_PREFS.tools, [
   "read", "bash", "edit", "write", "grep", "find", "ls",
@@ -138,6 +139,46 @@ try {
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(projectPrefsDir, { recursive: true, force: true });
+}
+
+// 7. clientLogoId 白名单 + 加载时 dirty 兜底为 "default"
+const logoPrefsDir = mkdtempSync(join(tmpdir(), "x-agent-logo-prefs-"));
+try {
+  setAgentDirOverrideForTests(logoPrefsDir);
+  const base = await patchPrefs({ clientLogoId: "default" });
+  assert.equal(base.clientLogoId, "default");
+
+  const preset = await patchPrefs({ clientLogoId: "preset:03-plasma-thunder" });
+  assert.equal(preset.clientLogoId, "preset:03-plasma-thunder");
+
+  const custom = await patchPrefs({
+    clientLogoId: "custom:7f3c0a4d-1234-5678-9abc-def012345678",
+  });
+  assert.equal(custom.clientLogoId, "custom:7f3c0a4d-1234-5678-9abc-def012345678");
+
+  // 拒绝任意路径 / 脚本片段 / 外部 scheme
+  const evil = await patchPrefs({ clientLogoId: "../../etc/passwd" });
+  assert.equal(evil.clientLogoId, "custom:7f3c0a4d-1234-5678-9abc-def012345678",
+    "evil clientLogoId is ignored, keeps previous value");
+
+  // 空字符串 → 默认
+  const blanked = await patchPrefs({ clientLogoId: "   " });
+  assert.equal(blanked.clientLogoId, "default", "blank clientLogoId reverts to default");
+
+  // 加载时：磁盘上的脏值（不在白名单命名空间）→ default
+  writeFileSync(
+    join(logoPrefsDir, "x-agent.json"),
+    JSON.stringify({ ...DEFAULT_PREFS, clientLogoId: "garbage-not-in-whitelist" }),
+    "utf8",
+  );
+  setAgentDirOverrideForTests(null);
+  setAgentDirOverrideForTests(logoPrefsDir);
+  const reloaded = loadPrefs();
+  assert.equal(reloaded.clientLogoId, "default",
+    "on-disk value outside the default/preset:/custom: namespace is normalized to default");
+} finally {
+  setAgentDirOverrideForTests(null);
+  rmSync(logoPrefsDir, { recursive: true, force: true });
 }
 
 console.log("DEFAULT_PREFS migration: ok");

@@ -465,6 +465,11 @@ export interface ClientPrefs {
    * `budget_limited` when reached; user can raise and resume.
    */
   goalMaxTokens: number;
+  /**
+   * User-selected client logo. See `ClientLogoId` for the encoding.
+   * Persisted as-is; unknown values fall back to `"default"` at load time.
+   */
+  clientLogoId: string;
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -492,6 +497,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   autoCompactPercent: 0,
   goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
   goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
+  clientLogoId: "default",
 };
 
 /**
@@ -536,6 +542,10 @@ export const ClientPrefsSchema = Type.Object({
   autoCompactPercent: Type.Number(),
   goalMaxTurns: Type.Number(),
   goalMaxTokens: Type.Number(),
+  // Encoded as a free-form string; renderer side filters against the known
+  // preset/custom list. Loose string schema here keeps IPC handler small and
+  // lets new presets/customs flow through without schema bumps.
+  clientLogoId: Type.String(),
 });
 
 export const ClientPrefsPatchSchema = Type.Partial(ClientPrefsSchema, {
@@ -1085,6 +1095,75 @@ export interface StartupIssue {
   message: string;
 }
 
+/**
+ * Logo identifier for the user's client-branding choice.
+ *
+ * Encoded as a single string in `ClientPrefs.clientLogoId` so prefs round-trip
+ * stays simple. Three shapes:
+ *   - `"default"`        — original X-agent logo (build/icon.* + public/logo.png)
+ *   - `"preset:NN-name"` — built-in preset under `apps/desktop/public/logos/`
+ *   - `"custom:<uuid>"`  — user-uploaded image under
+ *                          `~/.pi/agent/x-agent-logos/<uuid>.png`
+ *
+ * Anything else is treated as `"default"` by `parseLogoId` (defensive).
+ */
+export type ClientLogoId = string;
+
+export interface LogoPreset {
+  /** Always `"preset:NN-<slug>"`. */
+  id: string;
+  /** Human-readable Chinese label, e.g. "霓虹赛博". */
+  label: string;
+  /** Renderer-relative path to the 1024×1024 webp (favicon / full-size). */
+  url: string;
+  /** Renderer-relative path to the 256×256 webp thumbnail (settings grid). */
+  thumbnailUrl: string;
+  width: number;
+  height: number;
+  sizeBytes: number;
+}
+
+export interface CustomLogo {
+  /** Always `"custom:<uuid>"`. */
+  id: string;
+  /** Display label: `<originalName> · YYYY-MM-DD HH:mm`. */
+  label: string;
+  /** Renderer-relative URL served via the `x-agent-logos://` custom protocol. */
+  url: string;
+  fileName: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  uploadedAt: number;
+}
+
+export interface LogoList {
+  presets: LogoPreset[];
+  customs: CustomLogo[];
+  /** The currently effective `ClientPrefs.clientLogoId`. */
+  active: string;
+}
+
+export interface LogoUploadError {
+  ok: false;
+  error: string;
+  code: "INVALID_FILE" | "FILE_TOO_LARGE" | "DIM_OUT_OF_RANGE" | "WRITE_FAILED";
+}
+
+export interface LogoUploadSuccess {
+  ok: true;
+  logo: CustomLogo;
+}
+
+export type LogoUploadResult = LogoUploadSuccess | LogoUploadError;
+
+export interface LogoClearResult {
+  ok: boolean;
+  error?: string;
+  /** True when the deletion also reverted `clientLogoId` to `"default"`. */
+  revertedActive?: boolean;
+}
+
 export type OpenProjectMode = "continue" | "new";
 
 /** Coarse workspace / session lifecycle facade (facade methods stay on window.xAgent). */
@@ -1158,6 +1237,19 @@ export type PrefsApi = {
 export type AppReportApi = {
   /** Drain and clear the boot-time issue queue (shadow_recover / godot_rpc / package install). */
   getStartupReport: IpcInvokeMap["getStartupReport"];
+};
+
+/**
+ * Client logo asset management. The actual `clientLogoId` selection lives in
+ * `ClientPrefs` (set via `prefs.set`); this facade only handles the binary
+ * asset side (preset enumeration, custom upload/clear).
+ */
+export type LogoApi = {
+  listPresets: IpcInvokeMap["logoListPresets"];
+  uploadCustom: IpcInvokeMap["logoUploadCustom"];
+  clearCustom: IpcInvokeMap["logoClearCustom"];
+  /** Subscribe to main-process `logo:changed` pushes (e.g. when another window / a tool flips the active id). */
+  onChanged: (handler: (payload: { id: string }) => void) => () => void;
 };
 
 /** Godot editor RPC + addon lifecycle facade. */
@@ -1316,6 +1408,20 @@ export type IpcInvokeMap = {
   clearUsageSummary: () => Promise<{ ok: boolean; error?: string }>;
   /** Signal main process that renderer boot finished — closes splash and shows the main window. */
   appReady: () => Promise<{ ok: boolean }>;
+  /** Built-in logo presets + user-uploaded customs + currently active id. */
+  logoListPresets: () => Promise<LogoList>;
+  /**
+   * Show a native file picker, validate the chosen file, save it under
+   * `~/.pi/agent/x-agent-logos/`, and return its descriptor. The renderer is
+   * expected to call `setPrefs({ clientLogoId: result.logo.id })` afterwards
+   * if the user wants this to become active.
+   *
+   * `result.ok === false` when the user cancels (code `INVALID_FILE` with
+   * `error: "已取消"`), the file fails validation, or write fails.
+   */
+  logoUploadCustom: () => Promise<LogoUploadResult>;
+  /** Delete a custom logo. If it was the active one, also reverts to `default`. */
+  logoClearCustom: (customId: string) => Promise<LogoClearResult>;
 };
 
 /**
@@ -1402,6 +1508,7 @@ export interface XAgentApi extends XAgentApiFlat {
   appReport: AppReportApi;
   godot: GodotApi;
   updates: UpdatesApi;
+  logo: LogoApi;
 }
 
 /** Update UX facade. */

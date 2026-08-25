@@ -11,6 +11,7 @@
 ### 改进
 
 - **策划会话类型（Design Session Type）**：新增 `code` / `design` 两种会话级不可变抽象，与现有 4 mode（agent / 调研 / 计划 / 目标）正交。`code` 是现有默认行为；`design` 锁写只允许落到 `<cwd>/game-design/`，会话内仍可切 4 mode。TopBar 双按钮「+ 新代码会话 / + 新策划会话」二选一创建；UI 通过 `body[data-session-type="design"]` 给 `.chat-panel` 加 3px 左侧 inset 描边 + 极淡背景色，给 `.composer-shell` 加同色描边 + 浅色 glow（不覆盖现有 mode pill 颜色）。空对话中央新增「代码模式 / 策划模式」徽标 + per-theme 描边色。每个主题各出一套 `--session-design-accent` / `--session-design-accent-soft` token（10 主题 × dark/light 全覆盖），自适应深浅。侧栏条目显示「策」徽标。SessionType 通过 sidecar `<sessionPath>.session-type.json` 持久化（原子写），旧会话无 sidecar 自动 fallback 到 `code`。策划专用 skills 独立 PR，本次不预装。详见 [issue #21](https://github.com/Fromlan/X-agent/issues/21)。
+- **可切换的客户端 logo**：在「设置 → 通用 → 品牌」新增 logo 选择器，8 套内置预设（霓虹赛博 / 熔岩灼烧 / 电浆雷霆 / 全息彩虹 / 玫瑰金金属 / 像素 8-bit / 故障 Glitch / 宇宙星云）+ 自定义上传（PNG / JPG，64–4096 px，≤ 4 MB）。切换即时生效：favicon、BrowserWindow 标题栏 / 任务栏图标。splash 启动屏与打包后的 .exe / NSIS 安装包图标不在运行时替换范围内（需要 `npm run dist` 重新打包）；自定义 logo 存到 `~/.pi/agent/x-agent-logos/<uuid>.png`，由新注册的 `x-agent-logos://` 自定义协议对外提供；删除自定义且其是当前活跃项时自动回退到默认。
 
 ## 0.5.4
 

@@ -103,6 +103,19 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
       ? Math.min(10_000_000, Math.floor(rawGoalTokens))
       : DEFAULT_PREFS.goalMaxTokens;
   const { themeId, colorMode } = normalizeThemePrefs(raw);
+  // clientLogoId: defensive parse. Unknown shapes (legacy / corrupted values
+  // / future formats) fall back to the built-in default; we never throw on
+  // load. Custom ids are NOT validated here against the on-disk asset list —
+  // that would create a boot-time coupling. The renderer can show "missing"
+  // and the user can re-upload or revert.
+  const rawLogoId = rest.clientLogoId;
+  const clientLogoId =
+    typeof rawLogoId === "string" &&
+    (rawLogoId === "default" ||
+      rawLogoId.startsWith("preset:") ||
+      rawLogoId.startsWith("custom:"))
+      ? rawLogoId
+      : DEFAULT_PREFS.clientLogoId;
   return {
     ...DEFAULT_PREFS,
     ...rest,
@@ -115,6 +128,7 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     autoCompactPercent,
     goalMaxTurns,
     goalMaxTokens,
+    clientLogoId,
   };
 }
 
@@ -281,6 +295,22 @@ export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPre
           valid = false;
         }
         next.lastProjectPath = valid ? candidate : prev.lastProjectPath;
+      }
+    }
+    // clientLogoId: 严格白名单防止被攻陷 renderer 注入任意路径或脚本片段。
+    // "default" 永远是合法值；"preset:..." / "custom:<uuid>" 是受控命名空间。
+    if (patch.clientLogoId !== undefined) {
+      const candidate = patch.clientLogoId?.trim();
+      if (!candidate) {
+        next.clientLogoId = DEFAULT_PREFS.clientLogoId;
+      } else if (
+        candidate === "default" ||
+        candidate.startsWith("preset:") ||
+        candidate.startsWith("custom:")
+      ) {
+        next.clientLogoId = candidate;
+      } else {
+        next.clientLogoId = prev.clientLogoId;
       }
     }
     return next;

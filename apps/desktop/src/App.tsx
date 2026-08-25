@@ -86,6 +86,7 @@ import {
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
 import { applyTheme } from "./lib/theme";
+import { useLogo } from "./hooks/useLogo";
 
 export default function App() {
   const confirm = useConfirm();
@@ -281,6 +282,10 @@ export default function App() {
     compacting,
     sessionId,
   });
+
+  // 客户端 logo 状态 + favicon 同步。挂在 App 顶层以保证 splash 关闭后
+  // 第一次进入主界面时 favicon 已被正确设置,后续切 logo 也不依赖设置面板打开。
+  const logo = useLogo(prefs);
 
   useAgentEventRouter({
     setStatus,
@@ -1242,6 +1247,7 @@ export default function App() {
           open={settingsOpen}
           prefs={prefs}
           cwd={cwd}
+          logo={logo}
           initialTab={settingsTab}
           onClose={() => {
             setSettingsOpen(false);

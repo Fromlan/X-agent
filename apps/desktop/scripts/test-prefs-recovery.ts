@@ -33,6 +33,8 @@ try {
   );
   assert.equal(result.prefs.themeId, DEFAULT_PREFS.themeId);
   assert.equal(result.prefs.autoCompactPercent, 0);
+  assert.equal(result.prefs.clientLogoId, "default",
+    "corrupt-file recovery yields default clientLogoId");
   assert.ok(!("updateSource" in result.prefs));
 
   const again = loadPrefs();
@@ -60,6 +62,8 @@ try {
   assert.equal(ok.prefs.themeId, "nord");
   assert.equal(ok.prefs.colorMode, "light");
   assert.equal(ok.prefs.autoCompactPercent, 85);
+  assert.equal(ok.prefs.clientLogoId, "default",
+    "recovered-but-valid file without clientLogoId yields default");
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(root, { recursive: true, force: true });
