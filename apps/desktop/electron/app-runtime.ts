@@ -6,6 +6,7 @@ import { checkAuth } from "./agent/auth-check";
 import { checkGit } from "./agent/git-exec";
 import { checkPiCli, installPiCli, openPiLogin } from "./agent/pi-cli";
 import { loadPrefs, loadPrefsWithRecovery, patchPrefs, getCachedPrefs } from "./agent/prefs";
+import { ensureBuiltinDesignSkillsInstalledSync } from "./agent/builtin-skills-installer";
 import type { PrefsLoadResult } from "./agent/prefs";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
 import { SessionHost } from "./agent/session-host";
@@ -424,6 +425,10 @@ export function bootRuntime(hooks: RuntimeHooks): void {
   const updater = new AppAutoUpdater(hooks.getMainWindow);
   registerIpc(sessionHost, godotRpc, updater, hooks);
   updater.init();
+  // 同步预热 builtin design skills (≤50ms 启动开销, design session 启动时
+  // ~/.pi/agent/skills/design-*/SKILL.md 已在位, Pi DefaultResourceLoader 立即发现).
+  // 失败由 installer 内部静默吞, 这里不再 try/catch.
+  ensureBuiltinDesignSkillsInstalledSync();
 
   void (async () => {
     try {
