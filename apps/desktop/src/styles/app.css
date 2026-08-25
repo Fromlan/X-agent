@@ -1277,6 +1277,12 @@ body.is-resizing-column * {
   background: var(--bg-main);
 }
 
+/* 策划会话: 聊天窗口左侧 3px 描边条 + 极淡背景色, 提示"策划 mode". */
+body[data-session-type="design"] .chat-panel {
+  box-shadow: inset 3px 0 0 var(--session-design-accent, #d59c5b);
+  background: var(--session-design-accent-soft, rgba(213, 156, 91, 0.08));
+}
+
 .chat-transcript {
   display: flex;
   flex-direction: column;
@@ -1363,6 +1369,22 @@ body.is-resizing-column * {
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 500;
+}
+
+/* 会话类型徽章 — 空对话中央唯一主标.
+   字号撑大到 48px, 不加外框, 30% 不透明度,
+   让 "代码模式 / 策划模式" 像轻量水印一样居于中央. */
+.empty-state-session-type {
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  opacity: 0.3;
+}
+
+.empty-state-session-type[data-session-type="design"] {
+  color: var(--session-design-accent, #d59c5b);
 }
 
 .empty-state-hint {
@@ -2841,6 +2863,34 @@ body.is-resizing-column * {
   cursor: not-allowed;
 }
 
+/* =============================================================
+ * Session type badge —— 侧栏条目标记策划会话.
+ * 默认透明 (无徽标), 设计会话时显示暖色 chip.
+ * ============================================================= */
+.session-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--bg-app);
+  background: var(--accent-purple);
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.session-type-badge[data-session-type="design"] {
+  background: var(--accent-purple);
+}
+
+/* TopBar 双按钮视觉分组 —— 策划按钮在 hover / focus 走暖色边 */
+.topbar [data-session-type="design"]:not(:disabled):hover {
+  border-color: var(--accent-purple);
+}
+
 .goal-banner {
   display: flex;
   align-items: center;
@@ -2931,6 +2981,28 @@ body.is-resizing-column * {
 .composer-shell[data-streaming="true"] {
   box-shadow: var(--shadow-strong);
   border-color: color-mix(in srgb, var(--mode-color) 24%, transparent);
+}
+
+/* 策划会话: composer shell 加策划色描边 + 浅色 glow, 不抢 mode pill 的颜色. */
+body[data-session-type="design"] .composer-shell {
+  border-color: var(--session-design-accent, #d59c5b);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 0 1px var(--session-design-accent-soft, rgba(213, 156, 91, 0.16)),
+    0 0 18px var(--session-design-accent-soft, rgba(213, 156, 91, 0.16));
+}
+
+/* 策划 + focus/streaming 时 mode-color 与 design-accent 叠加: focus 偏 mode 色, idle 偏 design 色. */
+body[data-session-type="design"] .composer-shell:focus-within,
+body[data-session-type="design"] .composer-shell[data-streaming="true"] {
+  box-shadow:
+    var(--shadow-strong),
+    0 0 0 1px
+      color-mix(
+        in srgb,
+        var(--mode-color) 24%,
+        var(--session-design-accent, #d59c5b)
+      );
 }
 
 .composer-shell:has(textarea:disabled) {
