@@ -22,6 +22,12 @@ import {
   type TurnUsage,
   type UiAgentEvent,
 } from "../../shared/ipc";
+import {
+  DEFAULT_SESSION_TYPE,
+  coerceSessionType,
+  type SessionType,
+} from "../../shared/session-type";
+import { computeSessionTypeTools } from "../../shared/session-type-tools";
 import { getCachedPrefs, patchPrefs } from "./prefs";
 import { branchEntriesToHistory } from "../../shared/transcript";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
@@ -36,11 +42,20 @@ import {
   clearGoalJournal,
   clearPlanJournal,
   computeAskModeTools,
+  computeModeToolsForType,
   computePlanModeTools,
   createWritePlanTools,
   createPlanModeGuardExtension,
   type SessionModeController,
 } from "./session-mode/index";
+import {
+  createDesignWriteGuardExtension,
+} from "./session-mode/design-write-guard";
+import {
+  clearSessionType,
+  loadSessionType,
+  saveSessionType,
+} from "./session-type-persistence";
 import type { TurnFileTracker } from "./turn-file-tracker";
 import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
@@ -60,6 +75,8 @@ export type SessionBundle = {
   unsubscribe: () => void;
   cwd: string;
   sessionPath: string | null;
+  /** Session type (locked at creation). Defaults to "code" for legacy. */
+  sessionType: SessionType;
 };
 
 /** Mutable state + services SessionLifecycle needs from SessionHost. */
@@ -146,6 +163,7 @@ export class SessionLifecycle {
   private async createSession(
     cwd: string,
     sessionManager: SessionManager,
+    requestedType: SessionType = DEFAULT_SESSION_TYPE,
   ): Promise<OpenProjectResult> {
     const prefs = getCachedPrefs();
     const modelRuntime = await this.a().ensureRuntime();
@@ -165,6 +183,7 @@ export class SessionLifecycle {
           base.skills,
           cwd,
           getCachedPrefs().disabledSkills,
+          requestedType,
         ),
         diagnostics: base.diagnostics,
       }),
@@ -181,10 +200,21 @@ export class SessionLifecycle {
           getAllowedTools: () => {
             const prefsTools = getCachedPrefs().tools;
             const mode = this.a().sessionMode.getMode();
+            const type = this.a().getBundle()?.sessionType ?? DEFAULT_SESSION_TYPE;
+            if (type === "design") {
+              return computeModeToolsForType(type, mode, prefsTools);
+            }
             if (mode === "ask") return computeAskModeTools(prefsTools);
             if (mode === "plan") return computePlanModeTools(prefsTools);
             return prefsTools;
           },
+          getCwd: () => this.a().getBundle()?.cwd ?? null,
+        }),
+        // Design session type: block writes outside <cwd>/game-design/.
+        // No-op for code sessions (guard checks sessionType === "design" first).
+        createDesignWriteGuardExtension({
+          getSessionType: () =>
+            this.a().getBundle()?.sessionType ?? DEFAULT_SESSION_TYPE,
           getCwd: () => this.a().getBundle()?.cwd ?? null,
         }),
       ],
@@ -256,9 +286,13 @@ export class SessionLifecycle {
     if (effectiveThinking !== prefs.thinkingLevel) {
       void patchPrefs({ thinkingLevel: effectiveThinking });
     }
-    // Initial active set = user prefs only (write_plan stays registered but inactive
-    // until Plan mode). Must run after createAgentSession so registry is built.
-    session.setActiveToolsByName(prefs.tools);
+    // Initial active set = session-type derived from prefs (code = prefs.tools;
+    // design = readonly core + write/edit, with write/edit path-checked by the
+    // design-write-guard extension). Must run after createAgentSession so the
+    // registry is built.
+    session.setActiveToolsByName(
+      computeSessionTypeTools(requestedType, prefs.tools),
+    );
 
     // Wire ExtensionUI.notify → chat system notices (e.g. /godot-rpc-status).
     // Without this, Pi uses noOpUIContext and extension commands appear silent.
@@ -273,12 +307,20 @@ export class SessionLifecycle {
       }),
     });
 
+    const sessionPath = this.sessionFileOf(session);
+    // Persist the type sidecar NOW (after we have sessionPath) so a follow-up
+    // resume can recover the type. Failure is non-fatal per plan §3.3.
+    if (sessionPath) {
+      saveSessionType(sessionPath, requestedType);
+    }
+
     const unsubscribe = this.a().bridgeEvents(session);
     const nextBundle: SessionBundle = {
       session,
       unsubscribe,
       cwd,
-      sessionPath: this.sessionFileOf(session),
+      sessionPath,
+      sessionType: requestedType,
     };
 
     const previous = this.a().getBundle();
@@ -297,7 +339,7 @@ export class SessionLifecycle {
     // after restarting the app (plan files persist on disk).
     this.a().sessionMode.restorePlanFromJournal();
 
-    const sessionPath = this.sessionFileOf(session);
+    // sessionPath 已在 bundle 里写入, 上面循环里也用过了. 这里不需要重新声明.
     if (session.model) {
       // 若用户偏好仍是旧的虚构默认("deepseek/deepseek-v4-flash")，把真实生效模型
       // 写回 prefs 并显式通知；否则每次启动都以为已配置，实际却被静默回退。
@@ -317,9 +359,8 @@ export class SessionLifecycle {
     }
     void patchPrefs({
       lastProjectPath: cwd,
-      lastSessionPath: sessionPath,
+      lastSessionPath: nextBundle.sessionPath,
     });
-    this.a().getBundle()!.sessionPath = sessionPath;
 
     this.a().fileTracker.setCwd(cwd);
     this.a().fileTracker.clear();
@@ -337,6 +378,7 @@ export class SessionLifecycle {
       sessionId: session.sessionId,
       model: modelFromSession(session),
       thinkingLevel: effectiveThinking,
+      sessionType: requestedType,
       ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
     };
 
@@ -346,6 +388,7 @@ export class SessionLifecycle {
       cwd,
       model: info.model,
       thinkingLevel: info.thinkingLevel,
+      sessionType: requestedType,
       sessionPath,
     });
     this.a().setLastHistoryFingerprint(this.a().historyFingerprint(history));
@@ -371,7 +414,11 @@ export class SessionLifecycle {
     }
   }
 
-  async openProject(cwd: string, mode: "continue" | "new" = "continue"): Promise<OpenProjectResult> {
+  async openProject(
+    cwd: string,
+    mode: "continue" | "new" = "continue",
+    sessionType: SessionType = DEFAULT_SESSION_TYPE,
+  ): Promise<OpenProjectResult> {
     if (!cwd || !existsSync(cwd)) {
       return failOpen("项目路径不存在", cwd);
     }
@@ -382,7 +429,7 @@ export class SessionLifecycle {
           mode === "new"
             ? SessionManager.create(cwd, root)
             : SessionManager.continueRecent(cwd, root);
-        const result = await this.createSession(cwd, sessionManager);
+        const result = await this.createSession(cwd, sessionManager, sessionType);
         if (result.ok) this.unhideProjectKey(cwd);
         return result;
       } catch (err) {
@@ -393,12 +440,12 @@ export class SessionLifecycle {
     });
   }
 
-  async newSession(): Promise<OpenProjectResult> {
+  async newSession(sessionType: SessionType = DEFAULT_SESSION_TYPE): Promise<OpenProjectResult> {
     const cwd = this.a().getBundle()?.cwd;
     if (!cwd) {
       return failOpen("尚未打开项目");
     }
-    return this.openProject(cwd, "new");
+    return this.openProject(cwd, "new", sessionType);
   }
 
   async resumeSession(sessionPath: string): Promise<OpenProjectResult> {
@@ -420,7 +467,9 @@ export class SessionLifecycle {
             "无法从会话文件解析项目路径，请先打开对应项目后再恢复",
           );
         }
-        const result = await this.createSession(cwd, sessionManager);
+        // 恢复时从 sidecar 读 type, 缺省 fallback 到 DEFAULT_SESSION_TYPE (向后兼容).
+        const sessionType = loadSessionType(sessionPath);
+        const result = await this.createSession(cwd, sessionManager, sessionType);
         if (result.ok) this.unhideProjectKey(cwd);
         return result;
       } catch (err) {
@@ -478,6 +527,7 @@ export class SessionLifecycle {
       }
       clearGoalJournal(sessionPath);
       clearPlanJournal(sessionPath);
+      clearSessionType(sessionPath);
 
       const prefs = getCachedPrefs();
       if (prefs.lastSessionPath === sessionPath) {
@@ -555,6 +605,7 @@ export class SessionLifecycle {
         unlinkSync(sessionPath);
         clearGoalJournal(sessionPath);
         clearPlanJournal(sessionPath);
+        clearSessionType(sessionPath);
         deleted += 1;
         if (prefs.lastSessionPath === sessionPath) {
           clearLastSession = true;
@@ -655,6 +706,8 @@ export class SessionLifecycle {
           path: s.path,
           cwd: s.cwd ?? "",
           updatedAt: new Date(s.modified ?? s.created ?? Date.now()).toISOString(),
+          // sessionType 从 sidecar 读; 缺省 fallback 到 DEFAULT_SESSION_TYPE.
+          sessionType: coerceSessionType(loadSessionType(s.path)),
         }));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

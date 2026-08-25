@@ -164,6 +164,7 @@ export function failOpen(error: string, cwd = ""): OpenProjectResult {
     sessionId: "",
     model: null,
     thinkingLevel: "off",
+    sessionType: "code",
     error,
   };
 }
