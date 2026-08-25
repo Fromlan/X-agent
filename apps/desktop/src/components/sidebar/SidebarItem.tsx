@@ -6,6 +6,7 @@ import {
 } from "react";
 import { Check, X } from "lucide-react";
 import type { AgentStatus, SessionInfo } from "@shared/ipc";
+import { SESSION_TYPE_LABELS } from "@shared/session-type";
 import { StatusIcon } from "../StatusIcon";
 
 interface Props {
@@ -101,6 +102,7 @@ export function SidebarItem({
             onContextMenu={onContextMenu}
             disabled={locked}
             title={session.name}
+            data-session-type={session.sessionType}
           >
             <StatusIcon status={active ? agentStatus : "idle"} />
             <div className="session-card-text">
@@ -109,6 +111,16 @@ export function SidebarItem({
                 {new Date(session.updatedAt).toLocaleString()}
               </div>
             </div>
+            {session.sessionType === "design" && (
+              <span
+                className="session-type-badge"
+                data-session-type="design"
+                aria-label={`${SESSION_TYPE_LABELS.design} 会话`}
+                title="策划会话（写只落到 game-design/）"
+              >
+                {SESSION_TYPE_LABELS.design}
+              </span>
+            )}
           </button>
         )}
       </div>

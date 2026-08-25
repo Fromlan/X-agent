@@ -11,6 +11,7 @@ import type {
   GoalInfo,
   UiAgentEvent,
 } from "@shared/ipc";
+import type { SessionType } from "@shared/session-type";
 import type { ChatItem } from "../stores/chat-store";
 import { applyAgentEvent } from "../stores/chat-store";
 import {
@@ -34,6 +35,7 @@ type EventRouterDeps = {
   setError: Dispatch<SetStateAction<string | null>>;
   setCwd: Dispatch<SetStateAction<string | null>>;
   setSessionId: Dispatch<SetStateAction<string | null>>;
+  setSessionType: Dispatch<SetStateAction<SessionType>>;
   sessionIdRef: MutableRefObject<string | null>;
   usageFetchGen: MutableRefObject<number>;
   setPrefs: Dispatch<SetStateAction<ClientPrefs | null>>;
@@ -58,6 +60,7 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setError,
     setCwd,
     setSessionId,
+    setSessionType,
     sessionIdRef,
     usageFetchGen,
     setPrefs,
@@ -114,6 +117,11 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
         setCwd(event.cwd || null);
         setSessionId(nextId);
         sessionIdRef.current = nextId;
+        // 同步会话类型, 用于 body[data-session-type] 切色.
+        // 旧事件 (没有 sessionType 字段) 走 DEFAULT_SESSION_TYPE fallback.
+        if (event.sessionType) {
+          setSessionType(event.sessionType);
+        }
         if (!nextId || prevId !== nextId) {
           usageFetchGen.current += 1;
           clearSessionUsage();
@@ -193,6 +201,7 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     setQueuedSteering,
     setSessionId,
     setSessionMode,
+    setSessionType,
     setStatus,
     usageFetchGen,
   ]);

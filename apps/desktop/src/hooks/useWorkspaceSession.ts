@@ -19,6 +19,8 @@ import type {
   SecretCodecStatus,
   ThinkingLevel,
 } from "@shared/ipc";
+import type { SessionType } from "@shared/session-type";
+import { DEFAULT_SESSION_TYPE } from "@shared/session-type";
 import type { RetractConfirmMode } from "../components/RetractConfirmModal";
 import { normalizeProjectKey } from "../lib/group-sessions";
 import { applyTheme } from "../lib/theme";
@@ -42,6 +44,7 @@ export type UseWorkspaceSessionOpts = {
   setSessionId: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string | null>>;
   setBusy: Dispatch<SetStateAction<boolean>>;
+  setSessionType: Dispatch<SetStateAction<SessionType>>;
   setSessionMode: Dispatch<SetStateAction<AgentSessionMode>>;
   setPlanPath: Dispatch<SetStateAction<string | null>>;
   setGoal: Dispatch<SetStateAction<GoalInfo | null>>;
@@ -75,6 +78,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setSessionId,
     setError,
     setBusy,
+    setSessionType,
     setQueuedSteering,
     setEditingEntryId,
     setEditDraft,
@@ -186,6 +190,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setInput("");
         setCwd(result.cwd);
         setSessionId(result.sessionId);
+        setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
         if (result.warning) setError(result.warning);
         const p = await window.xAgent.prefs.get();
         setPrefs(p);
@@ -211,40 +216,45 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     ],
   );
 
-  const newSession = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    // Clear immediately — do not wait for history_replace; stale bubbles from
-    // the previous session must not linger if host events race with abort.
-    setItems(createEmptyState());
-    setQueuedSteering([]);
-    try {
-      const result = await window.xAgent.workspace.newSession();
-      if (!result.ok) {
-        setError(result.error ?? "新建会话失败");
-        await syncFromHost();
-        return;
+  const newSession = useCallback(
+    async (sessionType: SessionType = "code") => {
+      setBusy(true);
+      setError(null);
+      // Clear immediately — do not wait for history_replace; stale bubbles from
+      // the previous session must not linger if host events race with abort.
+      setItems(createEmptyState());
+      setQueuedSteering([]);
+      try {
+        const result = await window.xAgent.workspace.newSession(sessionType);
+        if (!result.ok) {
+          setError(result.error ?? "新建会话失败");
+          await syncFromHost();
+          return;
+        }
+        clearComposerEditState();
+        setInput("");
+        setSessionId(result.sessionId);
+        setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
+        setFollowNonce((n) => n + 1);
+        await refreshSessions();
+      } finally {
+        setBusy(false);
       }
-      clearComposerEditState();
-      setInput("");
-      setSessionId(result.sessionId);
-      setFollowNonce((n) => n + 1);
-      await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    clearComposerEditState,
-    refreshSessions,
-    setBusy,
-    setError,
-    setFollowNonce,
-    setInput,
-    setItems,
-    setQueuedSteering,
-    setSessionId,
-    syncFromHost,
-  ]);
+    },
+    [
+      clearComposerEditState,
+      refreshSessions,
+      setBusy,
+      setError,
+      setFollowNonce,
+      setInput,
+      setItems,
+      setQueuedSteering,
+      setSessionId,
+      setSessionType,
+      syncFromHost,
+    ],
+  );
 
   const resumeSession = useCallback(
     async (path: string) => {
@@ -263,6 +273,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setInput("");
         setCwd(result.cwd);
         setSessionId(result.sessionId);
+        setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
         setFollowNonce((n) => n + 1);
         if (result.warning) setError(result.warning);
         const p = await window.xAgent.prefs.get();
@@ -284,6 +295,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setPrefs,
       setQueuedSteering,
       setSessionId,
+      setSessionType,
       syncFromHost,
     ],
   );
@@ -458,6 +470,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
           if (result.ok) {
             setCwd(result.cwd);
             setSessionId(result.sessionId);
+            setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
             setFollowNonce((n) => n + 1);
             if (result.warning) setError(result.warning);
             await refreshProjectReadiness(result.cwd);
@@ -494,6 +507,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setSecretCodec,
     setQueuedSteering,
     setSessionId,
+    setSessionType,
     syncFromHost,
   ]);
 

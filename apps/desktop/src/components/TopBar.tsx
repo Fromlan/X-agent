@@ -26,7 +26,8 @@ interface Props {
   /** When true, mount --shadow-soft on the sticky bar (set by parent scroll listener). */
   elevated?: boolean;
   onOpenProject: () => void;
-  onNewSession: () => void;
+  onNewCodeSession: () => void;
+  onNewDesignSession: () => void;
   onToggleTheme: () => void;
   onToggleRightPanel: () => void;
   onOpenSettings: () => void;
@@ -54,7 +55,7 @@ function TopBarImpl(props: Props) {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={props.onNewSession}
+          onClick={props.onNewCodeSession}
           disabled={
             props.busy ||
             props.compacting ||
@@ -62,10 +63,28 @@ function TopBarImpl(props: Props) {
             props.status === "streaming" ||
             props.status === "retrying"
           }
-          title="新会话"
+          title="新代码会话（默认；写项目任意位置）"
+          data-session-type="code"
         >
           <MessageSquarePlus size={14} />
-          <span className="btn-label">新会话</span>
+          <span className="btn-label">新代码会话</span>
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={props.onNewDesignSession}
+          disabled={
+            props.busy ||
+            props.compacting ||
+            !props.cwd ||
+            props.status === "streaming" ||
+            props.status === "retrying"
+          }
+          title="新策划会话（写只落到 game-design/）"
+          data-session-type="design"
+        >
+          <MessageSquarePlus size={14} />
+          <span className="btn-label">新策划会话</span>
         </button>
         <span className="cwd" title={props.cwd ?? ""}>
           {props.cwd ?? "未打开项目"}

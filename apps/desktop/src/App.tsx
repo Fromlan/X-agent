@@ -24,6 +24,7 @@ import type {
   ThinkingLevel,
 } from "@shared/ipc";
 import { GODOT_TOOLS, THINKING_LEVELS, isRestorableGoalStatus } from "@shared/ipc";
+import { DEFAULT_SESSION_TYPE, type SessionType } from "@shared/session-type";
 import { dbgLog, dbgTimer } from "@shared/debug-log";
 import {
   GIT_FOR_WINDOWS_DOWNLOAD_URL,
@@ -105,6 +106,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
+  const [sessionType, setSessionType] = useState<SessionType>(DEFAULT_SESSION_TYPE);
   const [planPath, setPlanPath] = useState<string | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -242,6 +244,7 @@ export default function App() {
     setSessionId,
     setError,
     setBusy,
+    setSessionType,
     setSessionMode,
     setPlanPath,
     setGoal,
@@ -284,6 +287,7 @@ export default function App() {
     setError,
     setCwd,
     setSessionId,
+    setSessionType,
     sessionIdRef,
     usageFetchGen,
     setPrefs,
@@ -301,9 +305,22 @@ export default function App() {
     setReadyNotice(null);
   }, [cwd]);
 
+  // 同步 body[data-session-type], 让 themes.css 的策划主题色 override 生效.
+  // 设计会话锁定为 "design", 其它任何状态 fallback 到 "code".
+  useEffect(() => {
+    const next = sessionType ?? DEFAULT_SESSION_TYPE;
+    document.body.dataset.sessionType = next;
+    return () => {
+      // 卸载或切换时恢复默认, 避免污染后续会话
+      if (document.body.dataset.sessionType === next) {
+        document.body.dataset.sessionType = DEFAULT_SESSION_TYPE;
+      }
+    };
+  }, [sessionType]);
+
   const chatStarters = useMemo(
-    () => startersForProject(isGodotProject),
-    [isGodotProject],
+    () => startersForProject(isGodotProject, sessionType),
+    [isGodotProject, sessionType],
   );
 
   useEffect(() => {
@@ -945,7 +962,8 @@ export default function App() {
         status={status}
         theme={prefs?.colorMode ?? "dark"}
         onOpenProject={openProject}
-        onNewSession={newSession}
+        onNewCodeSession={() => void newSession("code")}
+        onNewDesignSession={() => void newSession("design")}
         onToggleTheme={toggleTheme}
         onToggleRightPanel={toggleRightPanel}
         onOpenSettings={openSettings}
@@ -1120,6 +1138,7 @@ export default function App() {
           queuedSteering={queuedSteering}
           forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
           starters={chatStarters}
+          sessionType={sessionType}
           readinessHints={
             !cwd
               ? undefined
