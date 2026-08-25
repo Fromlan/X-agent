@@ -42,9 +42,13 @@ async function whichBashOnPath(): Promise<string | null> {
   const exeName = process.platform === "win32" ? "bash.exe" : "bash";
   for (const part of pathEnv.split(sep)) {
     const candidate = join(part.trim(), exeName);
-    if (await fileExists(candidate)) {
-      return candidate;
-    }
+    if (!(await fileExists(candidate))) continue;
+    // 不仅是文件存在：必须真的输出 GNU bash banner，避免被 nvm-symlinked
+    // 之类把 `bash.exe` 借成 node shim 的目录误抓（#24 PR 提到的 pre-existing
+    // bash-check flake 多数是这种 PATH shim 导致）。CANDIDATES 那批已知是真
+    // bash，不用再 probe；这里是 PATH 兜底路径才需要。
+    const probe = await probeBash(candidate);
+    if (probe.ok) return candidate;
   }
   return null;
 }
@@ -76,7 +80,10 @@ const BASH_BANNER_PATTERNS: readonly RegExp[] = [
 async function probeBash(target: string): Promise<ProbeResult> {
   let stdout = "";
   try {
-    const result = await execFileAsync(target, ["--version"], { timeout: 2000 });
+    // timeout 留到 5s:Windows 11 自带的 C:\Windows\system32\bash.exe 是 WSL
+    // 转发器,cold start 一次需要 ~2.2s (WSL infrastructure 初始化),2s 不够。
+    // CANDIDATES 那批 (Git for Windows) 不会触发 cold start,生产路径无影响。
+    const result = await execFileAsync(target, ["--version"], { timeout: 5000 });
     stdout = result.stdout ?? "";
   } catch (err) {
     const code = (err as { code?: unknown })?.code;
