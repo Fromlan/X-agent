@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { excludeUserAgentsHomeSkills } from "./exclude-agents-home-skills";
+import type { SessionType } from "../../shared/session-type";
 
 /** Max skill description length injected into `<available_skills>` (chars). */
 export const SKILL_INDEX_DESCRIPTION_MAX = 240;
@@ -94,6 +95,10 @@ export function filterDisabledSkills<
  * X-agent DefaultResourceLoader skillsOverride pipeline:
  * exclude ~/.agents/skills → hide godot-* outside Godot projects →
  * drop user-disabled skills → dedupe by name → truncate descriptions for the index.
+ *
+ * If `sessionType === "design"`, design-shaped skills (`design-*` / `*-design` /
+ * `gamedesign-*`) are surfaced first in the index so the agent sees them at the
+ * top of its skill list. No skills are pre-installed (策划专用 skills 独立 PR).
  */
 export function applyXAgentSkillsFilter<
   T extends { name?: string; filePath: string; description?: string },
@@ -101,10 +106,35 @@ export function applyXAgentSkillsFilter<
   skills: T[],
   cwd: string,
   disabledSkills: readonly string[] = [],
+  sessionType: SessionType = "code",
 ): T[] {
-  const filtered = filterDisabledSkills(
-    filterGodotSkillsForCwd(excludeUserAgentsHomeSkills(skills), cwd),
-    disabledSkills,
-  );
+  const base = excludeUserAgentsHomeSkills(skills);
+  const cwdFiltered = filterGodotSkillsForCwd(base, cwd);
+  const reordered = sessionType === "design" ? prioritizeDesignSkills(cwdFiltered) : cwdFiltered;
+  const filtered = filterDisabledSkills(reordered, disabledSkills);
   return truncateSkillsForIndex(dedupeSkillsByName(filtered));
+}
+
+/**
+ * Stable reorder: surface any skill whose name starts with `design-`,
+ * `gamedesign-`, or ends with `-design` to the top. Original order within
+ * each group is preserved. Non-matching skills follow.
+ *
+ * MVP placeholder —策划 skills 真正落地后这个函数会扩.
+ */
+function prioritizeDesignSkills<
+  T extends { name?: string; filePath: string },
+>(skills: T[]): T[] {
+  const isDesign = (s: T): boolean => {
+    const id = skillIdForFilter(s).toLowerCase();
+    if (!id) return false;
+    return id.startsWith("design-") || id.startsWith("gamedesign-") || id.endsWith("-design");
+  };
+  const head: T[] = [];
+  const tail: T[] = [];
+  for (const s of skills) {
+    if (isDesign(s)) head.push(s);
+    else tail.push(s);
+  }
+  return [...head, ...tail];
 }
