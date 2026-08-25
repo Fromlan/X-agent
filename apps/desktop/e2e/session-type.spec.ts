@@ -27,9 +27,10 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
       if (!res.ok) throw new Error(res.error ?? "openProject failed");
     }, tmp);
 
-    // TopBar 应有两个新按钮
-    const codeBtn = main.locator('button[data-session-type="code"]');
-    const designBtn = main.locator('button[data-session-type="design"]');
+    // TopBar 应有两个新按钮 — 用 .topbar 限定,避免命中侧栏 session-card-main
+    // (侧栏卡片也带 data-session-type,scope 不对会 strict mode 命中多个元素)。
+    const codeBtn = main.locator('.topbar button[data-session-type="code"]');
+    const designBtn = main.locator('.topbar button[data-session-type="design"]');
     await expect(codeBtn).toBeVisible();
     await expect(designBtn).toBeVisible();
 
@@ -95,9 +96,11 @@ test("策划会话类型 TopBar + 背景色 + 侧栏徽标", async () => {
     );
     expect(chatPanelBoxCode).not.toMatch(/inset/);
 
-    // 切回 code 后 chips 应回到代码模式 (含 "审查当前脚本" 等) — 强信号 React 已 re-render
+    // 切回 code 后 chips 应回到代码模式 — tmp 目录不是 Godot 项目,
+    // 走非 godotOnly 路径:只显示「了解项目结构」「帮我修一个问题」。
+    // 注意:「审查当前脚本」是 godotOnly, 这里不能用; 想测全量 chip 请在 fixture 里塞 project.godot。
     await expect(
-      main.locator('.starter-chip:has-text("审查当前脚本")'),
+      main.locator('.starter-chip:has-text("了解项目结构")'),
     ).toBeVisible();
     await expect(
       main.locator('.starter-chip:has-text("设计一个角色")'),
