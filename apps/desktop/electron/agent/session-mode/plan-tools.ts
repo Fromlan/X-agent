@@ -25,6 +25,9 @@ import {
   wrapWithModeBlock,
 } from "../../../shared/mode-prompt";
 import { getAgentDirPath } from "../prefs";
+import {
+  computeDesignSessionTypeTools,
+} from "../../../shared/session-type-tools";
 
 export { PLAN_MODE_INSTRUCTIONS, wrapWithModeBlock };
 
@@ -193,6 +196,39 @@ export function computeModeTools(
   return mode === "ask"
     ? computeAskModeTools(prefsTools)
     : computePlanModeTools(prefsTools);
+}
+
+/**
+ * Compute the active tool set given BOTH the session type and the current mode.
+ * Session type "design" overrides the per-mode derivation: even in agent /
+ * goal mode the design session should not get the full prefs.tools (which
+ * usually includes write/edit/bash and godot mutating tools). Instead it
+ * gets the design base (read-only + write/edit guarded by game-design/).
+ *
+ * Code session type falls through to the existing per-mode logic.
+ */
+export function computeModeToolsForType(
+  sessionType: "code" | "design",
+  mode: "ask" | "plan" | "agent" | "goal",
+  prefsTools: readonly string[],
+): string[] {
+  if (sessionType === "design") {
+    if (mode === "ask") {
+      // ask is read-only by definition; use the design base (which is
+      // already readonly + write). This avoids giving the agent the
+      // ability to write even in plan/agent mode without path check.
+      return computeDesignSessionTypeTools(prefsTools);
+    }
+    // plan / agent / goal: always the design base. The design-write-guard
+    // extension is the authoritative path check; mode-level narrow
+    // (write_plan removal) is already reflected in the design base.
+    return computeDesignSessionTypeTools(prefsTools);
+  }
+  // Code session: existing behavior.
+  if (mode === "ask") return computeAskModeTools(prefsTools);
+  if (mode === "plan") return computePlanModeTools(prefsTools);
+  // agent / goal: full prefs.tools.
+  return [...prefsTools];
 }
 
 /** Filter write_plan out of a tool list (e.g. when capturing savedTools). */
