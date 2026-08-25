@@ -27,6 +27,8 @@ import {
   type RefObject,
 } from "react";
 import type { AgentSessionMode, AgentStatus } from "@shared/ipc";
+import type { SessionType } from "@shared/session-type";
+import { SESSION_TYPE_LABELS } from "@shared/session-type";
 import type { ChatItem } from "../stores/chat-store";
 import {
   initialChatScrollPinState,
@@ -119,6 +121,8 @@ export interface ChatTranscriptProps {
   onRetract?: (entryId: string) => void;
   onRegenerate?: (userEntryId: string) => void;
   sessionMode?: AgentSessionMode;
+  /** Session type — shown prominently in the empty state. */
+  sessionType?: SessionType;
   planPath?: string | null;
   onBuildPlan?: () => void;
   onClarifySelect?: (reply: string) => void;
@@ -547,8 +551,22 @@ export function ChatTranscript(props: ChatTranscriptProps) {
               ((props.starters && props.starters.length > 0) ||
                 (props.readinessHints && props.readinessHints.length > 0)) && (
                 <div className="empty-state empty-state-starters">
-                  <p className="empty-state-title">开始对话</p>
-                  <p className="empty-state-hint">选择提示或直接提问</p>
+                  <span
+                    className="empty-state-session-type"
+                    data-session-type={props.sessionType ?? "code"}
+                    title={
+                      props.sessionType === "design"
+                        ? "策划会话：写只允许落到 game-design/，会话内可切 4 mode"
+                        : "代码会话（默认）：可读写项目任意路径"
+                    }
+                  >
+                    {SESSION_TYPE_LABELS[props.sessionType ?? "code"]}模式
+                  </span>
+                  <p className="empty-state-hint">
+                    {props.sessionType === "design"
+                      ? "选择提示或直接提问；写只落到 game-design/"
+                      : "选择提示或直接提问"}
+                  </p>
                   {props.readinessHints && props.readinessHints.length > 0 && (
                     <div className="empty-ready-hints">
                       {props.readinessHints.map((hint) => (
