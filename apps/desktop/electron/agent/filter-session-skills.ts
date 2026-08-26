@@ -99,6 +99,10 @@ export function filterDisabledSkills<
  * If `sessionType === "design"`, design-shaped skills (`design-*` / `*-design` /
  * `gamedesign-*`) are surfaced first in the index so the agent sees them at the
  * top of its skill list. No skills are pre-installed (策划专用 skills 独立 PR).
+ *
+ * Type decisions are now centralized in `SessionTypePolicy`. Prefer the
+ * policy-based variant `applyXAgentSkillsFilterForPolicy` in new code; this
+ * function remains for backward compatibility with the script tests.
  */
 export function applyXAgentSkillsFilter<
   T extends { name?: string; filePath: string; description?: string },

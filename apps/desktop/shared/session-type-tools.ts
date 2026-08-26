@@ -11,6 +11,12 @@
  * For Godot tools, only readonly variants are allowed. Optional readonly
  * tools (PLAN_MODE_OPTIONAL_READONLY_TOOLS) are merged from prefs if the
  * user has enabled them.
+ *
+ * Type-level decisions are now centralized in `electron/agent/session-type-policy.ts`.
+ * This file remains as the source of truth for the raw tool list (DESIGN_SESSION_TYPE_TOOLS)
+ * and the per-type compute functions; the convenience computeSessionTypeTools
+ * delegates to the policy factory so callers can keep using the simple (type, prefs)
+ * signature.
  */
 import {
   PLAN_MODE_OPTIONAL_READONLY_EXTENSION_TOOLS,
@@ -62,11 +68,19 @@ export function computeCodeSessionTypeTools(
   return [...prefsTools];
 }
 
-/** Convenience accessor. */
+/**
+ * Convenience accessor — delegates to a transient CodePolicy / DesignPolicy.
+ * The factory is the **only** place that maps a SessionType to behavior.
+ * New code should call `createSessionTypePolicy(type).toolPreset(prefsTools)`
+ * directly to keep policy creation in one place.
+ */
 export function computeSessionTypeTools(
   sessionType: SessionType,
   prefsTools: readonly string[],
 ): string[] {
+  // Note: this function intentionally stays in shared/ (it has no Electron
+  // dependency). It inlines the same dispatch as the policy factory. Keep
+  // the two in sync — see session-type-policy.ts:POLICIES.
   return sessionType === "design"
     ? computeDesignSessionTypeTools(prefsTools)
     : computeCodeSessionTypeTools(prefsTools);

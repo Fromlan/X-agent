@@ -22,6 +22,7 @@ import {
   DESIGN_DIR_NAME,
 } from "../electron/agent/session-mode/design-write-guard.ts";
 import { computeModeToolsForType } from "../electron/agent/session-mode/plan-tools.ts";
+import { createSessionTypePolicy } from "../electron/agent/session-type-policy.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "x-agent-design-e2e-"));
 try {
@@ -115,14 +116,16 @@ try {
   // —— 4. computeModeToolsForType 派生 ——
   console.log("[4] computeModeToolsForType");
   const prefs = ["write", "edit", "bash", "read", "godot_lint_scripts"];
-  const designPlan = computeModeToolsForType("design", "plan", prefs);
+  const designPolicy = createSessionTypePolicy("design");
+  const codePolicy = createSessionTypePolicy("code");
+  const designPlan = computeModeToolsForType(designPolicy, "plan", prefs);
   assert.ok(designPlan.includes("read"));
   assert.ok(designPlan.includes("write"));
   assert.ok(!designPlan.includes("write_plan"), "设计会话不含 write_plan");
-  const codePlan = computeModeToolsForType("code", "plan", prefs);
+  const codePlan = computeModeToolsForType(codePolicy, "plan", prefs);
   assert.ok(codePlan.includes("read"), "plan mode 永远有 read");
   assert.ok(codePlan.includes("write_plan"), "code + plan 仍含 write_plan");
-  const codeAgent = computeModeToolsForType("code", "agent", prefs);
+  const codeAgent = computeModeToolsForType(codePolicy, "agent", prefs);
   assert.deepEqual(codeAgent, prefs);
 
   // —— 5. clearSessionType 与 sidecar 文件存在性 ——

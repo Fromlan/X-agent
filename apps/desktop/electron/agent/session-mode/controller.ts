@@ -18,6 +18,10 @@ import {
   isRestorableGoalStatus,
 } from "../../../shared/ipc";
 import { DEFAULT_SESSION_TYPE, type SessionType } from "../../../shared/session-type";
+import {
+  createSessionTypePolicy,
+  type SessionTypePolicy,
+} from "../session-type-policy";
 import { getCachedPrefs } from "../prefs";
 import {
   buildImplementPrompt,
@@ -50,7 +54,6 @@ import {
 } from "./plan-journal";
 import {
   buildAskModeSystemAppend,
-  buildDesignSessionTypeAppend,
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
 } from "../../../shared/mode-prompt";
@@ -148,11 +151,18 @@ export class SessionModeController {
     );
   }
 
+  /** Resolve the active session type policy. Defaults to CodePolicy. */
+  getSessionTypePolicy(): SessionTypePolicy {
+    return createSessionTypePolicy(this.getSessionType());
+  }
+
   composeModeAppend(base: string[]): string[] {
     const out = [...base];
     // Type-level append FIRST (策划会话下, 任何 mode 都要看到写约束说明).
-    if (this.getSessionType() === "design") {
-      out.push(buildDesignSessionTypeAppend());
+    // policy.systemAppend() returns "" for code, design-instructions for design.
+    const typeAppend = this.getSessionTypePolicy().systemAppend();
+    if (typeAppend) {
+      out.push(typeAppend);
     }
     if (this.agentMode === "ask") {
       out.push(buildAskModeSystemAppend());
@@ -333,7 +343,7 @@ export class SessionModeController {
       const prefs = getCachedPrefs();
       this.agentMode = "ask";
       this.refreshSystemPrompt(
-        computeModeToolsForType(this.getSessionType(), "ask", prefs.tools),
+        computeModeToolsForType(this.getSessionTypePolicy(), "ask", prefs.tools),
       );
       this.emitSessionMode();
       this.emitGoal();
@@ -351,7 +361,7 @@ export class SessionModeController {
       const prefs = getCachedPrefs();
       this.agentMode = "plan";
       this.refreshSystemPrompt(
-        computeModeToolsForType(this.getSessionType(), "plan", prefs.tools),
+        computeModeToolsForType(this.getSessionTypePolicy(), "plan", prefs.tools),
       );
       const active = bundle.session.getActiveToolNames();
       if (!active.includes("write_plan")) {
@@ -965,7 +975,7 @@ export class SessionModeController {
   ): { ok: true } | { ok: false; error: string } {
     this.savedTools = [...tools];
     const mode = this.agentMode === "ask" ? "ask" : "plan";
-    const modeTools = computeModeToolsForType(this.getSessionType(), mode, tools);
+    const modeTools = computeModeToolsForType(this.getSessionTypePolicy(), mode, tools);
     const label = mode === "ask" ? "调研" : "Plan";
     try {
       this.refreshSystemPrompt(modeTools);
@@ -989,13 +999,14 @@ export class SessionModeController {
 
   refreshAfterResourceReload(): void {
     const prefs = getCachedPrefs();
-    const type = this.getSessionType();
+    const policy = this.getSessionTypePolicy();
     if (this.agentMode === "ask") {
-      this.refreshSystemPrompt(computeModeToolsForType(type, "ask", prefs.tools));
+      this.refreshSystemPrompt(computeModeToolsForType(policy, "ask", prefs.tools));
     } else if (this.agentMode === "plan") {
-      this.refreshSystemPrompt(computeModeToolsForType(type, "plan", prefs.tools));
-    } else if (type === "design") {
-      this.refreshSystemPrompt(computeModeToolsForType(type, "agent", prefs.tools));
+      this.refreshSystemPrompt(computeModeToolsForType(policy, "plan", prefs.tools));
+    } else if (policy.type === "design") {
+      // 设计会话: agent mode → 仍用 design 工具基线 (write/edit 已被 guard 兜底).
+      this.refreshSystemPrompt(computeModeToolsForType(policy, "agent", prefs.tools));
     } else {
       this.refreshSystemPrompt(prefs.tools);
     }

@@ -28,6 +28,7 @@ import {
   type SessionType,
 } from "../../shared/session-type";
 import { computeSessionTypeTools } from "../../shared/session-type-tools";
+import { createSessionTypePolicy } from "./session-type-policy";
 import { getCachedPrefs, patchPrefs } from "./prefs";
 import { branchEntriesToHistory } from "../../shared/transcript";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
@@ -42,9 +43,7 @@ import {
 import {
   clearGoalJournal,
   clearPlanJournal,
-  computeAskModeTools,
   computeModeToolsForType,
-  computePlanModeTools,
   createWritePlanTools,
   createPlanModeGuardExtension,
   type SessionModeController,
@@ -202,13 +201,10 @@ export class SessionLifecycle {
           getAllowedTools: () => {
             const prefsTools = getCachedPrefs().tools;
             const mode = this.a().sessionMode.getMode();
-            const type = this.a().getBundle()?.sessionType ?? DEFAULT_SESSION_TYPE;
-            if (type === "design") {
-              return computeModeToolsForType(type, mode, prefsTools);
-            }
-            if (mode === "ask") return computeAskModeTools(prefsTools);
-            if (mode === "plan") return computePlanModeTools(prefsTools);
-            return prefsTools;
+            const policy = createSessionTypePolicy(
+              this.a().getBundle()?.sessionType,
+            );
+            return computeModeToolsForType(policy, mode, prefsTools);
           },
           getCwd: () => this.a().getBundle()?.cwd ?? null,
         }),
