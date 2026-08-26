@@ -15,13 +15,18 @@ import {
   listProviderPresets,
   listProviderProfiles,
   looksLikeDeepSeekModelId,
+  looksLikeMiniMaxModelId,
+  minimaxModelExtras,
+  modelEntryForPiModelsJson,
   pruneStaleProviderKeys,
   repairDeepSeekModelsJson,
+  repairMiniMaxModelsJson,
   filterModelsByCatalogEnabled,
   setProviderProfileEnabled,
   type ProviderPaths,
   upsertProviderProfile,
 } from "../electron/agent/provider-store";
+import { lookupKnownContextWindow } from "../shared/model-context";
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -851,6 +856,384 @@ try {
       );
     } finally {
       rmSync(undecryptableRoot, { recursive: true, force: true });
+    }
+  }
+
+  // ===== MiniMax 思考开关接入 =====
+  // —— 1. looksLikeMiniMaxModelId 识别 ——
+  assert(looksLikeMiniMaxModelId("MiniMax-M3"), "minimax id M3");
+  assert(looksLikeMiniMaxModelId("MiniMax-M2.7"), "minimax id M2.7");
+  assert(looksLikeMiniMaxModelId("MiniMax-M2.7-highspeed"), "minimax id M2.7 highspeed");
+  assert(looksLikeMiniMaxModelId("MiniMax-M2.5"), "minimax id M2.5");
+  assert(looksLikeMiniMaxModelId("MiniMax-M2.1"), "minimax id M2.1");
+  // 网关常见形式（标准化前）
+  assert(looksLikeMiniMaxModelId("minimax/MiniMax-M3"), "minimax id via gateway prefix");
+  // 误识别护栏
+  assert(!looksLikeMiniMaxModelId("DeepSeek-V3"), "not deepseek");
+  assert(!looksLikeMiniMaxModelId("claude-opus-4-7"), "not claude");
+  assert(!looksLikeMiniMaxModelId("gpt-5.4"), "not gpt");
+  assert(!looksLikeMiniMaxModelId("MiniMax-not-a-model"), "not a real M series");
+
+  // —— 2. minimaxModelExtras 形状 ——
+  const m3Extras = minimaxModelExtras("MiniMax-M3");
+  assert(m3Extras !== null, "M3 extras present");
+  assert(m3Extras!.reasoning === true, "M3 reasoning true");
+  assert(
+    m3Extras!.compat.forceAdaptiveThinking === true,
+    "M3 forceAdaptiveThinking true",
+  );
+  // M3 官方 API 只有 adaptive / disabled 二态：UI 收敛到 off + max 二选一。
+  assert(m3Extras!.thinkingLevelMap.off === "off", "M3 off selectable");
+  assert(
+    m3Extras!.thinkingLevelMap.max === "max",
+    "M3 max present (binary on/off collapse)",
+  );
+  assert(m3Extras!.thinkingLevelMap.minimal === null, "M3 minimal hidden");
+  assert(m3Extras!.thinkingLevelMap.low === null, "M3 low hidden");
+  assert(m3Extras!.thinkingLevelMap.medium === null, "M3 medium hidden");
+  assert(m3Extras!.thinkingLevelMap.high === null, "M3 high hidden");
+
+  const m27Extras = minimaxModelExtras("MiniMax-M2.7");
+  assert(m27Extras !== null, "M2.7 extras present");
+  assert(m27Extras!.reasoning === true, "M2.7 reasoning true");
+  assert(
+    m27Extras!.compat.forceAdaptiveThinking === true,
+    "M2.7 forceAdaptiveThinking true",
+  );
+  assert(m27Extras!.thinkingLevelMap.off === null, "M2.7 off hidden");
+  assert(
+    m27Extras!.thinkingLevelMap.max === "max",
+    "M2.7 max selectable",
+  );
+
+  const m27SpeedExtras = minimaxModelExtras("MiniMax-M2.7-highspeed");
+  assert(m27SpeedExtras !== null, "M2.7 highspeed extras present");
+  assert(
+    m27SpeedExtras!.thinkingLevelMap.off === null,
+    "M2.7 highspeed off hidden",
+  );
+
+  assert(minimaxModelExtras("DeepSeek-V3") === null, "non-MiniMax returns null");
+  assert(minimaxModelExtras("claude-opus-4-7") === null, "claude returns null");
+
+  // —— 3. modelEntryForPiModelsJson 写盘形状（不依赖持久化） ——
+  const m3Entry = modelEntryForPiModelsJson(
+    { id: "MiniMax-M3", name: "MiniMax M3" },
+    "anthropic-messages",
+    "minimax",
+    "https://api.minimaxi.com/anthropic",
+  );
+  assert(m3Entry.id === "MiniMax-M3", "M3 entry id");
+  assert(
+    (m3Entry as Record<string, unknown>).reasoning === true,
+    "M3 entry reasoning true",
+  );
+  const m3Compat = (m3Entry as { compat?: { forceAdaptiveThinking?: boolean } })
+    .compat;
+  assert(m3Compat?.forceAdaptiveThinking === true, "M3 entry compat");
+  const m3Map = (m3Entry as { thinkingLevelMap?: Record<string, unknown> })
+    .thinkingLevelMap;
+  assert(m3Map?.off === "off", "M3 entry off selectable");
+  assert(m3Map?.max === "max", "M3 entry max present");
+  assert(m3Map?.minimal === null, "M3 entry minimal hidden");
+
+  const m27Entry = modelEntryForPiModelsJson(
+    { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
+    "anthropic-messages",
+    "minimax",
+    "https://api.minimaxi.com/anthropic",
+  );
+  const m27Map = (m27Entry as { thinkingLevelMap?: Record<string, unknown> })
+    .thinkingLevelMap;
+  assert(m27Map?.off === null, "M2.7 entry off null (hidden)");
+
+  // 非 MiniMax：行为不变（回归）
+  const qwenRegression = modelEntryForPiModelsJson(
+    { id: "Qwen/Qwen3-235B-A22B", name: "Qwen3" },
+    "openai-completions",
+    "siliconflow",
+    "https://api.siliconflow.cn/v1",
+  );
+  assert(
+    (qwenRegression as Record<string, unknown>).reasoning === undefined,
+    "qwen entry no reasoning",
+  );
+  assert(
+    (qwenRegression as { compat?: unknown }).compat === undefined,
+    "qwen entry no compat",
+  );
+
+  // —— 4. 上下文窗口启发式 ——
+  assert(lookupKnownContextWindow("MiniMax-M3") === 1_000_000, "M3 context 1M");
+  assert(
+    lookupKnownContextWindow("MiniMax-M2.7") === 204_800,
+    "M2.7 context 204800",
+  );
+  assert(
+    lookupKnownContextWindow("MiniMax-M2.7-highspeed") === 204_800,
+    "M2.7-highspeed context 204800",
+  );
+  // 回归：DeepSeek-V3 不受影响
+  assert(
+    lookupKnownContextWindow("DeepSeek-V3") === 128_000,
+    "deepseek-v3 context regression",
+  );
+
+  // —— 5. 预设列表包含 M3 + M2.7 + M2.7-highspeed ——
+  const minimaxPreset = listProviderPresets().find(
+    (p) => p.id === "minimax" || p.id === "minimax-en",
+  );
+  assert(minimaxPreset !== undefined, "minimax preset exists");
+  const minimaxIds = new Set(minimaxPreset!.models.map((m) => m.id));
+  assert(minimaxIds.has("MiniMax-M3"), "minimax preset includes M3");
+  assert(minimaxIds.has("MiniMax-M2.7"), "minimax preset includes M2.7");
+  assert(
+    minimaxIds.has("MiniMax-M2.7-highspeed"),
+    "minimax preset includes M2.7-highspeed",
+  );
+  assert(
+    minimaxIds.size === 3,
+    `minimax preset has exactly 3 models, got ${minimaxIds.size}`,
+  );
+
+  // —— 6. 激活 MiniMax 档案 → models.json 写入正确字段 ——
+  {
+    const miniRoot = mkdtempSync(join(tmpdir(), "alpha-providers-minimax-"));
+    const miniPaths: ProviderPaths = {
+      agentDir: miniRoot,
+      storePath: join(miniRoot, "x-agent-providers.json"),
+      authPath: join(miniRoot, "auth.json"),
+      modelsPath: join(miniRoot, "models.json"),
+    };
+    try {
+      const up = await upsertProviderProfile(
+        {
+          name: "MiniMax",
+          providerId: "minimax",
+          api: "anthropic-messages",
+          baseUrl: "https://api.minimaxi.com/anthropic",
+          apiKey: "sk-minimax-test",
+          models: [
+            { id: "MiniMax-M3", name: "MiniMax M3" },
+            { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
+            { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 Highspeed" },
+          ],
+        },
+        miniPaths,
+      );
+      assert(up.ok, "minimax profile created");
+      const act = await setProviderProfileEnabled(up.profile!.id, true, miniPaths);
+      assert(act.ok, `minimax activate ok (${act.error ?? ""})`);
+
+      const models = JSON.parse(readFileSync(miniPaths.modelsPath, "utf8")) as {
+        providers: Record<string, { models: Array<Record<string, unknown>> }>;
+      };
+      const list = models.providers.minimax?.models ?? [];
+      assert(list.length === 3, "3 models written");
+      const byId = new Map(list.map((m) => [m.id as string, m]));
+      for (const m of list) {
+        assert(m.reasoning === true, `${m.id} reasoning true`);
+        assert(
+          (m.compat as { forceAdaptiveThinking?: boolean } | undefined)
+            ?.forceAdaptiveThinking === true,
+          `${m.id} compat.forceAdaptiveThinking true`,
+        );
+      }
+      assert(
+        (byId.get("MiniMax-M3")?.thinkingLevelMap as Record<string, unknown>)
+          ?.off === "off",
+        "M3 on disk off selectable",
+      );
+      assert(
+        (byId.get("MiniMax-M3")?.thinkingLevelMap as Record<string, unknown>)
+          ?.max === "max",
+        "M3 on disk max present (binary)",
+      );
+      assert(
+        (byId.get("MiniMax-M3")?.thinkingLevelMap as Record<string, unknown>)
+          ?.minimal === null,
+        "M3 on disk minimal hidden (binary)",
+      );
+      assert(
+        (byId.get("MiniMax-M2.7")?.thinkingLevelMap as Record<string, unknown>)
+          ?.off === null,
+        "M2.7 on disk off hidden",
+      );
+      assert(
+        (
+          byId.get("MiniMax-M2.7-highspeed")?.thinkingLevelMap as Record<
+            string,
+            unknown
+          >
+        )?.off === null,
+        "M2.7-highspeed on disk off hidden",
+      );
+      assert(
+        byId.get("MiniMax-M3")?.contextWindow === 1_000_000,
+        "M3 on disk context 1M",
+      );
+      assert(
+        byId.get("MiniMax-M2.7")?.contextWindow === 204_800,
+        "M2.7 on disk context 204800",
+      );
+    } finally {
+      rmSync(miniRoot, { recursive: true, force: true });
+    }
+  }
+
+  // —— 7. repairMiniMaxModelsJson 老条目升级 ——
+  {
+    const legacyRoot = mkdtempSync(join(tmpdir(), "alpha-providers-repair-mx-"));
+    const legacyPaths: ProviderPaths = {
+      agentDir: legacyRoot,
+      storePath: join(legacyRoot, "x-agent-providers.json"),
+      authPath: join(legacyRoot, "auth.json"),
+      modelsPath: join(legacyRoot, "models.json"),
+    };
+    try {
+      // 老档案：MiniMax 条目缺 reasoning / compat / thinkingLevelMap
+      writeFileSync(
+        legacyPaths.modelsPath,
+        JSON.stringify({
+          providers: {
+            minimax: {
+              baseUrl: "https://api.minimaxi.com/anthropic",
+              api: "anthropic-messages",
+              models: [{ id: "MiniMax-M3", name: "MiniMax M3" }],
+            },
+          },
+        }),
+        "utf8",
+      );
+      assert(await repairMiniMaxModelsJson(legacyPaths), "minimax repair writes");
+      assert(
+        !(await repairMiniMaxModelsJson(legacyPaths)),
+        "minimax repair idempotent",
+      );
+
+      const repaired = JSON.parse(readFileSync(legacyPaths.modelsPath, "utf8")) as {
+        providers: Record<string, { models: Array<Record<string, unknown>> }>;
+      };
+      const m3 = repaired.providers.minimax?.models?.[0];
+      assert(m3?.reasoning === true, "legacy M3 reasoning patched");
+      assert(
+        (m3?.compat as { forceAdaptiveThinking?: boolean } | undefined)
+          ?.forceAdaptiveThinking === true,
+        "legacy M3 compat patched",
+      );
+      assert(
+        (m3?.thinkingLevelMap as Record<string, unknown>)?.off === "off",
+        "legacy M3 thinkingLevelMap patched",
+      );
+
+      // —— 8. repair 不污染 DeepSeek 条目 ——
+      writeFileSync(
+        legacyPaths.modelsPath,
+        JSON.stringify({
+          providers: {
+            deepseek: {
+              baseUrl: "https://api.deepseek.com",
+              api: "openai-completions",
+              models: [
+                { id: "deepseek-v4-pro", name: "Pro", reasoning: true },
+              ],
+            },
+            minimax: {
+              baseUrl: "https://api.minimaxi.com/anthropic",
+              api: "anthropic-messages",
+              models: [{ id: "MiniMax-M2.7", name: "M2.7" }],
+            },
+          },
+        }),
+        "utf8",
+      );
+      assert(
+        await repairMiniMaxModelsJson(legacyPaths),
+        "minimax repair runs alongside deepseek",
+      );
+      const mixed = JSON.parse(readFileSync(legacyPaths.modelsPath, "utf8")) as {
+        providers: Record<string, { models: Array<Record<string, unknown>> }>;
+      };
+      // DeepSeek 条目保留 reasoning（没有 thinkingLevelMap 也没强制加）
+      const ds = mixed.providers.deepseek?.models?.[0];
+      assert(ds?.reasoning === true, "deepseek reasoning preserved");
+      assert(
+        (ds as { thinkingLevelMap?: unknown })?.thinkingLevelMap === undefined,
+        "deepseek untouched by minimax repair",
+      );
+      const m27 = mixed.providers.minimax?.models?.[0];
+      assert(m27?.reasoning === true, "M2.7 reasoning patched in mixed file");
+      assert(
+        (m27?.thinkingLevelMap as Record<string, unknown>)?.off === null,
+        "M2.7 off hidden in mixed file",
+      );
+
+      // —— 9. 老版本 6 键 M3 map 必须被升级为新二态（value-level 升级） ——
+      const legacyMx3Root = mkdtempSync(join(tmpdir(), "alpha-providers-repair-mx3-oldshape-"));
+      const legacyMx3Paths: ProviderPaths = {
+        agentDir: legacyMx3Root,
+        storePath: join(legacyMx3Root, "x-agent-providers.json"),
+        authPath: join(legacyMx3Root, "auth.json"),
+        modelsPath: join(legacyMx3Root, "models.json"),
+      };
+      try {
+        // 模拟一个被旧版本 fix 写出的 6 键 M3 entry：key 都在但 value 跟新
+        // canonical 不一致（minimal/low/medium/high 在新 shape 应该是 null）。
+        writeFileSync(
+          legacyMx3Paths.modelsPath,
+          JSON.stringify({
+            providers: {
+              minimax: {
+                baseUrl: "https://api.minimaxi.com/anthropic",
+                api: "anthropic-messages",
+                models: [
+                  {
+                    id: "MiniMax-M3",
+                    name: "MiniMax M3",
+                    reasoning: true,
+                    compat: { forceAdaptiveThinking: true },
+                    thinkingLevelMap: {
+                      off: "off",
+                      minimal: "minimal",
+                      low: "low",
+                      medium: "medium",
+                      high: "high",
+                      max: "max",
+                    },
+                  },
+                ],
+              },
+            },
+          }),
+          "utf8",
+        );
+        assert(
+          await repairMiniMaxModelsJson(legacyMx3Paths),
+          "old-shape M3 entry must be upgraded",
+        );
+        const upgraded = JSON.parse(
+          readFileSync(legacyMx3Paths.modelsPath, "utf8"),
+        ) as {
+          providers: Record<string, { models: Array<Record<string, unknown>> }>;
+        };
+        const m3Up = upgraded.providers.minimax?.models?.[0];
+        const m3Map = m3Up?.thinkingLevelMap as Record<string, unknown>;
+        assert(m3Map?.off === "off", "upgraded M3 off selectable");
+        assert(m3Map?.max === "max", "upgraded M3 max present");
+        assert(m3Map?.minimal === null, "upgraded M3 minimal hidden");
+        assert(m3Map?.low === null, "upgraded M3 low hidden");
+        assert(m3Map?.medium === null, "upgraded M3 medium hidden");
+        assert(m3Map?.high === null, "upgraded M3 high hidden");
+        // 现在是 canonical 形状，再跑一次应该 idempotent
+        assert(
+          !(await repairMiniMaxModelsJson(legacyMx3Paths)),
+          "canonical M3 map is idempotent",
+        );
+      } finally {
+        rmSync(legacyMx3Root, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(legacyRoot, { recursive: true, force: true });
     }
   }
 

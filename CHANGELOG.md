@@ -8,6 +8,10 @@
 
 ## Unreleased
 
+### 改进
+
+- **MiniMax 思考强度开关接入**：MiniMax 预设（国内 / 国际）从单一 `MiniMax-M2.7` 升级为 `MiniMax-M3` / `MiniMax-M2.7` / `MiniMax-M2.7-highspeed` 三个模型，默认 M3。模型条目写入 Pi `~/.pi/agent/models.json` 时自动注入 `reasoning: true` + `compat.forceAdaptiveThinking: true` + `thinkingLevelMap`：M3 暴露 `off` / `max` 二态（官方 API 只有 `adaptive` / `disabled` 两态，没有强度差异，避免给用户 5 个等价的"开"选项），M2.x 系列隐藏 `off`（官方 API 无法关闭 thinking，传 `disabled` 也不生效；保留 5 个"开"档以匹配既有 UI 习惯）。上下文窗口启发式补 `MiniMax-M3 → 1,000,000`（之前误归类为 204_800）。启动时新增 `repairMiniMaxModelsJson` 兜底老用户的旧条目（缺 reasoning / compat 自动补齐），与 DeepSeek 既有修复串联。Pi 的 anthropic-messages 适配器看到 `forceAdaptiveThinking` 后会发 `thinking: {type:"adaptive"}`（开启）/`{type:"disabled"}`（关闭），与 MiniMax 官方 Anthropic 兼容 API 协议完全对齐。
+
 ## 0.5.5
 
 ### 改进

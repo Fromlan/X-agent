@@ -179,12 +179,20 @@ function knownBuiltinDefaults(providerId: string): {
     minimax: {
       api: "anthropic-messages",
       baseUrl: "https://api.minimax.io/anthropic",
-      models: [{ id: "MiniMax-M2.7", name: "MiniMax M2.7" }],
+      models: [
+        { id: "MiniMax-M3", name: "MiniMax M3" },
+        { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
+        { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 Highspeed" },
+      ],
     },
     "minimax-cn": {
       api: "anthropic-messages",
       baseUrl: "https://api.minimaxi.com/anthropic",
-      models: [{ id: "MiniMax-M2.7", name: "MiniMax M2.7" }],
+      models: [
+        { id: "MiniMax-M3", name: "MiniMax M3" },
+        { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
+        { id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 Highspeed" },
+      ],
     },
     xiaomi: {
       api: "anthropic-messages",

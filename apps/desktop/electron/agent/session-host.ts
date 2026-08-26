@@ -42,6 +42,7 @@ import {
   dedupeModelInfosForUi,
   filterModelsByCatalogEnabled,
   repairDeepSeekModelsJson,
+  repairMiniMaxModelsJson,
 } from "./provider-store";
 import {
   branchEntriesToHistory,
@@ -593,6 +594,8 @@ export class SessionHost {
       const dir = getAgentDirPath();
       // Fix legacy DeepSeek models.json entries missing reasoning (thinking→off).
       await repairDeepSeekModelsJson();
+      // Fix legacy MiniMax models.json entries missing reasoning / forceAdaptiveThinking.
+      await repairMiniMaxModelsJson();
       this.modelRuntime = await ModelRuntime.create({
         authPath: join(dir, "auth.json"),
         modelsPath: join(dir, "models.json"),

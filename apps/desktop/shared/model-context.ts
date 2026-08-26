@@ -132,6 +132,8 @@ export function lookupKnownContextWindow(id: string): number | undefined {
 
   // MiniMax
   if (n.includes("minimax")) {
+    // M3 上下文窗口 1M,M2.x 系列 204_800
+    if (n.includes("minimax-m3") || n.endsWith("-m3")) return 1_000_000;
     return 204_800;
   }
 

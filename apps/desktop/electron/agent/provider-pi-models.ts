@@ -36,6 +36,59 @@ export function isPiAutoDetectedDeepSeekEndpoint(
   return id === "deepseek" || url.includes("deepseek.com");
 }
 
+/**
+ * MiniMax / MiniMax-M* 模型识别。MiniMax 官方模型 id 形如
+ * "MiniMax-M3" / "MiniMax-M2.7" / "MiniMax-M2.7-highspeed" 等；
+ * 也兼容 OpenRouter / 第三方网关常见的 "minimax/MiniMax-M3" 形式
+ * (经过 VENDOR_PREFIXES 标准化后会落在这里)。
+ */
+export function looksLikeMiniMaxModelId(modelId: string): boolean {
+  return /MiniMax-M\d/i.test(modelId.trim());
+}
+
+/** Pi models.json 注入字段，覆盖 reasoning / compat / thinkingLevelMap。 */
+export function minimaxModelExtras(modelId: string): {
+  reasoning: true;
+  compat: { forceAdaptiveThinking: true };
+  thinkingLevelMap: Record<string, string | null>;
+} | null {
+  if (!looksLikeMiniMaxModelId(modelId)) return null;
+  const id = modelId.trim().toLowerCase();
+  const isM3 = /^MiniMax-M3(\b|[_-])/.test(id) || id.endsWith("-m3");
+  if (isM3) {
+    // M3：官方 API 只有 adaptive / disabled 二态，Pi 在 forceAdaptiveThinking
+    // 路径下所有非 off 级别都发 thinking: {type:"adaptive"}，没有强度差异。
+    // 把 UI 收敛到 off / max 二选一，避免给用户 5 个等价的"开"选项。
+    return {
+      reasoning: true,
+      compat: { forceAdaptiveThinking: true },
+      thinkingLevelMap: {
+        off: "off",
+        minimal: null, // M3 无强度差异，Pi 强制收成 max
+        low: null,
+        medium: null,
+        high: null,
+        max: "max",
+      },
+    };
+  }
+  // M2.x：官方无法关闭（传 disabled 也不生效），模型始终 thinking。
+  // 隐藏 off；其它 5 个级别保留（pre-existing UX，UI 提示"在思考中"，
+  // 实际服务端对所有非 off 级别都返回 thinking，不影响正确性）。
+  return {
+    reasoning: true,
+    compat: { forceAdaptiveThinking: true },
+    thinkingLevelMap: {
+      off: null, // 强制从 UI 中隐藏 off（服务端无法关闭）
+      minimal: "minimal",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      max: "max",
+    },
+  };
+}
+
 /** Model entry fields written into Pi models.json for DeepSeek-family models. */
 export function deepseekProxyModelExtras(modelId: string): {
   reasoning: true;
@@ -99,6 +152,17 @@ export function modelEntryForPiModelsJson(
     ) {
       entry.compat = extras.compat;
     }
+  }
+  // MiniMax (anthropic-messages only): inject forceAdaptiveThinking compat so
+  // Pi sends thinking: {type:"adaptive"} / {type:"disabled"} instead of the
+  // budget_tokens form. Without reasoning+compat, Pi clamps every level to
+  // off (issue: thinking strength selector is dead for MiniMax). MiniMax does
+  // not have an "auto-detected" baseUrl path — always write compat.
+  const minimaxExtras = minimaxModelExtras(enriched.id);
+  if (minimaxExtras) {
+    entry.reasoning = minimaxExtras.reasoning;
+    entry.compat = minimaxExtras.compat;
+    entry.thinkingLevelMap = minimaxExtras.thinkingLevelMap;
   }
   return entry;
 }
@@ -169,6 +233,94 @@ export async function repairDeepSeekModelsJson(
       return next;
     });
     providers[providerId] = provider;
+  }
+
+  if (!changed) return false;
+  await withStoreLock(paths.modelsPath, () =>
+    writeJsonAtomic(paths.modelsPath, modelsFile),
+  );
+  return true;
+}
+
+/**
+ * Patch existing ~/.pi/agent/models.json MiniMax entries that lack `reasoning`
+ * / `compat.forceAdaptiveThinking` / `thinkingLevelMap`. Without these, Pi's
+ * anthropic-messages adapter clamps every thinking level to off (issue: thinking
+ * strength selector is dead for MiniMax). Idempotent: returns true only when at
+ * least one entry was actually rewritten.
+ *
+ * B4: shares the models.json lock + atomic write with provider-pi-sync so
+ * concurrent activate/edit calls cannot tear or truncate the file.
+ */
+export async function repairMiniMaxModelsJson(
+  paths: ProviderPaths = defaultProviderPaths(),
+): Promise<boolean> {
+  if (!existsSync(paths.modelsPath)) return false;
+  let modelsFile: { providers?: Record<string, unknown> };
+  try {
+    modelsFile = JSON.parse(readFileSync(paths.modelsPath, "utf8")) as {
+      providers?: Record<string, unknown>;
+    };
+  } catch {
+    return false;
+  }
+  const providers = modelsFile.providers;
+  if (!providers || typeof providers !== "object") return false;
+
+  let changed = false;
+  for (const [, rawProvider] of Object.entries(providers)) {
+    if (!rawProvider || typeof rawProvider !== "object") continue;
+    const provider = rawProvider as {
+      models?: Array<Record<string, unknown>>;
+    };
+    if (!Array.isArray(provider.models)) continue;
+
+    provider.models = provider.models.map((model) => {
+      const id = typeof model.id === "string" ? model.id : "";
+      if (!id || !looksLikeMiniMaxModelId(id)) return model;
+      const extras = minimaxModelExtras(id);
+      if (!extras) return model;
+      const next = { ...model };
+      if (next.reasoning !== true) {
+        next.reasoning = true;
+        changed = true;
+      }
+      // compat: only patch if missing or wrong type; do not overwrite a
+      // user-supplied compat (none today — MiniMax always uses our shape).
+      if (
+        next.compat == null ||
+        typeof next.compat !== "object" ||
+        (next.compat as { forceAdaptiveThinking?: unknown })
+          .forceAdaptiveThinking !== true
+      ) {
+        next.compat = extras.compat;
+        changed = true;
+      }
+      // thinkingLevelMap: value-level compare against the canonical shape.
+      // A previous release wrote a 6-key map for M3 (off/minimal/low/medium/
+      // high/max all mapped to themselves); the new M3 shape is the binary
+      // off/max (minimal/low/medium/high all `null`). A key-presence check
+      // alone lets the old 6-key M3 entry slip through, leaving the UI
+      // dropdown showing 5 redundant "thinking on" levels that all map to
+      // the same `adaptive` request. Compare values, not just keys.
+      const canonical = extras.thinkingLevelMap;
+      const existing = next.thinkingLevelMap;
+      const canonicalKeys = Object.keys(canonical);
+      const existingKeys =
+        existing != null && typeof existing === "object"
+          ? Object.keys(existing)
+          : [];
+      const mapMatches =
+        existing != null &&
+        typeof existing === "object" &&
+        canonicalKeys.every((k) => (existing as Record<string, unknown>)[k] === canonical[k]) &&
+        existingKeys.every((k) => k in canonical);
+      if (!mapMatches) {
+        next.thinkingLevelMap = canonical;
+        changed = true;
+      }
+      return next;
+    });
   }
 
   if (!changed) return false;

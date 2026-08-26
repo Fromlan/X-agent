@@ -27,9 +27,12 @@ export {
   deepseekProxyModelExtras,
   isPiAutoDetectedDeepSeekEndpoint,
   looksLikeDeepSeekModelId,
+  looksLikeMiniMaxModelId,
+  minimaxModelExtras,
   modelEntryForPiModelsJson,
   pruneStaleProviderKeys,
   repairDeepSeekModelsJson,
+  repairMiniMaxModelsJson,
 } from "./provider-pi-models";
 
 export { importExistingProviderProfiles } from "./provider-import";
