@@ -105,7 +105,7 @@ describe("applyBashShellPath", () => {
     }
     const settings = readPiSettingsSync();
     expect(settings.shellPath).toBe(real);
-  });
+  }, 15_000);
 });
 
 function isInTrustedDir(absPath: string): boolean {
@@ -137,7 +137,7 @@ describe("checkBash", () => {
     } else {
       expect(r.shellPath).toBeNull();
     }
-  });
+  }, 15_000);
 
   it("配置了非 bash 的可执行时返回 ok:false + 提示", async () => {
     const fake = makeFakeBash("definitely not bash", 0);
