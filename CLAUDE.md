@@ -88,6 +88,13 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 - **前置**(在 main 上):
   1. 整理 [`CHANGELOG.md`](CHANGELOG.md) `## Unreleased` → 对应 `## x.y.z` 章节(按 `改进` / `修复` / `安全` / `测试 & 质量` 等小节归类)
+     **写法约定**(避免 0.5.5 / 0.5.6 那种"一栏 600 字讲实现细节"的反模式):
+     - 每条 bullet **1-3 句话**为主,开头部份是**用户能看到的**行为/能力(动词 + 名字),不展开实现
+     - **不写**实现细节(path 解析规则 / sidecar 格式 / 内部 API 名 / 命令行 flag / 配置项)——这些在 commit 与 PR 描述里
+     - **不写**为什么做、PR 引用、issue 编号进 bullet 正文(放 footer)
+     - 改进 / 修复 / 安全分类按"对用户的影响"判断,不是按代码变更范围
+     - 关键功能展开 1 行 80-150 字,**绝对不要**写半页
+     - 反例: "首次打开策划会话... 35 个 vitest 用例覆盖路径规范化、逃逸尝试、godot 工具、bash 只读与扩展 hookup" — 这种就该砍到 "策划会话支持预装 5 个内置 skill（issue #23）：design-initiation / design-process / design-systems / design-numerical / design-core-loop，由 Pi 自动发现并入可用 skill 顶部"
   2. `npm run release:prepare -- x.y.z` 改版本号 + 校验 CHANGELOG 抽取
   3. 通过 PR 合并到 `main`(与功能 PR 走同一条流程)
 - **发版**:

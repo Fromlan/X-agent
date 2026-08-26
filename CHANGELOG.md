@@ -6,6 +6,26 @@
 
 升 **minor 线起点**（如 `0.3.0`，patch 为 0 且 minor > 0）时，`prepare-release` 会把上一线全部小版本（`0.2.0`…`0.2.x`）汇总写入本章节；GitHub Release 正文使用该章节（已含汇总则不再重复附加）。补丁版（如 `0.3.1`）不汇总。可用 `npm run release:notes -- 0.3.0` 预览，`--no-aggregate` 关闭自动附加。
 
+## 写法约定
+
+CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是架构文档。后续发版统一遵守：
+
+- 每条 bullet **1-3 句话**为主，开头是**用户能看到的**行为/能力（动词 + 名字）
+- **不写**实现细节：path 解析规则 / sidecar 格式 / 内部 API 名 / 命令行 flag / 配置项 / 测试数量 —— 这些在 commit 与 PR 描述里
+- **不写**为什么做、PR 引用、issue 编号进 bullet 正文（issue 编号放 footer 即可）
+- 改进 / 修复 / 安全分类按"对用户的影响"判断，不是按代码变更范围
+- 关键功能展开 1 行 80-150 字。**绝对不要**写半页或一段 600+ 字的实现说明
+
+**反例**（0.5.5 / 0.5.6 风格，已 commit 不再回改；新条目按下面的正例写）：
+
+> 策划会话类型 code / design（issue #22）：在原有 4 个 AgentSessionMode（agent / 调研 / 计划 / 目标）之上，新增会话级 sessionType 抽象——code（默认，写入无限制）与 design（策划会话，写操作硬约束到 `<cwd>/game-design/`，UI 切暖色主题）。design 类型的工具集为「read + 写/编辑 + readonly bash」，不包含 `write_plan`（策划文档应直接 write 到 game-design/），且对 `write` / `edit` / godot-mutating 工具的路径参数做强约束：相对路径自动补 `<cwd>/game-design/`，绝对路径 / `..` / UNC / 盘符越界 / `~` 展开 / `file://` 全部拒绝。type 信息通过 `<sessionPath>.session-type.json` sidecar 持久化（旧会话自动回退到 `code`）……（500+ 字后略）
+
+**正例**（同条改动，对照）：
+
+> **策划会话类型 code / design**：新增会话级 `code` / `design` 类型。`design` 模式下写操作硬约束到 `<cwd>/game-design/`，UI 切暖色主题；type 信息持久化到 sidecar（旧会话自动回退 `code`）。
+
+实现细节（路径解析规则、sidecar 格式、工具白名单、vitest 覆盖）都进 PR 描述与 commit，CHANGELOG 只承担"用户能看到什么"。
+
 ## Unreleased
 
 ### 改进
