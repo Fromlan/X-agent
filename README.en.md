@@ -20,7 +20,6 @@
 <p align="center">
   <a href="#install">Install</a> ·
   <a href="#what-is-x-agent">Three pillars</a> ·
-  <a href="#x-agent-vs">Compare</a> ·
   <a href="docs/agent.md">Dev docs</a> ·
   <a href="docs/roadmap.md">Roadmap</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
@@ -82,26 +81,6 @@ X-agent does three things other agents don't: **deep Godot integration**, **trus
 - **Session types (orthogonal to mode)**:
   - **`code`** (default, writes unrestricted)
   - **`design`** — writes are **hard-confined** to `<cwd>/game-design/`, UI flips to a warm theme; 5 preinstalled skills: `design-initiation` / `design-process` / `design-systems` / `design-numerical` / `design-core-loop`
-
-## X-agent vs.
-
-**Comparison axes** (not just "does it work" — "what does it do that others don't"):
-
-| | VS Code + Copilot | Cursor | Claude Code | Pi CLI | **X-agent** |
-|---|---|---|---|---|---|
-| **Godot editor RPC** | ⚠️ Third-party plugins | 🚫 No | 🚫 No | 🚫 No | ✅ **Deep integration** (17 tools + 1.3 suite) |
-| **Rollback** | ⚠️ Rewinds messages | ⚠️ Rewinds messages | ⚠️ Rewinds messages | 🚫 No | ✅ **Shadow Git restores by diff path** |
-| **Mode hard-gate** (IPC layer) | 🚫 Suggestions only | 🚫 Suggestions only | ⚠️ Permission mode | ⚠️ Config file | ✅ **Session-level enforcement** (Agent / Ask / Plan / Goal) |
-| **Session types** | 🚫 No | 🚫 No | 🚫 No | 🚫 No | ✅ **`code` / `design` dual types** |
-| **Game-design workflow** | 🚫 No | 🚫 No | 🚫 No | 🚫 No | ✅ **5 preinstalled design skills + game-design hard-confine** |
-| **Local data** | ⚠️ Cloud-synced | ⚠️ Cloud-synced | ⚠️ Cloud-synced | ✅ Local | ✅ **Locally isolated** (separate dir from Pi CLI) |
-| **Windows installer** | ✅ | ✅ | ✅ | ⚠️ CLI-first | ✅ **NSIS double-click install** |
-| **Model-swappable** | ✅ | ✅ | ✅ | ✅ | ✅ **Multi-provider profiles + Thinking clamp** |
-| **UI language** | Multi-locale | Multi-locale | Multi-locale | EN | 🚧 **Chinese only** (English docs via `README.en.md`) |
-| **Open source** | Partial | 🚫 | 🚫 | ✅ MIT | ✅ MIT |
-| **Maintenance** | Commercial | Commercial | Commercial | Single-maintainer | 🚧 **Single-maintainer** (see [docs/maintenance.md](docs/maintenance.md)) |
-
-> ✅ = full support · ⚠️ = partial / needs config · 🚫 = unsupported · 🚧 = partial / WIP
 
 ## What do you want to do with X-agent?
 

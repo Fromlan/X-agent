@@ -83,26 +83,6 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
   - **`code`**（默认，写入无限制）
   - **`design`** —— 写操作**硬约束**到 `<cwd>/game-design/`，UI 切暖色主题；预装 5 个内置 skill：`design-initiation` / `design-process` / `design-systems` / `design-numerical` / `design-core-loop`
 
-## X-agent vs.
-
-**对比维度**（不只比"能不能用"——比"做了别人没做的事"）：
-
-| | VS Code + Copilot | Cursor | Claude Code | Pi CLI | **X-agent** |
-|---|---|---|---|---|---|
-| **Godot 编辑器 RPC** | ⚠️ 需第三方插件 | 🚫 无 | 🚫 无 | 🚫 无 | ✅ **深度集成**（17 工具 + 1.3 套件） |
-| **撤回机制** | ⚠️ 撤 message | ⚠️ 撤 message | ⚠️ 撤 message | 🚫 无 | ✅ **Shadow Git 按 diff 路径还原** |
-| **模式硬闸**（IPC 层） | 🚫 仅建议 | 🚫 仅建议 | ⚠️ permission mode | ⚠️ 配置文件 | ✅ **会话级强制**（Agent / Ask / Plan / Goal） |
-| **会话类型** | 🚫 无 | 🚫 无 | 🚫 无 | 🚫 无 | ✅ **`code` / `design` 双类型** |
-| **策划工作流支持** | 🚫 无 | 🚫 无 | 🚫 无 | 🚫 无 | ✅ **5 内置 design skill + game-design 硬约束** |
-| **数据本地** | ⚠️ 同步到云 | ⚠️ 同步到云 | ⚠️ 同步到云 | ✅ 本地 | ✅ **本机隔离**（与 Pi CLI 分目录） |
-| **Windows 安装包** | ✅ | ✅ | ✅ | ⚠️ CLI 为主 | ✅ **NSIS 双击安装** |
-| **模型可换** | ✅ | ✅ | ✅ | ✅ | ✅ **多 provider 档案 + Thinking 钳制** |
-| **UI 语言** | 多语种 | 多语种 | 多语种 | EN | 🚧 **中文 only**（英文文档由 README.en.md 承担） |
-| **开源** | 部分 | 🚫 | 🚫 | ✅ MIT | ✅ MIT |
-| **维护模式** | 商业 | 商业 | 商业 | 个人项目 | 🚧 **单兵项目**（见 [docs/maintenance.md](docs/maintenance.md)） |
-
-> ✅ = 完整支持　⚠️ = 部分 / 需配置　🚫 = 不支持　🚧 = 部分 / 在做
-
 ## 你要用 X-agent 做什么？
 
 四个常见场景，按"我是什么角色"选：
