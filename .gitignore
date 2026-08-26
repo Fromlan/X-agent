@@ -1,7 +1,7 @@
 node_modules
 dist
 out
-release
+release*
 .DS_Store
 *.log
 # docs/ 是公开文档目录（自 2026-08-24 整理起）
