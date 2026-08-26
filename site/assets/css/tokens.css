@@ -104,8 +104,12 @@ body[data-theme="dark"] {
   /* ============================================
    * Premium upgrade — Gradient definitions (NEW)
    * ============================================ */
+  /* Hero gradient geometry is parameterized so breakpoint
+   * media queries can swap size/position without re-stating
+   * the theme-dependent color stops. */
+  --gradient-hero-geometry: ellipse 100% 80% at 50% 0%;
   --gradient-hero: radial-gradient(
-    ellipse 80% 60% at 28% 18%,
+    var(--gradient-hero-geometry),
     rgba(18, 34, 68, 0.85) 0%,
     rgba(18, 34, 68, 0.20) 45%,
     transparent 75%
@@ -223,8 +227,9 @@ body[data-theme="light"] {
   --green-500-glow: rgba(42, 174, 91, 0.18);
 
   /* === Light theme: gradients (softer, lower alpha) === */
+  --gradient-hero-geometry: ellipse 100% 80% at 50% 0%;
   --gradient-hero: radial-gradient(
-    ellipse 80% 60% at 28% 18%,
+    var(--gradient-hero-geometry),
     rgba(197, 216, 255, 0.45) 0%,
     rgba(197, 216, 255, 0.10) 45%,
     transparent 75%

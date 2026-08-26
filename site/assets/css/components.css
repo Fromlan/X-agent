@@ -199,40 +199,58 @@
 
 /* ============================================
  * Hero — Premium
+ *
+ * Layout split: .hero is a full-viewport background box
+ * (so the gradient + spotlight span edge-to-edge on
+ * ultra-wide screens). .hero__inner is the 1180px content
+ * container that centers title / CTA / logo.
  * ============================================ */
 .hero {
   position: relative;
+  width: 100%;
   padding: 80px 0 56px;
   text-align: center;
-  overflow: hidden;
+  overflow: hidden;       /* clip the ::after blur overflow */
+  isolation: isolate;     /* local stacking context — keep ::before/::after from leaking into other sections */
 }
 
-/* Hero background gradient overlay */
+/* Inner content container — picks up .container's 1180px ceiling.
+ * No additional rules needed; only ensure content stacks above
+ * the gradient/blob pseudo-elements.
+ */
+.hero__inner {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero background gradient overlay (full-viewport, follows viewport, not the 1180px ceiling) */
 .hero::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--gradient-hero);
+  background-image: var(--gradient-hero);
+  background-repeat: no-repeat;
   pointer-events: none;
   z-index: 0;
   opacity: 0.85;
   animation: hero-fade-in var(--motion-slower) var(--ease-out) both;
 }
 
-/* Floating ambient blob (top-right) */
+/* Floating ambient blob (top-right) — vw + min() so it scales with viewport but caps on 4K */
 .hero::after {
   content: "";
   position: absolute;
-  top: 12%;
-  right: -8%;
-  width: 480px;
-  height: 480px;
+  top: 8%;
+  right: -6%;
+  width: min(60vw, 720px);
+  aspect-ratio: 1 / 1;
   background: var(--gradient-spotlight);
-  filter: blur(60px);
+  filter: blur(80px);
   pointer-events: none;
   z-index: 0;
   opacity: 0.45;
   animation: hero-blob-float 14s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 @keyframes hero-fade-in {
@@ -339,7 +357,72 @@
     0 0 32px var(--blue-500-glow);
 }
 
-@media (max-width: 768px) {
+/* ============================================
+ * Hero — Responsive geometry
+ *
+ * Five viewports: <480, ≥480, ≥768, ≥1180, ≥1920.
+ * Each tunes:
+ *   - .hero padding
+ *   - --gradient-hero-geometry (size + position)
+ *   - .hero::after blob (size, position, blur)
+ *   - typography (title, sub, logo)
+ *
+ * Gradient color stops are kept in tokens.css and shared
+ * across themes; only the geometry var is overridden.
+ * ============================================ */
+
+/* <480px (mobile S) */
+@media (max-width: 479.98px) {
+  :root {
+    --gradient-hero-geometry: ellipse 120% 70% at 50% 0%;
+  }
+  .hero {
+    padding: 40px 0 24px;
+  }
+  .hero__title {
+    font-size: 26px;
+  }
+  .hero__sub {
+    font-size: 13px;
+  }
+  .hero__cta {
+    margin-bottom: 40px;
+  }
+  .hero::after {
+    top: 4%;
+    right: -20%;
+    width: 320px;
+    filter: blur(40px);
+  }
+}
+
+/* ≥480px (mobile L) */
+@media (min-width: 480px) and (max-width: 767.98px) {
+  :root {
+    --gradient-hero-geometry: ellipse 120% 70% at 50% 0%;
+  }
+  .hero {
+    padding: 48px 0 28px;
+  }
+  .hero__title {
+    font-size: 28px;
+  }
+  .hero__sub {
+    font-size: 14px;
+  }
+  .hero::after {
+    top: 6%;
+    right: -15%;
+    width: 400px;
+    filter: blur(50px);
+  }
+}
+
+/* ≥768px (tablet) — replaces the original 768 breakpoint */
+@media (min-width: 768px) and (max-width: 1179.98px) {
+  :root {
+    --gradient-hero-geometry: ellipse 100% 75% at 50% 0%;
+  }
   .hero {
     padding: 48px 0 32px;
   }
@@ -351,6 +434,67 @@
   }
   .hero__visual img {
     max-width: 100%;
+  }
+  .hero::after {
+    top: 8%;
+    right: -10%;
+    width: 480px;
+    filter: blur(60px);
+  }
+}
+
+/* ≥1180px (desktop) — explicit "default" ceiling; matches token default */
+@media (min-width: 1180px) and (max-width: 1919.98px) {
+  :root {
+    --gradient-hero-geometry: ellipse 100% 80% at 50% 0%;
+  }
+  .hero {
+    padding: 80px 0 56px;
+  }
+  .hero::after {
+    top: 8%;
+    right: -6%;
+    width: 600px;
+    filter: blur(70px);
+  }
+}
+
+/* ≥1920px (4K / ultra-wide) — alpha dialed down to avoid deep stacking */
+@media (min-width: 1920px) {
+  :root {
+    --gradient-hero-geometry: ellipse 100% 80% at 50% 0%;
+  }
+  .hero {
+    padding: 96px 0 64px;
+  }
+  .hero::before {
+    opacity: 0.7;  /* avoid gradient stacking into a black band */
+  }
+  .hero::after {
+    top: 8%;
+    right: -4%;
+    width: min(60vw, 720px);  /* already the default; explicit for clarity */
+    filter: blur(80px);
+  }
+}
+
+/* Light theme: soften the hero gradient — avoid gray wash on white bg */
+body[data-theme="light"] .hero::before {
+  opacity: 0.65;
+}
+
+/* Reduced motion: the global tokens.css override zeros the duration of
+ * the one-shot hero-fade-in (since it uses --motion-slower), but
+ * hero-blob-float's 14s infinite loop is hard-coded and would still
+ * run forever under prefers-reduced-motion. Kill it here. */
+@media (prefers-reduced-motion: reduce) {
+  .hero::before {
+    animation: none;
+    opacity: 0.85;  /* hold the post-fade-in end state */
+  }
+  .hero::after {
+    animation: none;
+    opacity: 0.45;  /* hold a stable position */
   }
 }
 
