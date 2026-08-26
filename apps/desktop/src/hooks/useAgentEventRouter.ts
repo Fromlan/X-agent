@@ -9,6 +9,7 @@ import type {
   AgentStatus,
   ClientPrefs,
   GoalInfo,
+  ThinkingLevel,
   UiAgentEvent,
 } from "@shared/ipc";
 import type { SessionType } from "@shared/session-type";
@@ -39,6 +40,13 @@ type EventRouterDeps = {
   sessionIdRef: MutableRefObject<string | null>;
   usageFetchGen: MutableRefObject<number>;
   setPrefs: Dispatch<SetStateAction<ClientPrefs | null>>;
+  /**
+   * Thinking levels supported by the current session's model. Driven by
+   * `session_info` events (Pi `getAvailableThinkingLevels()`). `null` while
+   * no session is open — Composer falls back to all THINKING_LEVELS.
+   * See issue #30.
+   */
+  setAvailableThinkingLevels: Dispatch<SetStateAction<ThinkingLevel[] | null>>;
   setQueuedSteering: Dispatch<SetStateAction<string[]>>;
   setEditingEntryId: Dispatch<SetStateAction<string | null>>;
   setItems: Dispatch<SetStateAction<ChatItem[]>>;
@@ -64,6 +72,7 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
     sessionIdRef,
     usageFetchGen,
     setPrefs,
+    setAvailableThinkingLevels,
     setQueuedSteering,
     setEditingEntryId,
     setItems,
@@ -112,6 +121,13 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
         return;
       }
       if (event.type === "session_info") {
+        // DEBUG(thinking-switch #30): 渲染端确认收到 session_info 时的 thinkingLevel
+        dbgLog("renderer", "session_info received", {
+          thinkingLevel: event.thinkingLevel,
+          availableThinkingLevels: event.availableThinkingLevels,
+          model: event.model,
+          sessionId: event.sessionId,
+        });
         const nextId = event.sessionId || null;
         const prevId = sessionIdRef.current;
         setCwd(event.cwd || null);
@@ -129,6 +145,14 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
           // 新会话补发 queue_update([])，banner 会显示过期内容）。
           setQueuedSteering([]);
         }
+        // Sync the model-supported thinking levels (used by the Composer
+        // SelectMenu to avoid offering levels Pi would silently clamp — #30).
+        // closeWorkspace emits []; treat that as "no session → fall back to all".
+        setAvailableThinkingLevels(
+          event.availableThinkingLevels.length > 0
+            ? event.availableThinkingLevels
+            : null,
+        );
         setPrefs((prev) =>
           prev
             ? {

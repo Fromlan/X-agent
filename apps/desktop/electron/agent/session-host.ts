@@ -354,7 +354,18 @@ export class SessionHost {
         this.textDeltaCount = 0;
         this.thinkingDeltaCount = 0;
       }
-      dbgLog("emit", "->", event.type);
+      // DEBUG(thinking-switch #30): 详细 payload for 排查 thinking 切换失联。
+      // 只在 3 个关键事件上多打一条 — session_info / session_mode / notice
+      // 任何 status 错误，避免淹没常规流。
+      if (
+        event.type === "session_info" ||
+        event.type === "session_mode" ||
+        event.type === "notice"
+      ) {
+        dbgLog("emit", "->", event.type, event);
+      } else {
+        dbgLog("emit", "->", event.type);
+      }
     }
     const win = this.getWindow();
     if (win && !win.isDestroyed()) {
@@ -880,11 +891,14 @@ export class SessionHost {
     id: string,
   ): Promise<{ ok: boolean; error?: string }> {
     if (!this.bundle) return { ok: false, error: "尚未打开项目" };
+    // DEBUG(thinking-switch #30): 跟踪 setModel 调用链,排查周期 session_info
+    dbgLog("setModel", "in", { provider, id });
     try {
       const runtime = await this.ensureRuntime();
       const model = runtime.getModel(provider, id);
       if (!model) {
         const error = `未找到模型 ${provider}/${id}`;
+        dbgLog("setModel", "model-not-found", { provider, id });
         this.emitReplaceableNotice("model", error, "error");
         return { ok: false, error };
       }
@@ -897,6 +911,7 @@ export class SessionHost {
         cwd: this.bundle.cwd,
         model: modelFromSession(this.bundle.session),
         thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
+        availableThinkingLevels: this.bundle.session.getAvailableThinkingLevels(),
         sessionPath: this.bundle.sessionPath,
       });
       this.emitUsageUpdate();
@@ -919,11 +934,28 @@ export class SessionHost {
   async setThinkingLevel(
     level: ThinkingLevel,
   ): Promise<{ ok: boolean; thinkingLevel?: ThinkingLevel }> {
-    if (!this.bundle) return { ok: false };
+    if (!this.bundle) {
+      dbgLog("setThinkingLevel", "no-bundle", { level });
+      return { ok: false };
+    }
+    // DEBUG(thinking-switch #30): 跟踪 thinking 切换入参,排查"调了但 UI 没动"
+    const currentBefore = this.bundle.session.thinkingLevel;
+    dbgLog("setThinkingLevel", "in", {
+      requested: level,
+      currentBefore,
+      available: this.bundle.session.getAvailableThinkingLevels(),
+    });
     this.bundle.session.setThinkingLevel(level);
     // Persist the model-clamped effective level so prefs / TopBar / Settings stay
     // aligned (e.g. DeepSeek V4 maps medium→high; unsupported → nearest).
     const effective = this.bundle.session.thinkingLevel as ThinkingLevel;
+    dbgLog("setThinkingLevel", "after-set", {
+      requested: level,
+      effective,
+      changedVsBefore: effective !== currentBefore,
+      // 标记 Pi 是否把目标级别钳制了(available levels 不含) — 切换被静默回弹的根因
+      clamped: effective !== level,
+    });
     // Await the persist: renderer follows this IPC with `prefs.get()`, and a
     // fire-and-forget write can leave a stale cache that clobbers the effective
     // level it just received via session_info (composer snap-back bug).
@@ -934,6 +966,7 @@ export class SessionHost {
       cwd: this.bundle.cwd,
       model: modelFromSession(this.bundle.session),
       thinkingLevel: effective,
+      availableThinkingLevels: this.bundle.session.getAvailableThinkingLevels(),
       sessionPath: this.bundle.sessionPath,
     });
     return { ok: true, thinkingLevel: effective };
@@ -1032,6 +1065,9 @@ export class SessionHost {
       thinkingLevel:
         (this.bundle?.session.thinkingLevel as ThinkingLevel) ??
         getCachedPrefs().thinkingLevel,
+      availableThinkingLevels: this.bundle
+        ? this.bundle.session.getAvailableThinkingLevels()
+        : undefined,
       error: this.lastError,
       hasSession: Boolean(this.bundle),
     };
