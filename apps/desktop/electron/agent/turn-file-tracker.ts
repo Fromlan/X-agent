@@ -260,6 +260,11 @@ export class TurnFileTracker implements RestoreSource {
   /**
    * 扫描 active branch 中 entryId 之后的 segment。
    * 收集 write/edit 触及的相对路径、user turn id 列表，是否含 bash / Godot。
+   *
+   * **不变量**: 必须在 `session.navigateTree(entryId)` 之前调用. nav 之后
+   * abandoned write/edit 不在 active branch,scan 看不到. 这是撤回撤销的
+   * 硬时序,见 restore-source.ts 顶部说明. 编排器走 `CompositeRestoreSource.scan`,
+   * 不直接调此方法.
    */
   scanSegmentSince(sm: SessionManagerLike, entryId: string): SegmentScan {
     const branch = sm.getBranch();
@@ -304,6 +309,18 @@ export class TurnFileTracker implements RestoreSource {
   }
 
   /**
+   * RestoreSource seam: scan (entryId → segment scan).
+   * Mirrors {@link scanSegmentSince} but conforms to the seam's method name
+   * so {@link CompositeRestoreSource} can dispatch via duck-typing without
+   * expanding the RestoreSource interface to 4 methods.
+   *
+   * **不变量**: 必须在 `session.navigateTree(entryId)` 之前调用.
+   */
+  scan(sm: SessionManagerLike, entryId: string): RestoreSegmentScan {
+    return this.scanSegmentSince(sm, entryId);
+  }
+
+  /**
    * 查找某路径在给定 user turn 列表下是否已有可还原基线。
    * 优先匹配最近的 turn（从前往后），找不到再回落到 `_legacy`。
    */
@@ -325,7 +342,12 @@ export class TurnFileTracker implements RestoreSource {
     return { ok: false, reason: "no_baseline" };
   }
 
-  previewRestore(
+  /**
+   * @deprecated Use {@link preview} (seam method) — this is the pre-seam
+   * implementation. Kept private to enforce seam usage; tests in this module
+   * still cover it directly through the public `preview` path.
+   */
+  private previewRestore(
     sm: SessionManagerLike,
     entryId: string,
   ): {
@@ -427,7 +449,11 @@ export class TurnFileTracker implements RestoreSource {
     };
   }
 
-  restorePaths(
+  /**
+   * @deprecated Use {@link restore} (seam method). Kept private to enforce
+   * seam usage.
+   */
+  private restorePaths(
     rels: string[],
     userEntryIds: string[],
   ): FileRestoreReport {
@@ -530,13 +556,16 @@ export class TurnFileTracker implements RestoreSource {
   }
 
   /**
+   * @deprecated Internal pre-seam helper — restored via {@link restore}
+   * (seam method). Kept private to enforce seam usage.
+   *
    * Restore files for a segment still present on the active branch.
    * Production retract scans *before* navigateTree, then calls
    * {@link restorePaths} with that scan — do not call this after nav
    * (abandoned tool calls leave the branch).
    * Call {@link dropBaselinesForTurns} after a successful restore.
    */
-  restoreSegment(sm: SessionManagerLike, entryId: string): {
+  private restoreSegment(sm: SessionManagerLike, entryId: string): {
     report: FileRestoreReport;
     userEntryIds: string[];
   } {
@@ -555,7 +584,11 @@ export class TurnFileTracker implements RestoreSource {
     return { report, userEntryIds: scan.userEntryIds };
   }
 
-  restoreSince(sm: SessionManagerLike, entryId: string): FileRestoreReport {
+  /**
+   * @deprecated Use {@link restore} (seam method). Kept private to enforce
+   * seam usage.
+   */
+  private restoreSince(sm: SessionManagerLike, entryId: string): FileRestoreReport {
     const { report, userEntryIds } = this.restoreSegment(sm, entryId);
     this.dropBaselinesForTurns(userEntryIds);
     return report;

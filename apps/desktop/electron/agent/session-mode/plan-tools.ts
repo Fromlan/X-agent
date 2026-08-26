@@ -25,9 +25,7 @@ import {
   wrapWithModeBlock,
 } from "../../../shared/mode-prompt";
 import { getAgentDirPath } from "../prefs";
-import {
-  computeDesignSessionTypeTools,
-} from "../../../shared/session-type-tools";
+import type { SessionTypePolicy } from "../session-type-policy";
 
 export { PLAN_MODE_INSTRUCTIONS, wrapWithModeBlock };
 
@@ -206,23 +204,23 @@ export function computeModeTools(
  * gets the design base (read-only + write/edit guarded by game-design/).
  *
  * Code session type falls through to the existing per-mode logic.
+ *
+ * Type decisions are centralized in `SessionTypePolicy`; this function
+ * takes a policy and reads `policy.toolPreset(...)` for the design branch.
  */
 export function computeModeToolsForType(
-  sessionType: "code" | "design",
+  policy: SessionTypePolicy,
   mode: "ask" | "plan" | "agent" | "goal",
   prefsTools: readonly string[],
 ): string[] {
-  if (sessionType === "design") {
-    if (mode === "ask") {
-      // ask is read-only by definition; use the design base (which is
-      // already readonly + write). This avoids giving the agent the
-      // ability to write even in plan/agent mode without path check.
-      return computeDesignSessionTypeTools(prefsTools);
-    }
-    // plan / agent / goal: always the design base. The design-write-guard
+  if (policy.type === "design") {
+    // ask is read-only by definition; use the design base (which is
+    // already readonly + write). This avoids giving the agent the
+    // ability to write even in plan/agent mode without path check.
+    // plan / agent / goal: also the design base. The design-write-guard
     // extension is the authoritative path check; mode-level narrow
     // (write_plan removal) is already reflected in the design base.
-    return computeDesignSessionTypeTools(prefsTools);
+    return [...policy.toolPreset(prefsTools)];
   }
   // Code session: existing behavior.
   if (mode === "ask") return computeAskModeTools(prefsTools);

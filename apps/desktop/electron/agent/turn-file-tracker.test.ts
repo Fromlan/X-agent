@@ -68,8 +68,8 @@ describe("diffTextForTurn", () => {
   });
 });
 
-describe("previewRestore（baseline 模式）", () => {
-  it("附带 write/edit 基线 diffText（无 git 降级路径）", () => {
+describe("preview (seam / baseline 模式)", () => {
+  it("附带 write/edit 基线 diffText（无 git 降级路径）", async () => {
     tracker = freshTracker();
     writeFileSync(join(work, "a.txt"), "v1\n", "utf8");
     tracker.captureBeforeTool("write", { path: "a.txt" });
@@ -93,7 +93,8 @@ describe("previewRestore（baseline 模式）", () => {
       getEntry: () => undefined,
       appendCustomEntry: () => "c",
     };
-    const p = tracker.previewRestore(sm as never, "u1");
+    const scan = tracker.scan(sm as never, "u1");
+    const p = await tracker.preview(sm as never, "u1", scan);
     expect(p.restorablePaths).toEqual(["a.txt"]);
     expect(p.diffText).toBeTruthy();
     expect(p.diffText!.includes("-v1")).toBe(true);
