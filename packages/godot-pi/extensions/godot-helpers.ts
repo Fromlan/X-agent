@@ -7,7 +7,7 @@ import { Type } from "typebox";
 import {
   detectGodotProject,
   formatGodotProjectInfo,
-} from "./godot-project-detect";
+} from "../helpers/godot-project-detect";
 
 const RPC_METHODS =
   "ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, " +
