@@ -1,0 +1,120 @@
+/* motion.css — Premium upgrade motion utilities
+ * Pure CSS reveal system + stagger + reduced-motion fallback.
+ * Driven by IntersectionObserver in reveal.js (toggles .is-revealed).
+ *
+ * Conventions:
+ *   [data-reveal]            - element reveals when scrolled into view
+ *   [data-reveal-delay="N"]  - delay N * --stagger-base (1..8)
+ *   [data-reveal-stagger]    - parent; children stagger by index
+ *   [data-reveal-up|left|right|scale|mask] - direction variant
+ */
+
+/* ===== Default reveal (fade + 12px up) ===== */
+[data-reveal] {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+  transition: opacity var(--motion-slow) var(--ease-out),
+              transform var(--motion-slow) var(--ease-out);
+  will-change: opacity, transform;
+}
+[data-reveal].is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  will-change: auto;
+}
+
+/* ===== Direction variants ===== */
+[data-reveal-up] {
+  opacity: 0;
+  transform: translate3d(0, 16px, 0);
+  transition: opacity var(--motion-slow) var(--ease-out),
+              transform var(--motion-slow) var(--ease-out);
+}
+[data-reveal-up].is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-reveal-down] {
+  opacity: 0;
+  transform: translate3d(0, -12px, 0);
+  transition: opacity var(--motion-slow) var(--ease-out),
+              transform var(--motion-slow) var(--ease-out);
+}
+[data-reveal-down].is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-reveal-left] {
+  opacity: 0;
+  transform: translate3d(16px, 0, 0);
+  transition: opacity var(--motion-slow) var(--ease-out),
+              transform var(--motion-slow) var(--ease-out);
+}
+[data-reveal-left].is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-reveal-right] {
+  opacity: 0;
+  transform: translate3d(-16px, 0, 0);
+  transition: opacity var(--motion-slow) var(--ease-out),
+              transform var(--motion-slow) var(--ease-out);
+}
+[data-reveal-right].is-revealed {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+[data-reveal-scale] {
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity var(--motion-slow) var(--ease-out),
+              transform var(--motion-slow) var(--ease-out);
+}
+[data-reveal-scale].is-revealed {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ===== Stagger via data-reveal-delay ===== */
+[data-reveal-delay="1"] { transition-delay: calc(var(--stagger-base) * 0); }
+[data-reveal-delay="2"] { transition-delay: calc(var(--stagger-base) * 1); }
+[data-reveal-delay="3"] { transition-delay: calc(var(--stagger-base) * 2); }
+[data-reveal-delay="4"] { transition-delay: calc(var(--stagger-base) * 3); }
+[data-reveal-delay="5"] { transition-delay: calc(var(--stagger-base) * 4); }
+[data-reveal-delay="6"] { transition-delay: calc(var(--stagger-base) * 5); }
+[data-reveal-delay="7"] { transition-delay: calc(var(--stagger-base) * 6); }
+[data-reveal-delay="8"] { transition-delay: calc(var(--stagger-base) * 7); }
+
+/* Stagger-tight variant (40ms steps) */
+[data-reveal-delay="t1"] { transition-delay: calc(var(--stagger-tight) * 0); }
+[data-reveal-delay="t2"] { transition-delay: calc(var(--stagger-tight) * 1); }
+[data-reveal-delay="t3"] { transition-delay: calc(var(--stagger-tight) * 2); }
+[data-reveal-delay="t4"] { transition-delay: calc(var(--stagger-tight) * 3); }
+[data-reveal-delay="t5"] { transition-delay: calc(var(--stagger-tight) * 4); }
+
+/* Stagger-loose variant (140ms steps) */
+[data-reveal-delay="l1"] { transition-delay: calc(var(--stagger-loose) * 0); }
+[data-reveal-delay="l2"] { transition-delay: calc(var(--stagger-loose) * 1); }
+[data-reveal-delay="l3"] { transition-delay: calc(var(--stagger-loose) * 2); }
+[data-reveal-delay="l4"] { transition-delay: calc(var(--stagger-loose) * 3); }
+
+/* ===== Reduced motion override (must come last) ===== */
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal],
+  [data-reveal-up],
+  [data-reveal-down],
+  [data-reveal-left],
+  [data-reveal-right],
+  [data-reveal-scale] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  [data-reveal-delay] {
+    transition-delay: 0ms !important;
+  }
+}

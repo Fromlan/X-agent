@@ -1,0 +1,308 @@
+/* X-agent v1.1 design tokens — site version
+ * Mirrors apps/desktop/src/styles/themes.css (default family, dark + light)
+ * https://github.com/Fromlan/X-agent/blob/master/docs/design.md
+ *
+ * Premium upgrade (2026-08-26): added color scales, gradients, motion system.
+ * Legacy tokens preserved — only NEW tokens added below.
+ */
+
+:root,
+body[data-theme="dark"] {
+  /* === Surface (4-tier elevation) === */
+  --bg-app: #141414;
+  --bg-sidebar: #141414;
+  --bg-main: #141414;
+  --bg-header: #2c2c2a;
+  --bg-input: #2c2c2a;
+  --bg-modal: #2c2c2a;
+  --bg-card-elev: #33332f;
+  --bg-chrome: #1a1a1a;
+  --border-primary: #3c3c3a;
+  --border-input: #3c3c3a;
+  --bg-list-hover: #3c3c3a;
+  --bg-list-selected: #44443f;
+  --surface-chip: #3c3c3a;
+
+  /* === Text === */
+  --text-primary: #d4d4d4;
+  --text-secondary: #a3a3a3;
+  --text-muted: #737373;
+  --text-dim: #737373;
+  --text-placeholder: #525252;
+  --text-code: #d4d4d4;
+  --text-error: #ff7b72;
+
+  /* === Semantic accents === */
+  --focus-ring: #417cdd;
+  --focus-ring-soft: rgba(65, 124, 221, 0.5);
+  --warning-accent: #ea6b17;
+  --accent-green: #2aae5b;
+  --accent-red: #d91f37;
+  --accent-yellow: #f3a115;
+  --accent-blue: #417cdd;
+  --accent-gray: #737373;
+
+  /* === Buttons & overlays === */
+  --btn-bg: #ffffff;
+  --btn-text: #000000;
+  --overlay-bg: rgb(0 0 0 / 0.45);
+  --scrollbar-thumb: rgb(255 255 255 / 0.12);
+
+  /* === Diff preview (0.5.3) === */
+  --diff-add-bg: rgba(42, 174, 91, 0.16);
+  --diff-add-fg: #2aae5b;
+  --diff-del-bg: rgba(217, 31, 55, 0.16);
+  --diff-del-fg: #d91f37;
+
+  /* === Radius === */
+  --radius-control: 8px;
+  --radius-container: 12px;
+  --radius-floating: 16px;
+  --radius-pill: 9999px;
+
+  /* === Shadow (tiered, dual-layer) === */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-strong: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 1px 2px rgba(0, 0, 0, 0.12), 0 12px 36px rgba(0, 0, 0, 0.18);
+  --shadow-glow: 0 0 0 1px rgba(65, 124, 221, 0.20), 0 8px 32px rgba(65, 124, 221, 0.18);
+
+  /* === Typography === */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI",
+    "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Courier New", monospace;
+  --fs-base: 13px;
+  --lh-base: 1.5;
+
+  /* ============================================
+   * Premium upgrade — Color scales (NEW)
+   * ============================================ */
+  /* Blue scale (主品牌色) */
+  --blue-50: #0a1830;
+  --blue-100: #122244;
+  --blue-200: #1a3466;
+  --blue-300: #2d5cb0;
+  --blue-500: #417cdd;   /* == --accent-blue */
+  --blue-700: #6b9bef;
+  --blue-900: #c5d8ff;
+
+  /* Warm scale (辅色,用于 highlight) */
+  --warm-50: #1a0e08;
+  --warm-100: #2a160a;
+  --warm-200: #3d2010;
+  --warm-300: #b8551a;
+  --warm-500: #ea6b17;   /* == --warning-accent */
+  --warm-700: #ff8a3d;
+  --warm-900: #ffd9b8;
+
+  /* Accent transparent variants (for glows) */
+  --blue-500-glow: rgba(65, 124, 221, 0.18);
+  --blue-500-soft: rgba(65, 124, 221, 0.10);
+  --warm-500-glow: rgba(234, 107, 23, 0.18);
+  --green-500-glow: rgba(42, 174, 91, 0.18);
+
+  /* ============================================
+   * Premium upgrade — Gradient definitions (NEW)
+   * ============================================ */
+  --gradient-hero: radial-gradient(
+    ellipse 80% 60% at 28% 18%,
+    rgba(18, 34, 68, 0.85) 0%,
+    rgba(18, 34, 68, 0.20) 45%,
+    transparent 75%
+  );
+  --gradient-spotlight: radial-gradient(
+    circle at center,
+    var(--blue-500) 0%,
+    transparent 65%
+  );
+  --gradient-divider: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--border-primary) 50%,
+    transparent 100%
+  );
+  --gradient-card-hover: linear-gradient(
+    135deg,
+    rgba(45, 92, 176, 0.18) 0%,
+    var(--bg-card-elev) 55%
+  );
+  --gradient-border-sweep: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--blue-500) 12%,
+    transparent 24%,
+    transparent 100%
+  );
+  --gradient-pill-active: linear-gradient(
+    135deg,
+    rgba(45, 92, 176, 0.30) 0%,
+    rgba(45, 92, 176, 0.08) 100%
+  );
+  --gradient-footer-curve: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--bg-chrome) 40%
+  );
+}
+
+body[data-theme="light"] {
+  /* === Surface (4-tier elevation) === */
+  --bg-app: #f8f8f6;
+  --bg-sidebar: #f8f8f6;
+  --bg-main: #f8f8f6;
+  --bg-header: #ffffff;
+  --bg-input: #ffffff;
+  --bg-modal: #ffffff;
+  --bg-card-elev: #fbfbf7;
+  --bg-chrome: #ededeb;
+  --border-primary: #d7d7d4;
+  --border-input: #d7d7d4;
+  --bg-list-hover: #e5e5e5;
+  --bg-list-selected: #dcdcd6;
+  --surface-chip: #e5e5e5;
+
+  /* === Text === */
+  --text-primary: #262626;
+  --text-secondary: #525252;
+  --text-muted: #737373;
+  --text-dim: #a3a3a3;
+  --text-placeholder: #c4c4c4;
+  --text-code: #262626;
+  --text-error: #b31d28;
+
+  /* === Semantic accents (consistent across themes) === */
+  --focus-ring: #417cdd;
+  --focus-ring-soft: rgba(65, 124, 221, 0.5);
+  --warning-accent: #ea6b17;
+  --accent-green: #2aae5b;
+  --accent-red: #d91f37;
+  --accent-yellow: #f3a115;
+  --accent-blue: #417cdd;
+  --accent-gray: #737373;
+
+  /* === Buttons & overlays === */
+  --btn-bg: #000000;
+  --btn-text: #ffffff;
+  --overlay-bg: rgb(0 0 0 / 0.35);
+  --scrollbar-thumb: rgb(0 0 0 / 0.12);
+
+  /* === Diff preview === */
+  --diff-add-bg: rgba(42, 174, 91, 0.12);
+  --diff-add-fg: #1c7a40;
+  --diff-del-bg: rgba(217, 31, 55, 0.10);
+  --diff-del-fg: #a91729;
+
+  /* === Shadow (light theme softer) === */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-strong: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 1px 2px rgba(0, 0, 0, 0.08), 0 12px 36px rgba(0, 0, 0, 0.10);
+  --shadow-glow: 0 0 0 1px rgba(65, 124, 221, 0.25), 0 8px 32px rgba(65, 124, 221, 0.12);
+
+  /* === Light theme: blue scale (deeper for contrast on white) === */
+  --blue-50: #e8efff;
+  --blue-100: #d1deff;
+  --blue-200: #a6beff;
+  --blue-300: #6b9bef;
+  --blue-500: #417cdd;
+  --blue-700: #2d5cb0;
+  --blue-900: #122244;
+
+  /* === Light theme: warm scale === */
+  --warm-50: #fff1e1;
+  --warm-100: #ffe2c1;
+  --warm-200: #ffcfa0;
+  --warm-300: #ff8a3d;
+  --warm-500: #ea6b17;
+  --warm-700: #b8551a;
+  --warm-900: #2a160a;
+
+  /* Glow tints (light) */
+  --blue-500-glow: rgba(65, 124, 221, 0.18);
+  --blue-500-soft: rgba(65, 124, 221, 0.10);
+  --warm-500-glow: rgba(234, 107, 23, 0.18);
+  --green-500-glow: rgba(42, 174, 91, 0.18);
+
+  /* === Light theme: gradients (softer, lower alpha) === */
+  --gradient-hero: radial-gradient(
+    ellipse 80% 60% at 28% 18%,
+    rgba(197, 216, 255, 0.45) 0%,
+    rgba(197, 216, 255, 0.10) 45%,
+    transparent 75%
+  );
+  --gradient-spotlight: radial-gradient(
+    circle at center,
+    var(--blue-500) 0%,
+    transparent 65%
+  );
+  --gradient-divider: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--border-primary) 50%,
+    transparent 100%
+  );
+  --gradient-card-hover: linear-gradient(
+    135deg,
+    rgba(45, 92, 176, 0.08) 0%,
+    var(--bg-card-elev) 55%
+  );
+  --gradient-border-sweep: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    var(--blue-500) 12%,
+    transparent 24%,
+    transparent 100%
+  );
+  --gradient-pill-active: linear-gradient(
+    135deg,
+    rgba(45, 92, 176, 0.18) 0%,
+    rgba(45, 92, 176, 0.04) 100%
+  );
+  --gradient-footer-curve: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--bg-chrome) 40%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+    --motion-slower: 0ms;
+    --stagger-tight: 0ms;
+    --stagger-base: 0ms;
+    --stagger-loose: 0ms;
+  }
+}
+
+/* ============================================
+ * Premium upgrade — Motion system (NEW)
+ * ============================================ */
+:root {
+  /* Legacy single token (kept for backward compat in components.css) */
+  --motion-duration: 200ms;
+  --easing: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Easing curves (NEW) */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-material: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Duration scale (NEW, replaces --motion-duration) */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+  --motion-slower: 480ms;
+
+  /* Stagger intervals (NEW) */
+  --stagger-tight: 40ms;
+  --stagger-base: 80ms;
+  --stagger-loose: 140ms;
+
+  /* Transform tokens for hover/press (NEW) */
+  --hover-lift: translateY(-2px);
+  --hover-press: scale(0.97);
+}
+

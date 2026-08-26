@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title data-i18n="meta.title">X-agent</title>
+    <meta name="description" content="X-agent 是一款基于 Pi SDK 的 Godot 4 桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。" />
+    <meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8f8f6" media="(prefers-color-scheme: light)" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="X-agent — Godot 4 项目的桌面编码 Agent" />
+    <meta property="og:description" content="Godot 4 项目的桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。" />
+    <meta property="og:image" content="./assets/img/logo.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" type="image/webp" href="./assets/img/favicon.webp" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="./assets/css/tokens.css" />
+    <link rel="stylesheet" href="./assets/css/base.css" />
+    <link rel="stylesheet" href="./assets/css/motion.css" />
+    <link rel="stylesheet" href="./assets/css/components.css" />
+  </head>
+
+  <body data-theme="dark">
+    <a class="skip-link" href="#product" style="position:absolute;left:-9999px;top:0;">Skip to content</a>
+
+    <!-- ============== TopBar ============== -->
+    <header class="topbar" role="banner">
+      <div class="container topbar__inner">
+        <a class="topbar__brand" href="#top" aria-label="X-agent home">
+          <img
+            class="topbar__brand-mark"
+            src="./assets/img/logo.png"
+            alt="X-agent"
+            width="28"
+            height="28"
+            decoding="async"
+          />
+          <span>X-agent</span>
+        </a>
+
+        <nav class="topbar__nav" aria-label="Primary">
+          <a class="topbar__nav-link" href="#product" data-i18n="nav.product">产品</a>
+          <a class="topbar__nav-link" href="#modes" data-i18n="nav.modes">模式</a>
+          <a class="topbar__nav-link" href="#roles" data-i18n="nav.roles">场景</a>
+          <a class="topbar__nav-link" href="#timeline" data-i18n="nav.timeline">能力</a>
+          <a class="topbar__nav-link" href="#faq" data-i18n="nav.faq">FAQ</a>
+        </nav>
+
+        <div class="topbar__actions">
+          <button
+            class="pill"
+            type="button"
+            data-theme-toggle
+            aria-pressed="false"
+            aria-label="切换主题"
+            title="切换主题"
+          >
+            <span class="theme-toggle__icon" aria-hidden="true">☾</span>
+          </button>
+          <div role="group" aria-label="Language switcher" style="display:inline-flex;gap:4px;">
+            <button class="pill" type="button" data-lang-switch="zh" aria-pressed="true">中</button>
+            <button class="pill" type="button" data-lang-switch="en" aria-pressed="false">EN</button>
+          </div>
+          <a
+            class="pill pill--solid pill--lg"
+            href="https://github.com/Fromlan/X-agent/releases/latest"
+            data-version-href
+            rel="noopener"
+          >
+            <span data-i18n="cta.download">下载</span>
+            <span data-version>v0.5.5</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ============== Hero ============== -->
+      <section class="hero container" id="product">
+        <div class="hero__status" data-reveal data-reveal-delay="1" aria-label="Project status">
+          <span data-i18n="hero.status">Early Beta · v</span><span data-version>v0.5.5</span>
+        </div>
+        <h1 class="hero__title" data-reveal data-reveal-delay="2" data-i18n="hero.title">
+          Godot 4 项目的桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。
+        </h1>
+        <p class="hero__sub" data-reveal data-reveal-delay="3" data-i18n="hero.sub">
+          基于 Pi SDK · Windows 10/11 · 17 个 Godot 工具 · Shadow Git 撤回 · 4 模式 + 2 类型硬闸
+        </p>
+        <div class="hero__cta" data-reveal data-reveal-delay="4">
+          <a
+            class="pill pill--solid pill--lg"
+            href="https://github.com/Fromlan/X-agent/releases/latest"
+            data-version-href
+            rel="noopener"
+          >
+            <span data-i18n="cta.downloadWin">下载 Windows 安装包</span>
+            <span data-version>v0.5.5</span>
+          </a>
+          <a
+            class="pill pill--lg"
+            href="https://github.com/Fromlan/X-agent"
+            rel="noopener"
+            data-i18n="cta.star"
+          >GitHub Star</a>
+          <a
+            class="pill pill--lg"
+            href="https://github.com/Fromlan/X-agent/blob/master/README.md"
+            rel="noopener"
+            data-i18n="cta.readme"
+          >看 README</a>
+        </div>
+        <div class="hero__visual" data-reveal data-reveal-delay="5">
+          <img
+            class="hero__logo"
+            src="./assets/img/logo.png"
+            alt="X-agent logo"
+            width="160"
+            height="160"
+            fetchpriority="high"
+            decoding="async"
+          />
+        </div>
+        <a class="hero__scroll-hint" href="#pillars" aria-label="Scroll to features">
+          <span class="hero__scroll-mouse" aria-hidden="true">
+            <span class="hero__scroll-dot"></span>
+          </span>
+          <span data-i18n="hero.scrollHint">scroll</span>
+        </a>
+      </section>
+
+      <!-- ============== Pillars (Three Pillars) ============== -->
+      <section class="section" id="pillars">
+        <div class="container">
+          <div class="center-text">
+            <span class="eyebrow" data-i18n="pillars.eyebrow" data-reveal>WHY X-AGENT</span>
+            <h2 class="section-title" data-i18n="pillars.title" data-reveal data-reveal-delay="1">三件其他 Agent 没做好的事</h2>
+            <p class="section-sub" data-i18n="pillars.sub" data-reveal data-reveal-delay="2">
+              每个支柱都链到 docs/agent.md 的详细机制；下面这些差异在 30 秒上手里就能感受到。
+            </p>
+          </div>
+
+          <div class="pillars" data-reveal-stagger>
+            <!-- Pillar 1: Godot integration -->
+            <article class="card card--hover">
+              <span class="card__index">01</span>
+              <div class="pillar__visual" aria-hidden="true">
+                <svg viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="320" height="180" rx="8" fill="var(--bg-chrome)" />
+                  <rect x="14" y="14" width="180" height="120" rx="6" fill="var(--bg-card-elev)" />
+                  <rect x="20" y="22" width="120" height="10" rx="2" fill="var(--surface-chip)" />
+                  <rect x="20" y="40" width="166" height="6" rx="2" fill="var(--text-muted)" opacity="0.5" />
+                  <rect x="20" y="52" width="146" height="6" rx="2" fill="var(--text-muted)" opacity="0.5" />
+                  <rect x="20" y="64" width="156" height="6" rx="2" fill="var(--accent-blue)" opacity="0.7" />
+                  <rect x="20" y="76" width="120" height="6" rx="2" fill="var(--text-muted)" opacity="0.5" />
+                  <rect x="20" y="100" width="80" height="22" rx="11" fill="var(--bg-header)" />
+                  <text x="60" y="115" text-anchor="middle" fill="var(--accent-blue)" font-size="10" font-family="JetBrains Mono">play()</text>
+                  <rect x="110" y="100" width="60" height="22" rx="11" fill="var(--bg-header)" />
+                  <text x="140" y="115" text-anchor="middle" fill="var(--text-secondary)" font-size="10" font-family="JetBrains Mono">stop</text>
+                  <!-- Right column: tools list -->
+                  <rect x="206" y="14" width="100" height="120" rx="6" fill="var(--bg-card-elev)" />
+                  <text x="216" y="28" fill="var(--text-muted)" font-size="9" font-family="JetBrains Mono">17 godot tools</text>
+                  <g font-family="JetBrains Mono" font-size="9" fill="var(--text-secondary)">
+                    <text x="216" y="46">godot_run_scene</text>
+                    <text x="216" y="60">godot_inspect</text>
+                    <text x="216" y="74">godot_debugger</text>
+                    <text x="216" y="88">godot_lint</text>
+                    <text x="216" y="102">godot_export</text>
+                    <text x="216" y="116">...</text>
+                  </g>
+                  <!-- Arrow / RPC indicator -->
+                  <path d="M 196 75 L 204 75" stroke="var(--accent-green)" stroke-width="1.5" fill="none" />
+                  <circle cx="200" cy="75" r="2" fill="var(--accent-green)" />
+                  <text x="14" y="160" fill="var(--text-muted)" font-size="9" font-family="JetBrains Mono">tcp 127.0.0.1:8765 · shared token</text>
+                </svg>
+              </div>
+              <div class="card__icon" aria-hidden="true"></div>
+              <h3 class="card__title" data-i18n="pillar.godot.title">Godot 深度联动</h3>
+              <p class="card__lede" data-i18n="pillar.godot.lede">
+                Agent 直接驱动你的 Godot 编辑器：开/重载场景、跑当前或主场景、跑完收集报错回传。
+              </p>
+              <ul class="card__list">
+                <li data-i18n-html="pillar.godot.l1"><b>编辑器 RPC (TCP)</b> — 默认 8765，多编辑器显式选路</li>
+                <li data-i18n-html="pillar.godot.l2"><b>17 个 Godot 工具</b> — 场景内省 / 调试器 / 资源治理 / 导出 / 配置读写</li>
+                <li data-i18n-html="pillar.godot.l3"><b>godot-docs-4-7 技能</b> — Pi 按需 read，0 token 浪费</li>
+                <li data-i18n-html="pillar.godot.l4"><b>就绪清单</b> — 首次开 Godot 项目一键引导</li>
+              </ul>
+            </article>
+
+            <!-- Pillar 2: Trustworthy rollback -->
+            <article class="card card--hover">
+              <span class="card__index">02</span>
+              <div class="pillar__visual" aria-hidden="true">
+                <svg viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="320" height="180" rx="8" fill="var(--bg-chrome)" />
+                  <!-- Timeline rail -->
+                  <line x1="22" y1="60" x2="298" y2="60" stroke="var(--border-primary)" stroke-width="1" />
+                  <!-- Checkpoint nodes -->
+                  <g>
+                    <circle cx="40" cy="60" r="5" fill="var(--accent-green)" />
+                    <text x="40" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="JetBrains Mono">ckpt 0</text>
+                  </g>
+                  <g>
+                    <circle cx="100" cy="60" r="5" fill="var(--accent-green)" />
+                    <text x="100" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="JetBrains Mono">ckpt 1</text>
+                  </g>
+                  <g>
+                    <circle cx="160" cy="60" r="5" fill="var(--accent-green)" />
+                    <text x="160" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="JetBrains Mono">ckpt 2</text>
+                  </g>
+                  <g>
+                    <circle cx="220" cy="60" r="5" fill="var(--warning-accent)" />
+                    <text x="220" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="JetBrains Mono">ckpt 3 (active)</text>
+                  </g>
+                  <g>
+                    <circle cx="280" cy="60" r="5" fill="var(--text-muted)" />
+                    <text x="280" y="86" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="JetBrains Mono">next</text>
+                  </g>
+                  <!-- Diff preview (right) -->
+                  <rect x="20" y="106" width="280" height="58" rx="6" fill="var(--bg-card-elev)" />
+                  <text x="30" y="122" fill="var(--text-muted)" font-size="9" font-family="JetBrains Mono">pre → HEAD diff (ckpt 2 → 3)</text>
+                  <g font-family="JetBrains Mono" font-size="9">
+                    <rect x="26" y="128" width="270" height="11" fill="var(--diff-add-bg)" />
+                    <text x="32" y="137" fill="var(--diff-add-fg)">+ func dash() -&gt; void: ...</text>
+                    <rect x="26" y="140" width="270" height="11" fill="var(--diff-del-bg)" />
+                    <text x="32" y="149" fill="var(--diff-del-fg)">- # Player.gd: stale comment</text>
+                  </g>
+                  <!-- Rewind arrow -->
+                  <path d="M 220 96 L 160 96" stroke="var(--accent-blue)" stroke-width="1.5" fill="none" stroke-dasharray="3 2" />
+                  <text x="190" y="106" text-anchor="middle" fill="var(--accent-blue)" font-size="9" font-family="JetBrains Mono">rewind</text>
+                </svg>
+              </div>
+              <div class="card__icon" aria-hidden="true"></div>
+              <h3 class="card__title" data-i18n="pillar.rewind.title">可信任的撤回</h3>
+              <p class="card__lede" data-i18n="pillar.rewind.lede">
+                Shadow Git 检查点（独立于你的 .git），按 diff 路径还原，撤回前先看 diff。
+              </p>
+              <ul class="card__list">
+                <li data-i18n-html="pillar.rewind.l1"><b>Shadow Git</b> — 每轮 prompt 前打独立检查点</li>
+                <li data-i18n-html="pillar.rewind.l2"><b>Diff 预览</b> — 撤回前逐行确认影响范围</li>
+                <li data-i18n-html="pillar.rewind.l3"><b>断点不重写</b> — 跨恢复不丢 Shadow 状态</li>
+                <li data-i18n-html="pillar.rewind.l4"><b>无 Git 降级</b> — write/edit 字节基线仍能 diff</li>
+              </ul>
+            </article>
+
+            <!-- Pillar 3: Hard-gate -->
+            <article class="card card--hover">
+              <span class="card__index">03</span>
+              <div class="pillar__visual" aria-hidden="true">
+                <svg viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="320" height="180" rx="8" fill="var(--bg-chrome)" />
+                  <!-- 4 modes (row 1) -->
+                  <g font-family="Inter" font-size="10" font-weight="500">
+                    <rect x="20" y="20" width="60" height="28" rx="14" fill="var(--bg-card-elev)" stroke="var(--text-muted)" />
+                    <text x="50" y="38" text-anchor="middle" fill="var(--text-primary)">Agent</text>
+
+                    <rect x="92" y="20" width="60" height="28" rx="14" fill="var(--bg-card-elev)" stroke="var(--text-muted)" />
+                    <text x="122" y="38" text-anchor="middle" fill="var(--text-primary)">Ask</text>
+
+                    <rect x="164" y="20" width="60" height="28" rx="14" fill="var(--bg-card-elev)" stroke="var(--text-muted)" />
+                    <text x="194" y="38" text-anchor="middle" fill="var(--text-primary)">Plan</text>
+
+                    <rect x="236" y="20" width="60" height="28" rx="14" fill="var(--bg-card-elev)" stroke="var(--text-muted)" />
+                    <text x="266" y="38" text-anchor="middle" fill="var(--text-primary)">Goal</text>
+                  </g>
+                  <!-- 2 types (row 2) -->
+                  <g font-family="JetBrains Mono" font-size="10">
+                    <rect x="80" y="68" width="70" height="28" rx="14" fill="var(--bg-card-elev)" stroke="var(--accent-blue)" />
+                    <text x="115" y="86" text-anchor="middle" fill="var(--accent-blue)">code</text>
+
+                    <rect x="170" y="68" width="70" height="28" rx="14" fill="var(--bg-card-elev)" stroke="var(--warning-accent)" />
+                    <text x="205" y="86" text-anchor="middle" fill="var(--warning-accent)">design</text>
+                  </g>
+                  <!-- Hard-gate note -->
+                  <rect x="20" y="116" width="280" height="48" rx="8" fill="var(--bg-card-elev)" />
+                  <text x="30" y="132" fill="var(--text-muted)" font-size="9" font-family="JetBrains Mono">IPC-layer hard-gate</text>
+                  <g font-family="JetBrains Mono" font-size="9" fill="var(--text-secondary)">
+                    <text x="30" y="148">write / edit     ⨯  调研 · 计划</text>
+                    <text x="30" y="158">write_plan       ⨯  design</text>
+                  </g>
+                  <text x="290" y="156" text-anchor="end" fill="var(--accent-red)" font-size="20" font-weight="500">⨯</text>
+                </svg>
+              </div>
+              <div class="card__icon" aria-hidden="true"></div>
+              <h3 class="card__title" data-i18n="pillar.modes.title">4 模式 + 2 类型硬闸</h3>
+              <p class="card__lede" data-i18n="pillar.modes.lede">
+                会话模式决定可用工具；会话类型决定写操作作用域。两条独立，组合出 8 种工作流。
+              </p>
+              <ul class="card__list">
+                <li data-i18n-html="pillar.modes.l1"><b>Agent / 调研 / 计划 / 目标</b> — 互斥切换</li>
+                <li data-i18n-html="pillar.modes.l2"><b>code / design</b> — 写操作作用域独立维度</li>
+                <li data-i18n-html="pillar.modes.l3"><b>硬闸在 IPC 层</b> — UI 被攻陷也绕不过</li>
+                <li data-i18n-html="pillar.modes.l4"><b>0 token 浪费</b> — 切换不重写 system prompt</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============== 4 Modes × 2 Types ============== -->
+      <section class="section" id="modes" style="background: var(--bg-chrome); border-top: 1px solid var(--border-primary); border-bottom: 1px solid var(--border-primary);">
+        <div class="container">
+          <div class="center-text">
+            <span class="eyebrow" data-i18n="modes.eyebrow" data-reveal>4 模式 × 2 类型</span>
+            <h2 class="section-title" data-i18n="modes.title" data-reveal data-reveal-delay="1">互斥模式 × 正交类型</h2>
+            <p class="section-sub" data-i18n="modes.sub" data-reveal data-reveal-delay="2">会话模式决定能用哪些工具，会话类型决定写操作落到哪里。</p>
+          </div>
+
+          <div class="modes" data-reveal data-reveal-delay="3">
+            <div class="modes__row">
+              <span class="modes__row-label" data-i18n="modes.row.modes">模式</span>
+              <span class="modes__chip modes__chip--agent modes__chip--active"><span class="modes__chip-dot"></span><span class="modes__chip__index">01</span><span data-i18n="modes.mode.agent">Agent</span></span>
+              <span class="modes__chip modes__chip--ask"><span class="modes__chip-dot"></span><span class="modes__chip__index">02</span><span data-i18n="modes.mode.ask">调研</span></span>
+              <span class="modes__chip modes__chip--plan"><span class="modes__chip-dot"></span><span class="modes__chip__index">03</span><span data-i18n="modes.mode.plan">计划</span></span>
+              <span class="modes__chip modes__chip--goal"><span class="modes__chip-dot"></span><span class="modes__chip__index">04</span><span data-i18n="modes.mode.goal">目标</span></span>
+            </div>
+
+            <div class="modes__row">
+              <span class="modes__row-label" data-i18n="modes.row.types">类型</span>
+              <span class="modes__chip modes__chip--code"><span class="modes__chip-dot"></span><span data-i18n="modes.type.code">code</span></span>
+              <span class="modes__chip modes__chip--design"><span class="modes__chip-dot"></span><span data-i18n="modes.type.design">design</span></span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ============== Role scenarios ============== -->
+      <section class="section" id="roles">
+        <div class="container">
+          <div class="center-text">
+            <span class="eyebrow" data-i18n="roles.eyebrow" data-reveal>你要用 X-agent 做什么</span>
+            <h2 class="section-title" data-i18n="roles.title" data-reveal data-reveal-delay="1">四个常见场景，按"我是什么角色"选</h2>
+            <p class="section-sub" data-i18n="roles.sub" data-reveal data-reveal-delay="2">下面是按角色预热好的典型流程；具体 prompt 在 30 秒上手里。</p>
+          </div>
+
+          <div class="roles" data-reveal-stagger>
+            <article class="card">
+              <div class="role__step" data-i18n="role.dev.step">流程 4 步</div>
+              <h3 class="card__title" data-i18n="role.dev.title">🎮 Godot 开发者 · 改代码 + 跑场景</h3>
+              <p class="card__lede" data-i18n="role.dev.body">
+                打开项目 → Agent 模式 → 选模型 → 问"在 Player.gd 加冲刺功能，跑一下当前场景"。
+              </p>
+              <div class="role__flow">
+                <span data-i18n="role.dev.flow.0">打开项目</span>
+                <span data-i18n="role.dev.flow.1">Agent 模式</span>
+                <span data-i18n="role.dev.flow.2">改文件</span>
+                <span data-i18n="role.dev.flow.3">RPC 重载</span>
+                <span data-i18n="role.dev.flow.4">跑场景</span>
+                <span data-i18n="role.dev.flow.5">报错回传</span>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="role__step" data-i18n="role.designer.step">流程 3 步</div>
+              <h3 class="card__title" data-i18n="role.designer.title">✍️ 独立策划 · 写设计文档（不污染 game/）</h3>
+              <p class="card__lede" data-i18n="role.designer.body">
+                新会话选 design 类型 → 写只允许落到 &lt;cwd&gt;/game-design/ → 预装 5 个 design skill 帮你做立项 / 数值 / 核心循环。
+              </p>
+              <div class="role__flow">
+                <span data-i18n="role.designer.flow.0">选 design 类型</span>
+                <span data-i18n="role.designer.flow.1">读预装 skill</span>
+                <span data-i18n="role.designer.flow.2">写到 game-design/</span>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="role__step" data-i18n="role.research.step">流程 2 步</div>
+              <h3 class="card__title" data-i18n="role.research.title">🔬 研究只读 · 问 API、查文档</h3>
+              <p class="card__lede" data-i18n="role.research.body">
+                切调研模式 → write / edit 硬闸关 → bash 仅放行只读命令，路径须在项目 cwd 内。
+              </p>
+              <div class="role__flow">
+                <span data-i18n="role.research.flow.0">切调研模式</span>
+                <span data-i18n="role.research.flow.1">只读问答</span>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="role__step" data-i18n="role.goal.step">流程 3 步</div>
+              <h3 class="card__title" data-i18n="role.goal.title">🎯 目标驱动 · 让 Agent 自己跑到完成</h3>
+              <p class="card__lede" data-i18n="role.goal.body">
+                切目标模式 → 写完成条件（如"在 ScoreManager.gd 加 combo 计数 + HUD 显示"） → 评估未达自动续轮。
+              </p>
+              <div class="role__flow">
+                <span data-i18n="role.goal.flow.0">切目标模式</span>
+                <span data-i18n="role.goal.flow.1">写完成条件</span>
+                <span data-i18n="role.goal.flow.2">评估续轮</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============== Timeline ============== -->
+      <section class="section" id="timeline" style="background: var(--bg-chrome); border-top: 1px solid var(--border-primary); border-bottom: 1px solid var(--border-primary);">
+        <div class="container">
+          <div class="center-text">
+            <span class="eyebrow" data-i18n="timeline.eyebrow" data-reveal>关键能力</span>
+            <h2 class="section-title" data-i18n="timeline.title" data-reveal data-reveal-delay="1">版本时间线 · 最新在上</h2>
+            <p class="section-sub" data-i18n="timeline.sub" data-reveal data-reveal-delay="2">完整列表见 CHANGELOG.md。</p>
+          </div>
+
+          <div class="timeline" data-reveal-stagger>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.5.5</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v055.title"><b>策划会话 design 类型</b> — 写只允许落到 &lt;cwd&gt;/game-design/，UI 切暖色主题</div>
+                <div data-i18n-html="timeline.v055.skills"><b>5 个内置 design skill</b> — 立项 / 流程 / 系统 / 数值 / 核心循环懒写即用</div>
+              </div>
+            </div>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.5.4</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v054.title"><b>v1.1 elevation 设计语言</b> — Composer 唯一主元素，三栏降为低调 chrome</div>
+              </div>
+            </div>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.5.3</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v053.title"><b>Diff 显示</b> — 撤回前 +/- 着色 diff，带 +N / -N 统计</div>
+              </div>
+            </div>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.5.2</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v052.title"><b>thinking-orbs 状态行动画</b> — 运行中粒子轨道而非转圈</div>
+              </div>
+            </div>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.4.x</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v04x.git"><b>Shadow Git 撤回</b> — 每轮检查点，按 diff 路径还原</div>
+                <div data-i18n-html="timeline.v04x.docs"><b>godot-docs-4-7</b> — 引擎惯例技能，按需 read</div>
+              </div>
+            </div>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.3.6+</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v036.title"><b>4 模式 + 2 类型硬闸</b> — Agent / 调研 / 计划 / 目标 × code / design</div>
+              </div>
+            </div>
+            <div class="timeline__item">
+              <div class="timeline__version">v0.2.5+</div>
+              <div class="timeline__body">
+                <div data-i18n-html="timeline.v025.title"><b>Thinking 档位 + 模型钳制</b> — DeepSeek 等自动钳制，编辑器实时反馈</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="timeline__more">
+            <a
+              class="pill pill--lg"
+              href="https://github.com/Fromlan/X-agent/blob/master/CHANGELOG.md"
+              rel="noopener"
+              data-i18n="timeline.more"
+            >查看完整 CHANGELOG</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============== FAQ ============== -->
+      <section class="section" id="faq">
+        <div class="container">
+          <div class="center-text">
+            <span class="eyebrow" data-i18n="faq.eyebrow" data-reveal>常见问题</span>
+            <h2 class="section-title" data-i18n="faq.title" data-reveal data-reveal-delay="1">6 个装之前最常问的</h2>
+          </div>
+
+          <div class="faq" data-reveal-stagger>
+            <details class="faq__item">
+              <summary class="faq__q" data-i18n="faq.q1">在线 / 离线能用吗？</summary>
+              <div class="faq__a">
+                <div data-i18n-html="faq.a1">
+                  <p>模型调用走 API（在线）；本地用量 / 检查点 / 会话 / 撤回全部离线。</p>
+                  <p>Godot 文档技能 godot-docs-4-7 在 Godot 项目内自动索引。</p>
+                </div>
+              </div>
+            </details>
+            <details class="faq__item">
+              <summary class="faq__q" data-i18n="faq.q2">为什么不用 VS Code + Copilot？</summary>
+              <div class="faq__a">
+                <div data-i18n-html="faq.a2">
+                  <p>1) Godot 编辑器 RPC 联动（场景内省 / 调试器 / 资源治理）VS Code 插件做不到；</p>
+                  <p>2) Shadow Git 撤回独立于你的 .git（VS Code 不会按 diff 路径还原）；</p>
+                  <p>3) 4 模式 + 2 类型硬闸（VS Code 插件是建议，X-agent 是 IPC 层强制）。</p>
+                </div>
+              </div>
+            </details>
+            <details class="faq__item">
+              <summary class="faq__q" data-i18n="faq.q3">可以用在非 Godot 项目吗？</summary>
+              <div class="faq__a">
+                <div data-i18n-html="faq.a3">
+                  <p>可以（IDE 本身是 Electron + Pi SDK 通用），但 Godot 工具全部关掉就退化成普通 Agent，<b>没有差异化价值</b>。</p>
+                </div>
+              </div>
+            </details>
+            <details class="faq__item">
+              <summary class="faq__q" data-i18n="faq.q4">数据会同步到云吗？</summary>
+              <div class="faq__a">
+                <div data-i18n-html="faq.a4">
+                  <p>不会。本机持久化（~/.pi/agent/）。仅模型调用走你配置的 provider。</p>
+                </div>
+              </div>
+            </details>
+            <details class="faq__item">
+              <summary class="faq__q" data-i18n="faq.q5">升级会丢数据吗？</summary>
+              <div class="faq__a">
+                <div data-i18n-html="faq.a5">
+                  <p>不会。升级保留 ~/.pi/agent/ 下所有内容。如需回滚到旧版，直接装旧 installer 覆盖。</p>
+                </div>
+              </div>
+            </details>
+            <details class="faq__item">
+              <summary class="faq__q" data-i18n="faq.q6">macOS / Linux 呢？</summary>
+              <div class="faq__a">
+                <div data-i18n-html="faq.a6">
+                  <p>当前 0.5.5 仅 Windows。Phase 3.4 路线图里有 macOS / Linux 安装包（详见 docs/roadmap.md）。</p>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============== Footer ============== -->
+    <footer class="footer" role="contentinfo">
+      <div class="container">
+        <div class="footer__grid" data-reveal-stagger>
+          <div>
+            <div class="footer__brand">
+              <img
+                class="topbar__brand-mark"
+                src="./assets/img/logo.png"
+                alt=""
+                width="22"
+                height="22"
+                decoding="async"
+              />
+              <span>X-agent</span>
+            </div>
+            <p class="footer__about" data-i18n="footer.about">X-agent — Godot 4 项目的桌面编码 Agent。基于 Pi SDK。</p>
+          </div>
+          <div class="footer__col">
+            <h4 data-i18n="footer.col.project">项目</h4>
+            <ul>
+              <li><a href="https://github.com/Fromlan/X-agent" rel="noopener" data-i18n="footer.link.repo">GitHub 仓库</a></li>
+              <li><a href="https://github.com/Fromlan/X-agent/releases" rel="noopener" data-i18n="footer.link.releases">Releases</a></li>
+              <li><a href="https://github.com/Fromlan/X-agent/issues" rel="noopener" data-i18n="footer.link.issues">Issues</a></li>
+            </ul>
+          </div>
+          <div class="footer__col">
+            <h4 data-i18n="footer.col.docs">文档</h4>
+            <ul>
+              <li><a href="https://github.com/Fromlan/X-agent/blob/master/docs/agent.md" rel="noopener" data-i18n="footer.link.agent">开发文档</a></li>
+              <li><a href="https://github.com/Fromlan/X-agent/blob/master/docs/roadmap.md" rel="noopener" data-i18n="footer.link.roadmap">路线图</a></li>
+              <li><a href="https://github.com/Fromlan/X-agent/blob/master/CHANGELOG.md" rel="noopener" data-i18n="footer.link.changelog">CHANGELOG</a></li>
+              <li><a href="https://github.com/Fromlan/X-agent/blob/master/README.md" rel="noopener" data-i18n="footer.link.readme">README</a></li>
+            </ul>
+          </div>
+          <div class="footer__col">
+            <h4 data-i18n="footer.col.contact">联系</h4>
+            <ul>
+              <li><a href="mailto:fromlan@qq.com" data-i18n="footer.contact.email">fromlan@qq.com</a></li>
+              <li data-i18n="footer.contact.qq">QQ 群 1074500101</li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer__bottom">
+          <span data-i18n="footer.bottom">© 2026 Fromlan · MIT License · Windows 10/11 · Godot 4.x</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- JS — order matters: theme + i18n first (synchronous), then release (async) -->
+    <script src="./assets/js/i18n.js"></script>
+    <script src="./assets/js/theme.js"></script>
+    <script>
+      // Wire up language switch + theme toggle once DOM is ready
+      (function init() {
+        // Init theme first (so initial paint uses the right tokens)
+        if (window.XAgentTheme) window.XAgentTheme.applyTheme(window.XAgentTheme.currentTheme);
+        // Then locale (re-renders all data-i18n nodes)
+        if (window.XAgentI18n) window.XAgentI18n.applyLocale(window.XAgentI18n.currentLocale);
+
+        // Wire language buttons
+        document.querySelectorAll("[data-lang-switch]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const target = btn.getAttribute("data-lang-switch");
+            if (window.XAgentI18n) window.XAgentI18n.applyLocale(target);
+          });
+        });
+        // Wire theme buttons
+        document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            if (window.XAgentTheme) window.XAgentTheme.toggleTheme();
+          });
+        });
+      })();
+    </script>
+    <script src="./assets/js/reveal.js" defer></script>
+    <script src="./assets/js/release.js" defer></script>
+    <script>
+      // Boot release fetcher after initial paint
+      window.addEventListener("DOMContentLoaded", () => {
+        try { window.XAgentRelease.initRelease(); } catch (e) { /* keep fallback */ }
+      });
+    </script>
+  </body>
+</html>
