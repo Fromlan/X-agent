@@ -1,7 +1,7 @@
 <h1 align="center">X-agent</h1>
 
 <p align="center">
-  <img src="docs/screenshots/main-window.png" alt="X-agent 主界面" width="900"/>
+  <img src="docs/screenshots/main-window.png" alt="X-agent 主界面" width="480"/>
 </p>
 
 <p align="center">
