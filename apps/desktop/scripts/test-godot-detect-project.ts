@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import {
   detectGodotProject,
   formatGodotProjectInfo,
-} from "../../../packages/godot-pi/extensions/godot-project-detect.ts";
+} from "../../../packages/godot-pi/helpers/godot-project-detect.ts";
 
 function writeProject(dir: string, body: string): void {
   mkdirSync(dir, { recursive: true });

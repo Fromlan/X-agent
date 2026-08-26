@@ -51,7 +51,7 @@ Edit scenes and scripts in your project, drive the editor over RPC (reload / run
 
 - Windows (installer currently shipping)
 - A Godot **4.x** project (when using the editor control plane)
-- Node.js 22+ (for building from source)
+- Node.js 24+ (for building from source)
 - Model auth (any of):
   - **Settings → Providers** — create and enable a profile
   - **Settings → General** → Open Pi login
