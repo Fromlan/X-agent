@@ -34,11 +34,12 @@ All participants are expected to follow
 ## Filing an Issue
 
 Three templates are available under
-[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE):
+[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE) (Chinese-primary,
+English-friendly notes in the markdown intro of each template):
 
-- **Bug report** — something is broken; fill in repro steps, expected vs
+- **Bug 报告** — something is broken; fill in repro steps, expected vs
   actual, environment (X-agent version / Godot version / model / OS)
-- **Feature request** — describe the problem first, then a proposed solution
+- **Feature** — describe the problem first, then a proposed solution
   and alternatives
 - **Question** — usage questions; please skim the README and
   [`CHANGELOG.md`](CHANGELOG.md) first

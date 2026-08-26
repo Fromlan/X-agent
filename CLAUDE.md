@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。当前版本见 `apps/desktop/package.json`（如 `0.4.0`）。
+X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应用 [`apps/desktop`](apps/desktop)；根 `package.json` 不是 npm workspace，仅转发脚本。权威版本号在 `apps/desktop/package.json`。
 
 **当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、**策划会话类型**（`code` / `design` 会话级抽象：design 写只允许 `<cwd>/game-design/`，UI 切暖色）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
 
@@ -35,12 +35,12 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 ### 3. 分支策略:GitHub Flow
 
-- **`main` 始终可发布**(CI 必绿;`Unreleased` 可空)
+- **`master` 始终可发布**(CI 必绿;`Unreleased` 可空)
 - **每个任务一个分支**,命名 `<type>/<short-desc>`:
   - `feature/<name>` 新功能(关联 issue 时 `feature/issue-123-xxx`)
   - `fix/<name>` 修复 · `docs/<name>` 文档 · `refactor/<name>` 重构 · `chore/<name>` 杂项 · `test/<name>` 测试
-- **路径**:从 `main` 拉 → 改完 → 提交 PR → CI 全绿 → review → squash merge 回 `main` → 删除远端分支
-- **分支保护**(推荐):`main` 设 required checks(`desktop` / `unit-test` / `e2e`)+ ≥1 review
+- **路径**:从 `master` 拉 → 改完 → 提交 PR → CI 全绿 → review → squash merge 回 `master` → 删除远端分支
+- **分支保护**(推荐):`master` 设 required checks(`desktop` / `unit-test` / `e2e`)+ ≥1 review
 
 ### 4. 提交规范:Conventional Commits
 
@@ -68,12 +68,12 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
   - `unit-test`: vitest + 覆盖率门槛(`lines: 60, functions: 55, branches: 50`)
   - `e2e`: Playwright Electron 冒烟
 - **review**:≥1 approve(单人项目 self-approve;多人显式邀请)
-- **合并**:默认 squash merge(保持 `main` 历史清爽);合并后删除远端分支
+- **合并**:默认 squash merge(保持 `master` 历史清爽);合并后删除远端分支
 - **禁止**带 ✗ 合并
 
 #### 5.1 GitHub 认证
 
-- **本机特殊环境（Windows + GCM Core 缺失）的 PAT 落地 / push 绕坑方法**在本地文件 [`docs/agents/env-credentials.md`](docs/agents/env-credentials.md)（gitignored，仅本机留存）。其他机器 / CI 不需要该文件，按自己正常 env 配即可。
+- **本机特殊环境（Windows + GCM Core 缺失）的 PAT 落地 / push 绕坑方法**在本地文件 [`.scratch/notes/env-credentials.md`](.scratch/notes/env-credentials.md)（gitignored，仅本机留存）。其他机器 / CI 不需要该文件，按自己正常 env 配即可。
 
 ### 6. CI 自动化
 
@@ -86,7 +86,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 > 发版 ≠ 每个 PR。累积的变更值得对外发布时才发版。
 
-- **前置**(在 main 上):
+- **前置**(在 master 上):
   1. 整理 [`CHANGELOG.md`](CHANGELOG.md) `## Unreleased` → 对应 `## x.y.z` 章节(按 `改进` / `修复` / `安全` / `测试 & 质量` 等小节归类)
      **写法约定**(避免 0.5.5 / 0.5.6 那种"一栏 600 字讲实现细节"的反模式):
      - 每条 bullet **1-3 句话**为主,开头部份是**用户能看到的**行为/能力(动词 + 名字),不展开实现
@@ -96,14 +96,14 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
      - 关键功能展开 1 行 80-150 字,**绝对不要**写半页
      - 反例: "首次打开策划会话... 35 个 vitest 用例覆盖路径规范化、逃逸尝试、godot 工具、bash 只读与扩展 hookup" — 这种就该砍到 "策划会话支持预装 5 个内置 skill（issue #23）：design-initiation / design-process / design-systems / design-numerical / design-core-loop，由 Pi 自动发现并入可用 skill 顶部"
   2. `npm run release:prepare -- x.y.z` 改版本号 + 校验 CHANGELOG 抽取
-  3. 通过 PR 合并到 `main`(与功能 PR 走同一条流程)
+  3. 通过 PR 合并到 `master`(与功能 PR 走同一条流程)
 - **发版**:
-  1. `git tag vX.Y.Z && git push origin vX.Y.Z`(在 main HEAD)
+  1. `git tag vX.Y.Z && git push origin vX.Y.Z`(在 master HEAD)
   2. `.github/workflows/release.yml` 自动 typecheck + lint + test + electron-builder + 上传 GitHub Release
   3. GitHub Release 正文来自 CHANGELOG 章节(`scripts/extract-changelog.mjs` 抽取)
 - **冒烟**(可选):打 tag 前 `npm run release:dist`(本机 typecheck + test + 打 Windows exe;CI 仍会重建,本地 exe 不是发布源)
 - **签名**(可选):CI 或本地设 `CSC_LINK` + `CSC_KEY_PASSWORD`(或 `WIN_CSC_LINK`);未设置则产出未签名包
-- **minor 线起点**(patch=0 且 minor>0,如 `0.3.0`):`prepare-release` 会把上一线全部 patch(`0.2.0…0.2.x`)汇总进当前章节;`npm run release:notes -- 0.x.0` 预览,`--no-aggregate` 关闭汇总
+- **minor 线起点**(patch=0 且 minor>0,如 `0.6.0`):`prepare-release` 会把上一线全部 patch(`0.5.0…0.5.x`)汇总进当前章节;`npm run release:notes -- 0.x.0` 预览,`--no-aggregate` 关闭汇总
 - **不提交**:`apps/desktop/release/`(已在 `.gitignore`)
 
 ### 8. 文档与社区
@@ -143,7 +143,7 @@ npm run desktop:dist           # electron-builder（Windows）
 npm run desktop:reset-tutorial # 重置教程环境
 npm run release:prepare -- x.y.z
 npm run release:notes -- x.y.z
-# minor 线起点（如 0.3.0）的 notes 会附带上一线 0.2.x 汇总；加 --no-aggregate 可关闭
+# minor 线起点（如 0.6.0）的 notes 会附带上一线 0.5.x 汇总；加 --no-aggregate 可关闭
 npm run release:test-changelog # 可选：验证 CHANGELOG 抽取 / 汇总
 npm run release:dist           # 可选：本地 typecheck + test + 打 Windows exe（冒烟）
 ```
@@ -159,14 +159,14 @@ npm run release:test-changelog     # 校验 CHANGELOG 抽取/汇总
 npm run release:dist               # 本机 typecheck + test + 打 Windows exe(冒烟用)
 ```
 
-- 发版:PR 合并到 main → `git tag vX.Y.Z && git push origin vX.Y.Z` → CI 自动构建并上传 GitHub Release
+- 发版:PR 合并到 master → `git tag vX.Y.Z && git push origin vX.Y.Z` → CI 自动构建并上传 GitHub Release
 - **不提交** `apps/desktop/release/`(已在 `.gitignore`);发布源是 CI 的 GitHub Release,本地 exe 不是
 
 `npm test`（在 `apps/desktop`）串联：
 
 `test-history-mapper`、`test-transcript-golden`、`test-turn-file-tracker`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-bash-liveness`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-provider-last-enabled`、`test-auth-cache-invalidation`、`test-model-fetch`、`test-model-context`、`test-godot-addon-install`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-debug-log`、`test-error-i18n`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-user-message-files`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-chat-markdown-streaming`、`test-chat-scroll-throttle`、`test-chat-virtual-cache`、`test-debug-mode`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-tool-batches`、`test-confirm-provider`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-slash-items`、`test-prompt-slash-wrap`、`test-extension-ui`、`test-session-event-bridge-stale`、`test-external-url`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
 
-> 0.4.0 起 cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints 的覆盖已收敛到 Vitest（`*.test.ts`），不再双写离线脚本。
+> 0.4.0 起 cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints 的覆盖已收敛到 Vitest（`*.test.ts`），不再双写离线脚本。0.5.0 起更多关键模块（`godot-tools` / `mode-tools` / `mode-prompt` / `lib/store` 等）也走 Vitest。
 
 冒烟（需本机认证）：
 
@@ -295,16 +295,18 @@ Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready
 
 ### Domain docs
 
-Single-context: root [`docs/context.md`](docs/context.md) 描述了核心架构与持久化路径(对应 ADR 摘要)。
+`docs/` 是**公开目录**(已在仓库内、随版本发布),按下面 8 个条目维护:
 
-本地 `docs/` 仅供个人维护 ADR / 调研 / code-review 草稿(已被 `.gitignore` 排除,不入 git 也不发布):
+- [`docs/agent.md`](docs/agent.md) — Agent 工作入口(被 Pi `DefaultResourceLoader` 全文注入到 `<project_context>`)
+- [`docs/agent-context.md`](docs/agent-context.md) — 模型上下文如何组装
+- [`docs/context.md`](docs/context.md) — 领域词表 + ADR 摘要(单一权威源)
+- [`docs/design.md`](docs/design.md) — 设计系统(token / 主题族 / 布局)
+- [`docs/maintenance.md`](docs/maintenance.md) — 维护节奏(周/月/季度/年度)
+- [`docs/pi-plugin-guide.md`](docs/pi-plugin-guide.md) — Pi 五类扩展机制
+- [`docs/roadmap.md`](docs/roadmap.md) — 22 个里程碑 / 4 个 Phase
+- [`docs/research/`](docs/research/) — 历史调研沉淀(如 godot-tileset-structure.md)
 
-- `docs/adr/*.md` — 单条 ADR(对应于 git 历史 commit 摘要,新决策请直接补到本文或 docs/context.md)
-- `docs/agents/{domain,issue-tracker,triage-labels}.md` — 给 skills 读的领域/协作规则,与本节同步更新
-- `docs/Godot-Tileset-结构格式调研.md` 与 `docs/research-plan-goal-modes.md` — 历史调研沉淀
-- `docs/code-review-2026-08-01.md` — 0.3.8 全量审查,分诊结论已落入 CHANGELOG 与 ADR
-
-约定:对外约定请写在本 `CLAUDE.md` 或 `docs/context.md`;`docs/` 内容不进 release、不参与协作,清理后下次会话可重建。
+约定:**对外约定**写在本 `CLAUDE.md` / `AGENTS.md` / `docs/context.md` / `docs/agent.md` / `docs/agent-context.md`;`docs/` 内容进 release、参与协作。个人草稿走 `.scratch/notes/`(已 gitignored,不入 git)。
 
 ## 维护节奏 / 社区入口
 
