@@ -119,17 +119,39 @@ assert.match(
   liveSection,
   new RegExp(`### ${livePrevLine.replace(/\./g, "\\.")} 累计变更`),
 );
+// 累计汇总里的子版本以 `#### x.y.z` 形式嵌入 rollup 主体，
+// 不要再回退到全 markdown 范围里找 `## x.y.z`（那种"重复段"已被
+// 2026-08-26 的 CHANGELOG 整理删掉）。
+const rollupBody = liveSection.match(
+  new RegExp(
+    `### ${livePrevLine.replace(/\./g, "\\.")} 累计变更[\\s\\S]*?(?=\\n### |\\n## |\\Z)`,
+  ),
+);
+assert.ok(rollupBody, `0.5.0 节内找不到 "${livePrevLine}" 累计段`);
+const rollupVersions = [
+  ...rollupBody[0].matchAll(/^#### (\d+\.\d+\.\d+)$/gm),
+].map((m) => m[1]);
+assert.ok(
+  rollupVersions.length > 0,
+  `上一线 ${livePrevLine} 的 rollup 内应有可汇总的小版本章节`,
+);
 const liveSeries = listSeriesSections(live, {
   major: liveMajor,
   minor: liveMinor - 1,
 });
+// 兼容旧格式：rollup 之外若还有遗留的 `## x.y.z` 顶级段也算（未清理前）。
+const combinedSeries = [
+  ...new Set([...rollupVersions, ...liveSeries.map((s) => s.version)]),
+].sort((a, b) =>
+  b.localeCompare(a, "en", { numeric: true }),
+);
 assert.ok(
-  liveSeries.length > 0,
-  `上一线 ${livePrevLine} 应有可汇总的小版本章节`,
+  combinedSeries.length > 0,
+  `上一线 ${livePrevLine} 应有可汇总的小版本章节（rollup 内或顶级段）`,
 );
 assert.match(
   liveSection,
-  new RegExp(`#### ${liveSeries[0].version.replace(/\./g, "\\.")}`),
+  new RegExp(`#### ${combinedSeries[0].replace(/\./g, "\\.")}`),
 );
 
 console.log("test-extract-changelog: ok");

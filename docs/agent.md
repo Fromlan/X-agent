@@ -14,7 +14,7 @@
 
 - 不是通用多语言 IDE 替代品；Godot 不是"一个插件"，是**核心工作面**。
 - 运行时复用 Pi 的认证与模型（`~/.pi/agent/auth.json`、`models.json`），会话与 Pi CLI **隔离**（写到 `~/.pi/agent/x-agent/sessions/`）。
-- 当前版本见 `apps/desktop/package.json`（如 `0.4.0`）；版本号以该文件为权威源。
+- 当前版本见 `apps/desktop/package.json`；版本号以该文件为权威源。
 
 ## 二、目录速览
 

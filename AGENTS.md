@@ -36,7 +36,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 - `apps/desktop/scripts/test-*.ts` = 离线断言脚本，由 `npm test` **串行串联**（`&&`）。命名为 `test-*.ts` 的不属于 vitest。
 - `*.test.ts`（`electron/**`、`shared/**`、`src/**`）= vitest 单测（`npm run test:unit`），CI 有覆盖率门槛。
-- 跑单个离线脚本：`npx tsx scripts/test-xxx.ts`；**renderer 相关脚本必须加 `--tsconfig tsconfig.web.json`**（如 `test-chat-*`、`test-plan-todos`、`test-skill-slash` 等，脚本名含 `web.json` 标志的不逐一列举——看 `package.json` 的 `test` 脚本为准）。
+- 跑单个离线脚本：`npx tsx scripts/test-xxx.ts`；**renderer 相关脚本需要走 web tsconfig**（`npx tsx --tsconfig=tsconfig.web.json scripts/test-xxx.ts`，如 `test-chat-*` / `test-plan-todos` / `test-skill-slash` / `test-confirm-provider` / `test-tool-batches` 等；以 `package.json` 的 `test` 脚本串联命令为准）。
 - 改 Godot 相关代码跑 `test-godot-addon-install`（bridge 协议已被 `electron/agent/godot-rpc-bridge.test.ts` 的 vitest 独占覆盖）；改模式/沙箱跑 `test-plan-mode-tools` / `test-plan-mode-guard` / `test-bash-readonly`（沙箱边界由 `cwd-sandbox.test.ts` / `project-fs.test.ts` 覆盖）；`npm test` 结尾还会跑 `packages/godot-pi/scripts/check-skills.mjs` 校验技能目录。
 
 ## 架构约束（改代码前必读）

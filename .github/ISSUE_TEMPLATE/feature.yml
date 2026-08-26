@@ -11,6 +11,8 @@ body:
         请先描述**动机**和**用户场景**,再讲实现思路。
         改写一份完整设计可考虑用"Plan"模式,或在评论区展开讨论后再开实施。
 
+        > English / international contributors: this is the Chinese-primary template. Field labels map directly to the previous English `feature_request` template; feel free to write in English—the maintainer reads both.
+
   - type: textarea
     id: problem
     attributes:

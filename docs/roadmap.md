@@ -31,7 +31,7 @@
 
 | Phase | 周期 | 主题 | 关键交付物 | 状态 |
 |---|---|---|---|---|
-| **Phase 1** | M1-M2（4-6 周） | 工程质量 + Godot 深化 | Vitest + Playwright E2E；7 个 Godot 新工具；i18n 基础；E2E 契约锁 | 进行中（1.1/1.2/1.4/1.5 已完成；剩 1.3/1.6） |
+| **Phase 1** | M1-M2（4-6 周） | 工程质量 + Godot 深化 | Vitest + Playwright E2E；7 个 Godot 新工具；i18n 基础；E2E 契约锁 | 1.1/1.2/1.4/1.5/1.6 已完成；1.3（i18n 基础）已废弃（详见 1.3 段决策） |
 | **Phase 2** | M2-M4（4-6 周） | 用户体验打磨 | 会话导出 / 导入；@-补全；开发者诊断页；Plan / Skill 模板；Crash 报告；A11y 自动化 | 待启动 |
 | **Phase 3** | M4-M8（8-12 周） | 差异化能力 | 插件可视化市场；主题编辑器；快捷键中心；Web fallback；多项目工作区；会话时间线；CI 增强；Telemetry | 待启动 |
 | **Phase 4** | 每个 Phase 末 | 验证与发版 | 综合回归 + 文档同步 + CHANGELOG 整理 | 持续 |
@@ -115,16 +115,16 @@ flowchart LR
 
 ### 1.3 国际化基础（i18n）  `P0`
 
-- **目标**：UI 文案从硬编码迁到 i18next，支持中 / 英双语切换。
-- **工作量**：4 人天
-- **前置依赖**：无
-- **交付物**：
+- **状态**：🛑 已废弃（2026-08-26 决议）
+- **决策**：UI 短期不双语。`README.en.md` 已发布英文文档承担海外贡献者沟通；UI 仍中文 only（见 [`README.en.md` §UI language](README.en.md)）。0.5.x 全部 release 均无 i18n 条目，单兵项目维护两套文案的 token / 维护成本不划算。
+- **如需重启**：移入 Phase 3 末；优先收敛设置 / 通用 / 错误码 / 文档链接 4 类静态文案，避免与运行时数据耦合。
+- **原计划**（仅作 ADR 记录，不实施）：
   - 引入 `i18next` + `react-i18next`（pin 到与 React 19 兼容版本）
   - `apps/desktop/src/locales/zh-CN.json` / `en.json`：首批覆盖 ChatPanel / Sidebar / TopBar / SettingsPanel / ReadyChecklist / ConfirmDialog
   - `apps/desktop/src/lib/i18n.ts`：初始化；首跑用 `navigator.language`，回退 `zh-CN`
   - 设置 → 通用加「语言」下拉；偏好 `ClientPrefs.locale` 持久化
   - `design.md` 加一节「i18n 文案约定」：占位、复数、时间格式
-- **验收**：
+- **原验收**（不再适用）：
   - 切换语言后整个 UI 即时刷新（不需重启）
   - 设置中可手动覆盖
   - `apps/desktop/scripts/check-i18n-keys.ts`：CI 校验两套 json 的 key 集合一致
@@ -163,11 +163,17 @@ flowchart LR
 
 ### 1.6 E2E 契约锁（虚拟列表 / 模式切换 / 撤回）  `P1`
 
-- **目标**：把 CHANGELOG 修过的虚拟列表缓存、行叠层、模式切换时序锁进 Playwright。
-- **工作量**：与 1.1 并行（同一个 Playwright 配置）
-- **前置依赖**：1.1
-- **交付物**：`apps/desktop/e2e/contracts/*.spec.ts`：3-5 个契约用例
-- **验收**：CI 上若契约回归失败，PR 阻断。
+- **状态**：✅ 已完成（2026-08，CHANGELOG 0.5.2 / 0.5.3 记 E2E 契约 2→6 + Vitest 24 套覆盖）
+- **完成度与最终交付**：
+  - 首批 3-5 个契约用例扩到 6 套：`contracts` / `mode-flow` / `mode-attestation` / `ipc-validation` / `startup-report`（CHANGELOG 0.5.3 记）
+  - 关键契约测试：`test-chat-virtual-cache`（禁全量重测）、`test-chat-transcript-virtual`（行叠层与溢出契约）、`test-mode-flow` / `test-mode-attestation`（模式切换时序）、`test-bash-readonly`（bash 硬闸） 等
+  - `apps/desktop/e2e/` Playwright 配置：CI 上若契约回归失败，PR 阻断
+- **原计划**：
+  - **目标**：把 CHANGELOG 修过的虚拟列表缓存、行叠层、模式切换时序锁进 Playwright。
+  - **工作量**：与 1.1 并行（同一个 Playwright 配置）
+  - **前置依赖**：1.1
+  - **交付物**：`apps/desktop/e2e/contracts/*.spec.ts`：3-5 个契约用例
+  - **验收**：CI 上若契约回归失败，PR 阻断。
 
 ## 四、Phase 2 — 用户体验打磨（M2-M4）
 

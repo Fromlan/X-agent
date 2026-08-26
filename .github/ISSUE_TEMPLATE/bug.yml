@@ -11,6 +11,8 @@ body:
         感谢反馈!请尽量提供足够信息以便复现:具体步骤、期望行为、实际行为、环境。
         安全/隐私问题请改用邮件(fromlan@qq.com),不要公开提 Issue。
 
+        > English / 国际贡献者:本模板为中文主版。若需英文版字段,字段含义与 `bug_report` 兼容,可直接按下面 label 标题翻译填写。本仓库 UI 当前仅中文,英文 issue 的回复可能会转中文总结。
+
   - type: textarea
     id: what-happened
     attributes:
