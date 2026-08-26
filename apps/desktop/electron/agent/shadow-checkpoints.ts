@@ -292,7 +292,11 @@ export class ShadowCheckpointTracker implements RestoreSource {
     return null;
   }
 
-  async previewRestore(
+  /**
+   * @deprecated Use {@link preview} (seam method) — this is the pre-seam
+   * implementation. Kept private to enforce seam usage.
+   */
+  private async previewRestore(
     sm: SessionManagerLike,
     targetUserEntryId: string,
     segmentScan: {

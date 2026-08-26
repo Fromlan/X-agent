@@ -42,6 +42,10 @@ function makeHost(overrides?: {
     kind: "baseline" as const,
     label: "write/edit 基线",
     fallbackWarning: "write/edit 基线还原失败。",
+    // RestoreSource seam: scan (seam method) delegates to scanSegmentSince
+    // (internal pre-seam helper) on the real instance; for the mock we wire
+    // both names to the same vi.fn so assertions cover either path.
+    scan: vi.fn(() => scanSegment),
     scanSegmentSince: vi.fn(() => scanSegment),
     preview: vi.fn(async () => ({
       mode: "baseline" as const,
@@ -232,7 +236,8 @@ describe("RetractOrchestrator.preview", () => {
     expect(res.ok).toBe(true);
     expect(res.restoreMode).toBe("shadow");
     expect(res.restorablePaths).toEqual(["a.txt", "b.txt"]);
-    expect(ctx.fileTracker.scanSegmentSince).toHaveBeenCalled();
+    // 编排器走 CompositeRestoreSource.scan → 委派给 baseline source 的 scan 方法.
+    expect(ctx.fileTracker.scan).toHaveBeenCalled();
   });
 
   it("无 Shadow 时走 fileTracker baseline", async () => {

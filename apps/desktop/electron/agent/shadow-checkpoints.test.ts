@@ -209,7 +209,7 @@ describe.skipIf(!gitAvailable)("ShadowGit + ShadowCheckpointTracker（需要 git
     expect(await tracker.diffForTurn("u-ghost")).toBeNull();
   });
 
-  it("previewRestore 在 shadow 模式附带 diffText", async () => {
+  it("preview (seam) 在 shadow 模式附带 diffText", async () => {
     writeFileSync(join(work, "a.txt"), "preview-before", "utf8");
     const tracker = new ShadowCheckpointTracker();
     await tracker.setCwd(work);
@@ -219,8 +219,9 @@ describe.skipIf(!gitAvailable)("ShadowGit + ShadowCheckpointTracker（需要 git
     await tracker.capturePost("u-preview");
 
     const { sm } = makeSm();
-    const preview = await tracker.previewRestore(sm, "u-preview", {
+    const preview = await tracker.preview(sm, "u-preview", {
       mutationPaths: ["a.txt"],
+      userEntryIds: ["u-preview"],
       hasBash: false,
       hasGodot: false,
     });

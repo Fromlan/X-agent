@@ -3,6 +3,15 @@
  * 还原适配器（git 检查点 vs write/edit 字节基线）。本模块定义它们共享的
  * RestoreSource 接口 + CompositeRestoreSource 调度器 —— 编排器只面对一个接缝，
  * 新增还原源 = 实现接口并加入数组，不再改编排器。
+ *
+ * 不变量 (scan → nav → restore):
+ *   1. `scan` 必须在 `session.navigateTree(entryId)` 之前调用。navigate 之后,
+ *      abandoned write/edit 不在 active branch,scan 看不到. 这是撤回撤销的
+ *      硬时序,过去散落在 track-器注释里,现在集中在 seam 文档化.
+ *   2. `scan` 是只读 —— 不写盘、不动 baselines、不动 shadow 状态.
+ *   3. `scan` 由 `CompositeRestoreSource` 委托给"拥有 mutation tracing 的源"
+ *      (目前即 fileTracker,kind=baseline). Shadow source 不实现 scan,
+ *      它只是 restore/preview 的实现者.
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { FileRestoreReport } from "../../shared/ipc";
@@ -56,6 +65,11 @@ export type RestoreAttempt = {
  * this segment?"; `restore` performs it and reports what happened. A source
  * only "owns" a segment when its preview/attempt mode equals its `kind`
  * (e.g. shadow saying "baseline" means "not me — keep going").
+ *
+ * `scan` is intentionally NOT in the interface: scan is a tracker
+ * concern (mutation tracing), not a restore concern. It lives on the
+ * composite so the orchestrator calls one method (`sources.scan(...)`)
+ * instead of knowing which source owns the scan. See CompositeRestoreSource.
  */
 export interface RestoreSource {
   /** The mode this source can produce. */
@@ -89,14 +103,61 @@ function mergeWarnings(carried: string[], next: string[]): string[] {
   return merged;
 }
 
+/** Empty scan — fallback when scan throws or no source can provide one. */
+function emptyScan(): RestoreSegmentScan {
+  return {
+    mutationPaths: [],
+    userEntryIds: [],
+    hasBash: false,
+    hasGodot: false,
+  };
+}
+
 /**
  * Priority-ordered restore scheduler: asks sources in order and uses the first
  * one that can handle the segment; on restore failure it falls back to the next
  * source and records the reason. Bash / Godot unrecoverability is appended to
  * the final report here so all callers see the same warnings.
+ *
+ * `scan` is the 4th method on the seam (the interface keeps 3, but the
+ * composite exposes scan as a first-class operation). It delegates to the
+ * source that owns mutation tracing: by convention the baseline-kind source
+ * (TurnFileTracker). If no baseline-kind source is present, scan returns an
+ * empty scan.
  */
 export class CompositeRestoreSource {
   constructor(private readonly sources: readonly RestoreSource[]) {}
+
+  /**
+   * Scan the active branch segment before navigateTree. The orchestrator MUST
+   * call this before `session.navigateTree` — see module-level invariant #1.
+   */
+  scan(
+    sm: RestoreSessionManager,
+    targetUserEntryId: string,
+  ): RestoreSegmentScan {
+    const scanSource = this.sources.find((s) => s.kind === "baseline");
+    if (!scanSource) return emptyScan();
+    // scanSource is expected to be TurnFileTracker. To keep the interface
+    // 3-method, we duck-type access a `scan` capability. Both adapters
+    // expose `scan` as the seam method (TurnFileTracker does it natively;
+    // ShadowCheckpoints delegates to fileTracker if it owns one).
+    const fn = (scanSource as unknown as {
+      scan?: (sm: RestoreSessionManager, id: string) => RestoreSegmentScan;
+    }).scan;
+    if (typeof fn !== "function") return emptyScan();
+    try {
+      return fn(sm, targetUserEntryId);
+    } catch (err) {
+      // Defensive: if scan throws, return empty scan so the orchestrator
+      // can still proceed (with no files to restore).
+      console.warn(
+        `[restore-source] scan() threw; falling back to empty scan:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return emptyScan();
+    }
+  }
 
   async preview(
     sm: RestoreSessionManager,

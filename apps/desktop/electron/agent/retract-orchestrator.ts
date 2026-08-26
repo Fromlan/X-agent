@@ -86,8 +86,8 @@ export class RetractOrchestrator {
       };
     }
     const sm = h.getBundle()!.session.sessionManager;
-    const scan = h.fileTracker.scanSegmentSince(sm, resolved.entryId);
     const sources = new CompositeRestoreSource([h.shadowCheckpoints, h.fileTracker]);
+    const scan = sources.scan(sm, resolved.entryId);
     const preview = await sources.preview(sm, resolved.entryId, scan);
 
     if (preview.mode === "shadow") {
@@ -159,8 +159,10 @@ export class RetractOrchestrator {
       }
 
       // 预扫必须在 navigate 之前：nav 后 abandoned write/edit 不在 active branch。
+      // 这是撤回撤销的硬时序,集中在 CompositeRestoreSource.scan 一处文档化.
       // Goal budget rollback also needs abandoned user entry ids from this scan.
-      const pendingScan = h.fileTracker.scanSegmentSince(sm, resolved.entryId);
+      const sources = new CompositeRestoreSource([h.shadowCheckpoints, h.fileTracker]);
+      const pendingScan = sources.scan(sm, resolved.entryId);
 
       const nav = await session.navigateTree(resolved.entryId, {
         summarize: false,
@@ -171,7 +173,6 @@ export class RetractOrchestrator {
 
       let restoreReport: RetractResult["restoreReport"];
       if (undoFiles) {
-        const sources = new CompositeRestoreSource([h.shadowCheckpoints, h.fileTracker]);
         const attempt = await sources.restore(sm, resolved.entryId, pendingScan);
         restoreReport = attempt.report;
         h.fileTracker.dropBaselinesForTurns(pendingScan.userEntryIds);

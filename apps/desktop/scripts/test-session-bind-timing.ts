@@ -64,7 +64,9 @@ try {
     getEntries: () => [],
     appendCustomEntry: () => "c",
   };
-  const preview = fileTracker.previewRestore(sm, "u-new");
+  // 走 RestoreSource seam: scan → preview.
+  const scan = fileTracker.scan(sm, "u-new");
+  const preview = await fileTracker.preview(sm, "u-new", scan);
   assert(preview.restorablePaths.includes("enemy.gd"), "restorable with correct bind");
   assert(preview.unrestorablePaths.length === 0, "no unrestorable");
 
@@ -75,7 +77,8 @@ try {
   writeFileSync(join(work, "enemy.gd"), "hp = 3\n", "utf8");
   wrong.captureBeforeTool("edit", { path: "enemy.gd" });
   writeFileSync(join(work, "enemy.gd"), "hp = 2\n", "utf8");
-  const badPreview = wrong.previewRestore(sm, "u-new");
+  const badScan = wrong.scan(sm, "u-new");
+  const badPreview = await wrong.preview(sm, "u-new", badScan);
   assert(
     badPreview.unrestorablePaths.includes("enemy.gd"),
     "wrong active id → missing baseline for retract target",

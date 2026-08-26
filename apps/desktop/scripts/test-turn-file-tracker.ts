@@ -15,6 +15,7 @@ import {
   TurnFileTracker,
   pathFromArgsForTest,
 } from "../electron/agent/turn-file-tracker";
+import { CompositeRestoreSource } from "../electron/agent/restore-source";
 
 const root = mkdtempSync(join(tmpdir(), "x-agent-file-tracker-"));
 
@@ -106,12 +107,18 @@ try {
     },
   };
 
-  const preview = tracker.previewRestore(sm, "u1");
+  // 走 RestoreSource seam: scan → preview / restore.
+  // bash / godot 的 skipped / warning enrichment 由 CompositeRestoreSource.enrich
+  // 添加,生产路径走 composite,这里也走 composite 以保持行为一致.
+  const scan = tracker.scan(sm, "u1");
+  const composite = new CompositeRestoreSource([tracker]);
+  const preview = await composite.preview(sm, "u1", scan);
   assert(preview.hasBash, "hasBash");
   assert(preview.restorablePaths.includes("existing.txt"), "restorable existing");
   assert(preview.restorablePaths.includes("new.txt"), "restorable new");
 
-  const report = tracker.restoreSince(sm, "u1");
+  const restoreResult = await composite.restore(sm, "u1", scan);
+  const report = restoreResult.report!;
   assert(report.restored.includes("existing.txt"), "restored existing");
   assert(report.deleted.includes("new.txt"), "deleted new");
   assert(readFileSync(existing, "utf8") === "v1", "existing rolled back");
@@ -211,13 +218,33 @@ try {
     appendCustomEntry: () => "x",
   };
 
-  const r2 = multi.restoreSince(smMulti, "u2");
+  // 走 RestoreSource seam: scan + restore.
+  const scan2 = multi.scan(smMulti, "u2");
+  const r2Result = await multi.restore(smMulti, "u2", scan2);
+  const r2 = r2Result.report!;
   assert(r2.restored.includes("existing.txt"), "t2 restored");
   assert(readFileSync(existing, "utf8") === "after-t1", "t2 rolls to after-t1");
 
   const empty = new TurnFileTracker();
   empty.setCwd(root);
-  const miss = empty.restorePaths(["ghost.txt"], ["u1"]);
+  // 测 "no baseline":scan 含 mutation path 但 tracker 没有任何 baseline.
+  // 用 CompositeRestoreSource 走 bash / godot enrichment 旁路(skip).
+  const smEmpty = {
+    getBranch: () => [
+      { type: "message", id: "u1", message: { role: "user", content: [] } },
+    ],
+    getEntries: () => [],
+    getEntry: () => undefined,
+    appendCustomEntry: () => "x",
+  };
+  const manualScan = {
+    mutationPaths: ["ghost.txt"],
+    userEntryIds: ["u1"],
+    hasBash: false,
+    hasGodot: false,
+  };
+  const missResult = await empty.restore(smEmpty, "u1", manualScan);
+  const miss = missResult.report!;
   assert(miss.skipped[0]?.reason === "no_baseline", "no baseline");
 
   // Fix B: setCwd 必须清空旧基线，避免污染新项目。
@@ -255,8 +282,35 @@ try {
   unlinkSync(linkAbs);
   writeFileSync(linkAbs, "regular", "utf8");
   assert(!lstatSync(linkAbs).isSymbolicLink(), "link replaced");
-  // 还原 → symlink 应被恢复
-  const rep = linkTracker.restorePaths([linkRel], ["u1"]);
+  // 还原 → symlink 应被恢复 (走 RestoreSource seam: scan + restore).
+  // seam 的 scan 需要 branch 含 toolCall 才有 mutation paths —— 用 linkToolCall
+  // 模拟 assistant 调 write 的 tool_call.
+  const smLink = {
+    getBranch: () => [
+      { type: "message", id: "u1", message: { role: "user", content: [] } },
+      {
+        type: "message",
+        id: "a1",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "t-link",
+              name: "write",
+              arguments: { path: linkRel },
+            },
+          ],
+        },
+      },
+    ],
+    getEntries: () => [],
+    getEntry: () => undefined,
+    appendCustomEntry: () => "x",
+  };
+  const linkScan = linkTracker.scan(smLink, "u1");
+  const linkResult = await linkTracker.restore(smLink, "u1", linkScan);
+  const rep = linkResult.report!;
   assert(rep.restored.includes(linkRel), "symlink restored");
   assert(lstatSync(linkAbs).isSymbolicLink(), "is symlink again");
 
@@ -298,7 +352,7 @@ try {
     getEntry: () => undefined,
     appendCustomEntry: () => "c",
   };
-  const scanned = preNav.scanSegmentSince(smPre, "u-pre");
+  const scanned = preNav.scan(smPre, "u-pre");
   assert(scanned.mutationPaths.includes("pre.txt"), "pre-nav scan paths");
   // Simulate post-nav branch: leaf is the target user only.
   const smPostNav = {
@@ -315,15 +369,13 @@ try {
     getEntry: () => undefined,
     appendCustomEntry: () => "c",
   };
-  const emptyAfterNav = preNav.scanSegmentSince(smPostNav, "u-pre");
+  const emptyAfterNav = preNav.scan(smPostNav, "u-pre");
   assert(
     emptyAfterNav.mutationPaths.length === 0,
     "post-nav scan must not see abandoned tools",
   );
-  const reportPre = preNav.restorePaths(
-    scanned.mutationPaths,
-    scanned.userEntryIds,
-  );
+  const reportPreResult = await preNav.restore(smPre, "u-pre", scanned);
+  const reportPre = reportPreResult.report!;
   assert(reportPre.restored.includes("pre.txt"), "restore from pre-nav scan");
   assert(readFileSync(preFile, "utf8") === "before", "pre-nav content");
   preNav.dropBaselinesForTurns(scanned.userEntryIds);
