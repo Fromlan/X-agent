@@ -55,6 +55,7 @@ export type UseWorkspaceSessionOpts = {
   setConfirmState: Dispatch<SetStateAction<RetractConfirmState>>;
   setFollowNonce: Dispatch<SetStateAction<number>>;
   setPrefs: Dispatch<SetStateAction<ClientPrefs | null>>;
+  setAvailableThinkingLevels: Dispatch<SetStateAction<ThinkingLevel[] | null>>;
   setPrefsRecovery: Dispatch<SetStateAction<PrefsRecoveryNotice | null>>;
   setSecretCodec: Dispatch<SetStateAction<SecretCodecStatus | null>>;
   setBash: Dispatch<SetStateAction<BashCheckResult | null>>;
@@ -86,6 +87,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setConfirmState,
     setFollowNonce,
     setPrefs,
+    setAvailableThinkingLevels,
     setPrefsRecovery,
     setSecretCodec,
     setBash,
@@ -146,6 +148,12 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
           : prev,
       );
     }
+    // Sync the model-supported thinking levels (issue #30).
+    setAvailableThinkingLevels(
+      s.availableThinkingLevels && s.availableThinkingLevels.length > 0
+        ? s.availableThinkingLevels
+        : null,
+    );
   }, [
     fetchSessionUsage,
     sessionIdRef,
@@ -156,6 +164,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setError,
     setItems,
     setPrefs,
+    setAvailableThinkingLevels,
     setQueuedSteering,
     setSessionId,
     setStatus,

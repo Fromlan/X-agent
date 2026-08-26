@@ -765,6 +765,12 @@ export type UiAgentEvent =
       thinkingLevel: ThinkingLevel;
       /** Active session type (locked at creation). */
       sessionType?: SessionType;
+      /**
+       * Thinking levels the current model actually supports (Pi `getAvailableThinkingLevels`).
+       * Renderer uses this to filter the SelectMenu so users don't pick a level that
+       * Pi will silently clamp back to `off` (issue #30: thinking 切换被静默回弹).
+       */
+      availableThinkingLevels: ThinkingLevel[];
       sessionPath?: string | null;
     }
   | {
@@ -819,6 +825,10 @@ export interface HostStatus {
   sessionPath: string | null;
   model: ModelInfo | null;
   thinkingLevel: ThinkingLevel;
+  /** See {@link UiAgentEvent} session_info — for the renderer to filter the
+   *  Composer thinking SelectMenu. Falls back to all THINKING_LEVELS when the
+   *  bundle is missing (no project open). */
+  availableThinkingLevels?: ThinkingLevel[];
   error?: string;
   hasSession: boolean;
 }

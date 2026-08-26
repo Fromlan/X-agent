@@ -34,6 +34,7 @@ import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { displaySessionName } from "./session-title";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
+import { dbgLog } from "../../shared/debug-log";
 import {
   createDesktopExtensionUi,
   mapExtensionNotifyLevel,
@@ -390,7 +391,14 @@ export class SessionLifecycle {
       model: info.model,
       thinkingLevel: info.thinkingLevel,
       sessionType: requestedType,
+      availableThinkingLevels: session.getAvailableThinkingLevels(),
       sessionPath,
+    });
+    // DEBUG(thinking-switch #30): 标记 openSession 的 session_info
+    dbgLog("lifecycle", "session_info (openSession)", {
+      sessionId: session.sessionId,
+      thinkingLevel: info.thinkingLevel,
+      available: session.getAvailableThinkingLevels(),
     });
     this.a().setLastHistoryFingerprint(this.a().historyFingerprint(history));
     this.a().emit({ type: "history_replace", items: history });
@@ -655,12 +663,18 @@ export class SessionLifecycle {
     void patchPrefs(patch);
     this.a().setLastHistoryFingerprint(this.a().historyFingerprint([]));
     this.a().emit({ type: "history_replace", items: [] });
+    // DEBUG(thinking-switch #30): 标记 closeWorkspace 的 session_info
+    dbgLog("lifecycle", "session_info (closeWorkspace)", {
+      thinkingLevel: getCachedPrefs().thinkingLevel,
+    });
     this.a().emit({
       type: "session_info",
       sessionId: "",
       cwd: "",
       model: null,
       thinkingLevel: getCachedPrefs().thinkingLevel,
+      // close 时没有 bundle 上下文, renderer 拿到 undefined 时回退到全部 THINKING_LEVELS
+      availableThinkingLevels: [],
       sessionPath: null,
     });
     this.a().setStatus("idle");

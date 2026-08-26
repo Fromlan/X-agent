@@ -54,6 +54,7 @@ import {
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
 } from "../../../shared/mode-prompt";
+import { dbgLog } from "../../../shared/debug-log";
 
 export type SessionModeHost = {
   getBundle(): {
@@ -308,6 +309,8 @@ export class SessionModeController {
     if (mode !== "agent" && mode !== "ask" && mode !== "plan" && mode !== "goal") {
       return { ok: false, error: `非法 mode：${String(mode)}` };
     }
+    // DEBUG(thinking-switch #30): 跟踪 setMode 入口,排查 模式切换后 thinking 被静默重置
+    dbgLog("mode", "setMode in", { from: this.agentMode, to: mode });
     const bundle = this.host().getBundle();
     if (!bundle) {
       return { ok: false, error: "尚未打开项目" };

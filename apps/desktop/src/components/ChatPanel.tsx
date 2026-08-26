@@ -14,6 +14,7 @@ import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
 import { AtMenu } from "./AtMenu";
 import { SelectMenu } from "./SelectMenu";
+import { dbgLog } from "@shared/debug-log";
 import {
   Bot,
   Brain,
@@ -571,9 +572,14 @@ function ChatPanelImpl(props: Props) {
                   className="select-menu-compact select-menu-centered"
                   value={props.thinkingLevel}
                   options={thinkingOptions}
-                  onChange={(v) =>
-                    props.onThinkingChange(v as ThinkingLevel)
-                  }
+                  onChange={(v) => {
+                    // DEBUG(thinking-switch #30): 渲染端 SelectMenu 选值时打点
+                    dbgLog("renderer", "thinking SelectMenu onChange", {
+                      picked: v,
+                      currentValue: props.thinkingLevel,
+                    });
+                    props.onThinkingChange(v as ThinkingLevel);
+                  }}
                   disabled={thinkingDisabled}
                   aria-label="Thinking"
                 />

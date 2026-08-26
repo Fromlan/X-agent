@@ -98,6 +98,11 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [prefs, setPrefs] = useState<ClientPrefs | null>(null);
+  // 渲染端：当前 session 模型支持的 thinking 级别。
+  // null = 还没拿到（尚未打开项目），fallback 到全部 THINKING_LEVELS。
+  // 见 issue #30：Pi 会把不支持的级别静默 clamp，UI 过滤掉让用户能看到实际可选。
+  const [availableThinkingLevels, setAvailableThinkingLevels] =
+    useState<ThinkingLevel[] | null>(null);
   const [bash, setBash] = useState<BashCheckResult | null>(null);
   const [git, setGit] = useState<GitCheckResult | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -256,6 +261,7 @@ export default function App() {
     setConfirmState,
     setFollowNonce,
     setPrefs,
+    setAvailableThinkingLevels,
     setPrefsRecovery,
     setSecretCodec,
     setBash,
@@ -296,6 +302,7 @@ export default function App() {
     sessionIdRef,
     usageFetchGen,
     setPrefs,
+    setAvailableThinkingLevels,
     setQueuedSteering,
     setEditingEntryId,
     setItems,
@@ -570,8 +577,11 @@ export default function App() {
   };
 
   const onThinkingChange = async (level: ThinkingLevel) => {
+    // DEBUG(thinking-switch #30): 渲染端入口,确认 composer 点选确实触发 IPC
+    dbgLog("renderer", "onThinkingChange click", { level });
     const result = await window.xAgent.session.setThinkingLevel(level);
     if (!result.ok) {
+      dbgLog("renderer", "onThinkingChange !ok", { level, result });
       setError("切换 Thinking 失败（请先打开项目）");
       return;
     }
@@ -579,6 +589,7 @@ export default function App() {
     // racy `prefs.get()` round trip: the prefs cache can lag the session apply
     // and would snap the composer select back to the stale level.
     const effective = result.thinkingLevel ?? level;
+    dbgLog("renderer", "onThinkingChange ok", { level, effective, result });
     setPrefs((prev) =>
       prev ? { ...prev, thinkingLevel: effective } : prev,
     );
@@ -1188,7 +1199,10 @@ export default function App() {
           models={models}
           currentModelKey={currentModelKey}
           thinkingLevel={prefs?.thinkingLevel ?? "high"}
-          thinkingLevels={THINKING_LEVELS}
+          thinkingLevels={
+            // issue #30: 只暴露模型实际支持的级别,避免 Pi 静默 clamp 后回弹
+            availableThinkingLevels ?? THINKING_LEVELS
+          }
           onModelChange={onModelChange}
           onThinkingChange={onThinkingChange}
           onToggleThinking={toggleThinking}
