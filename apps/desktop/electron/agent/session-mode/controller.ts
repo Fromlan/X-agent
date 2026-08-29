@@ -54,6 +54,7 @@ import {
 } from "./plan-journal";
 import {
   buildAskModeSystemAppend,
+  buildGameDesignLayoutGuide,
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
 } from "../../../shared/mode-prompt";
@@ -163,6 +164,12 @@ export class SessionModeController {
     const typeAppend = this.getSessionTypePolicy().systemAppend();
     if (typeAppend) {
       out.push(typeAppend);
+    }
+    // GDD layout guide (策划会话 only). Anchors the standard 9-section
+    // GDD skeleton so "整理 / 写入 设计文档" 任务不再产出 summary/audit/
+    // integration-plan 这类自由发挥的副产物 (#40 follow-up).
+    if (this.getSessionType() === "design") {
+      out.push(buildGameDesignLayoutGuide());
     }
     if (this.agentMode === "ask") {
       out.push(buildAskModeSystemAppend());

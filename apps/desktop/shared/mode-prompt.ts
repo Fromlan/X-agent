@@ -59,21 +59,92 @@ export function buildGoalModeSystemAppend(condition: string): string {
  * Design session type system append. Injected BEFORE the mode-level append
  * (ask/plan/goal) so the type constraint is always visible. Appended only
  * when the active SessionType is "design".
+ *
+ * v0.5+: Rewritten after a real failure (issue #40 follow-up). The previous
+ * version said "You may use ask/plan/agent/goal modes internally" — that
+ * phrasing made the LLM think there was an inner sub-mode, which leaked
+ * plan-mode error messages into agent-mode behavior. New version:
+ *   - states identity first (orthogonal to the 4 modes)
+ *   - lists tools by name (whitelist > blacklist; LLM defaults to "anything
+ *     not banned is allowed")
+ *   - explicitly calls out cross-cwd read access so the agent doesn't waste
+ *     turns trying `bash ls ../design` to read sibling project assets
  */
 export const DESIGN_SESSION_TYPE_INSTRUCTIONS = [
-  "You are in a Design session: produce structured game design documents.",
-  "Read: any project file (you can navigate the existing code as a reference).",
-  "Write: only inside <cwd>/game-design/ — markdown documents, data tables, or config snippets for design assets.",
-  "Do NOT use write/edit/bash to modify game code, scenes, project.godot, or any file outside game-design/.",
-  "If the user asks for code changes, tell them to open a Code session (新代码会话) — do not attempt to mutate code in this session.",
-  "You may use ask/plan/agent/goal modes internally; the game-design write constraint is always active regardless of mode.",
-  "write_plan is disabled in this session: write design documents directly into <cwd>/game-design/ instead of plan files.",
+  "You are in a Design session (策划会话). The 4 modes (ask/plan/agent/goal) share the same design tool set — switching mode does not unlock new tools or lift the game-design/ write constraint.",
+  "Available tools in this session: `read`, `grep`, `find`, `ls`, `bash` (read-only commands only; path must stay inside project cwd), `write` (path must be inside `<cwd>/game-design/`), `edit` (same constraint), `godot_detect_project`.",
+  "Disabled in this session: `write_plan` (策划文档直接写到 `<cwd>/game-design/`，不走 plan 流程); `godot_set_project_setting` and other unlisted Godot mutating tools are blocked by the design-write-guard. If the user wants code changes, tell them to open a Code session (新代码会话).",
+  "Cross-project reference: 策划需要参考其他项目的设计资产时, 可以用 `read` / `grep` / `find` / `ls` 直接读**项目外任意路径** (这些 read 系列工具不受 design-write-guard 限制), 但**不要用 bash 访问项目外路径** — bash 的 cwd sandbox 会拦截.",
+  'Writing GDD: when the user says "整理 / 写入" 设计文档, follow the standard GDD skeleton (see layout guide below). Do NOT produce a summary.md / audit.md / integration-plan.md / engine-*.md unless the user explicitly asks.',
 ].join("\n");
 
 export function buildDesignSessionTypeAppend(): string {
   return ["# X-agent Design session type", DESIGN_SESSION_TYPE_INSTRUCTIONS].join(
     "\n",
   );
+}
+
+/**
+ * GDD 布局引导 —— 给"整理/写入设计文档"任务列标准子模块。
+ * 由 controller.composeModeAppend 在 design session 追加在 type append 之后。
+ *
+ * 设计取舍: 不强制 agent 全写 (不同策划阶段需要的 GDD 子集不同),
+ * 但显式禁止 summary/audit/integration-plan 这 4 个变体 — 那是
+ * #40 follow-up 对话里 agent 的实际错误路径。
+ */
+export function buildGameDesignLayoutGuide(): string {
+  const sections = [
+    {
+      name: "01-主设计文档.md",
+      purpose: "游戏总纲: 一句话定位、核心循环、设计支柱、9 个核心系统 (棋子/羁绊/经济/爬塔/法宝/战斗/建筑/峰/难度)",
+    },
+    {
+      name: "02-棋子图鉴.md",
+      purpose: "每个棋子的属性、技能、定位、speed 档位 (如适用, 也叫'角色图鉴')",
+    },
+    {
+      name: "03-羁绊效果.md",
+      purpose: "羁绊/职业/种族的激活条件、数值、Combo 表",
+    },
+    {
+      name: "04-法宝图鉴.md",
+      purpose: "装备/法宝的触发、效果、合成 (如适用, 也叫'装备图鉴')",
+    },
+    {
+      name: "05-建筑数值.md",
+      purpose: "建筑/城池/基地的升级、产出、玩家等级",
+    },
+    {
+      name: "06-敌人阵容.md",
+      purpose: "敌方单位、阵容、难度梯度、Boss 列表",
+    },
+    {
+      name: "07-峰的选择.md",
+      purpose: "玩家初始身份/种族/职业的独特加成、初始棋子、克制链 (如适用, 也叫'职业选择'/'出身选择')",
+    },
+    {
+      name: "08-事件奇遇.md",
+      purpose: "随机/分支事件、道德/善恶系统、事件链",
+    },
+    {
+      name: "09-章节与Boss.md",
+      purpose: "主线/关卡流程、Boss 技能、章节奖励",
+    },
+  ];
+  const header = [
+    "# X-agent GDD layout guide (策划会话)",
+    "",
+    'When the user says "整理 / 写入" 设计文档 to `<cwd>/game-design/`, write one markdown file per row below. Use 1 行文件名 + 1 行问题说明 + 实际内容 (具体数值/列表/效果).',
+    "",
+    "如果项目已有自己的命名 (比如'角色'替代'棋子', '出身'替代'峰'), 沿用项目约定; 文件名里那一截也可以替换。",
+    "",
+    "Do NOT produce a summary.md / audit.md / integration-plan.md / engine-*.md unless the user explicitly asks. 不要把原始策划案**逐字复制**过来当成 game-design/ 的内容 — 整理的意思是按下面的骨架写。",
+    "",
+  ].join("\n");
+  const body = sections
+    .map((s) => `- **${s.name}** — ${s.purpose}`)
+    .join("\n");
+  return header + body;
 }
 
 export function wrapWithModeBlock(
