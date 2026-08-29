@@ -16,8 +16,14 @@ import {
 
 function FileRefChip({ name, content }: { name: string; content: string }) {
   const [open, setOpen] = useState(false);
-  const label = name.trim() || "file";
-  const lines = content ? content.split(/\r?\n/).length : 0;
+  const fullPath = name.trim() || "file";
+  // Short display: show only the basename so chat history doesn't
+  // drown in absolute paths (e.g. D:/UGit/z-2/config/01_chess.csv
+  // → "01_chess.csv"). Full path lives in title attribute for hover
+  // + accessibility.
+  const shortName = basename(fullPath) || fullPath;
+  const isEmpty = content.trim().length === 0;
+  const lines = isEmpty ? 0 : content.split(/\r?\n/).length;
 
   return (
     <details
@@ -25,17 +31,37 @@ function FileRefChip({ name, content }: { name: string; content: string }) {
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
-      <summary className="user-file-ref-summary" title={label}>
+      <summary
+        className="user-file-ref-summary"
+        title={fullPath}
+        aria-label={fullPath}
+      >
         <ChevronRight size={12} className="user-file-ref-chevron" aria-hidden />
         <FileText size={12} aria-hidden />
-        <span className="user-file-ref-at">@{label}</span>
-        {lines > 0 && (
+        <span className="user-file-ref-at">{shortName}</span>
+        {isEmpty && (
+          <span className="user-file-ref-meta">未展开</span>
+        )}
+        {!isEmpty && lines > 0 && (
           <span className="user-file-ref-meta">{lines} 行</span>
         )}
       </summary>
-      <pre className="user-file-ref-body">{content}</pre>
+      {isEmpty ? (
+        <pre className="user-file-ref-body user-file-ref-body-empty">
+          （文件未在 prompt 中展开；完整路径：{fullPath}）
+        </pre>
+      ) : (
+        <pre className="user-file-ref-body">{content}</pre>
+      )}
     </details>
   );
+}
+
+/** Cross-platform basename (renderer has no `path` module). */
+function basename(p: string): string {
+  if (!p) return "";
+  const m = /([^/\\]+)[/\\]*$/.exec(p);
+  return m ? m[1]! : p;
 }
 
 function ModeRefChip({ name, content }: { name: string; content: string }) {
