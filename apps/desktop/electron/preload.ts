@@ -6,6 +6,7 @@ import type {
   FlatInvokeApi,
   IpcChannelKey,
   IpcInvokeMap,
+  PromptPayload,
   UiAgentEvent,
   XAgentApi,
   XAgentApiFlat,
@@ -36,10 +37,13 @@ function makeInvokeApi(): FlatInvokeApi {
 const api = makeInvokeApi();
 
 // Channel-keyed methods that keep custom logging on the renderer side.
-api.prompt = ((text: string) => {
-  dbgLog("preload", "invoke prompt", { len: text?.length, preview: text?.slice(0, 80) });
+api.prompt = ((payload: PromptPayload) => {
+  dbgLog("preload", "invoke prompt", {
+    textLen: payload?.text?.length,
+    imageCount: payload?.images?.length ?? 0,
+  });
   const done = dbgTimer("preload", "prompt roundtrip");
-  return ipcRenderer.invoke(IPC_CHANNELS.prompt, text).then((result) => {
+  return ipcRenderer.invoke(IPC_CHANNELS.prompt, payload).then((result) => {
     done();
     dbgLog("preload", "prompt result", result);
     return result;

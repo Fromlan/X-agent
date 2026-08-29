@@ -438,7 +438,7 @@ export default function App() {
     const expanded = await expandAtPathsInPrompt(text);
     doneExpand();
     const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
-    const result = await window.xAgent.turn.prompt(expanded);
+    const result = await window.xAgent.turn.prompt({ text: expanded });
     doneRoundtrip();
     dbgLog("chat", "turn.prompt resolved", { ok: result.ok, silent: result.silent, error: result.error });
     if (!result.ok || result.silent) {
@@ -733,7 +733,7 @@ export default function App() {
       const pendingId = makePendingUserId();
       setItems((prev) => appendPendingUser(prev, text, pendingId));
       const expanded = await expandAtPathsInPrompt(text);
-      const result = await window.xAgent.turn.prompt(expanded);
+      const result = await window.xAgent.turn.prompt({ text: expanded });
       if (!result.ok || result.silent) {
         setItems((prev) => removePendingUser(prev, pendingId));
         if (!result.ok) {
