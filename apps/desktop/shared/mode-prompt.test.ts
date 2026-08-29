@@ -7,9 +7,12 @@ import {
   ASK_MODE_INSTRUCTIONS,
   PLAN_MODE_INSTRUCTIONS,
   GOAL_MODE_INSTRUCTIONS,
+  DESIGN_SESSION_TYPE_INSTRUCTIONS,
   buildAskModeSystemAppend,
   buildPlanModeSystemAppend,
   buildGoalModeSystemAppend,
+  buildDesignSessionTypeAppend,
+  buildGameDesignLayoutGuide,
   wrapWithModeBlock,
   stripModeBlocks,
   modeBlockLabel,
@@ -80,5 +83,39 @@ describe("modeBlockLabel", () => {
     expect(modeBlockLabel("goal")).toBe("目标");
     expect(modeBlockLabel("build")).toBe("执行计划");
     expect(modeBlockLabel("")).toBe("mode");
+  });
+});
+
+describe("DESIGN_SESSION_TYPE_INSTRUCTIONS (v0.5+ rewrite)", () => {
+  it("白名单包含 read (avoid agent 跑去用 bash 读项目外路径)", () => {
+    expect(DESIGN_SESSION_TYPE_INSTRUCTIONS).toMatch(/`read`/);
+    expect(DESIGN_SESSION_TYPE_INSTRUCTIONS).toMatch(/`bash`/);
+  });
+
+  it("不再含 'modes internally' 措辞 (#40 follow-up 锁定的回归点)", () => {
+    expect(DESIGN_SESSION_TYPE_INSTRUCTIONS).not.toMatch(/modes internally/);
+  });
+
+  it("buildDesignSessionTypeAppend 带标题 + 内容非空", () => {
+    const out = buildDesignSessionTypeAppend();
+    expect(out.startsWith("# X-agent Design session type")).toBe(true);
+    expect(out.length).toBeGreaterThan(200);
+  });
+});
+
+describe("buildGameDesignLayoutGuide", () => {
+  it("至少含 '主设计文档' GDD 关键词", () => {
+    expect(buildGameDesignLayoutGuide()).toMatch(/主设计文档/);
+  });
+
+  it("再次锚定 game-design/ 路径约束 (避免 LLM 写到散落位置)", () => {
+    expect(buildGameDesignLayoutGuide()).toMatch(/game-design\//);
+  });
+
+  it("显式禁止 summary / audit / integration-plan 变体 (本次对话 agent 的实际错误路径)", () => {
+    const guide = buildGameDesignLayoutGuide();
+    expect(guide).toMatch(/summary\.md/);
+    expect(guide).toMatch(/audit\.md/);
+    expect(guide).toMatch(/integration-plan\.md/);
   });
 });
