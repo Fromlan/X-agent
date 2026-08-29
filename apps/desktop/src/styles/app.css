@@ -6338,6 +6338,31 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   display: block;
 }
 
+.composer-attachment-chip-file {
+  width: auto;
+  height: 56px;
+  min-width: 56px;
+  padding: 0 28px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+}
+
+.composer-attachment-file-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.composer-attachment-file-name {
+  font-size: 12px;
+  color: var(--text-strong);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer-attachment-remove {
   position: absolute;
   top: 2px;

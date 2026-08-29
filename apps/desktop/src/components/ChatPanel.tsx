@@ -41,7 +41,7 @@ import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
 import { ThinkingOrb } from "./ThinkingOrb";
 import { ComposerAttachments } from "./ComposerAttachments";
-import { MAX_IMAGE_COUNT } from "../lib/file-attachment";
+import { MAX_IMAGE_COUNT, type FileReference } from "../lib/file-attachment";
 import type { RefObject } from "react";
 
 /** @-补全 path 候选暂未接入 file-tree IPC；空数组常量化避免每次渲染新建引用。 */
@@ -102,11 +102,15 @@ interface Props {
   externalStreamRef?: RefObject<HTMLDivElement | null>;
   /** 已附图片 (粘贴截图 / 拖放图片). 非空时 composer 上方显示缩略图 chip. */
   attachments?: ImageContent[];
+  /** 已附文件 (拖入 / 粘贴的非图片). 与图片共享同一片 chip 区域. */
+  fileRefs?: FileReference[];
   /** Hard cap on attachment count, displayed in chip counter. */
   maxAttachmentCount?: number;
-  /** 移除第 i 个附件 (附件状态由父组件维护). */
-  onRemoveAttachment?: (index: number) => void;
-  /** 拖文件 / 粘贴文件 → 分类后入 attachments + 拼 @<path> 引用到 input. */
+  /** 移除第 i 个图片附件. */
+  onRemoveImage?: (index: number) => void;
+  /** 移除第 i 个文件附件. */
+  onRemoveFile?: (index: number) => void;
+  /** 拖文件 / 粘贴文件 → 分类后入 attachments (图片) + fileRefs (其他). */
   onAddFiles?: (files: File[]) => void;
 }
 
@@ -134,6 +138,7 @@ function ChatPanelImpl(props: Props) {
   // on the shell are accepted (not just on the textarea).
   const [isDragOver, setIsDragOver] = useState(false);
   const attachments = props.attachments ?? [];
+  const fileRefs = props.fileRefs ?? [];
   const maxAttachments = props.maxAttachmentCount ?? MAX_IMAGE_COUNT;
   const onShellDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -427,8 +432,10 @@ function ChatPanelImpl(props: Props) {
         >
           <ComposerAttachments
             attachments={attachments}
-            onRemove={(i) => props.onRemoveAttachment?.(i)}
-            maxCount={maxAttachments}
+            fileRefs={fileRefs}
+            onRemoveImage={(i) => props.onRemoveImage?.(i)}
+            onRemoveFile={(i) => props.onRemoveFile?.(i)}
+            maxImageCount={maxAttachments}
           />
           <SlashMenu
             open={menuOpen}

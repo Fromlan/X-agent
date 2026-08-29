@@ -494,13 +494,9 @@ export default function App() {
       setAttachments((prev) => [...prev, ...images]);
     }
     if (references.length > 0) {
-      // Input 文本只显示短串 (📎 <basename>), 绝对路径单独存
-      // fileRefs state, send 时拼到 user message 末尾 (走
-      // expandAtPaths 展开成 <file> 块). 这样 composer 短, AI
-      // 拿到完整路径.
-      setInput((prev) =>
-        prev + references.map((r) => `📎 ${r.displayName} `).join(""),
-      );
+      // 文件不进 input 文本 —— 由 ComposerAttachments 渲染成 chip
+      // (跟图片附件同区域). 绝对路径存 fileRefs state, send 时
+      // 走 expandAtPaths 展开成 <file> 块拼到 user message 末尾.
       setFileRefs((prev) => [...prev, ...references]);
     }
     if (notices.length > 0) {
@@ -508,8 +504,12 @@ export default function App() {
     }
   }, []);
 
-  const onRemoveAttachment = useCallback((index: number) => {
+  const onRemoveImage = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const onRemoveFile = useCallback((index: number) => {
+    setFileRefs((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const onSessionModeChange = useCallback(
@@ -1214,8 +1214,10 @@ export default function App() {
           onSend={send}
           onAbort={abort}
           attachments={attachments}
+          fileRefs={fileRefs}
           onAddFiles={onAddFiles}
-          onRemoveAttachment={onRemoveAttachment}
+          onRemoveImage={onRemoveImage}
+          onRemoveFile={onRemoveFile}
           disabled={!cwd}
           skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
           queuedSteering={queuedSteering}
