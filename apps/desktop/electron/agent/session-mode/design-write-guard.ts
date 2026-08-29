@@ -29,9 +29,7 @@ import { resolveInsideCwd } from "../cwd-sandbox";
 import { getReadablePluginRoots } from "../plugin-host";
 import {
   bashCommandEscapesCwd,
-  cwdEscapeBashBlockReason,
   isReadonlyBashCommand,
-  readonlyBashBlockReason,
 } from "./bash-readonly";
 
 /** Folder under cwd that the design session may write to. */
@@ -153,7 +151,7 @@ export function shouldBlockDesignSessionWrite(
     if (
       bashCommandEscapesCwd(command, cwd, getReadablePluginRoots(cwd))
     ) {
-      return { block: true, reason: cwdEscapeBashBlockReason(command) };
+      return { block: true, reason: designBashCwdEscapeBlockReason(command) };
     }
     return { block: false };
   }
@@ -215,6 +213,10 @@ function designBashBlockReason(command: string): string {
     `策划会话禁止执行写操作 bash 命令（${command.slice(0, 80)}）。` +
     `策划文档请用 write 工具写到 <cwd>/game-design/。`
   );
+}
+
+function designBashCwdEscapeBlockReason(command: string): string {
+  return `策划会话禁止 bash 访问项目目录外路径。已拦截：${command.slice(0, 120)}`;
 }
 
 /** Compatibility: exported for tests and downstream consumers. */

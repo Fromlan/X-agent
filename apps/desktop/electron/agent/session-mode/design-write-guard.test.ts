@@ -262,7 +262,7 @@ describe("shouldBlockDesignSessionWrite — design session bash 约束", () => {
     expect(r.reason).toMatch(/策划会话/);
   });
 
-  it("试图 escape cwd: block", () => {
+  it("试图 escape cwd: block + reason 措辞是策划会话(不复用 plan-mode 措辞)", () => {
     const r = shouldBlockDesignSessionWrite(
       "design",
       "bash",
@@ -270,6 +270,10 @@ describe("shouldBlockDesignSessionWrite — design session bash 约束", () => {
       CWD,
     );
     expect(r.block).toBe(true);
+    expect(r.reason).toMatch(/策划会话/);
+    // 关键回归断言: design-write-guard 不能复用 plan-mode-guard 的
+    // "调研/Plan 模式" 措辞,否则用户在 agent 模式下看到会误判 mode。
+    expect(r.reason).not.toMatch(/调研\/Plan/);
   });
 });
 
