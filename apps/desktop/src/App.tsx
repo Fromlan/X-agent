@@ -465,7 +465,21 @@ export default function App() {
    */
   const onAddFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-    const { images, references, notices } = await splitFilesForAttachment(files);
+    // 走 preload 暴露的 webUtils.getPathForFile 拿绝对路径
+    // (Electron 32+ 不再自动挂 .path). webUtils 在 renderer 是
+    // contextBridge 沙箱外的, 仅 preload 能 import; 我们通过
+    // window.xAgentPath.getForFile 间接调用.
+    const pathGetter = window.xAgentPath?.getForFile;
+    const items = files.map((file) => {
+      let absPath = "";
+      try {
+        absPath = pathGetter ? pathGetter(file) : "";
+      } catch {
+        absPath = "";
+      }
+      return { file, absPath, fallbackName: file.name };
+    });
+    const { images, references, notices } = await splitFilesForAttachment(items);
     if (images.length > 0) {
       setAttachments((prev) => [...prev, ...images]);
     }

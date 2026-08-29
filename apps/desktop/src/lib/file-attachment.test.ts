@@ -1,13 +1,15 @@
 /**
  * Vitest 套件 —— file → attachment helpers (renderer-side).
  *
- * 锁住 4 个不变量 (#42 composer attachments):
+ * 锁住 5 个不变量 (#42 composer attachments + #44 绝对路径):
  * 1. SUPPORTED_IMAGE_MIME 白名单 (png/jpeg/gif/webp 之外 → 非图片)
  * 2. MAX_IMAGE_BYTES 单张上限 (4MB)
  * 3. MAX_IMAGE_COUNT 总数上限 (4 张)
- * 4. 非图片走 @<path> 引用, 不读内容塞 prompt
+ * 4. 非图片走 <file name="<abs path>"> 块 (空 content, name 用绝对路径)
+ * 5. 切到绝对路径: splitFilesForAttachment 接 FileInput[] (含 absPath),
+ *    不再读 f.path (Electron 32+ 不可用)
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   SUPPORTED_IMAGE_MIME,
   MAX_IMAGE_BYTES,
@@ -15,13 +17,20 @@ import {
   isSupportedImage,
   readFileAsImageContent,
   splitFilesForAttachment,
+  type FileInput,
 } from "./file-attachment";
 
-function makeFile(name: string, type: string, sizeBytes: number, path = ""): File {
-  // jsdom File doesn't have `path`; cast through unknown to inject.
-  const f = new File([new Uint8Array(sizeBytes)], name, { type });
-  if (path) (f as unknown as { path: string }).path = path;
-  return f;
+function makeFile(name: string, type: string, sizeBytes: number): File {
+  return new File([new Uint8Array(sizeBytes)], name, { type });
+}
+
+/** Wrap File + absPath + optional fallback into a FileInput. */
+function input(
+  file: File,
+  absPath: string,
+  fallbackName?: string,
+): FileInput {
+  return { file, absPath, fallbackName };
 }
 
 describe("SUPPORTED_IMAGE_MIME 白名单", () => {
@@ -61,11 +70,9 @@ describe("readFileAsImageContent", () => {
   });
 
   it("正常 PNG 转 base64, 不带 data: 前缀", async () => {
-    // Stub FileReader to deterministic output
     const original = globalThis.FileReader;
     class StubFR {
       result: string | null = null;
-      error: unknown = null;
       onload: ((ev: unknown) => void) | null = null;
       onerror: ((ev: unknown) => void) | null = null;
       readAsDataURL(_file: File): void {
@@ -88,32 +95,59 @@ describe("readFileAsImageContent", () => {
 });
 
 describe("splitFilesForAttachment", () => {
-  it("非图片 → references, 不入 images", async () => {
-    const f = makeFile("data.csv", "text/csv", 10, "D:/x/data.csv");
-    const out = await splitFilesForAttachment([f]);
+  it("非图片 → <file name=\"<abs path>\"> 块 (空 content)", async () => {
+    const f = makeFile("data.csv", "text/csv", 10);
+    const out = await splitFilesForAttachment([
+      input(f, "D:/x/data.csv"),
+    ]);
     expect(out.images).toEqual([]);
-    expect(out.references).toEqual(["@D:/x/data.csv "]);
+    expect(out.references).toEqual([
+      '<file name="D:/x/data.csv">\n</file>',
+    ]);
   });
 
-  it("多文件混合: 图片入 images, 非图片入 references", async () => {
-    // stub FileReader for image
+  it("绝对路径优先: 不再用 f.name (Electron 32+ 不可用)", async () => {
+    const f = makeFile("data.csv", "text/csv", 10);
+    const out = await splitFilesForAttachment([
+      input(f, "D:/abs/path/data.csv"),
+    ]);
+    // name attribute 必须是绝对路径, 不是 f.name ("data.csv")
+    expect(out.references[0]).toContain('name="D:/abs/path/data.csv"');
+  });
+
+  it("Windows 反斜杠路径在 attr 内 → 转正斜杠 (与 @<path> 风格一致)", async () => {
+    const f = makeFile("data.csv", "text/csv", 10);
+    const out = await splitFilesForAttachment([
+      input(f, "D:\\UGit\\x\\data.csv"),
+    ]);
+    // 我们的 escapeAttr 不转 slash, 但 basename 兼容两种.
+    // 主要确认 name 含原 Windows 路径.
+    expect(out.references[0]).toContain("D:");
+  });
+
+  it("多文件混合: 图片入 images, 非图片入 <file> 块", async () => {
     const original = globalThis.FileReader;
     class StubFR {
-      result: string | null = null;
       onload: ((ev: unknown) => void) | null = null;
       onerror: ((ev: unknown) => void) | null = null;
       readAsDataURL(_file: File): void {
-        this.result = "data:image/png;base64,QUJD";
-        queueMicrotask(() => this.onload?.(null));
+        queueMicrotask(() =>
+          this.onload?.({ target: { result: "data:image/png;base64,QUJD" } } as unknown),
+        );
       }
     }
     globalThis.FileReader = StubFR as unknown as typeof FileReader;
     try {
       const png = makeFile("a.png", "image/png", 100);
-      const csv = makeFile("b.csv", "text/csv", 50, "D:/b.csv");
-      const out = await splitFilesForAttachment([png, csv]);
+      const csv = makeFile("b.csv", "text/csv", 50);
+      const out = await splitFilesForAttachment([
+        input(png, "D:/a.png"),
+        input(csv, "D:/b.csv"),
+      ]);
       expect(out.images).toHaveLength(1);
-      expect(out.references).toEqual(["@D:/b.csv "]);
+      expect(out.references).toEqual([
+        '<file name="D:/b.csv">\n</file>',
+      ]);
     } finally {
       globalThis.FileReader = original;
     }
@@ -132,10 +166,10 @@ describe("splitFilesForAttachment", () => {
     }
     globalThis.FileReader = StubFR as unknown as typeof FileReader;
     try {
-      const files = Array.from({ length: 6 }, (_, i) =>
-        makeFile(`f${i}.png`, "image/png", 100),
+      const items = Array.from({ length: 6 }, (_, i) =>
+        input(makeFile(`f${i}.png`, "image/png", 100), `D:/f${i}.png`),
       );
-      const out = await splitFilesForAttachment(files);
+      const out = await splitFilesForAttachment(items);
       expect(out.images).toHaveLength(MAX_IMAGE_COUNT);
       expect(out.notices.some((n) => n.includes("上限"))).toBe(true);
     } finally {
@@ -143,17 +177,44 @@ describe("splitFilesForAttachment", () => {
     }
   });
 
-  it("非图片无 path 字段 → 用 f.name 兜底, 不报错", async () => {
+  it("absPath 空 → 用 fallbackName (或 f.name), 不报错", async () => {
     const f = makeFile("only-name.txt", "text/plain", 5);
-    const out = await splitFilesForAttachment([f]);
-    // jsdom File 没有 path, splitFilesForAttachment 退到 f.name 作 fallback
-    expect(out.references).toEqual(["@only-name.txt "]);
+    const out = await splitFilesForAttachment([
+      input(f, "", "fallback.txt"),
+    ]);
+    expect(out.references).toEqual([
+      '<file name="fallback.txt">\n</file>',
+    ]);
+  });
+
+  it("absPath + fallbackName 都空 → 退到 f.name 兜底 (浏览器 File.name 总有值)", async () => {
+    const f = makeFile("orphan.txt", "text/plain", 5);
+    const out = await splitFilesForAttachment([input(f, "")]);
+    // 三层 fallback: absPath → fallbackName → f.name
+    expect(out.references).toEqual([
+      '<file name="orphan.txt">\n</file>',
+    ]);
   });
 
   it("超大图片单张 → 进 notices, 不入 images", async () => {
     const big = makeFile("big.png", "image/png", MAX_IMAGE_BYTES + 1);
-    const out = await splitFilesForAttachment([big]);
+    const out = await splitFilesForAttachment([
+      input(big, "D:/big.png"),
+    ]);
     expect(out.images).toEqual([]);
     expect(out.notices.some((n) => n.includes("图片过大"))).toBe(true);
+    // notice 用 basename 而不是全路径
+    expect(out.notices[0]).toContain("big.png");
+    expect(out.notices[0]).not.toContain("D:/big.png");
+  });
+
+  it("XML 注入防御: 路径含 '\"' 或 '<' 时 attr 被转义", async () => {
+    const f = makeFile("a.csv", "text/csv", 10);
+    const out = await splitFilesForAttachment([
+      input(f, 'D:/x/"<script>.csv'),
+    ]);
+    expect(out.references[0]).toContain("&quot;");
+    expect(out.references[0]).toContain("&lt;");
+    expect(out.references[0]).not.toContain('"<script>');
   });
 });

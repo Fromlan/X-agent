@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { DELETED_FLAT_KEYS } from "../shared/ipc";
 import type {
   AppUpdateStatus,
@@ -184,3 +184,18 @@ const exposed: XAgentApi = {
 } as XAgentApi;
 
 contextBridge.exposeInMainWorld("xAgent", exposed);
+
+// Drag-and-drop helper: Electron 32+ no longer augments File with `.path`
+// (security: cross-origin drag). Renderer 进程需要走 webUtils.getPathForFile
+// 拿绝对路径, 用于 @<path> 引用 / cwd-sandbox resolve. Expose it via
+// contextBridge so the sandboxed renderer can call it without importing
+// 'electron' directly.
+contextBridge.exposeInMainWorld("xAgentPath", {
+  getForFile: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return "";
+    }
+  },
+});
