@@ -21,6 +21,7 @@ import {
   type OpenProjectResult,
   type PlanContentResult,
   type PlanMutateResult,
+  type PromptPayload,
   type PromptResult,
   type RetractOptions,
   type RetractPreview,
@@ -198,7 +199,7 @@ export class SessionHost {
       emit: (event) => this.emit(event),
       emitReplaceableNotice: (replaceKey, text, level) =>
         this.emitReplaceableNotice(replaceKey, text, level),
-      prompt: (text) => this.prompt(text),
+      prompt: (text) => this.prompt({ text }),
       ensureRuntime: () => this.ensureRuntime(),
       getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
       getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
@@ -214,7 +215,7 @@ export class SessionHost {
       pruneToolDetailsToBranch: () => this.pruneToolDetailsToBranch(),
       emitHistoryReplace: () => this.emitHistoryReplace(),
       emitUsageUpdate: () => this.emitUsageUpdate(),
-      prompt: (text) => this.prompt(text),
+      prompt: (text) => this.prompt({ text }),
       isPromptPreparing: () => this.promptPreparing,
       onRetractSuccess: (abandonedUserEntryIds) =>
         this.sessionMode.rollbackGoalAfterRetract(abandonedUserEntryIds),
@@ -741,21 +742,23 @@ export class SessionHost {
     return this.lifecycle.dispose();
   }
 
-  async prompt(text: string): Promise<PromptResult> {
+  async prompt(payload: PromptPayload): Promise<PromptResult> {
     const bundle = this.bundle;
     if (!bundle) {
       dbgLog("session", "prompt rejected: no bundle");
       return { ok: false, error: "尚未打开项目" };
     }
-    const trimmed = text.trim();
-    if (!trimmed) {
-      dbgLog("session", "prompt rejected: empty text");
+    const text = (payload?.text ?? "").trim();
+    const images = payload?.images;
+    if (!text && (!images || images.length === 0)) {
+      dbgLog("session", "prompt rejected: empty text and no images");
       return { ok: false, error: "消息不能为空" };
     }
 
     dbgLog("session", "prompt start", {
-      len: trimmed.length,
-      preview: trimmed.slice(0, 80),
+      len: text.length,
+      preview: text.slice(0, 80),
+      imageCount: images?.length ?? 0,
       isStreaming: bundle.session.isStreaming,
     });
     const doneShadow = dbgTimer("session", "preparePromptCheckpoint");
@@ -764,8 +767,8 @@ export class SessionHost {
 
     try {
       const { session } = bundle;
-      const slashName = trimmed.startsWith("/")
-        ? (trimmed.match(/^\/([^\s]+)/)?.[1] ?? "")
+      const slashName = text.startsWith("/")
+        ? (text.match(/^\/([^\s]+)/)?.[1] ?? "")
         : "";
       const isExtensionCommand =
         Boolean(slashName) &&
@@ -774,9 +777,9 @@ export class SessionHost {
 
       // Wrap prompt templates as `<prompt>` so the UI can chip them
       // (Pi already wraps `/skill:name` as `<skill>`).
-      let sendText = trimmed;
+      let sendText = text;
       if (!isExtensionCommand) {
-        const wrapped = wrapPromptSlashAsBlock(trimmed, [
+        const wrapped = wrapPromptSlashAsBlock(text, [
           ...session.promptTemplates,
         ]);
         if (wrapped) sendText = wrapped;
@@ -784,7 +787,7 @@ export class SessionHost {
 
       if (session.isStreaming) {
         dbgLog("session", "prompt: steer into active stream");
-        await session.prompt(sendText, { streamingBehavior: "steer" });
+        await session.prompt(sendText, { streamingBehavior: "steer", images });
         donePi();
       } else {
         dbgLog("session", "prompt: prepare shadow checkpoint…");
@@ -802,7 +805,7 @@ export class SessionHost {
           dbgLog("session", "prompt aborted: bundle switched during shadow");
           return { ok: false, error: "会话已切换" };
         }
-        await session.prompt(sendText);
+        await session.prompt(sendText, { images });
         donePi();
       }
       if (this.bundle !== bundle) {

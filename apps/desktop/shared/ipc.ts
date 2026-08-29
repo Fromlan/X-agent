@@ -585,6 +585,34 @@ export interface PromptResult {
   silent?: boolean;
 }
 
+/**
+ * Image attachment for a prompt. Mirrors the shape of Pi SDK's
+ * `ImageContent` (declared in `@earendil-works/pi-ai/dist/types.d.ts`)
+ * but lives in `shared/` so the renderer never has to import the
+ * Pi SDK type directly — keeps the renderer bundle free of
+ * `@earendil-works/pi-ai`.
+ *
+ * The data is the base64-encoded image body (no `data:` URL prefix).
+ * mimeType must be one of the supported image types; the renderer
+ * enforces the whitelist at attachment time.
+ */
+export interface ImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+/**
+ * Payload for the renderer → main `prompt` IPC. `text` is required
+ * but may be empty when `images` carries the message (e.g. paste a
+ * screenshot with no caption). main-side rejects the call when both
+ * are empty.
+ */
+export interface PromptPayload {
+  text: string;
+  images?: ImageContent[];
+}
+
 /** Serializable chat history item shared by main ↔ renderer. */
 export type HistoryItem =
   | { kind: "user"; id: string; text: string; entryId?: string }
@@ -1284,7 +1312,7 @@ export type GodotApi = {
  */
 export type IpcInvokeMap = {
   openProject: (path?: string, mode?: OpenProjectMode) => Promise<OpenProjectResult>;
-  prompt: (text: string) => Promise<PromptResult>;
+  prompt: (payload: PromptPayload) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
   previewRetract: (entryId: string) => Promise<RetractPreview>;
   retractToUserMessage: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;

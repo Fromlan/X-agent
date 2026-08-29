@@ -2,6 +2,7 @@ import type {
   AgentSessionMode,
   AgentStatus,
   GoalInfo,
+  ImageContent,
   ModelInfo,
   SessionSlashItem,
   ThinkingLevel,
@@ -39,6 +40,8 @@ import {
 import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
 import { ThinkingOrb } from "./ThinkingOrb";
+import { ComposerAttachments } from "./ComposerAttachments";
+import { MAX_IMAGE_COUNT, type FileReference } from "../lib/file-attachment";
 import type { RefObject } from "react";
 
 /** @-补全 path 候选暂未接入 file-tree IPC；空数组常量化避免每次渲染新建引用。 */
@@ -97,6 +100,18 @@ interface Props {
    * Used by parent to track scroll position (e.g. mount TopBar shadow).
    */
   externalStreamRef?: RefObject<HTMLDivElement | null>;
+  /** 已附图片 (粘贴截图 / 拖放图片). 非空时 composer 上方显示缩略图 chip. */
+  attachments?: ImageContent[];
+  /** 已附文件 (拖入 / 粘贴的非图片). 与图片共享同一片 chip 区域. */
+  fileRefs?: FileReference[];
+  /** Hard cap on attachment count, displayed in chip counter. */
+  maxAttachmentCount?: number;
+  /** 移除第 i 个图片附件. */
+  onRemoveImage?: (index: number) => void;
+  /** 移除第 i 个文件附件. */
+  onRemoveFile?: (index: number) => void;
+  /** 拖文件 / 粘贴文件 → 分类后入 attachments (图片) + fileRefs (其他). */
+  onAddFiles?: (files: File[]) => void;
 }
 
 /** Render an "已等待 12s" suffix when the wait exceeds 3 seconds. */
@@ -118,6 +133,40 @@ function ChatPanelImpl(props: Props) {
   const composerLocked = props.disabled || Boolean(props.editingEntryId);
   const sessionMode = props.sessionMode ?? "agent";
   const modeSwitchDisabled = composerLocked || streaming;
+
+  // Drag-over visual for the composer shell. Files dropped anywhere
+  // on the shell are accepted (not just on the textarea).
+  const [isDragOver, setIsDragOver] = useState(false);
+  const attachments = props.attachments ?? [];
+  const fileRefs = props.fileRefs ?? [];
+  const maxAttachments = props.maxAttachmentCount ?? MAX_IMAGE_COUNT;
+  const onShellDragOver = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (!props.onAddFiles || composerLocked) return;
+      if (e.dataTransfer.types.includes("Files")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!isDragOver) setIsDragOver(true);
+      }
+    },
+    [props.onAddFiles, composerLocked, isDragOver],
+  );
+  const onShellDragLeave = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (e.currentTarget === e.target) setIsDragOver(false);
+    },
+    [],
+  );
+  const onShellDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      if (!props.onAddFiles || composerLocked) return;
+      e.preventDefault();
+      setIsDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) props.onAddFiles(files);
+    },
+    [props.onAddFiles, composerLocked],
+  );
 
   // 底部工具条：模型 / Thinking SelectMenu 的派生数据
   const modelOptions =
@@ -376,7 +425,18 @@ function ChatPanelImpl(props: Props) {
           className="composer-shell"
           data-session-mode={sessionMode}
           data-streaming={streaming ? "true" : undefined}
+          data-dragover={isDragOver ? "true" : undefined}
+          onDragOver={onShellDragOver}
+          onDragLeave={onShellDragLeave}
+          onDrop={onShellDrop}
         >
+          <ComposerAttachments
+            attachments={attachments}
+            fileRefs={fileRefs}
+            onRemoveImage={(i) => props.onRemoveImage?.(i)}
+            onRemoveFile={(i) => props.onRemoveFile?.(i)}
+            maxImageCount={maxAttachments}
+          />
           <SlashMenu
             open={menuOpen}
             items={filtered}
@@ -447,6 +507,22 @@ function ChatPanelImpl(props: Props) {
             onClick={syncCursor}
             onKeyUp={syncCursor}
             onSelect={syncCursor}
+            onPaste={(e) => {
+              if (!props.onAddFiles || composerLocked) return;
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              for (const it of items) {
+                if (it.kind === "file" && it.type.startsWith("image/")) {
+                  const f = it.getAsFile();
+                  if (f) {
+                    e.preventDefault();
+                    props.onAddFiles([f]);
+                    return;
+                  }
+                }
+              }
+              // 非图片的 paste 走默认行为 (粘贴纯文本)
+            }}
             placeholder={
               props.disabled
                 ? "请先打开项目…"

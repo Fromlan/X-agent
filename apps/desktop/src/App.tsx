@@ -16,6 +16,7 @@ import type {
   ClientPrefs,
   GitCheckResult,
   GoalInfo,
+  ImageContent,
   ModelInfo,
   PiCliStatus,
   PrefsRecoveryNotice,
@@ -52,6 +53,7 @@ import {
   collapseFileBlocksToAtPaths,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
+import { splitFilesForAttachment, type FileReference } from "./lib/file-attachment";
 import { startersForProject } from "./lib/chat-starters";
 import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
@@ -110,6 +112,14 @@ export default function App() {
   const [piCliInstalling, setPiCliInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<ImageContent[]>([]);
+  /**
+   * 拖入 / 粘贴的非图片文件. 不入 attachments (那是图片), 单独
+   * state. 短串显示在 input 文本 (📎 <basename>), 绝对路径
+   * 在 send 时拼到 user message (走 expandAtPaths 展开成 <file> 块)
+   * 让 AI 看到完整路径.
+   */
+  const [fileRefs, setFileRefs] = useState<FileReference[]>([]);
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
   const [sessionType, setSessionType] = useState<SessionType>(DEFAULT_SESSION_TYPE);
@@ -367,7 +377,14 @@ export default function App() {
       return;
     }
     const text = input.trim();
+    // Snapshot attachments / fileRefs before clearing input so we can
+    // pass them into the IPC payload + expandAtPaths. Cleared below
+    // to keep empty state on send.
+    const currentAttachments = attachments;
+    const currentFileRefs = fileRefs;
     setInput("");
+    setAttachments([]);
+    setFileRefs([]);
     setError(null);
     setFollowNonce((n) => n + 1);
     dbgLog("chat", "send invoked", { len: text.length, preview: text.slice(0, 80), status, sessionMode });
@@ -435,10 +452,13 @@ export default function App() {
     setItems((prev) => appendPendingUser(prev, text, pendingId));
 
     const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
-    const expanded = await expandAtPathsInPrompt(text);
+    const expanded = await expandAtPathsInPrompt(text, currentFileRefs);
     doneExpand();
     const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
-    const result = await window.xAgent.turn.prompt(expanded);
+    const result = await window.xAgent.turn.prompt({
+      text: expanded,
+      images: currentAttachments.length > 0 ? currentAttachments : undefined,
+    });
     doneRoundtrip();
     dbgLog("chat", "turn.prompt resolved", { ok: result.ok, silent: result.silent, error: result.error });
     if (!result.ok || result.silent) {
@@ -446,7 +466,51 @@ export default function App() {
       if (!result.ok) setError(result.error ?? "发送失败");
     }
     await refreshSessions();
-  }, [input, cwd, sessionMode, goal, refreshSessions, status]);
+  }, [input, attachments, fileRefs, cwd, sessionMode, goal, refreshSessions, status]);
+
+  /**
+   * Composer 拖文件 / 粘贴文件时调用. 分类为图片 (入 attachments) 和
+   * 非图片 (拼 @<path> 引用到 input 文本, 走现有 expandAtPaths 路径).
+   * notices 推给 setError 横幅.
+   */
+  const onAddFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    // 走 preload 暴露的 webUtils.getPathForFile 拿绝对路径
+    // (Electron 32+ 不再自动挂 .path). webUtils 在 renderer 是
+    // contextBridge 沙箱外的, 仅 preload 能 import; 我们通过
+    // window.xAgentPath.getForFile 间接调用.
+    const pathGetter = window.xAgentPath?.getForFile;
+    const items = files.map((file) => {
+      let absPath = "";
+      try {
+        absPath = pathGetter ? pathGetter(file) : "";
+      } catch {
+        absPath = "";
+      }
+      return { file, absPath, fallbackName: file.name };
+    });
+    const { images, references, notices } = await splitFilesForAttachment(items);
+    if (images.length > 0) {
+      setAttachments((prev) => [...prev, ...images]);
+    }
+    if (references.length > 0) {
+      // 文件不进 input 文本 —— 由 ComposerAttachments 渲染成 chip
+      // (跟图片附件同区域). 绝对路径存 fileRefs state, send 时
+      // 走 expandAtPaths 展开成 <file> 块拼到 user message 末尾.
+      setFileRefs((prev) => [...prev, ...references]);
+    }
+    if (notices.length > 0) {
+      setError(notices.join("\n"));
+    }
+  }, []);
+
+  const onRemoveImage = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const onRemoveFile = useCallback((index: number) => {
+    setFileRefs((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   const onSessionModeChange = useCallback(
     async (mode: AgentSessionMode) => {
@@ -733,7 +797,7 @@ export default function App() {
       const pendingId = makePendingUserId();
       setItems((prev) => appendPendingUser(prev, text, pendingId));
       const expanded = await expandAtPathsInPrompt(text);
-      const result = await window.xAgent.turn.prompt(expanded);
+      const result = await window.xAgent.turn.prompt({ text: expanded });
       if (!result.ok || result.silent) {
         setItems((prev) => removePendingUser(prev, pendingId));
         if (!result.ok) {
@@ -1149,6 +1213,11 @@ export default function App() {
           setInput={setInput}
           onSend={send}
           onAbort={abort}
+          attachments={attachments}
+          fileRefs={fileRefs}
+          onAddFiles={onAddFiles}
+          onRemoveImage={onRemoveImage}
+          onRemoveFile={onRemoveFile}
           disabled={!cwd}
           skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
           queuedSteering={queuedSteering}

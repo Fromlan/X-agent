@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { DELETED_FLAT_KEYS } from "../shared/ipc";
 import type {
   AppUpdateStatus,
@@ -6,6 +6,7 @@ import type {
   FlatInvokeApi,
   IpcChannelKey,
   IpcInvokeMap,
+  PromptPayload,
   UiAgentEvent,
   XAgentApi,
   XAgentApiFlat,
@@ -36,10 +37,13 @@ function makeInvokeApi(): FlatInvokeApi {
 const api = makeInvokeApi();
 
 // Channel-keyed methods that keep custom logging on the renderer side.
-api.prompt = ((text: string) => {
-  dbgLog("preload", "invoke prompt", { len: text?.length, preview: text?.slice(0, 80) });
+api.prompt = ((payload: PromptPayload) => {
+  dbgLog("preload", "invoke prompt", {
+    textLen: payload?.text?.length,
+    imageCount: payload?.images?.length ?? 0,
+  });
   const done = dbgTimer("preload", "prompt roundtrip");
-  return ipcRenderer.invoke(IPC_CHANNELS.prompt, text).then((result) => {
+  return ipcRenderer.invoke(IPC_CHANNELS.prompt, payload).then((result) => {
     done();
     dbgLog("preload", "prompt result", result);
     return result;
@@ -180,3 +184,18 @@ const exposed: XAgentApi = {
 } as XAgentApi;
 
 contextBridge.exposeInMainWorld("xAgent", exposed);
+
+// Drag-and-drop helper: Electron 32+ no longer augments File with `.path`
+// (security: cross-origin drag). Renderer 进程需要走 webUtils.getPathForFile
+// 拿绝对路径, 用于 @<path> 引用 / cwd-sandbox resolve. Expose it via
+// contextBridge so the sandboxed renderer can call it without importing
+// 'electron' directly.
+contextBridge.exposeInMainWorld("xAgentPath", {
+  getForFile: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return "";
+    }
+  },
+});

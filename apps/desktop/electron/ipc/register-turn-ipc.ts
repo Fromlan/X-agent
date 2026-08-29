@@ -1,6 +1,7 @@
 import type { IpcMain } from "electron";
 import type { SessionHost } from "../agent/session-host";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import type { PromptPayload } from "../../shared/ipc";
 import { dbgLog, dbgTimer } from "../../shared/debug-log";
 import { handle } from "./register-ipc";
 
@@ -13,14 +14,18 @@ export function registerTurnIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
 ): void {
-  handle(ipcMain, IPC_CHANNELS.prompt, async (_e, text: string) => {
+  handle(ipcMain, IPC_CHANNELS.prompt, async (_e, payload: PromptPayload) => {
+    const text = payload?.text ?? "";
     if (typeof text !== "string" || text.length > PROMPT_MAX_LENGTH) {
       return { ok: false, error: `消息过长（上限 ${PROMPT_MAX_LENGTH} 字符）` };
     }
-    dbgLog("ipc", "prompt handler entered", { len: text?.length });
+    dbgLog("ipc", "prompt handler entered", {
+      len: text.length,
+      imageCount: payload?.images?.length ?? 0,
+    });
     const done = dbgTimer("ipc", "prompt handler");
     try {
-      const result = await sessionHost.prompt(text);
+      const result = await sessionHost.prompt(payload);
       done();
       dbgLog("ipc", "prompt handler result", { ok: result.ok, silent: result.silent, error: result.error });
       return result;
