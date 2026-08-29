@@ -61,9 +61,29 @@ export function collapseFileBlocksToAtPaths(text: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trimEnd();
 }
 
-export async function expandAtPathsInPrompt(text: string): Promise<string> {
+export async function expandAtPathsInPrompt(
+  text: string,
+  extraRefs: ReadonlyArray<{ absPath: string; displayName?: string }> = [],
+): Promise<string> {
+  // Pass 1: extra refs from drag/drop (e.g. "📎 foo.csv" markers).
+  // Force-resolve from absolute path; emit empty `<file>` block on
+  // failure so the renderer still collapses it to a chip.
+  const extraBlocks: string[] = [];
+  for (const r of extraRefs) {
+    const abs = r.absPath;
+    if (!abs) continue;
+    const res = await window.xAgent.readProjectFile(abs);
+    if (res.ok && res.content != null) {
+      extraBlocks.push(`<file name="${abs}">\n${res.content}\n</file>`);
+    } else {
+      // cwd 外 / 二进制 / 过大 → 保留绝对路径作为 file 块, content 空
+      extraBlocks.push(`<file name="${abs}">\n</file>`);
+    }
+  }
+
+  // Pass 2: `@<rel-or-abs>` tokens inside the composer text.
   const matches = [...text.matchAll(AT_PATH_RE)];
-  if (matches.length === 0) return text;
+  if (matches.length === 0 && extraBlocks.length === 0) return text;
 
   const unique = [
     ...new Set(matches.map((m) => m[1].replace(/\\/g, "/"))),
@@ -85,8 +105,13 @@ export async function expandAtPathsInPrompt(text: string): Promise<string> {
     }),
   );
 
-  return text.replace(AT_PATH_RE, (full, rawPath: string) => {
+  const replaced = text.replace(AT_PATH_RE, (full, rawPath: string) => {
     const rel = rawPath.replace(/\\/g, "/");
     return expansions.get(rel) ?? full;
   });
+
+  if (extraBlocks.length === 0) return replaced;
+  // Append extra refs as a trailing block. Empty line keeps the
+  // user's prose separate from the file references.
+  return `${replaced}${replaced.endsWith("\n") ? "" : "\n\n"}${extraBlocks.join("\n")}`;
 }

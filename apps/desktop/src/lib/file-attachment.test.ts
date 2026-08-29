@@ -95,14 +95,14 @@ describe("readFileAsImageContent", () => {
 });
 
 describe("splitFilesForAttachment", () => {
-  it("非图片 → <file name=\"<abs path>\"> 块 (空 content)", async () => {
+  it("非图片 → references: {absPath, displayName}, basename 来自 absPath", async () => {
     const f = makeFile("data.csv", "text/csv", 10);
     const out = await splitFilesForAttachment([
       input(f, "D:/x/data.csv"),
     ]);
     expect(out.images).toEqual([]);
     expect(out.references).toEqual([
-      '<file name="D:/x/data.csv">\n</file>',
+      { absPath: "D:/x/data.csv", displayName: "data.csv" },
     ]);
   });
 
@@ -111,21 +111,27 @@ describe("splitFilesForAttachment", () => {
     const out = await splitFilesForAttachment([
       input(f, "D:/abs/path/data.csv"),
     ]);
-    // name attribute 必须是绝对路径, 不是 f.name ("data.csv")
-    expect(out.references[0]).toContain('name="D:/abs/path/data.csv"');
+    // absPath 必须是绝对路径, 不是 f.name ("data.csv")
+    expect(out.references[0]?.absPath).toBe("D:/abs/path/data.csv");
   });
 
-  it("Windows 反斜杠路径在 attr 内 → 转正斜杠 (与 @<path> 风格一致)", async () => {
+  it("Windows 反斜杠路径: basename 兼容 (取最后一段, 不论 / 还是 \\)", async () => {
     const f = makeFile("data.csv", "text/csv", 10);
     const out = await splitFilesForAttachment([
       input(f, "D:\\UGit\\x\\data.csv"),
     ]);
-    // 我们的 escapeAttr 不转 slash, 但 basename 兼容两种.
-    // 主要确认 name 含原 Windows 路径.
-    expect(out.references[0]).toContain("D:");
+    expect(out.references[0]?.displayName).toBe("data.csv");
   });
 
-  it("多文件混合: 图片入 images, 非图片入 <file> 块", async () => {
+  it("displayName 路径里有子目录: basename 取最后一段", async () => {
+    const f = makeFile("ignored", "text/csv", 10);
+    const out = await splitFilesForAttachment([
+      input(f, "D:/UGit/z-2/config/01_chess_pieces.csv"),
+    ]);
+    expect(out.references[0]?.displayName).toBe("01_chess_pieces.csv");
+  });
+
+  it("多文件混合: 图片入 images, 非图片入 references", async () => {
     const original = globalThis.FileReader;
     class StubFR {
       onload: ((ev: unknown) => void) | null = null;
@@ -146,7 +152,7 @@ describe("splitFilesForAttachment", () => {
       ]);
       expect(out.images).toHaveLength(1);
       expect(out.references).toEqual([
-        '<file name="D:/b.csv">\n</file>',
+        { absPath: "D:/b.csv", displayName: "b.csv" },
       ]);
     } finally {
       globalThis.FileReader = original;
@@ -177,22 +183,21 @@ describe("splitFilesForAttachment", () => {
     }
   });
 
-  it("absPath 空 → 用 fallbackName (或 f.name), 不报错", async () => {
+  it("absPath 空 → 用 fallbackName 作 absPath (displayName 也取 fallbackName)", async () => {
     const f = makeFile("only-name.txt", "text/plain", 5);
     const out = await splitFilesForAttachment([
       input(f, "", "fallback.txt"),
     ]);
     expect(out.references).toEqual([
-      '<file name="fallback.txt">\n</file>',
+      { absPath: "fallback.txt", displayName: "fallback.txt" },
     ]);
   });
 
-  it("absPath + fallbackName 都空 → 退到 f.name 兜底 (浏览器 File.name 总有值)", async () => {
+  it("absPath + fallbackName 都空 → 退到 f.name 兜底", async () => {
     const f = makeFile("orphan.txt", "text/plain", 5);
     const out = await splitFilesForAttachment([input(f, "")]);
-    // 三层 fallback: absPath → fallbackName → f.name
     expect(out.references).toEqual([
-      '<file name="orphan.txt">\n</file>',
+      { absPath: "orphan.txt", displayName: "orphan.txt" },
     ]);
   });
 
@@ -206,15 +211,5 @@ describe("splitFilesForAttachment", () => {
     // notice 用 basename 而不是全路径
     expect(out.notices[0]).toContain("big.png");
     expect(out.notices[0]).not.toContain("D:/big.png");
-  });
-
-  it("XML 注入防御: 路径含 '\"' 或 '<' 时 attr 被转义", async () => {
-    const f = makeFile("a.csv", "text/csv", 10);
-    const out = await splitFilesForAttachment([
-      input(f, 'D:/x/"<script>.csv'),
-    ]);
-    expect(out.references[0]).toContain("&quot;");
-    expect(out.references[0]).toContain("&lt;");
-    expect(out.references[0]).not.toContain('"<script>');
   });
 });

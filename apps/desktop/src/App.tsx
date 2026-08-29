@@ -53,7 +53,7 @@ import {
   collapseFileBlocksToAtPaths,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
-import { splitFilesForAttachment } from "./lib/file-attachment";
+import { splitFilesForAttachment, type FileReference } from "./lib/file-attachment";
 import { startersForProject } from "./lib/chat-starters";
 import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
@@ -113,6 +113,13 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ImageContent[]>([]);
+  /**
+   * 拖入 / 粘贴的非图片文件. 不入 attachments (那是图片), 单独
+   * state. 短串显示在 input 文本 (📎 <basename>), 绝对路径
+   * 在 send 时拼到 user message (走 expandAtPaths 展开成 <file> 块)
+   * 让 AI 看到完整路径.
+   */
+  const [fileRefs, setFileRefs] = useState<FileReference[]>([]);
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
   const [sessionType, setSessionType] = useState<SessionType>(DEFAULT_SESSION_TYPE);
@@ -370,11 +377,14 @@ export default function App() {
       return;
     }
     const text = input.trim();
-    // Snapshot attachments before clearing input so we can pass them
-    // into the IPC payload. Cleared below to keep empty state on send.
+    // Snapshot attachments / fileRefs before clearing input so we can
+    // pass them into the IPC payload + expandAtPaths. Cleared below
+    // to keep empty state on send.
     const currentAttachments = attachments;
+    const currentFileRefs = fileRefs;
     setInput("");
     setAttachments([]);
+    setFileRefs([]);
     setError(null);
     setFollowNonce((n) => n + 1);
     dbgLog("chat", "send invoked", { len: text.length, preview: text.slice(0, 80), status, sessionMode });
@@ -442,7 +452,7 @@ export default function App() {
     setItems((prev) => appendPendingUser(prev, text, pendingId));
 
     const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
-    const expanded = await expandAtPathsInPrompt(text);
+    const expanded = await expandAtPathsInPrompt(text, currentFileRefs);
     doneExpand();
     const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
     const result = await window.xAgent.turn.prompt({
@@ -456,7 +466,7 @@ export default function App() {
       if (!result.ok) setError(result.error ?? "发送失败");
     }
     await refreshSessions();
-  }, [input, attachments, cwd, sessionMode, goal, refreshSessions, status]);
+  }, [input, attachments, fileRefs, cwd, sessionMode, goal, refreshSessions, status]);
 
   /**
    * Composer 拖文件 / 粘贴文件时调用. 分类为图片 (入 attachments) 和
@@ -484,7 +494,14 @@ export default function App() {
       setAttachments((prev) => [...prev, ...images]);
     }
     if (references.length > 0) {
-      setInput((prev) => prev + references.join(""));
+      // Input 文本只显示短串 (📎 <basename>), 绝对路径单独存
+      // fileRefs state, send 时拼到 user message 末尾 (走
+      // expandAtPaths 展开成 <file> 块). 这样 composer 短, AI
+      // 拿到完整路径.
+      setInput((prev) =>
+        prev + references.map((r) => `📎 ${r.displayName} `).join(""),
+      );
+      setFileRefs((prev) => [...prev, ...references]);
     }
     if (notices.length > 0) {
       setError(notices.join("\n"));

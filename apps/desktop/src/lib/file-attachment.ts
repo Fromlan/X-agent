@@ -44,18 +44,30 @@ export interface FileInput {
   fallbackName?: string;
 }
 
+/**
+ * A dropped/pasted non-image file. Carries the basename for short
+ * display in the composer, plus the absolute path the model needs
+ * to `read` it. Composer shows `📎 <basename>`; the absolute path
+ * flows out-of-band to the send pipeline so the model sees it.
+ */
+export interface FileReference {
+  /** Absolute path on disk (empty if Electron could not resolve). */
+  absPath: string;
+  /** Basename (e.g. "01_chess_pieces.csv"). */
+  displayName: string;
+}
+
 /** Result of splitting dropped / pasted files into image vs reference. */
 export interface AttachmentSplit {
   /** Image attachments ready to be added to `ImageContent[]`. */
   images: ImageContent[];
   /**
-   * `<file name="<abs path>">\n</file>` blocks (empty content). Pushed
-   * into the composer input verbatim. User message renderer collapses
-   * these to a chip with basename + tooltip = full path. The absolute
-   * path is preserved in the `name` attribute so the model can use
-   * the `read` tool with the full path.
+   * File references. Caller decides how to surface them in the
+   * composer (short chip, `<file>` block, etc.) and how to ship the
+   * absolute path to the model (PromptPayload extensions, separate
+   * send pipeline, etc.).
    */
-  references: string[];
+  references: FileReference[];
   /** Notes for the user (skipped files with reasons). */
   notices: string[];
 }
@@ -95,7 +107,7 @@ export async function splitFilesForAttachment(
   items: FileInput[],
 ): Promise<AttachmentSplit> {
   const images: ImageContent[] = [];
-  const references: string[] = [];
+  const references: FileReference[] = [];
   const notices: string[] = [];
   let imageSkipped = 0;
   for (const { file, absPath, fallbackName } of items) {
@@ -123,17 +135,20 @@ export async function splitFilesForAttachment(
       }
       continue;
     }
-    // Non-image: emit `<file name="<abs path>">\n</file>` block. The
-    // block name carries the absolute path so the model can `read` it.
-    // expandAtPaths does not touch pre-existing `<file>` blocks, so
-    // this round-trips verbatim. The renderer collapses it to a chip
-    // showing the basename (full path in tooltip).
-    const ref = absPath || fallbackName || file.name;
-    if (!ref) {
+    // Non-image: emit structured FileReference. Caller renders
+    // `📎 <displayName>` in composer (short) and ships `<absPath>` to
+    // the model out-of-band (e.g. via `<file>` block appended to
+    // expanded prompt). Keeps the composer free of long paths while
+    // preserving the model-side reference.
+    const refPath = absPath || fallbackName || file.name;
+    if (!refPath) {
       notices.push(`文件无路径，已跳过：${file.name}`);
       continue;
     }
-    references.push(`<file name="${escapeAttr(ref)}">\n</file>`);
+    references.push({
+      absPath: refPath,
+      displayName,
+    });
   }
   if (imageSkipped > 0) {
     notices.push(`已达图片上限 ${MAX_IMAGE_COUNT} 张，跳过 ${imageSkipped} 张`);
@@ -147,15 +162,6 @@ function basename(p: string): string {
   // Strip both Unix and Windows separators, take last segment.
   const m = /([^/\\]+)[/\\]*$/.exec(p);
   return m ? m[1]! : p;
-}
-
-/** Escape `<` / `>` / `"` / `&` for safe insertion into XML-ish attributes. */
-function escapeAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function readAsDataUrl(file: File): Promise<string> {
