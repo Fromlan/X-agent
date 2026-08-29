@@ -16,6 +16,7 @@ import type {
   ClientPrefs,
   GitCheckResult,
   GoalInfo,
+  ImageContent,
   ModelInfo,
   PiCliStatus,
   PrefsRecoveryNotice,
@@ -52,6 +53,7 @@ import {
   collapseFileBlocksToAtPaths,
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
+import { splitFilesForAttachment } from "./lib/file-attachment";
 import { startersForProject } from "./lib/chat-starters";
 import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
@@ -110,6 +112,7 @@ export default function App() {
   const [piCliInstalling, setPiCliInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<ImageContent[]>([]);
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
   const [sessionType, setSessionType] = useState<SessionType>(DEFAULT_SESSION_TYPE);
@@ -367,7 +370,11 @@ export default function App() {
       return;
     }
     const text = input.trim();
+    // Snapshot attachments before clearing input so we can pass them
+    // into the IPC payload. Cleared below to keep empty state on send.
+    const currentAttachments = attachments;
     setInput("");
+    setAttachments([]);
     setError(null);
     setFollowNonce((n) => n + 1);
     dbgLog("chat", "send invoked", { len: text.length, preview: text.slice(0, 80), status, sessionMode });
@@ -438,7 +445,10 @@ export default function App() {
     const expanded = await expandAtPathsInPrompt(text);
     doneExpand();
     const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
-    const result = await window.xAgent.turn.prompt({ text: expanded });
+    const result = await window.xAgent.turn.prompt({
+      text: expanded,
+      images: currentAttachments.length > 0 ? currentAttachments : undefined,
+    });
     doneRoundtrip();
     dbgLog("chat", "turn.prompt resolved", { ok: result.ok, silent: result.silent, error: result.error });
     if (!result.ok || result.silent) {
@@ -446,7 +456,30 @@ export default function App() {
       if (!result.ok) setError(result.error ?? "发送失败");
     }
     await refreshSessions();
-  }, [input, cwd, sessionMode, goal, refreshSessions, status]);
+  }, [input, attachments, cwd, sessionMode, goal, refreshSessions, status]);
+
+  /**
+   * Composer 拖文件 / 粘贴文件时调用. 分类为图片 (入 attachments) 和
+   * 非图片 (拼 @<path> 引用到 input 文本, 走现有 expandAtPaths 路径).
+   * notices 推给 setError 横幅.
+   */
+  const onAddFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    const { images, references, notices } = await splitFilesForAttachment(files);
+    if (images.length > 0) {
+      setAttachments((prev) => [...prev, ...images]);
+    }
+    if (references.length > 0) {
+      setInput((prev) => prev + references.join(""));
+    }
+    if (notices.length > 0) {
+      setError(notices.join("\n"));
+    }
+  }, []);
+
+  const onRemoveAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   const onSessionModeChange = useCallback(
     async (mode: AgentSessionMode) => {
@@ -1149,6 +1182,9 @@ export default function App() {
           setInput={setInput}
           onSend={send}
           onAbort={abort}
+          attachments={attachments}
+          onAddFiles={onAddFiles}
+          onRemoveAttachment={onRemoveAttachment}
           disabled={!cwd}
           skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
           queuedSteering={queuedSteering}
