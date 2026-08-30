@@ -42,6 +42,11 @@ api.prompt = ((payload: PromptPayload) => {
     textLen: payload?.text?.length,
     imageCount: payload?.images?.length ?? 0,
   });
+  // #42 调试可见性:DevTools Console 立刻看到图片是否进入 IPC,免去翻
+  // dbgLog 的麻烦。生产环境 DevTools 默认关闭,但用户主动打开即可核对。
+  console.info(
+    `[x-agent] prompt: ${payload?.images?.length ?? 0} image(s), ${payload?.text?.length ?? 0} char(s)`,
+  );
   const done = dbgTimer("preload", "prompt roundtrip");
   return ipcRenderer.invoke(IPC_CHANNELS.prompt, payload).then((result) => {
     done();

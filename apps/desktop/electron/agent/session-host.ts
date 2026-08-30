@@ -1055,6 +1055,10 @@ export class SessionHost {
       id: m.id,
       name: (m as { name?: string }).name ?? m.id,
       baseUrl: (m as { baseUrl?: string }).baseUrl,
+      // 透传 Pi SDK `Model.input` (["text"] / ["text", "image"]) ——
+      // 供 renderer 在 send 前判断当前 model 是否支持 image。
+      // 缺省 = undefined,renderer 侧保守按"不收图"对待。
+      input: (m as { input?: ("text" | "image")[] }).input,
     }));
     // Catalog enabled flag is authoritative for TopBar — not only models.json.
     const visible = await filterModelsByCatalogEnabled(mapped);

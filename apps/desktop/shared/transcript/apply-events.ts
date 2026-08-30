@@ -1,4 +1,4 @@
-import type { HistoryItem, UiAgentEvent } from "../ipc";
+import type { HistoryItem, ImageContent, UiAgentEvent } from "../ipc";
 import { formatErrorBubble } from "./error-format";
 
 export type ChatItem = HistoryItem;
@@ -18,11 +18,17 @@ export function isPendingUserId(id: string): boolean {
   return id.startsWith(PENDING_USER_ID_PREFIX);
 }
 
-/** Append a local-only user bubble so the transcript updates on send. */
+/** Append a local-only user bubble so the transcript updates on send.
+ *
+ * `images` 仅在用户本次发送携带图片时传入。空数组不写入 bubble (避免
+ * HistoryItem.user.images 字段膨胀成 `[]` 持久化噪声),与
+ * apply-events user_message 合并分支"只覆盖 text/entryId"配合保留
+ * prev.images 一起渲染已附图。 */
 export function appendPendingUser(
   items: ChatItem[],
   text: string,
   id?: string,
+  images?: ImageContent[],
 ): ChatItem[] {
   const pendingId = id ?? makePendingUserId();
   return [
@@ -31,6 +37,7 @@ export function appendPendingUser(
       kind: "user",
       id: pendingId,
       text,
+      ...(images && images.length > 0 ? { images } : {}),
     },
   ];
 }

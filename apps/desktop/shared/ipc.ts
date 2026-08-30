@@ -45,6 +45,20 @@ export interface ModelInfo {
   name: string;
   /** Model context window in tokens (from Pi Model). */
   contextWindow?: number;
+  /**
+   * 模型接受的输入类型 (与 Pi SDK `Model.input` 对齐).
+   *
+   * - `["text"]`           : 纯文本模型
+   * - `["text", "image"]`  : 多模态模型
+   *
+   * 部分 provider (例如 mistral-conversations) 会基于该字段在 user message
+   * 含 image 时把整条 message 替换为 `(image omitted: model does not support
+   * images)` 占位文本 —— X-agent 侧必须能读到该字段,才能在 send 前
+   * 给出"当前模型不收图"的明确反馈,而不是让 AI 在回应里说"看不到图"。
+   *
+   * 缺省 = 未知,沿用纯文本判断 (保守:不假设支持)。
+   */
+  input?: ("text" | "image")[];
 }
 
 /** Per-turn / aggregate token counts (aligned with Pi Usage). */
@@ -615,7 +629,18 @@ export interface PromptPayload {
 
 /** Serializable chat history item shared by main ↔ renderer. */
 export type HistoryItem =
-  | { kind: "user"; id: string; text: string; entryId?: string }
+  | {
+      kind: "user";
+      id: string;
+      text: string;
+      entryId?: string;
+      /**
+       * 已附图片 (粘贴截图 / 拖放图片). 由 renderer 在 appendPendingUser 时
+       * 写入;主进程 user_message 事件不带这个字段,apply-events 合并时保留
+       * 已有 images 不动 (#42 修复 #2:让 user bubble 显示已附图)。
+       */
+      images?: ImageContent[];
+    }
   | {
       kind: "assistant";
       id: string;
