@@ -6390,3 +6390,25 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* User bubble 已附图片缩略图 (#42 修复 #2):
+   chip 在 composer 中作为草稿状态;发送后 user bubble 也得展示,让用户
+   视觉确认图片已发 (否则 chip 消失 + 气泡只剩文字,误判"图丢了")。 */
+.user-bubble-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.user-bubble-image {
+  display: block;
+  max-width: 180px;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--board-line, var(--mode-color));
+  background: var(--bg-card);
+}

@@ -615,7 +615,18 @@ export interface PromptPayload {
 
 /** Serializable chat history item shared by main ↔ renderer. */
 export type HistoryItem =
-  | { kind: "user"; id: string; text: string; entryId?: string }
+  | {
+      kind: "user";
+      id: string;
+      text: string;
+      entryId?: string;
+      /**
+       * 已附图片 (粘贴截图 / 拖放图片). 由 renderer 在 appendPendingUser 时
+       * 写入;主进程 user_message 事件不带这个字段,apply-events 合并时保留
+       * 已有 images 不动 (#42 修复 #2:让 user bubble 显示已附图)。
+       */
+      images?: ImageContent[];
+    }
   | {
       kind: "assistant";
       id: string;

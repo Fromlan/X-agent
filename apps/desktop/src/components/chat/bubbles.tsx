@@ -116,7 +116,24 @@ export const UserBubble = memo(function UserBubble(props: UserBubbleProps) {
           </div>
         </div>
       ) : (
-        <UserMessageBody text={props.item.text} />
+        <>
+          {/* 已附图片缩略图 (粘贴截图 / 拖放图片) —— #42 修复 #2:
+              让 user bubble 显示已附图,避免 chip 消失后用户误判"图丢了"。
+              复用与 ComposerAttachments 相同的 data: URL 渲染方式。 */}
+          {props.item.images && props.item.images.length > 0 && (
+            <div className="user-bubble-images" aria-label="已附图片">
+              {props.item.images.map((img, i) => (
+                <img
+                  key={`img:${img.mimeType}:${i}`}
+                  src={`data:${img.mimeType};base64,${img.data}`}
+                  alt=""
+                  className="user-bubble-image"
+                />
+              ))}
+            </div>
+          )}
+          <UserMessageBody text={props.item.text} />
+        </>
       )}
     </div>
   );

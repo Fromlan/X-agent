@@ -296,7 +296,12 @@ function ChatPanelImpl(props: Props) {
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (props.input.trim()) props.onSend();
+      // 闸门认 text + attachments + fileRefs,纯图片也能 Enter 发送。
+      const hasContent =
+        props.input.trim().length > 0 ||
+        attachments.length > 0 ||
+        fileRefs.length > 0;
+      if (hasContent) props.onSend();
     }
   };
 
@@ -692,8 +697,11 @@ function ChatPanelImpl(props: Props) {
                 onClick={props.onSend}
                 disabled={
                   props.disabled ||
-                  !props.input.trim() ||
                   Boolean(props.editingEntryId) ||
+                  // 闸门认 text + attachments + fileRefs,纯图片 / 纯文件也能发。
+                  (!props.input.trim() &&
+                    attachments.length === 0 &&
+                    fileRefs.length === 0) ||
                   // B7: 已有未确认的 pending 气泡时禁止再发（双 pending 会错位归并）
                   props.items.some(
                     (i) =>
