@@ -54,6 +54,7 @@ import {
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
 import { splitFilesForAttachment, type FileReference } from "./lib/file-attachment";
+import { findCurrentModel, modelSupportsImage } from "./lib/model-capability";
 import { startersForProject } from "./lib/chat-starters";
 import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
@@ -382,6 +383,23 @@ export default function App() {
         images: attachments.length,
         files: fileRefs.length,
         hasCwd: Boolean(cwd),
+      });
+      return;
+    }
+    // 模型能力闸门:若用户带了图片但当前 model 不收图,挡住 + 明确提示
+    // (mistral-conversations provider 会在 user message 含 image 时把整条
+    // message 替换为 "(image omitted: model does not support images)" —
+    // X-agent 必须在 send 前挡住,避免静默丢图)。纯文字/纯文件不受影响。
+    if (attachments.length > 0 && !modelSupportsImage(models, currentModelKey)) {
+      const m = findCurrentModel(models, currentModelKey);
+      const label = m ? `${m.provider}/${m.id}` : currentModelKey || "(未知)";
+      setError(
+        `当前模型 ${label} 不支持图片,Pi SDK 会把整条 user message 替换为占位文本,截图发过去 AI 也看不到。请切换到 vision 模型 (如 mistral-small-2603 / pixtral-12b / mistral-medium-latest / Claude / GPT-4o / Gemini),或把图片以文件方式提供 (拖入或用 @ 引用路径)。`,
+      );
+      dbgLog("chat", "send blocked: model lacks image input", {
+        currentModel: label,
+        imageCount: attachments.length,
+        input: m?.input,
       });
       return;
     }
@@ -1232,6 +1250,8 @@ export default function App() {
           onRemoveImage={onRemoveImage}
           onRemoveFile={onRemoveFile}
           disabled={!cwd}
+          modelSupportsImage={modelSupportsImage(models, currentModelKey)}
+          currentModelLabel={currentModelKey}
           skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
           queuedSteering={queuedSteering}
           forceFollowKey={`${sessionId ?? ""}:${followNonce}`}

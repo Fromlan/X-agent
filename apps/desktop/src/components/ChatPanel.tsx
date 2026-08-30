@@ -112,6 +112,14 @@ interface Props {
   onRemoveFile?: (index: number) => void;
   /** 拖文件 / 粘贴文件 → 分类后入 attachments (图片) + fileRefs (其他). */
   onAddFiles?: (files: File[]) => void;
+  /**
+   * 当前模型是否支持 image 输入。若 false + 用户拖了图片,
+   * composer 上方会显示警告 chip (避免 send 时被 Pi SDK 静默替换为
+   * "(image omitted: model does not support images)" 占位文本)。
+   */
+  modelSupportsImage?: boolean;
+  /** 当前模型名 (e.g. "mistral/mistral-small-2603"),用于警告文案。 */
+  currentModelLabel?: string;
 }
 
 /** Render an "已等待 12s" suffix when the wait exceeds 3 seconds. */
@@ -442,6 +450,30 @@ function ChatPanelImpl(props: Props) {
             onRemoveFile={(i) => props.onRemoveFile?.(i)}
             maxImageCount={maxAttachments}
           />
+          {/* 模型能力警告:用户拖了图但当前 model 不收图。
+              真正阻断在 App.send() 里,这里只做"比 send 早一步"的视觉提醒,
+              让用户知道下一步会被挡住 + 切哪个模型。 */}
+          {attachments.length > 0 &&
+            props.modelSupportsImage === false && (
+              <div
+                className="composer-model-warning"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="composer-model-warning-icon" aria-hidden>
+                  ⚠
+                </span>
+                <span className="composer-model-warning-text">
+                  当前模型
+                  {props.currentModelLabel
+                    ? `「${props.currentModelLabel}」`
+                    : ""}{" "}
+                  不支持图片,发送会被拦截。请切换到 vision 模型
+                  (mistral-small-2603 / pixtral-12b / mistral-medium-latest / Claude / GPT-4o / Gemini),
+                  或把图片以文件方式提供。
+                </span>
+              </div>
+            )}
           <SlashMenu
             open={menuOpen}
             items={filtered}

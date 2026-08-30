@@ -6412,3 +6412,32 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   border: 1px solid var(--board-line, var(--mode-color));
   background: var(--bg-card);
 }
+
+/* 模型能力警告:用户拖了图但当前 model 不收图。
+   比 send 闸门早一步视觉提醒,避免 send 时才发现被 Pi SDK 静默丢图。
+   复用 board-line / warning token,与 chip 区域视觉对齐。 */
+.composer-model-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 6px 0 0;
+  border-radius: 6px;
+  border: 1px solid var(--board-line, var(--mode-color));
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  color: var(--text-strong);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.composer-model-warning-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-strong);
+}
+
+.composer-model-warning-text {
+  flex: 1;
+  min-width: 0;
+}
