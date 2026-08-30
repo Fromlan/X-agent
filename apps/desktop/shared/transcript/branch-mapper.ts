@@ -1,6 +1,6 @@
-import type { HistoryItem } from "../ipc";
+import type { HistoryItem, ImageContent } from "../ipc";
 import { TRANSCRIPT_CAPS } from "./caps";
-import { textFromContent, thinkingFromContent } from "./content";
+import { imagesFromContent, textFromContent, thinkingFromContent } from "./content";
 import { truncateTranscript } from "./truncate";
 import { formatErrorBubble } from "./error-format";
 
@@ -56,11 +56,18 @@ function pushMessages(
     const text = textFromContent(msg.content);
     if (!text.trim()) return nextLastUser;
     const id = entryId ?? `hist-user-${idBase}-${index}`;
+    // 提取 image content blocks — turn_end 后 history_replace 会用这里
+    // 出来的 items 整体替换 in-memory list (#42 修复 #2:appendPendingUser
+    // 写入的 images 会被这步擦掉)。从 Pi SDK 的 user message content
+    // 里把 image 块拎出来,UserBubble 才能在 reload / 后续 turn 继续
+    // 看到已附图。空数组不写字段(避免持久化噪声)。
+    const images: ImageContent[] = imagesFromContent(msg.content);
     items.push({
       kind: "user",
       id,
       text,
       ...(entryId ? { entryId } : {}),
+      ...(images.length > 0 ? { images } : {}),
     });
     return entryId ?? id;
   }
