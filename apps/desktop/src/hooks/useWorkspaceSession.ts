@@ -36,6 +36,28 @@ type RetractConfirmState = {
   editText?: string;
 } | null;
 
+/**
+ * 6 个 workspace 方法 (openProject / newSession / resumeSession /
+ * deleteSession / deleteProjectSessions / closeWorkspace) 共享的
+ * busy 生命周期 (issue #61 主题 F C-203, 2026-08-31):
+ *   setBusy(true) → setError(null) → fn() → finally setBusy(false)
+ *
+ * 把 3 行 boilerplate 合一, 6 个方法各自只剩业务逻辑 (IPC call + 状态更新).
+ */
+async function withBusyLifecycle(
+  setBusy: Dispatch<SetStateAction<boolean>>,
+  setError: Dispatch<SetStateAction<string | null>>,
+  fn: () => Promise<void>,
+): Promise<void> {
+  setBusy(true);
+  setError(null);
+  try {
+    await fn();
+  } finally {
+    setBusy(false);
+  }
+}
+
 export type UseWorkspaceSessionOpts = {
   setItems: Dispatch<SetStateAction<ChatItem[]>>;
   setStatus: Dispatch<SetStateAction<AgentStatus>>;
@@ -181,11 +203,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       // TopBar may pass this as onClick; ignore non-string (e.g. MouseEvent).
       const projectPath =
         typeof path === "string" && path.trim() ? path.trim() : undefined;
-      setBusy(true);
-      setError(null);
-      setItems(createEmptyState());
-      setQueuedSteering([]);
-      try {
+      await withBusyLifecycle(setBusy, setError, async () => {
+        setItems(createEmptyState());
+        setQueuedSteering([]);
         const result = await window.xAgent.workspace.open(projectPath);
         if (!result.ok) {
           if (result.error !== "已取消") {
@@ -204,9 +224,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setPrefs(p);
         await refreshSessions();
         await refreshProjectReadiness(result.cwd);
-      } finally {
-        setBusy(false);
-      }
+      });
     },
     [
       clearComposerEditState,
@@ -226,13 +244,11 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const newSession = useCallback(
     async (sessionType: SessionType = "code") => {
-      setBusy(true);
-      setError(null);
-      // Clear immediately — do not wait for history_replace; stale bubbles from
-      // the previous session must not linger if host events race with abort.
-      setItems(createEmptyState());
-      setQueuedSteering([]);
-      try {
+      await withBusyLifecycle(setBusy, setError, async () => {
+        // Clear immediately — do not wait for history_replace; stale bubbles from
+        // the previous session must not linger if host events race with abort.
+        setItems(createEmptyState());
+        setQueuedSteering([]);
         const result = await window.xAgent.workspace.newSession(sessionType);
         if (!result.ok) {
           setError(result.error ?? "新建会话失败");
@@ -245,9 +261,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
         setFollowNonce((n) => n + 1);
         await refreshSessions();
-      } finally {
-        setBusy(false);
-      }
+      });
     },
     [
       clearComposerEditState,
@@ -266,11 +280,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const resumeSession = useCallback(
     async (path: string) => {
-      setBusy(true);
-      setError(null);
-      setItems(createEmptyState());
-      setQueuedSteering([]);
-      try {
+      await withBusyLifecycle(setBusy, setError, async () => {
+        setItems(createEmptyState());
+        setQueuedSteering([]);
         const result = await window.xAgent.workspace.resume(path);
         if (!result.ok) {
           setError(result.error ?? "恢复会话失败");
@@ -287,9 +299,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         const p = await window.xAgent.prefs.get();
         setPrefs(p);
         await refreshSessions();
-      } finally {
-        setBusy(false);
-      }
+      });
     },
     [
       clearComposerEditState,
@@ -310,9 +320,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const deleteSession = useCallback(
     async (path: string) => {
-      setBusy(true);
-      setError(null);
-      try {
+      await withBusyLifecycle(setBusy, setError, async () => {
         const before = await window.xAgent.workspace.getStatus();
         const deletingActive = before.sessionPath === path;
         const result = await window.xAgent.workspace.deleteSession(path);
@@ -330,9 +338,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         }
         await syncFromHost();
         await refreshSessions();
-      } finally {
-        setBusy(false);
-      }
+      });
     },
     [
       clearComposerEditState,
@@ -348,9 +354,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const deleteProjectSessions = useCallback(
     async (projectCwd: string) => {
-      setBusy(true);
-      setError(null);
-      try {
+      await withBusyLifecycle(setBusy, setError, async () => {
         const before = await window.xAgent.workspace.getStatus();
         const activeInProject =
           Boolean(before.cwd) &&
@@ -369,9 +373,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         }
         await syncFromHost();
         await refreshSessions();
-      } finally {
-        setBusy(false);
-      }
+      });
     },
     [
       clearComposerEditState,
@@ -386,18 +388,14 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
   );
 
   const closeWorkspace = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
+    await withBusyLifecycle(setBusy, setError, async () => {
       const closed = await window.xAgent.workspace.close();
       if (!closed.ok) {
         setError(closed.error ?? "关闭工作区失败");
       }
       await syncFromHost();
       await refreshSessions();
-    } finally {
-      setBusy(false);
-    }
+    });
   }, [refreshSessions, setBusy, setError, syncFromHost]);
 
   const hideProject = useCallback(
