@@ -82,6 +82,37 @@ export type WorkspaceApi = {
   getStatus: IpcInvokeMap["getStatus"];
 };
 
+/**
+ * 不可信 sender 异常契约 (issue #65 主题 H, 2026-08-31).
+ *
+ * 之前 register-ipc.ts 在 sender trust 校验失败时 throw `new Error("IPC 调用来源不受信任")`,
+ * renderer 端 catch 块拿到的是普通 Error, 无法与业务错误区分.
+ *
+ * 现在抛契约化异常, renderer 可用 `isSenderUntrustedError(e)` typeguard 判断.
+ * 字段 `__senderUntrusted: true` 是 tag (类似 fp-ts 的 Discriminated Union),
+ * 不会被业务 Result 误判. `channel` 字段方便日志追踪是哪个 IPC 通道拒绝.
+ *
+ * 不在 IpcInvokeMap[K] 联合类型中加这个变体: 那样会让 100+ 个 renderer consumer
+ * 全部 typecheck 失败 (Result 多了一个无 `.ok` 字段的变体). 当前只把契约暴露给
+ * sender guard 测试 + 给未来 IpcInvokeMap 二次改造留 hook. 详见 register-ipc.ts.
+ */
+export interface SenderUntrustedError {
+  readonly __senderUntrusted: true;
+  readonly channel: string;
+}
+
+/** Typeguard: e 是 register-ipc.ts 抛的不可信 sender 异常. */
+export function isSenderUntrustedError(
+  e: unknown,
+): e is SenderUntrustedError {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    (e as { __senderUntrusted?: unknown }).__senderUntrusted === true &&
+    typeof (e as { channel?: unknown }).channel === "string"
+  );
+}
+
 /** Coarse turn / composer facade (facade methods stay on window.xAgent). */
 export type TurnApi = {
   prompt: IpcInvokeMap["prompt"];
