@@ -13,14 +13,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_TOOL_REGISTRY,
-  type AgentStatus,
   type ClientPrefs,
   type HistoryItem,
   type OpenProjectResult,
   type SessionInfo,
   type ThinkingLevel,
-  type TurnUsage,
-  type UiAgentEvent,
 } from "../../shared/ipc";
 import {
   DEFAULT_SESSION_TYPE,
@@ -33,7 +30,6 @@ import { getCachedPrefs, patchPrefs } from "./prefs";
 import { branchEntriesToHistory } from "../../shared/transcript";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { displaySessionName } from "./session-title";
-import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { createGodotTools } from "./godot-tools";
 import { dbgLog } from "../../shared/debug-log";
 import {
@@ -46,7 +42,6 @@ import {
   computeModeToolsForType,
   createWritePlanTools,
   createPlanModeGuardExtension,
-  type SessionModeController,
 } from "./session-mode/index";
 import {
   createDesignWriteGuardExtension,
@@ -56,8 +51,6 @@ import {
   loadSessionType,
   saveSessionType,
 } from "./session-type-persistence";
-import type { TurnFileTracker } from "./turn-file-tracker";
-import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import {
   normalizeProjectKey,
   pickFallbackSessionPath,
@@ -68,8 +61,8 @@ import { ensureBuiltinDesignSkillsInstalledSafe } from "./builtin-skills-install
 import {
   failOpen,
   modelFromSession,
-  type ToolDetailRecord,
 } from "./session-host-helpers";
+import type { SessionLifecycleHost } from "./host-interfaces";
 
 export type SessionBundle = {
   session: AgentSession;
@@ -80,48 +73,11 @@ export type SessionBundle = {
   sessionType: SessionType;
 };
 
-/** Mutable state + services SessionLifecycle needs from SessionHost. */
-export type SessionLifecycleAccess = {
-  getBundle(): SessionBundle | null;
-  setBundle(bundle: SessionBundle | null): void;
-  setResourceLoader(loader: DefaultResourceLoader | null): void;
-  setBaseAppendPrompt(base: string[]): void;
-  setLastTurnUsage(u: TurnUsage | undefined): void;
-  clearCompactionState(): void;
-  setAutoTitleInFlight(v: boolean): void;
-  setLastHistoryFingerprint(fp: string | null): void;
-  toolDetails: Map<string, ToolDetailRecord>;
-  fileTracker: TurnFileTracker;
-  shadowCheckpoints: ShadowCheckpointTracker;
-  sessionMode: SessionModeController;
-  godotRpc: GodotRpcBridge | null;
-  runReplaceExclusive<T>(fn: () => Promise<T>): Promise<T>;
-  ensureRuntime(): Promise<ModelRuntime>;
-  bridgeEvents(session: AgentSession): () => void;
-  emit(event: UiAgentEvent): void;
-  emitReplaceableNotice(
-    replaceKey:
-      | "session_mode"
-      | "model"
-      | "tools"
-      | "resources"
-      | "plan"
-      | "goal_eval"
-      | "session"
-      | "extension",
-    text: string,
-    level?: "info" | "warn" | "error",
-  ): void;
-  setStatus(status: AgentStatus, error?: string): void;
-  emitUsageUpdate(): void;
-  historyFingerprint(items: HistoryItem[]): string;
-};
-
 export class SessionLifecycle {
-  constructor(private readonly getAccess: () => SessionLifecycleAccess) {}
+  constructor(private readonly getHost: () => SessionLifecycleHost) {}
 
-  private a(): SessionLifecycleAccess {
-    return this.getAccess();
+  private a(): SessionLifecycleHost {
+    return this.getHost();
   }
 
   private sessionFileOf(session: AgentSession): string | null {

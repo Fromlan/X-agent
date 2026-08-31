@@ -4,34 +4,21 @@
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type {
-  AgentStatus,
   RetractOptions,
   RetractPreview,
   RetractResult,
 } from "../../shared/ipc";
 import { extractMessageText } from "../../shared/transcript";
-import type { TurnFileTracker } from "./turn-file-tracker";
-import type { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import { CompositeRestoreSource } from "./restore-source";
+import type { RetractOrchestratorHost } from "./host-interfaces";
 
 export type RetractSessionBundle = {
   session: AgentSession;
 };
 
-export type RetractOrchestratorHost = {
-  getBundle(): RetractSessionBundle | null;
-  fileTracker: TurnFileTracker;
-  shadowCheckpoints: ShadowCheckpointTracker;
-  setStatus(status: AgentStatus, error?: string): void;
-  pruneToolDetailsToBranch(): void;
-  emitHistoryReplace(): void;
-  emitUsageUpdate(): void;
-  prompt(text: string): Promise<{ ok: boolean; error?: string }>;
-  /** True while prompt() is between checkpoint prepare and session.prompt. */
-  isPromptPreparing?(): boolean;
-  /** Called after successful navigate + restore so Goal budget can roll back. */
-  onRetractSuccess?(abandonedUserEntryIds: readonly string[]): void;
-};
+// RetractOrchestratorHost 类型从 ./host-interfaces 导入 (issue #59 主题 A 收口).
+// 本地不再手抄, 与新 4 interface (ResourceState/EventBus/CwdOps/RuntimeState)
+// 的 Pick<> 组合保持单一源.
 
 export type ResolvedUserEntry =
   | { ok: true; entryId: string; editorText: string }

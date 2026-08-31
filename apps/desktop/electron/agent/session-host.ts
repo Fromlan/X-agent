@@ -18,6 +18,7 @@ import {
   type HistoryItem,
   type HostStatus,
   type ModelInfo,
+  type NoticeReplaceKey,
   type OpenProjectResult,
   type PlanContentResult,
   type PlanMutateResult,
@@ -55,12 +56,10 @@ import { wrapPromptSlashAsBlock } from "./prompt-slash-wrap";
 import { buildSessionSlashItems } from "./session-slash-items";
 import {
   SessionModeController,
-  type SessionModeHost,
   isReadonlySessionMode,
 } from "./session-mode/index";
 import {
   RetractOrchestrator,
-  type RetractOrchestratorHost,
 } from "./retract-orchestrator";
 import { TurnFileTracker } from "./turn-file-tracker";
 import { ShadowCheckpointTracker } from "./shadow-checkpoints";
@@ -75,8 +74,16 @@ import {
 import {
   SessionLifecycle,
   type SessionBundle,
-  type SessionLifecycleAccess,
 } from "./session-lifecycle";
+import type {
+  CwdOps,
+  EventBus,
+  ResourceState,
+  RuntimeState,
+  SessionLifecycleHost,
+  SessionModeHost,
+  RetractOrchestratorHost,
+} from "./host-interfaces";
 import {
   bridgeSessionEvents,
   type SessionEventBridgeDeps,
@@ -103,7 +110,7 @@ export class SessionHost {
    * would corrupt turn state / resurrect stale pre SHAs). Retract rejects
    * while this flag is set.
    */
-  private promptPreparing = false;
+  promptPreparing = false;
   private lastError: string | undefined;
   private getWindow: () => BrowserWindow | null;
   private godotRpc: GodotRpcBridge | null;
@@ -141,16 +148,105 @@ export class SessionHost {
   ) {
     this.getWindow = getWindow;
     this.godotRpc = godotRpc;
-    this.sessionMode = new SessionModeController(() => this.asModeHost());
+    this.sessionMode = new SessionModeController(() => this.asSessionModeHost());
     this.retractOrchestrator = new RetractOrchestrator(() =>
-      this.asRetractHost(),
+      this.asRetractOrchestratorHost(),
     );
-    this.lifecycle = new SessionLifecycle(() => this.asLifecycleAccess());
+    this.lifecycle = new SessionLifecycle(() => this.asSessionLifecycleHost());
   }
 
-  private asLifecycleAccess(): SessionLifecycleAccess {
+  // ============ 4 个窄 host-bag 暴露 (issue #59 主题 A) ============
+  // 替代 asLifecycleAccess / asModeHost / asRetractHost 3 个大 host-bag.
+  // SessionLifecycle 拿到 4 件全量; Mode / Retract 只 Pick 自己要的.
+
+  /** Full host for SessionLifecycle (open/resume/dispose 全生命周期). */
+  private asSessionLifecycleHost(): SessionLifecycleHost {
+    return {
+      ...this.asResourceState(),
+      ...this.asEventBus(),
+      ...this.asCwdOps(),
+      ...this.asRuntimeState(),
+    };
+  }
+
+  /** Narrow host for SessionModeController (mode 互锁路径). */
+  private asSessionModeHost(): SessionModeHost {
     return {
       getBundle: () => this.bundle,
+      getResourceLoader: () => this.getResourceLoader(),
+      getBaseAppendPrompt: () => this.getBaseAppendPrompt(),
+      getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
+      getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
+      emit: (event) => this.emit(event),
+      emitReplaceableNotice: (replaceKey, text, level) =>
+        this.emitReplaceableNotice(replaceKey, text, level),
+      ensureRuntime: () => this.ensureRuntime(),
+      prompt: (payload) =>
+        this.prompt(typeof payload === "string" ? { text: payload } : payload),
+    };
+  }
+
+  /** Narrow host for RetractOrchestrator (撤回 pipeline). */
+  private asRetractOrchestratorHost(): RetractOrchestratorHost {
+    return {
+      getBundle: () => this.bundle,
+      fileTracker: this.fileTracker,
+      shadowCheckpoints: this.shadowCheckpoints,
+      setStatus: (status, error) => this.setStatus(status, error),
+      emitHistoryReplace: () => this.emitHistoryReplace(),
+      emitUsageUpdate: () => this.emitUsageUpdate(),
+      pruneToolDetailsToBranch: () => this.pruneToolDetailsToBranch(),
+      prompt: (payload) =>
+        this.prompt(typeof payload === "string" ? { text: payload } : payload),
+      promptPreparing: this.promptPreparing,
+      isPromptPreparing: () => this.promptPreparing,
+      onRetractSuccess: (abandonedUserEntryIds) =>
+        this.sessionMode.rollbackGoalAfterRetract(abandonedUserEntryIds),
+    };
+  }
+
+  private asResourceState(): ResourceState {
+    return {
+      getBundle: () => this.bundle,
+      getResourceLoader: () => this.getResourceLoader(),
+      getBaseAppendPrompt: () => this.getBaseAppendPrompt(),
+      fileTracker: this.fileTracker,
+      shadowCheckpoints: this.shadowCheckpoints,
+      sessionMode: this.sessionMode,
+      godotRpc: this.godotRpc,
+      getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
+      getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
+    };
+  }
+
+  private asEventBus(): EventBus {
+    return {
+      emit: (event) => this.emit(event),
+      emitReplaceableNotice: (replaceKey, text, level) =>
+        this.emitReplaceableNotice(replaceKey, text, level),
+      setStatus: (status, error) => this.setStatus(status, error),
+      emitUsageUpdate: () => this.emitUsageUpdate(),
+      emitHistoryReplace: () => this.emitHistoryReplace(),
+    };
+  }
+
+  private asCwdOps(): CwdOps {
+    return {
+      pruneToolDetailsToBranch: () => this.pruneToolDetailsToBranch(),
+      ensureRuntime: () => this.ensureRuntime(),
+      bridgeEvents: (session) => this.bridgeEvents(session),
+      prompt: (payload) =>
+        this.prompt(typeof payload === "string" ? { text: payload } : payload),
+      promptPreparing: this.promptPreparing,
+      isPromptPreparing: () => this.promptPreparing,
+    };
+  }
+
+  private asRuntimeState(): RuntimeState {
+    return {
+      runReplaceExclusive: (fn) => this.runReplaceExclusive(fn),
+      historyFingerprint: (items) => this.historyFingerprint(items),
+      toolDetails: this.toolDetails,
       setBundle: (bundle) => {
         this.bundle = bundle;
       },
@@ -173,50 +269,6 @@ export class SessionHost {
       setLastHistoryFingerprint: (fp) => {
         this.lastHistoryFingerprint = fp;
       },
-      toolDetails: this.toolDetails,
-      fileTracker: this.fileTracker,
-      shadowCheckpoints: this.shadowCheckpoints,
-      sessionMode: this.sessionMode,
-      godotRpc: this.godotRpc,
-      runReplaceExclusive: (fn) => this.runReplaceExclusive(fn),
-      ensureRuntime: () => this.ensureRuntime(),
-      bridgeEvents: (session) => this.bridgeEvents(session),
-      emit: (event) => this.emit(event),
-      emitReplaceableNotice: (replaceKey, notice, level) =>
-        this.emitReplaceableNotice(replaceKey, notice, level),
-      setStatus: (status, error) => this.setStatus(status, error),
-      emitUsageUpdate: () => this.emitUsageUpdate(),
-      historyFingerprint: (items) => this.historyFingerprint(items),
-    };
-  }
-
-  /** Host bag for SessionModeController: session + emit + prompt + runtime. */
-  private asModeHost(): SessionModeHost {
-    return {
-      getBundle: () => this.getBundle(),
-      getResourceLoader: () => this.getResourceLoader(),
-      getBaseAppendPrompt: () => this.getBaseAppendPrompt(),
-      emit: (event) => this.emit(event),
-      emitReplaceableNotice: (replaceKey, text, level) =>
-        this.emitReplaceableNotice(replaceKey, text, level),
-      prompt: (text) => this.prompt({ text }),
-      ensureRuntime: () => this.ensureRuntime(),
-      getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
-      getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
-    };
-  }
-
-  private asRetractHost(): RetractOrchestratorHost {
-    return {
-      getBundle: () => this.bundle,
-      fileTracker: this.fileTracker,
-      shadowCheckpoints: this.shadowCheckpoints,
-      setStatus: (status, error) => this.setStatus(status, error),
-      pruneToolDetailsToBranch: () => this.pruneToolDetailsToBranch(),
-      emitHistoryReplace: () => this.emitHistoryReplace(),
-      emitUsageUpdate: () => this.emitUsageUpdate(),
-      prompt: (text) => this.prompt({ text }),
-      isPromptPreparing: () => this.promptPreparing,
       onRetractSuccess: (abandonedUserEntryIds) =>
         this.sessionMode.rollbackGoalAfterRetract(abandonedUserEntryIds),
     };
@@ -634,15 +686,7 @@ export class SessionHost {
    * Same replaceKey replaces the previous bubble (mode / model / tools / …).
    */
   private emitReplaceableNotice(
-    replaceKey:
-      | "session_mode"
-      | "model"
-      | "tools"
-      | "resources"
-      | "plan"
-      | "goal_eval"
-      | "session"
-      | "extension",
+    replaceKey: NoticeReplaceKey,
     text: string,
     level: "info" | "warn" | "error" = "info",
   ): void {
