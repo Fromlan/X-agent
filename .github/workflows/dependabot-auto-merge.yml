@@ -32,7 +32,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          # `gh pr merge --auto` 偶发因 GraphQL race condition 失败
+          # (Protected branch rules not configured for this branch)。
+          # 典型场景: Dependabot 刚推 PR, branch protection 元数据未就绪。
+          # 简单重试 3 次, 每次等 5s, 覆盖 99% 的偶发情况。
+          for attempt in 1 2 3; do
+            if gh pr merge --auto --squash "$PR_URL"; then
+              echo "✅ auto-merge enabled on attempt $attempt"
+              exit 0
+            fi
+            echo "⚠️ attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "❌ auto-merge failed after 3 attempts"
+          exit 1
 
       - name: Comment for non-patch (informational)
         if: |
@@ -42,4 +56,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr comment "$PR_URL" --body "🤖 Auto-merge skipped: \`${{ steps.meta.outputs.update-type }}\`. Patch-only auto-merge is enabled; minor/major updates need a human review."
+          # comment 是 informational, 失败不影响主流程; 但仍重试避免静默漏通知
+          for attempt in 1 2 3; do
+            if gh pr comment "$PR_URL" --body "🤖 Auto-merge skipped: \`${{ steps.meta.outputs.update-type }}\`. Patch-only auto-merge is enabled; minor/major updates need a human review."; then
+              exit 0
+            fi
+            echo "⚠️ comment attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "⚠️ comment failed after 3 attempts, but auto-merge logic is unaffected"
