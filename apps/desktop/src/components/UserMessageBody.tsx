@@ -7,6 +7,7 @@ import {
   Hammer,
   ScrollText,
   Target,
+  Terminal,
 } from "lucide-react";
 import { modeBlockLabel } from "@shared/mode-prompt";
 import {
@@ -169,6 +170,36 @@ function PromptRefChip({
   );
 }
 
+/**
+ * `<cmd>` block — emitted by Pi extension command handlers (see
+ * `apps/desktop/electron/agent/extensions/init-command.ts` for `/init`).
+ * Renders as a compact chip parallel to `<skill>` / `<prompt>`, with the
+ * full procedure body expandable on demand. The leading `/` mirrors the
+ * slash-command shape the user typed in the composer.
+ */
+function CmdRefChip({ name, content }: { name: string; content: string }) {
+  const [open, setOpen] = useState(false);
+  const label = name.trim() || "cmd";
+  const lines = content ? content.split(/\r?\n/).length : 0;
+
+  return (
+    <details
+      className="user-file-ref user-cmd-ref"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="user-file-ref-summary" title={`命令 · /${label}`}>
+        <ChevronRight size={12} className="user-file-ref-chevron" aria-hidden />
+        <Terminal size={12} aria-hidden />
+        <span className="user-file-ref-at">/{label}</span>
+        <span className="user-file-ref-meta">命令</span>
+        {lines > 0 && <span className="user-file-ref-meta">{lines} 行</span>}
+      </summary>
+      <pre className="user-file-ref-body">{content}</pre>
+    </details>
+  );
+}
+
 function renderSegment(seg: UserMessageSegment, key: number) {
   if (seg.kind === "file") {
     return <FileRefChip key={key} name={seg.name} content={seg.content} />;
@@ -188,6 +219,9 @@ function renderSegment(seg: UserMessageSegment, key: number) {
         args={seg.args}
       />
     );
+  }
+  if (seg.kind === "cmd") {
+    return <CmdRefChip key={key} name={seg.name} content={seg.content} />;
   }
   if (!seg.text.trim()) return null;
   return (

@@ -65,6 +65,7 @@ flowchart TD
 - 全局：`~/.pi/agent/AGENTS.md`（或 CLAUDE）
 - 再从文件系统根向 `cwd` 向上 walk；同目录优先 `AGENTS.md`
 - **全文**进入 system（不是索引）
+- X-agent 0.6.x 起额外追加 `AGENT.md` / `agent.md`（及大小写变体）单数变体（[`apps/desktop/electron/agent/agents-md-context.ts`](../apps/desktop/electron/agent/agents-md-context.ts)）；每级目录中单数变体在 `AGENTS.md` / `CLAUDE.md` 之后追加；同路径 case-insensitive 去重（win32 下不重复注入）
 
 ### 4. `<available_skills>`
 

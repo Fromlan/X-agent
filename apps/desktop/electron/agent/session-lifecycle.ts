@@ -63,6 +63,7 @@ import {
   modelFromSession,
 } from "./session-host-helpers";
 import type { SessionLifecycleHost } from "./host-interfaces";
+import { createInitCommandExtension } from "./extensions/init-command";
 import { augmentAgentsFiles } from "./agents-md-context";
 
 export type SessionBundle = {
@@ -179,6 +180,11 @@ export class SessionLifecycle {
             this.a().getBundle()?.sessionType ?? DEFAULT_SESSION_TYPE,
           getCwd: () => this.a().getBundle()?.cwd ?? null,
         }),
+        // `/init` slash command: bootstrap AGENTS.md for the current project.
+        // Body is the markdown imported via `?raw`; handler sends it as a
+        // user message so the model runs the procedure. Side-effect free on
+        // the host side. See `extensions/init-command.ts` for full design.
+        createInitCommandExtension(),
       ],
     });
     await loader.reload();
