@@ -8,7 +8,14 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(appRoot, "../..");
+// 主题 E (#62) 把 main.ts 拆 4 module, debug 模式 invariant 分布在
+// main.ts (second-instance) 和 main-debug.ts (其它 7 条). 测试要同时读.
 const main = readFileSync(join(appRoot, "electron/main.ts"), "utf8");
+const mainDebug = readFileSync(
+  join(appRoot, "electron/main-debug.ts"),
+  "utf8",
+);
+const combinedDebug = `${main}\n${mainDebug}`;
 const appPackage = JSON.parse(
   readFileSync(join(appRoot, "package.json"), "utf8"),
 ) as { scripts?: Record<string, string> };
@@ -16,14 +23,14 @@ const rootPackage = JSON.parse(
   readFileSync(join(repoRoot, "package.json"), "utf8"),
 ) as { scripts?: Record<string, string> };
 
-assert.match(main, /--x-agent-debug/);
-assert.match(main, /--debug-ui/);
-assert.match(main, /X_AGENT_DEBUG/);
-assert.match(main, /openDevTools\(\{ mode: "detach" \}\)/);
-assert.match(main, /before-input-event/);
-assert.match(main, /input\.key === "F12"/);
-assert.match(main, /input\.control && input\.shift && key === "i"/);
-assert.match(main, /second-instance/);
+assert.match(combinedDebug, /--x-agent-debug/);
+assert.match(combinedDebug, /--debug-ui/);
+assert.match(combinedDebug, /X_AGENT_DEBUG/);
+assert.match(combinedDebug, /openDevTools\(\{ mode: "detach" \}\)/);
+assert.match(combinedDebug, /before-input-event/);
+assert.match(combinedDebug, /input\.key === "F12"/);
+assert.match(combinedDebug, /input\.control && input\.shift && key === "i"/);
+assert.match(combinedDebug, /second-instance/);
 assert.equal(
   appPackage.scripts?.debug,
   "set X_AGENT_DEBUG=1&& electron-vite dev",
