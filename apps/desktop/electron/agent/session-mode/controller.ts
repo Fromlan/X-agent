@@ -317,79 +317,77 @@ export class SessionModeController {
       };
     }
 
+    // 4 case commit 模板合一 (issue #63 主题 B C-107, 2026-08-31):
+    // 共享 set agentMode + refreshSystemPrompt + emit session/goal + emitModeNotice
+    // + 失败回滚. 各 case 只需提供 pre / tools / notice / 可选 rollback.
+
     if (mode === "ask") {
-      this.clearGoalState("cleared", { silent: true });
-      this.captureSavedToolsFromSession();
-      const prefs = getCachedPrefs();
-      this.agentMode = "ask";
-      this.refreshSystemPrompt(
-        computeModeToolsForType(this.getSessionTypePolicy(), "ask", prefs.tools),
-      );
-      this.emitSessionMode();
-      this.emitGoal();
-      this.emitModeNotice(
-        this.planPath
+      return this.commitModeChange({
+        pre: () => {
+          this.clearGoalState("cleared", { silent: true });
+          this.captureSavedToolsFromSession();
+        },
+        tools: computeModeToolsForType(
+          this.getSessionTypePolicy(),
+          "ask",
+          getCachedPrefs().tools,
+        ),
+        notice: this.planPath
           ? `已进入调研模式（只读问答）。右栏「计划」仍保留：${this.planPath}`
           : "已进入调研模式（只读研究与问答，不改文件）。需要可执行方案请切 Plan。",
-      );
-      return { ok: true, info: this.getInfo() };
+      });
     }
 
     if (mode === "plan") {
-      this.clearGoalState("cleared", { silent: true });
-      this.captureSavedToolsFromSession();
-      const prefs = getCachedPrefs();
-      this.agentMode = "plan";
-      this.refreshSystemPrompt(
-        computeModeToolsForType(this.getSessionTypePolicy(), "plan", prefs.tools),
-      );
-      const active = bundle.session.getActiveToolNames();
-      if (!active.includes("write_plan")) {
-        const restore = this.takeRestoredTools();
-        this.agentMode = "agent";
-        this.refreshSystemPrompt(restore);
-        this.emitSessionMode();
-        this.emitGoal();
-        this.host().emitReplaceableNotice(
+      return this.commitModeChange({
+        pre: () => {
+          this.clearGoalState("cleared", { silent: true });
+          this.captureSavedToolsFromSession();
+        },
+        tools: computeModeToolsForType(
+          this.getSessionTypePolicy(),
           "plan",
-          "Plan 模式未能激活 write_plan（工具未注册）。请重开项目后再试。",
-          "error",
-        );
-        return {
-          ok: false,
-          error: "write_plan 未激活，无法写出计划文件",
-          info: this.getInfo(),
-        };
-      }
-      this.emitSessionMode();
-      this.emitGoal();
-      this.emitModeNotice(
-        this.planPath
+          getCachedPrefs().tools,
+        ),
+        // plan-mode 校验: write_plan 必须激活. 失败回滚到 agent + emit error notice.
+        rollback: () => {
+          const active = bundle.session.getActiveToolNames();
+          if (!active.includes("write_plan")) {
+            const restore = this.takeRestoredTools();
+            this.agentMode = "agent";
+            this.refreshSystemPrompt(restore);
+            this.emitSessionMode();
+            this.emitGoal();
+            this.host().emitReplaceableNotice(
+              "plan",
+              "Plan 模式未能激活 write_plan（工具未注册）。请重开项目后再试。",
+              "error",
+            );
+            return {
+              ok: false,
+              error: "write_plan 未激活，无法写出计划文件",
+              info: this.getInfo(),
+            };
+          }
+          return null;
+        },
+        notice: this.planPath
           ? `已进入 Plan 模式。当前计划仍保留在右栏「计划」：${this.planPath}`
           : "已进入 Plan 模式（只读研究 + write_plan）。完成后在右栏审阅并「执行计划」。",
-      );
-      return { ok: true, info: this.getInfo() };
+      });
     }
 
     if (mode === "goal") {
-      let tools: string[] | undefined;
-      if (isReadonlySessionMode(this.agentMode)) {
-        tools = this.takeRestoredTools();
-      }
+      // goal 模式不走 commitModeChange 模板: 不 emitGoal (有专门 goal emit 路径),
+      // 返回 needGoalCondition. 见 commitModeChange 上方注释.
+      const tools = isReadonlySessionMode(this.agentMode)
+        ? this.takeRestoredTools()
+        : undefined;
       this.agentMode = "goal";
       this.refreshSystemPrompt(tools);
       this.emitSessionMode();
       const needGoalCondition = !isRestorableGoalStatus(this.goal?.status);
-      let notice = "已进入目标模式。请输入可验证的完成条件后发送。";
-      if (!needGoalCondition && this.goal) {
-        if (this.goal.status === "paused") {
-          notice = `目标已暂停：「${this.goal.condition}」。可点「继续」恢复自动续轮。`;
-        } else if (this.goal.status === "budget_limited") {
-          notice = `目标已达预算（轮次 ${this.goal.turns}/${this.goal.maxTurns}，token ${this.goal.tokensUsed}/${this.goal.maxTokens}）。提高上限后可继续。`;
-        } else {
-          notice = `目标模式：继续推进「${this.goal.condition}」（${this.goal.turns}/${this.goal.maxTurns} 轮，${this.goal.tokensUsed}/${this.goal.maxTokens} tokens）`;
-        }
-      }
+      const notice = this.computeGoalModeNotice(needGoalCondition);
       this.emitModeNotice(notice);
       return {
         ok: true,
@@ -398,23 +396,66 @@ export class SessionModeController {
       };
     }
 
-    let tools: string[] | undefined;
-    if (isReadonlySessionMode(this.agentMode)) {
-      tools = this.takeRestoredTools();
-    } else {
+    // mode === "agent"
+    const wasReadonly = isReadonlySessionMode(this.agentMode);
+    const tools = wasReadonly ? this.takeRestoredTools() : undefined;
+    if (!wasReadonly) {
       this.savedTools = null;
     }
-    this.clearGoalState("cleared", { silent: true });
-    this.agentMode = "agent";
-    this.refreshSystemPrompt(tools);
-    this.emitSessionMode();
-    this.emitGoal();
-    this.emitModeNotice(
-      this.planPath
+    return this.commitModeChange({
+      pre: () => {
+        this.clearGoalState("cleared", { silent: true });
+      },
+      tools,
+      notice: this.planPath
         ? "已切换到 Agent 模式。右栏「计划」仍可查看或执行当前计划。"
         : "已切换到 Agent 模式。",
-    );
+    });
+  }
+
+  /**
+   * 4 case commit 模板合一的共享实现 (issue #63 主题 B C-107).
+   * 模板: pre → set agentMode → refreshSystemPrompt → [可选 rollback] → emit session/goal → emit notice.
+   *
+   * 不走模板的例外:
+   * - "goal" 模式不 emitGoal (有专门 goal emit 路径, return needGoalCondition 也要单独拼)
+   * - "plan" rollback 走单独 helper (写 plan validate 失败时回滚)
+   */
+  private commitModeChange(opts: {
+    pre?: () => void;
+    tools: string[] | undefined;
+    notice: string;
+    rollback?: () => SessionModeResult | null;
+  }): SessionModeResult {
+    if (opts.pre) opts.pre();
+    // agentMode 已经在 caller set (ask/plan 走 captureSavedTools 之后, agent 走
+    // takeRestoredTools 之后). commitModeChange 不再覆盖,只负责共享 emit.
+    this.refreshSystemPrompt(opts.tools);
+    if (opts.rollback) {
+      const result = opts.rollback();
+      if (result) return result;
+    }
+    this.emitSessionMode();
+    this.emitGoal();
+    this.emitModeNotice(opts.notice);
     return { ok: true, info: this.getInfo() };
+  }
+
+  /**
+   * Goal 模式进入时的 notice 文案 (根据 goal 当前状态).
+   * 从原 setMode 内联提取, 方便单测.
+   */
+  private computeGoalModeNotice(needGoalCondition: boolean): string {
+    if (needGoalCondition || !this.goal) {
+      return "已进入目标模式。请输入可验证的完成条件后发送。";
+    }
+    if (this.goal.status === "paused") {
+      return `目标已暂停：「${this.goal.condition}」。可点「继续」恢复自动续轮。`;
+    }
+    if (this.goal.status === "budget_limited") {
+      return `目标已达预算（轮次 ${this.goal.turns}/${this.goal.maxTurns}，token ${this.goal.tokensUsed}/${this.goal.maxTokens}）。提高上限后可继续。`;
+    }
+    return `目标模式：继续推进「${this.goal.condition}」（${this.goal.turns}/${this.goal.maxTurns} 轮，${this.goal.tokensUsed}/${this.goal.maxTokens} tokens）`;
   }
 
   private clearGoalState(
