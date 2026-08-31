@@ -1,16 +1,30 @@
 /**
  * Vitest 套件 —— shared/ipc 的核心 payload 类型契约。
  *
- * 锁住 4 个不变量 (#42 composer attachments 的 IPC 形状):
- * 1. PromptPayload.text 必填 (可空字符串, 配合 images-only 发图)
- * 2. PromptPayload.images 可选, 缺省 = 仅 text
- * 3. ImageContent.data 是 base64 字符串, mimeType 是字符串
- * 4. IpcInvokeMap.prompt 接受 PromptPayload, 返回 Promise<PromptResult>
+ * 锁住以下不变量:
+ * 1. PromptPayload 形状 (#42 composer attachments)
+ * 2. PromptResult 三态 (ok / error / silent)
+ * 3. 工具注册表 derive + boundary (issue #60 主题 D C-306, 2026-08-31):
+ *    - AVAILABLE_TOOLS / GODOT_TOOLS 是 source-of-truth (2 个 const 数组)
+ *    - ALL_TOGGLEABLE_TOOLS = [...AVAILABLE_TOOLS, ...GODOT_TOOLS] derive
+ *    - SESSION_TOOL_REGISTRY = [...ALL_TOGGLEABLE_TOOLS, WRITE_PLAN_TOOL] derive
+ *    - typecheck 立即捕获"加了工具忘更新某 list" (加在 AVAILABLE_TOOLS 但
+ *      没在 SESSION_TOOL_REGISTRY 用 → 编译报错)
+ *    - 本测试锁住无重名 / union 长度 = sum / WRITE_PLAN_TOOL 不冲突
  *
  * 不验证运行时行为 (那是 session-host.test.ts 的责任); 这里只
  * 验证类型在编译期可序列化、字段不漏。
  */
 import { describe, it, expect } from "vitest";
+import {
+  ALL_TOGGLEABLE_TOOLS,
+  AVAILABLE_TOOLS,
+  GODOT_TOOLS,
+  SESSION_TOOL_REGISTRY,
+  type BuiltinToolName,
+  type GodotToolName,
+} from "./ipc";
+import { WRITE_PLAN_TOOL } from "./mode-tools";
 import type { ImageContent, PromptPayload, PromptResult } from "./ipc";
 
 describe("PromptPayload 形状", () => {
@@ -61,5 +75,49 @@ describe("PromptResult 形状", () => {
     expect(ok.ok).toBe(true);
     expect(fail.error).toBe("消息不能为空");
     expect(silent.silent).toBe(true);
+  });
+});
+
+describe("工具注册表 derive + boundary (主题 D C-306)", () => {
+  it("AVAILABLE_TOOLS / GODOT_TOOLS 各自非空, 是 source-of-truth", () => {
+    expect(AVAILABLE_TOOLS.length).toBeGreaterThan(0);
+    expect(GODOT_TOOLS.length).toBeGreaterThan(0);
+    // 命名约定: 内置工具无 godot_ 前缀
+    for (const t of AVAILABLE_TOOLS) {
+      expect(t.startsWith("godot_"), `内置工具不应有 godot_ 前缀: ${t}`).toBe(false);
+    }
+    // Godot 工具必须有 godot_ 前缀
+    for (const t of GODOT_TOOLS) {
+      expect(t.startsWith("godot_"), `Godot 工具必须有 godot_ 前缀: ${t}`).toBe(true);
+    }
+  });
+
+  it("ALL_TOGGLEABLE_TOOLS = AVAILABLE ∪ Godot, 无重名", () => {
+    const set = new Set<string>();
+    for (const t of ALL_TOGGLEABLE_TOOLS) {
+      expect(set.has(t), `ALL_TOGGLEABLE_TOOLS 有重名: ${t}`).toBe(false);
+      set.add(t);
+    }
+    expect(ALL_TOGGLEABLE_TOOLS.length).toBe(AVAILABLE_TOOLS.length + GODOT_TOOLS.length);
+  });
+
+  it("SESSION_TOOL_REGISTRY = ALL_TOGGLEABLE + write_plan, 无重名", () => {
+    const set = new Set<string>();
+    for (const t of SESSION_TOOL_REGISTRY) {
+      expect(set.has(t), `SESSION_TOOL_REGISTRY 有重名: ${t}`).toBe(false);
+      set.add(t);
+    }
+    expect(SESSION_TOOL_REGISTRY.length).toBe(
+      ALL_TOGGLEABLE_TOOLS.length + 1,
+    );
+    expect(SESSION_TOOL_REGISTRY).toContain(WRITE_PLAN_TOOL);
+  });
+
+  it("BuiltinToolName / GodotToolName 类型与数组同步 (compile-time)", () => {
+    // 这一行编译过即通过 — typecheck 已经覆盖.
+    const builtin: BuiltinToolName = AVAILABLE_TOOLS[0];
+    const godot: GodotToolName = GODOT_TOOLS[0];
+    expect(typeof builtin).toBe("string");
+    expect(typeof godot).toBe("string");
   });
 });
