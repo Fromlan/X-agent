@@ -3,7 +3,11 @@ import type {
   IpcMain,
   IpcMainInvokeEvent,
 } from "electron";
-import type { IpcInvokeMap, IpcChannelKey } from "../../shared/ipc";
+import {
+  type IpcInvokeMap,
+  type IpcChannelKey,
+  type SenderUntrustedError,
+} from "../../shared/ipc";
 
 /**
  * Typed `ipcMain.handle` registrar: the handler signature is derived from
@@ -13,6 +17,10 @@ import type { IpcInvokeMap, IpcChannelKey } from "../../shared/ipc";
  * Every handler is wrapped with a sender trust check (defense in depth):
  * only the main window's webContents (and a frame whose origin matches the
  * renderer URL / file: protocol) may invoke channels.
+ *
+ * 不可信 sender 现在抛 `SenderUntrustedError` (issue #65 主题 H, 2026-08-31),
+ * renderer 端可用 `isSenderUntrustedError` typeguard 区分. 不再加进 IpcInvokeMap[K]
+ * (会让 100+ consumer 全部 typecheck 失败, 详见 SenderUntrustedError doc).
  */
 export type IpcHandler<K extends IpcChannelKey> = IpcInvokeMap[K] extends (
   ...args: infer Args
@@ -66,7 +74,14 @@ export function handle<K extends IpcChannelKey>(
   ipcMain.handle(channel, (event, ...args) => {
     if (!isTrustedIpcSender(event as IpcMainInvokeEvent)) {
       console.warn(`[ipc] 拒绝来自不受信任来源的调用：${channel}`);
-      throw new Error("IPC 调用来源不受信任");
+      // 抛契约化异常 (issue #65 主题 H, 2026-08-31). 之前 throw new Error(...)
+      // 让 renderer 端 catch 块拿到普通 Error, 无法与业务错误区分. 现在用
+      // __senderUntrusted tag 让 typeguard 识别, channel 字段方便日志追踪.
+      const err: SenderUntrustedError = {
+        __senderUntrusted: true,
+        channel,
+      };
+      throw err;
     }
     return handler(event, ...args);
   });
