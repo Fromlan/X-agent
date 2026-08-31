@@ -322,7 +322,7 @@ export class SessionModeController {
     // + 失败回滚. 各 case 只需提供 pre / tools / notice / 可选 rollback.
 
     if (mode === "ask") {
-      return this.commitModeChange({
+      return this.commitModeChange("ask", {
         pre: () => {
           this.clearGoalState("cleared", { silent: true });
           this.captureSavedToolsFromSession();
@@ -339,7 +339,7 @@ export class SessionModeController {
     }
 
     if (mode === "plan") {
-      return this.commitModeChange({
+      return this.commitModeChange("plan", {
         pre: () => {
           this.clearGoalState("cleared", { silent: true });
           this.captureSavedToolsFromSession();
@@ -402,7 +402,7 @@ export class SessionModeController {
     if (!wasReadonly) {
       this.savedTools = null;
     }
-    return this.commitModeChange({
+    return this.commitModeChange("agent", {
       pre: () => {
         this.clearGoalState("cleared", { silent: true });
       },
@@ -415,21 +415,23 @@ export class SessionModeController {
 
   /**
    * 4 case commit 模板合一的共享实现 (issue #63 主题 B C-107).
-   * 模板: pre → set agentMode → refreshSystemPrompt → [可选 rollback] → emit session/goal → emit notice.
+   * 模板: set agentMode → [pre] → refreshSystemPrompt → [可选 rollback] → emit session/goal → emit notice.
    *
    * 不走模板的例外:
    * - "goal" 模式不 emitGoal (有专门 goal emit 路径, return needGoalCondition 也要单独拼)
    * - "plan" rollback 走单独 helper (写 plan validate 失败时回滚)
    */
-  private commitModeChange(opts: {
-    pre?: () => void;
-    tools: string[] | undefined;
-    notice: string;
-    rollback?: () => SessionModeResult | null;
-  }): SessionModeResult {
+  private commitModeChange(
+    mode: AgentSessionMode,
+    opts: {
+      pre?: () => void;
+      tools: string[] | undefined;
+      notice: string;
+      rollback?: () => SessionModeResult | null;
+    },
+  ): SessionModeResult {
+    this.agentMode = mode;
     if (opts.pre) opts.pre();
-    // agentMode 已经在 caller set (ask/plan 走 captureSavedTools 之后, agent 走
-    // takeRestoredTools 之后). commitModeChange 不再覆盖,只负责共享 emit.
     this.refreshSystemPrompt(opts.tools);
     if (opts.rollback) {
       const result = opts.rollback();
