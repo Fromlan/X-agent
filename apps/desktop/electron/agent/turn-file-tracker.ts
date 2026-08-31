@@ -263,10 +263,10 @@ export class TurnFileTracker implements RestoreSource {
    *
    * **不变量**: 必须在 `session.navigateTree(entryId)` 之前调用. nav 之后
    * abandoned write/edit 不在 active branch,scan 看不到. 这是撤回撤销的
-   * 硬时序,见 restore-source.ts 顶部说明. 编排器走 `CompositeRestoreSource.scan`,
-   * 不直接调此方法.
+   * 硬时序,见 restore-source.ts 顶部说明. 编排器走 {@link scan} (seam),
+   * 内部走此方法. 2026-08-31 收口为 private (issue #64 主题 C C-104).
    */
-  scanSegmentSince(sm: SessionManagerLike, entryId: string): SegmentScan {
+  private scanSegmentSince(sm: SessionManagerLike, entryId: string): SegmentScan {
     const branch = sm.getBranch();
     const idx = branch.findIndex((e) => e.id === entryId);
     const segment = idx >= 0 ? branch.slice(idx) : branch;
@@ -310,9 +310,9 @@ export class TurnFileTracker implements RestoreSource {
 
   /**
    * RestoreSource seam: scan (entryId → segment scan).
-   * Mirrors {@link scanSegmentSince} but conforms to the seam's method name
-   * so {@link CompositeRestoreSource} can dispatch via duck-typing without
-   * expanding the RestoreSource interface to 4 methods.
+   * Public seam entry point —编排器只调 `scan`,内部走 private
+   * `scanSegmentSince` 拿实现. CompositeRestoreSource 用 duck-type 派发
+   * 到本方法,RestoreSource 接口只 3 方法 (scan/preview/restore).
    *
    * **不变量**: 必须在 `session.navigateTree(entryId)` 之前调用.
    */

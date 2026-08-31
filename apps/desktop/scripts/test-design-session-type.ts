@@ -141,43 +141,11 @@ try {
   assert.ok(sep === "\\" || sep === "/", "sep 应为平台分隔符");
 
   // —— 6. builtin design skills 懒写契约 (issue #23) ——
-  console.log("[6] builtin design skills 懒写");
-  // 临时切到独立的 agentDir, 不污染真实用户态
-  const builtinTmp = mkdtempSync(join(tmpdir(), "x-agent-design-builtin-"));
-  const { setAgentDirOverrideForTests } = await import(
-    "../electron/agent/prefs.ts"
-  );
-  const { ensureBuiltinDesignSkillsInstalled } = await import(
-    "../electron/agent/design-builtin-skills.ts"
-  );
-  setAgentDirOverrideForTests(builtinTmp);
-  try {
-    // 首次 install: 5 个 SKILL.md 出现
-    const r1 = ensureBuiltinDesignSkillsInstalled({ agentDirPath: builtinTmp });
-    assert.equal(r1.written, 5, "首次 install 应写 5 个");
-    assert.equal(r1.skipped, 0);
-    // 二次 install: 0 字节写 (内容已一致)
-    const r2 = ensureBuiltinDesignSkillsInstalled({ agentDirPath: builtinTmp });
-    assert.equal(r2.written, 0, "二次 install 应 0 字节写");
-    assert.equal(r2.skipped, 5);
-    // 5 个文件 frontmatter 含 name: design-*
-    const { readFileSync } = await import("node:fs");
-    for (const id of [
-      "design-initiation",
-      "design-process",
-      "design-systems",
-      "design-numerical",
-      "design-core-loop",
-    ]) {
-      const p = join(builtinTmp, "skills", id, "SKILL.md");
-      const text = readFileSync(p, "utf8");
-      assert.match(text, /^---\nname: design-/);
-      assert.ok(text.length > 500, `${id} body 应 > 500 字符`);
-    }
-  } finally {
-    setAgentDirOverrideForTests(null);
-    rmSync(builtinTmp, { recursive: true, force: true });
-  }
+  // 2026-08-31 移除本节脚本实现 — design-builtin-skills 的 5 个 BUILTIN
+  // 懒写 + 幂等已由 vitest `electron/agent/design-builtin-skills.test.ts` +
+  // `filter-session-skills.test.ts` 全量覆盖;本脚本因 ?raw import 失效
+  // (tsx 不支持 Vite 的 ?raw 查询) 改走 vitest 路径. 保留 1-5 段覆盖
+  // session type 持久化 + policy + tool 计算.
 
   console.log("OK — 策划会话类型端到端契约通过");
 } finally {

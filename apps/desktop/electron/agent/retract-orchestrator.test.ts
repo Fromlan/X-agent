@@ -42,11 +42,9 @@ function makeHost(overrides?: {
     kind: "baseline" as const,
     label: "write/edit 基线",
     fallbackWarning: "write/edit 基线还原失败。",
-    // RestoreSource seam: scan (seam method) delegates to scanSegmentSince
-    // (internal pre-seam helper) on the real instance; for the mock we wire
-    // both names to the same vi.fn so assertions cover either path.
+    // RestoreSource seam: 编排器只走 scan/preview/restore 3 个 seam 方法
+    // (2026-08-31 收口 scanSegmentSince 为 private,见 issue #64 主题 C C-104).
     scan: vi.fn(() => scanSegment),
-    scanSegmentSince: vi.fn(() => scanSegment),
     preview: vi.fn(async () => ({
       mode: "baseline" as const,
       restorablePaths: ["a.txt"],
