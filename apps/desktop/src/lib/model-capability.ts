@@ -37,3 +37,22 @@ export function findCurrentModel(
   if (!key) return null;
   return models.find((x) => `${x.provider}/${x.id}` === key) ?? null;
 }
+
+/**
+ * 给用户提示"切到 vision 模型"时列举的常见 vision 能力模型 id。
+ * 加新模型时改这里一处即可;两处警告文案 (App.tsx send 闸门 +
+ * ChatPanel composer chip) 共享同一份清单,避免 drift。
+ */
+export const VISION_MODEL_EXAMPLES: readonly string[] = [
+  "mistral-small-2603",
+  "pixtral-12b",
+  "mistral-medium-latest",
+  "Claude",
+  "GPT-4o",
+  "Gemini",
+] as const;
+
+/** 格式化 vision 模型清单为 "(a / b / c)" 形式 — 直接拼进用户提示文案。 */
+export function formatVisionModelExamples(): string {
+  return VISION_MODEL_EXAMPLES.join(" / ");
+}

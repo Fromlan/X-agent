@@ -23,7 +23,6 @@ import type { SessionType } from "@shared/session-type";
 import { DEFAULT_SESSION_TYPE } from "@shared/session-type";
 import type { RetractConfirmMode } from "../components/RetractConfirmModal";
 import { normalizeProjectKey } from "../lib/group-sessions";
-import { applyTheme } from "../lib/theme";
 import { createEmptyState, type ChatItem } from "../stores/chat-store";
 import {
   clearSessionUsage,
@@ -455,7 +454,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setPrefs(p);
         if (recovery) setPrefsRecovery(recovery);
         if (codec) setSecretCodec(codec);
-        applyTheme(p.themeId, p.colorMode);
+        document.body.dataset.theme = `${p.themeId}-${p.colorMode}`;
         setBash(await window.xAgent.prefs.checkBash());
         setGit(await window.xAgent.prefs.checkGit());
         setAuth(await window.xAgent.prefs.checkAuth());

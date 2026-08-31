@@ -16,6 +16,7 @@ import { SlashMenu } from "./SlashMenu";
 import { AtMenu } from "./AtMenu";
 import { SelectMenu } from "./SelectMenu";
 import { dbgLog } from "@shared/debug-log";
+import { formatVisionModelExamples } from "../lib/model-capability";
 import {
   Bot,
   Brain,
@@ -469,7 +470,7 @@ function ChatPanelImpl(props: Props) {
                     ? `「${props.currentModelLabel}」`
                     : ""}{" "}
                   不支持图片,发送会被拦截。请切换到 vision 模型
-                  (mistral-small-2603 / pixtral-12b / mistral-medium-latest / Claude / GPT-4o / Gemini),
+                  ({formatVisionModelExamples()}),
                   或把图片以文件方式提供。
                 </span>
               </div>

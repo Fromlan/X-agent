@@ -54,7 +54,7 @@ import {
   expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
 import { splitFilesForAttachment, type FileReference } from "./lib/file-attachment";
-import { findCurrentModel, modelSupportsImage } from "./lib/model-capability";
+import { findCurrentModel, formatVisionModelExamples, modelSupportsImage } from "./lib/model-capability";
 import { startersForProject } from "./lib/chat-starters";
 import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
 import {
@@ -88,7 +88,6 @@ import {
   getSessionUsageStoreVersion,
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
-import { applyTheme } from "./lib/theme";
 import { useLogo } from "./hooks/useLogo";
 
 export default function App() {
@@ -394,7 +393,7 @@ export default function App() {
       const m = findCurrentModel(models, currentModelKey);
       const label = m ? `${m.provider}/${m.id}` : currentModelKey || "(未知)";
       setError(
-        `当前模型 ${label} 不支持图片,Pi SDK 会把整条 user message 替换为占位文本,截图发过去 AI 也看不到。请切换到 vision 模型 (如 mistral-small-2603 / pixtral-12b / mistral-medium-latest / Claude / GPT-4o / Gemini),或把图片以文件方式提供 (拖入或用 @ 引用路径)。`,
+        `当前模型 ${label} 不支持图片,Pi SDK 会把整条 user message 替换为占位文本,截图发过去 AI 也看不到。请切换到 vision 模型 (如 ${formatVisionModelExamples()}),或把图片以文件方式提供 (拖入或用 @ 引用路径)。`,
       );
       dbgLog("chat", "send blocked: model lacks image input", {
         currentModel: label,
@@ -703,7 +702,7 @@ export default function App() {
     const colorMode = prefs.colorMode === "dark" ? "light" : "dark";
     const next = await window.xAgent.prefs.set({ colorMode });
     setPrefs(next);
-    applyTheme(next.themeId, next.colorMode);
+    document.body.dataset.theme = `${next.themeId}-${next.colorMode}`;
   };
 
   const commitSidebarWidth = useCallback(async (sidebarWidth: number) => {
@@ -1373,7 +1372,7 @@ export default function App() {
           hasActiveSession={Boolean(sessionId)}
           onPrefsChanged={(p) => {
             setPrefs(p);
-            applyTheme(p.themeId, p.colorMode);
+            document.body.dataset.theme = `${p.themeId}-${p.colorMode}`;
           }}
           onBashChanged={setBash}
           onGitChanged={setGit}

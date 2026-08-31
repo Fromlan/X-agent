@@ -11,7 +11,12 @@
  */
 import { describe, it, expect } from "vitest";
 import type { ModelInfo } from "@shared/ipc";
-import { findCurrentModel, modelSupportsImage } from "./model-capability";
+import {
+  findCurrentModel,
+  formatVisionModelExamples,
+  modelSupportsImage,
+  VISION_MODEL_EXAMPLES,
+} from "./model-capability";
 
 function mi(
   provider: string,
@@ -82,5 +87,25 @@ describe("findCurrentModel", () => {
     expect(findCurrentModel(models, null)).toBeNull();
     expect(findCurrentModel(models, undefined)).toBeNull();
     expect(findCurrentModel(models, "")).toBeNull();
+  });
+});
+
+describe("VISION_MODEL_EXAMPLES / formatVisionModelExamples", () => {
+  it("清单非空, 至少含 4 个常见 vision 能力模型", () => {
+    expect(VISION_MODEL_EXAMPLES.length).toBeGreaterThanOrEqual(4);
+    expect(VISION_MODEL_EXAMPLES).toContain("pixtral-12b");
+    expect(VISION_MODEL_EXAMPLES).toContain("Claude");
+    expect(VISION_MODEL_EXAMPLES).toContain("GPT-4o");
+    expect(VISION_MODEL_EXAMPLES).toContain("Gemini");
+  });
+
+  it("formatVisionModelExamples 用 ' / ' 拼接, 两侧不加括号", () => {
+    const out = formatVisionModelExamples();
+    expect(out.startsWith("(")).toBe(false);
+    expect(out.endsWith(")")).toBe(false);
+    expect(out).toContain(" / ");
+    // 完整 token 数 = len(elements) + len(" / ") * (n - 1)
+    const expected = VISION_MODEL_EXAMPLES.join(" / ");
+    expect(out).toBe(expected);
   });
 });

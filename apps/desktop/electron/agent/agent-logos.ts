@@ -9,9 +9,13 @@
  * are served back to the renderer through the `x-agent-logos://` custom
  * protocol (registered in `electron/main.ts`).
  *
- * The active choice lives in `ClientPrefs.clientLogoId`; this module only
- * owns the binary side and exposes a `notifyLogoChange` hook for the runtime
- * to push `IPC_EVENTS.logoChanged` to the renderer.
+ * The active choice lives in `ClientPrefs.clientLogoId`; this module owns
+ * the binary side (presets + custom upload / list / delete / path resolve).
+ * The renderer-facing `logo:changed` event push + BrowserWindow title-bar
+ * icon refresh lives in `app-runtime.ts` (`notifyLogoChange`) — this module
+ * only re-exports the resolver it needs. (2026-08-31 seam 注释修正, issue
+ * #68 主题 J C-405: 原注释把 `notifyLogoChange` 写成本模块 export,实际
+ * 在 app-runtime.ts:382.)
  */
 import { app } from "electron";
 import { randomUUID } from "node:crypto";
