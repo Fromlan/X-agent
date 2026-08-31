@@ -88,6 +88,29 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     rawAutoCompact >= 0
       ? Math.min(100, Math.floor(rawAutoCompact))
       : DEFAULT_PREFS.autoCompactPercent;
+  const rawSnipThreshold = rest.autoSnipThreshold;
+  // Threshold is char count: 0 disables the snip pass; otherwise clamped to
+  // [256, 1_000_000] so a single pathological value cannot blank the history.
+  const autoSnipThreshold =
+    typeof rawSnipThreshold === "number" &&
+    Number.isFinite(rawSnipThreshold) &&
+    rawSnipThreshold >= 0
+      ? Math.min(1_000_000, Math.floor(rawSnipThreshold))
+      : DEFAULT_PREFS.autoSnipThreshold;
+  const rawSnipHead = rest.autoSnipHeadKeep;
+  const autoSnipHeadKeep =
+    typeof rawSnipHead === "number" &&
+    Number.isFinite(rawSnipHead) &&
+    rawSnipHead >= 0
+      ? Math.min(1_000_000, Math.floor(rawSnipHead))
+      : DEFAULT_PREFS.autoSnipHeadKeep;
+  const rawSnipTail = rest.autoSnipTailKeep;
+  const autoSnipTailKeep =
+    typeof rawSnipTail === "number" &&
+    Number.isFinite(rawSnipTail) &&
+    rawSnipTail >= 0
+      ? Math.min(1_000_000, Math.floor(rawSnipTail))
+      : DEFAULT_PREFS.autoSnipTailKeep;
   const rawGoalMax = rest.goalMaxTurns;
   const goalMaxTurns =
     typeof rawGoalMax === "number" &&
@@ -126,6 +149,9 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     dismissedGodotToolsNudgeKeys,
     disabledSkills,
     autoCompactPercent,
+    autoSnipThreshold,
+    autoSnipHeadKeep,
+    autoSnipTailKeep,
     goalMaxTurns,
     goalMaxTokens,
     clientLogoId,
@@ -262,6 +288,21 @@ export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPre
       next.autoCompactPercent = Number.isFinite(patch.autoCompactPercent)
         ? Math.min(100, Math.max(0, Math.floor(patch.autoCompactPercent)))
         : DEFAULT_PREFS.autoCompactPercent;
+    }
+    if (typeof patch.autoSnipThreshold === "number") {
+      next.autoSnipThreshold = Number.isFinite(patch.autoSnipThreshold)
+        ? Math.min(1_000_000, Math.max(0, Math.floor(patch.autoSnipThreshold)))
+        : DEFAULT_PREFS.autoSnipThreshold;
+    }
+    if (typeof patch.autoSnipHeadKeep === "number") {
+      next.autoSnipHeadKeep = Number.isFinite(patch.autoSnipHeadKeep)
+        ? Math.min(1_000_000, Math.max(0, Math.floor(patch.autoSnipHeadKeep)))
+        : DEFAULT_PREFS.autoSnipHeadKeep;
+    }
+    if (typeof patch.autoSnipTailKeep === "number") {
+      next.autoSnipTailKeep = Number.isFinite(patch.autoSnipTailKeep)
+        ? Math.min(1_000_000, Math.max(0, Math.floor(patch.autoSnipTailKeep)))
+        : DEFAULT_PREFS.autoSnipTailKeep;
     }
     if (typeof patch.goalMaxTurns === "number") {
       next.goalMaxTurns = Number.isFinite(patch.goalMaxTurns)

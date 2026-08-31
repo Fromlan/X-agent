@@ -28,7 +28,14 @@ assert.equal(DEFAULT_PREFS.thinkingLevel, "high");
 assert.deepEqual(DEFAULT_PREFS.dismissedReadyChecklistKeys, []);
 assert.deepEqual(DEFAULT_PREFS.dismissedGodotToolsNudgeKeys, []);
 assert.deepEqual(DEFAULT_PREFS.disabledSkills, []);
-assert.equal(DEFAULT_PREFS.autoCompactPercent, 0);
+// auto-maintain defaults (introduced by feature/auto-maintain-context):
+//   autoCompactPercent = 80 — single trigger threshold mirroring
+//     esengine/DeepSeek-Reasonix's `compact_ratio = 0.80`. Snip-first runs
+//     before compact, so a 80% ceiling is safe.
+assert.equal(DEFAULT_PREFS.autoCompactPercent, 80);
+assert.equal(DEFAULT_PREFS.autoSnipThreshold, 8192);
+assert.equal(DEFAULT_PREFS.autoSnipHeadKeep, 4096);
+assert.equal(DEFAULT_PREFS.autoSnipTailKeep, 1024);
 assert.equal(DEFAULT_PREFS.goalMaxTurns, 20);
 assert.equal(DEFAULT_PREFS.goalMaxTokens, 500_000);
 assert.equal(DEFAULT_PREFS.clientLogoId, "default", "DEFAULT_PREFS.clientLogoId");

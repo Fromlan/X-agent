@@ -36,6 +36,18 @@ import {
 export const DESIGN_DIR_NAME = "game-design";
 
 /**
+ * Cap on a single `write` tool call's `content` length (in characters) inside
+ * a design session. Files larger than this are blocked so a single turn
+ * cannot dump every source markdown into a new file (the issue behind the
+ * 195k-context blowup: nine ~25k markdown rewrites in one turn).
+ *
+ * 30_000 chars ≈ 7.5k tokens, which fits comfortably under most cache
+ * breakpoints. Files that need to be larger should be split across multiple
+ * `edit` calls (search/replace) or sequenced across turns.
+ */
+export const DESIGN_WRITE_CONTENT_MAX_CHARS = 30_000;
+
+/**
  * True iff `absOrRelPath` (after cwd-sandbox normalization) resolves inside
  * <cwd>/game-design/. Case-insensitive on Windows (matches cwd-sandbox).
  *
@@ -204,6 +216,18 @@ export function shouldBlockDesignSessionWrite(
       block: true,
       reason: `策划会话禁止在 game-design/ 外写入（${toolName} ${raw}）。`,
     };
+  }
+  // write 工具：单次 content 上限，避免一个 turn 整段铺大文件。
+  if (toolName === "write") {
+    const content = toolInput?.content;
+    if (typeof content === "string" && content.length > DESIGN_WRITE_CONTENT_MAX_CHARS) {
+      return {
+        block: true,
+        reason:
+          `策划会话单次 write content 不得超过 ${DESIGN_WRITE_CONTENT_MAX_CHARS} 字符（当前 ${content.length}）。` +
+          `请拆分为多次 edit，或分多个 turn 写入。`,
+      };
+    }
   }
   return { block: false };
 }

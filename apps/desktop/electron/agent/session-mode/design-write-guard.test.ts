@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import {
   DESIGN_DIR_NAME,
+  DESIGN_WRITE_CONTENT_MAX_CHARS,
   _internals,
   createDesignWriteGuardExtension,
   isInsideGameDesign,
@@ -402,5 +403,77 @@ describe("_internals 路径归一化", () => {
 describe("DESIGN_DIR_NAME 契约", () => {
   it("目录名为 game-design, 不可改", () => {
     expect(DESIGN_DIR_NAME).toBe("game-design");
+  });
+});
+
+describe("shouldBlockDesignSessionWrite — write content 上限", () => {
+  it("write content 在上限内: 不 block", () => {
+    const r = shouldBlockDesignSessionWrite(
+      "design",
+      "write",
+      {
+        path: "game-design/systems/combat.md",
+        content: "x".repeat(DESIGN_WRITE_CONTENT_MAX_CHARS - 1),
+      },
+      CWD,
+    );
+    expect(r.block).toBe(false);
+  });
+
+  it("write content 正好等于上限: 不 block (inclusive boundary)", () => {
+    const r = shouldBlockDesignSessionWrite(
+      "design",
+      "write",
+      {
+        path: "game-design/systems/combat.md",
+        content: "x".repeat(DESIGN_WRITE_CONTENT_MAX_CHARS),
+      },
+      CWD,
+    );
+    expect(r.block).toBe(false);
+  });
+
+  it("write content 超出上限: block + 提示拆分", () => {
+    const r = shouldBlockDesignSessionWrite(
+      "design",
+      "write",
+      {
+        path: "game-design/systems/combat.md",
+        content: "x".repeat(DESIGN_WRITE_CONTENT_MAX_CHARS + 1),
+      },
+      CWD,
+    );
+    expect(r.block).toBe(true);
+    expect(r.reason).toContain(String(DESIGN_WRITE_CONTENT_MAX_CHARS));
+    expect(r.reason).toMatch(/拆分|edit|分多个 turn/);
+  });
+
+  it("edit 不受 content 上限 (edit 走 search/replace)", () => {
+    // edit 接受 oldText/newText, 没有大段 content; 检验 edit 即便带长 args 也不该因为 content 上限 block
+    const r = shouldBlockDesignSessionWrite(
+      "design",
+      "edit",
+      {
+        path: "game-design/systems/combat.md",
+        oldText: "x",
+        newText: "y".repeat(50_000),
+      },
+      CWD,
+    );
+    // 路径合法, edit 不会被 content 上限卡
+    expect(r.block).toBe(false);
+  });
+
+  it("code session + write 超大 content: 不 block (上限只作用于 design)", () => {
+    const r = shouldBlockDesignSessionWrite(
+      "code",
+      "write",
+      {
+        path: "scripts/big.gd",
+        content: "x".repeat(DESIGN_WRITE_CONTENT_MAX_CHARS + 100_000),
+      },
+      CWD,
+    );
+    expect(r.block).toBe(false);
   });
 });

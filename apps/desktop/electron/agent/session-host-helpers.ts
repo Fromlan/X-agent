@@ -157,6 +157,105 @@ export function estimateTrailingAfterLastAssistant(
   }
 }
 
+/**
+ * Sum of chars/4 across assistant toolCall arguments and toolResult content
+ * bodies. Mirrors Pi's `estimateTokens` heuristic so the breakdown segments
+ * add up to the same total as `estimateMessageTokens`.
+ *
+ * Used by `context-breakdown` to break "messages" into a `toolHistory` segment
+ * + a smaller `messages` segment (user + assistant prose only).
+ */
+export function estimateToolHistoryTokens(session: AgentSession): number {
+  try {
+    const messages = session.messages ?? [];
+    let totalChars = 0;
+    for (const msg of messages) {
+      if (!msg || typeof msg !== "object") continue;
+      const m = msg as {
+        role?: string;
+        content?: unknown;
+      };
+      if (m.role === "assistant") {
+        // content is an array of blocks; collect {toolCall}.name + JSON(args)
+        if (Array.isArray(m.content)) {
+          for (const block of m.content) {
+            if (
+              block &&
+              typeof block === "object" &&
+              (block as { type?: string }).type === "toolCall"
+            ) {
+              const b = block as {
+                name?: unknown;
+                arguments?: unknown;
+              };
+              const nameLen =
+                typeof b.name === "string" ? b.name.length : 0;
+              const argsLen = jsonStringifyLen(b.arguments);
+              totalChars += nameLen + argsLen;
+            }
+          }
+        }
+      } else if (m.role === "toolResult") {
+        if (typeof m.content === "string") {
+          totalChars += m.content.length;
+        } else if (Array.isArray(m.content)) {
+          for (const block of m.content) {
+            if (
+              block &&
+              typeof block === "object" &&
+              typeof (block as { text?: unknown }).text === "string"
+            ) {
+              totalChars += (block as { text: string }).text.length;
+            }
+          }
+        }
+      }
+    }
+    return Math.ceil(totalChars / 4);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Sum of chars/4 across assistant `thinking` blocks. Companion to
+ * `estimateToolHistoryTokens` for the context breakdown.
+ */
+export function estimateThinkingTokens(session: AgentSession): number {
+  try {
+    const messages = session.messages ?? [];
+    let totalChars = 0;
+    for (const msg of messages) {
+      if (!msg || typeof msg !== "object") continue;
+      const m = msg as { role?: string; content?: unknown };
+      if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+      for (const block of m.content) {
+        if (
+          block &&
+          typeof block === "object" &&
+          (block as { type?: string }).type === "thinking" &&
+          typeof (block as { thinking?: unknown }).thinking === "string"
+        ) {
+          totalChars += (block as { thinking: string }).thinking.length;
+        }
+      }
+    }
+    return Math.ceil(totalChars / 4);
+  } catch {
+    return 0;
+  }
+}
+
+/** Best-effort `JSON.stringify` length; safe against circular refs. */
+function jsonStringifyLen(value: unknown): number {
+  if (value === undefined) return 0;
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return 0;
+  }
+}
+
 export function failOpen(error: string, cwd = ""): OpenProjectResult {
   return {
     ok: false,

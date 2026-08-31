@@ -31,6 +31,8 @@ const SEGMENT_LABELS: Record<ContextSegmentId, string> = {
   skills: "技能索引",
   tools: "工具说明",
   messages: "对话消息",
+  toolHistory: "工具历史",
+  thinking: "思考块",
   overhead: "协议损耗",
 };
 
@@ -109,6 +111,17 @@ export type BuildContextBreakdownInput = {
    * Prefer summing Pi estimateTokens(message) over residual math.
    */
   messageTokens?: number;
+  /**
+   * Sub-estimate of the assistant `toolCall` arguments + toolResult bodies
+   * portion of `messageTokens`. When supplied, the breakdown shows a separate
+   * `toolHistory` segment and the `messages` segment is reduced accordingly.
+   */
+  toolHistoryTokens?: number;
+  /**
+   * Sub-estimate of the assistant `thinking` blocks portion of
+   * `messageTokens`. Shown as a separate `thinking` segment when present.
+   */
+  thinkingTokens?: number;
 };
 
 type ContentParts = {
@@ -117,14 +130,30 @@ type ContentParts = {
   skills: number;
   tools: number;
   messages: number;
+  toolHistory: number;
+  thinking: number;
 };
 
 /** Scale content segments down so they sum to `total` (rounding → largest). */
 function scaleContentDown(parts: ContentParts, total: number): ContentParts {
   const accounted =
-    parts.system + parts.project + parts.skills + parts.tools + parts.messages;
+    parts.system +
+    parts.project +
+    parts.skills +
+    parts.tools +
+    parts.messages +
+    parts.toolHistory +
+    parts.thinking;
   if (total <= 0 || accounted <= 0) {
-    return { system: 0, project: 0, skills: 0, tools: 0, messages: 0 };
+    return {
+      system: 0,
+      project: 0,
+      skills: 0,
+      tools: 0,
+      messages: 0,
+      toolHistory: 0,
+      thinking: 0,
+    };
   }
   const scale = total / accounted;
   let system = Math.round(parts.system * scale);
@@ -132,7 +161,9 @@ function scaleContentDown(parts: ContentParts, total: number): ContentParts {
   let skills = Math.round(parts.skills * scale);
   let tools = Math.round(parts.tools * scale);
   let messages = Math.round(parts.messages * scale);
-  const sum = system + project + skills + tools + messages;
+  let toolHistory = Math.round(parts.toolHistory * scale);
+  let thinking = Math.round(parts.thinking * scale);
+  const sum = system + project + skills + tools + messages + toolHistory + thinking;
   const drift = total - sum;
   if (drift !== 0) {
     type SegKey = keyof ContentParts;
@@ -143,6 +174,8 @@ function scaleContentDown(parts: ContentParts, total: number): ContentParts {
         { key: "skills", value: skills },
         { key: "tools", value: tools },
         { key: "messages", value: messages },
+        { key: "toolHistory", value: toolHistory },
+        { key: "thinking", value: thinking },
       ] as Array<{ key: SegKey; value: number }>
     ).sort((a, b) => b.value - a.value);
     const target = ranked[0]!.key;
@@ -150,9 +183,11 @@ function scaleContentDown(parts: ContentParts, total: number): ContentParts {
     else if (target === "project") project = Math.max(0, project + drift);
     else if (target === "skills") skills = Math.max(0, skills + drift);
     else if (target === "tools") tools = Math.max(0, tools + drift);
-    else messages = Math.max(0, messages + drift);
+    else if (target === "messages") messages = Math.max(0, messages + drift);
+    else if (target === "toolHistory") toolHistory = Math.max(0, toolHistory + drift);
+    else thinking = Math.max(0, thinking + drift);
   }
-  return { system, project, skills, tools, messages };
+  return { system, project, skills, tools, messages, toolHistory, thinking };
 }
 
 /**
@@ -162,6 +197,12 @@ function scaleContentDown(parts: ContentParts, total: number): ContentParts {
  * When API `contextTokens` exceeds that sum, the residual is `overhead`
  * (tool JSON schemas + request framing) — never folded into system.
  * If estimates overshoot the API total, content is scaled down and overhead is 0.
+ *
+ * When `toolHistoryTokens` / `thinkingTokens` are provided, the
+ * `messageTokens` total is split into a `messages` segment (prose only) and
+ * dedicated `toolHistory` / `thinking` segments. The split assumes the
+ * sub-estimates are sub-counts of `messageTokens`; if they exceed it, the
+ * surplus stays as `messages` (the prose floor cannot go below zero).
  */
 export function buildContextBreakdown(
   input: BuildContextBreakdownInput,
@@ -171,7 +212,21 @@ export function buildContextBreakdown(
   let projectTokens = estimateTextTokens(parts.project);
   let skillsTokens = estimateTextTokens(parts.skills);
   let toolsTokens = estimateTextTokens(parts.tools);
-  let messagesTokens = Math.max(0, Math.round(input.messageTokens ?? 0));
+  let messagesTotal = Math.max(0, Math.round(input.messageTokens ?? 0));
+  const toolHistoryRaw = Math.max(
+    0,
+    Math.round(input.toolHistoryTokens ?? 0),
+  );
+  const thinkingRaw = Math.max(0, Math.round(input.thinkingTokens ?? 0));
+  // Sub-counts off the prose total. Clamp so the sum cannot exceed messages.
+  const subTotal = Math.min(toolHistoryRaw + thinkingRaw, messagesTotal);
+  let toolHistoryTokens =
+    messagesTotal > 0 ? Math.min(toolHistoryRaw, subTotal) : 0;
+  let thinkingTokens =
+    messagesTotal > 0
+      ? Math.min(thinkingRaw, Math.max(0, subTotal - toolHistoryTokens))
+      : 0;
+  let messagesTokens = Math.max(0, messagesTotal - toolHistoryTokens - thinkingTokens);
   let overheadTokens = 0;
 
   const contextWindow = Math.max(0, input.contextWindow);
@@ -183,7 +238,9 @@ export function buildContextBreakdown(
       projectTokens +
       skillsTokens +
       toolsTokens +
-      messagesTokens;
+      messagesTokens +
+      toolHistoryTokens +
+      thinkingTokens;
 
     if (accounted > tokens && accounted > 0) {
       const scaled = scaleContentDown(
@@ -193,6 +250,8 @@ export function buildContextBreakdown(
           skills: skillsTokens,
           tools: toolsTokens,
           messages: messagesTokens,
+          toolHistory: toolHistoryTokens,
+          thinking: thinkingTokens,
         },
         tokens,
       );
@@ -201,6 +260,8 @@ export function buildContextBreakdown(
       skillsTokens = scaled.skills;
       toolsTokens = scaled.tools;
       messagesTokens = scaled.messages;
+      toolHistoryTokens = scaled.toolHistory;
+      thinkingTokens = scaled.thinking;
       overheadTokens = 0;
     } else {
       // Keep content estimates as-is; residual is protocol/tool-schema overhead.
@@ -208,17 +269,29 @@ export function buildContextBreakdown(
     }
   }
 
-  const segments: ContextSegment[] = (
-    [
-      ["system", systemTokens],
-      ["project", projectTokens],
-      ["skills", skillsTokens],
-      ["tools", toolsTokens],
-      ["messages", messagesTokens],
-      ["overhead", overheadTokens],
-    ] as const
-  )
-    .filter(([id, segTokens]) => id !== "overhead" || segTokens > 0)
+  // `id` is typed as the literal union of segment ids; widen to ContextSegmentId
+  // before filtering so the comparator branches type-check.
+  const rawSegments: Array<[ContextSegmentId, number]> = [
+    ["system", systemTokens],
+    ["project", projectTokens],
+    ["skills", skillsTokens],
+    ["tools", toolsTokens],
+    ["messages", messagesTokens],
+    ["toolHistory", toolHistoryTokens],
+    ["thinking", thinkingTokens],
+    ["overhead", overheadTokens],
+  ];
+  const segments: ContextSegment[] = rawSegments
+    .filter(([id, segTokens]) => {
+      if (id === "overhead" && segTokens <= 0) return false;
+      // Hide the new segments entirely when the caller didn't provide them
+      // (preserves backward compatibility with tests / direct callers).
+      if (id === "toolHistory" && input.toolHistoryTokens === undefined) return false;
+      if (id === "thinking" && input.thinkingTokens === undefined) return false;
+      // Hide zero-token toolHistory / thinking so the bar isn't cluttered.
+      if ((id === "toolHistory" || id === "thinking") && segTokens <= 0) return false;
+      return true;
+    })
     .map(([id, segTokens]) => ({
       id,
       label: SEGMENT_LABELS[id],

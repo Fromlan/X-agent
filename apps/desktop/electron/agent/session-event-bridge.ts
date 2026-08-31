@@ -58,6 +58,13 @@ export interface SessionEventBridgeDeps {
   turn: SessionEventTurnFacet;
   usage: SessionEventUsageFacet;
   maybeAutoTitleSession(): Promise<void>;
+  /**
+   * Called on `turn_end` and periodically on `tool_execution_end` to run
+   * the snip-first + auto-compact pass. The host owns debounce / lock so
+   * the bridge just schedules; the call returns a promise that may be
+   * long-lived when compaction is needed. Errors are logged inside.
+   */
+  autoMaintainIfNeeded(): Promise<void> | void;
   /** Called after agent_end when not retrying — Goal Mode continuation hook. */
   onAgentSettled?: () => void;
 }
@@ -94,6 +101,10 @@ export function bridgeSessionEvents(
   session: AgentSession,
   deps: SessionEventBridgeDeps,
 ): () => void {
+  // Mid-turn auto-maintain counter: every 5 tool executions within a single
+  // turn nudges the host to re-evaluate the snip / compact threshold. Reset
+  // to 0 on `turn_start` so each turn gets its own cadence.
+  let midTurnToolCount = 0;
   return session.subscribe((event) => {
     // Drop events after the host switched (or cleared) the active bundle.
     // Otherwise abort/turn_end from a disposed session can re-inject bubbles
@@ -120,6 +131,7 @@ export function bridgeSessionEvents(
         break;
       }
       case "turn_start":
+        midTurnToolCount = 0;
         deps.emit({ type: "turn_start" });
         break;
       case "turn_end": {
@@ -158,6 +170,11 @@ export function bridgeSessionEvents(
         deps.emit({ type: "turn_end" });
         deps.emitHistoryReplace();
         deps.emitUsageUpdate();
+        // Auto-maintain (snip-first, then compact if still over) runs after
+        // the turn ends so a long single-turn can recover without waiting
+        // for agent_end. The call is fire-and-forget: errors / busy states
+        // are swallowed inside `autoMaintainIfNeeded`.
+        void deps.autoMaintainIfNeeded();
         break;
       }
       case "message_start": {
@@ -325,6 +342,14 @@ export function bridgeSessionEvents(
           ),
           isError: event.isError,
         });
+        // Mid-turn auto-maintain: every 5th tool execution nudges the host to
+        // re-evaluate. `autoMaintainIfNeeded` itself debounces (5s) and exits
+        // early when below threshold, so this stays cheap.
+        midTurnToolCount += 1;
+        if (midTurnToolCount >= 5) {
+          midTurnToolCount = 0;
+          void deps.autoMaintainIfNeeded();
+        }
         break;
       }
       case "queue_update":

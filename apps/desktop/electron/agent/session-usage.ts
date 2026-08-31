@@ -12,6 +12,8 @@ import {
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import {
   estimateMessageTokens,
+  estimateThinkingTokens,
+  estimateToolHistoryTokens,
   estimateTrailingAfterLastAssistant,
 } from "./session-host-helpers";
 
@@ -40,6 +42,12 @@ export function buildUsageSnapshot(
                 estimateTrailingAfterLastAssistant(session)
               : null,
             messageTokens: estimateMessageTokens(session),
+            // Split toolCall args + toolResult bodies and assistant thinking
+            // blocks out of the message total so the breakdown UI shows where
+            // the prompt bytes actually live, instead of one 88% "overhead"
+            // bucket that hides tool-history growth.
+            toolHistoryTokens: estimateToolHistoryTokens(session),
+            thinkingTokens: estimateThinkingTokens(session),
           })
         : null;
     return {

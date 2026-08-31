@@ -118,6 +118,10 @@ export type ContextSegmentId =
   | "skills"
   | "tools"
   | "messages"
+  /** Assistant toolCall arguments + toolResult bodies in the history. */
+  | "toolHistory"
+  /** Assistant thinking blocks (reasoning effort ≠ off). */
+  | "thinking"
   /** API total minus text estimates: tool schemas + request framing. */
   | "overhead";
 
@@ -493,10 +497,25 @@ export interface ClientPrefs {
    */
   dismissedGodotToolsNudgeKeys: string[];
   /**
-   * Auto-compact when context occupancy percent reaches this threshold (1鈥?00).
-   * `0` disables automatic compression.
+   * Auto-compact when context occupancy percent reaches this threshold (1-100).
+   * `0` disables automatic compression. The auto-maintain flow is:
+   *   1. Snip oversized tool results (see `autoSnipThreshold`).
+   *   2. If still above threshold, run `session.compact()`.
+   * Inspired by `esengine/DeepSeek-Reasonix` SPEC section 3.6 — "stale tool
+   * output is snipped/pruned before summary compaction".
    */
   autoCompactPercent: number;
+  /**
+   * Tool result messages whose `content` exceeds this many characters get
+   * in-place snipped at the auto-maintain pass (head + marker + tail).
+   * Default 8192 (~2k tokens) — same threshold as Reasonix's tool-result snip.
+   * `0` disables the snip pass (only compaction runs).
+   */
+  autoSnipThreshold: number;
+  /** Number of characters to keep at the head of a snipped tool result. */
+  autoSnipHeadKeep: number;
+  /** Number of characters to keep at the tail of a snipped tool result. */
+  autoSnipTailKeep: number;
   /**
    * Goal mode auto-continue turn budget (1鈥?00). Soft-stops with
    * `budget_limited` when reached; user can raise and resume.
@@ -536,7 +555,10 @@ export const DEFAULT_PREFS: ClientPrefs = {
   hiddenProjectKeys: [],
   dismissedReadyChecklistKeys: [],
   dismissedGodotToolsNudgeKeys: [],
-  autoCompactPercent: 0,
+  autoCompactPercent: 80,
+  autoSnipThreshold: 8192,
+  autoSnipHeadKeep: 4096,
+  autoSnipTailKeep: 1024,
   goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
   goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
   clientLogoId: "default",
@@ -582,6 +604,9 @@ export const ClientPrefsSchema = Type.Object({
   dismissedReadyChecklistKeys: Type.Array(Type.String()),
   dismissedGodotToolsNudgeKeys: Type.Array(Type.String()),
   autoCompactPercent: Type.Number(),
+  autoSnipThreshold: Type.Number(),
+  autoSnipHeadKeep: Type.Number(),
+  autoSnipTailKeep: Type.Number(),
   goalMaxTurns: Type.Number(),
   goalMaxTokens: Type.Number(),
   // Encoded as a free-form string; renderer side filters against the known
@@ -721,7 +746,8 @@ export type NoticeReplaceKey =
   | "plan"
   | "goal_eval"
   | "session"
-  | "extension";
+  | "extension"
+  | "auto-maintain";
 
 export type FileRestoreSkipReason =
   | "bash_unknown"
