@@ -28,6 +28,22 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 ## Unreleased
 
+## 0.6.1
+
+### 改进
+
+- **Composer 支持附件**：可在输入框直接粘贴或拖放图片（缩略图 chip 化显示在 composer 内部）；拖入非图片文件以文件 chip 形式呈现（与图片同区域，cwd 内文件发送时内联展开，cwd 外文件以绝对路径送达模型）。粘贴的图片走多模态协议，AI 实际可见；当前模型不支持图片时，发送前提示切到 vision 模型，并支持拖图时提前在 composer 上方给出警告条。
+- **策划会话错误提示措辞**：design 模式下被守卫拦截时，错误文案改用策划会话语境，避免误以为处于 plan 模式。
+- **项目网站响应式与 favicon**：Hero 背景层跨满视口（旧版 1180px 容器会切掉宽屏的渐变与浮层），favicon 替换为从 logo.png 派生的多尺寸渲染集（16/32/48 + apple-touch），部署 README 的 URL / node_id 同步更新。
+- **主依赖升级**：vite 8.2.2、electron-vite 6.0.0-beta.1、@vitejs/plugin-react 6.1.0，构建与启动性能优化。
+- **内部架构加深**：session / session-mode / hooks / electron main / IPC / shared / provider 等模块的内部边界收口（主题 A–J 共 8 项重构）；Vitest 覆盖扩展（godot-rpc 跨文件 drift check、IPC 工具注册表 derive / boundary、user-bubble images、model capability 等）。
+
+### 修复
+
+- **CI dependabot-auto-merge race condition**：`gh pr merge --auto` 偶发因 branch protection 元数据未就绪失败，3 次 5s 重试兜底，避免依赖更新自动合并漏触。
+- **Vitest CI 冷启动超时**：testTimeout 由 5s 扩到 15s，CI 冷启动偶发的 5s 超时不再误报。
+- **e2e：session-type plan mode 接受 design session rollback 路径**：策划会话回滚路径与 session-type 判定对齐，避免回滚误判。
+
 ## 0.6.0
 
 > minor 线起点：自动汇总 0.5.0–0.5.5 各补丁；本节先列本周期新增，再附 `### 0.5.0–0.5.5 汇总`。
