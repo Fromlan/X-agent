@@ -1,4 +1,30 @@
-/** Shared IPC types between main and renderer. */
+﻿/**
+ * Shared IPC types between main and renderer.
+ *
+ * 2026-08-31 收口 (issue #60 主题 D C-301): 原 1475 行 god file 拆出
+ * IpcInvokeMap + 9 facade (WorkspaceApi / TurnApi / PlanApi / SessionApi /
+ * PrefsApi / AppReportApi / LogoApi / GodotApi / UpdatesApi) + XAgentApi
+ * + DELETED_FLAT_KEYS 到 `./ipc-invoke-map.ts`. 本文件剩 ~1250 行, 仍
+ * barrel re-export 新文件所有 export, 保持 104 个 consumer import 路径不变.
+ */
+
+export {
+  type WorkspaceApi,
+  type TurnApi,
+  type PlanApi,
+  type SessionApi,
+  type PrefsApi,
+  type AppReportApi,
+  type LogoApi,
+  type GodotApi,
+  type UpdatesApi,
+  type IpcInvokeMap,
+  type FlatInvokeApi,
+  type XAgentApiFlat,
+  type XAgentApi,
+  type DeletedFlatKey,
+  DELETED_FLAT_KEYS,
+} from "./ipc-invoke-map";
 
 import { Type } from "typebox";
 import type {
@@ -28,7 +54,7 @@ export type ThinkingLevel =
   | "xhigh"
   | "max";
 
-/** Thinking levels in UI display order (low → high intensity). */
+/** Thinking levels in UI display order (low 鈫?high intensity). */
 export const THINKING_LEVELS: ThinkingLevel[] = [
   "off",
   "minimal",
@@ -46,17 +72,17 @@ export interface ModelInfo {
   /** Model context window in tokens (from Pi Model). */
   contextWindow?: number;
   /**
-   * 模型接受的输入类型 (与 Pi SDK `Model.input` 对齐).
+   * 妯″瀷鎺ュ彈鐨勮緭鍏ョ被鍨?(涓?Pi SDK `Model.input` 瀵归綈).
    *
-   * - `["text"]`           : 纯文本模型
-   * - `["text", "image"]`  : 多模态模型
+   * - `["text"]`           : 绾枃鏈ā鍨?
+   * - `["text", "image"]`  : 澶氭ā鎬佹ā鍨?
    *
-   * 部分 provider (例如 mistral-conversations) 会基于该字段在 user message
-   * 含 image 时把整条 message 替换为 `(image omitted: model does not support
-   * images)` 占位文本 —— X-agent 侧必须能读到该字段,才能在 send 前
-   * 给出"当前模型不收图"的明确反馈,而不是让 AI 在回应里说"看不到图"。
+   * 閮ㄥ垎 provider (渚嬪 mistral-conversations) 浼氬熀浜庤瀛楁鍦?user message
+   * 鍚?image 鏃舵妸鏁存潯 message 鏇挎崲涓?`(image omitted: model does not support
+   * images)` 鍗犱綅鏂囨湰 鈥斺€?X-agent 渚у繀椤昏兘璇诲埌璇ュ瓧娈?鎵嶈兘鍦?send 鍓?
+   * 缁欏嚭"褰撳墠妯″瀷涓嶆敹鍥?鐨勬槑纭弽棣?鑰屼笉鏄 AI 鍦ㄥ洖搴旈噷璇?鐪嬩笉鍒板浘"銆?
    *
-   * 缺省 = 未知,沿用纯文本判断 (保守:不假设支持)。
+   * 缂虹渷 = 鏈煡,娌跨敤绾枃鏈垽鏂?(淇濆畧:涓嶅亣璁炬敮鎸?銆?
    */
   input?: ("text" | "image")[];
 }
@@ -240,10 +266,10 @@ export const GODOT_TOOLS = [
   "godot_import_resources",
   "godot_play_errors",
   "godot_stop_scene",
-  // 1.2 扩展：场景内省（只读）
+  // 1.2 鎵╁睍锛氬満鏅唴鐪侊紙鍙锛?
   "godot_get_scene_tree",
   "godot_get_node_properties",
-  // 1.2 扩展：调试器 / 资源治理 / 导出 / 配置读写 / lint
+  // 1.2 鎵╁睍锛氳皟璇曞櫒 / 璧勬簮娌荤悊 / 瀵煎嚭 / 閰嶇疆璇诲啓 / lint
   "godot_get_debugger_state",
   "godot_set_breakpoint",
   "godot_find_unused_resources",
@@ -251,7 +277,7 @@ export const GODOT_TOOLS = [
   "godot_get_project_setting",
   "godot_set_project_setting",
   "godot_lint_scripts",
-  // 1.3 扩展：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检
+  // 1.3 鎵╁睍锛氬彧璇绘枃浠跺唴鐪?/ UID / 绫诲悕 / 鑴氭湰鍙嶅皠 / 瀵煎嚭棰勬
   "godot_list_project_files",
   "godot_resolve_uid",
   "godot_wait_for_import_done",
@@ -284,7 +310,7 @@ export const SESSION_TOOL_REGISTRY = [
   WRITE_PLAN_TOOL,
 ] as const;
 
-/** Session interaction mode — mutually exclusive. */
+/** Session interaction mode 鈥?mutually exclusive. */
 export type AgentSessionMode = "agent" | "ask" | "plan" | "goal";
 
 export type GoalStatus =
@@ -354,7 +380,7 @@ export interface SessionModeResult {
   ok: boolean;
   error?: string;
   info?: SessionModeInfo;
-  /** Entered Goal mode but no condition yet — UI should prompt for one. */
+  /** Entered Goal mode but no condition yet 鈥?UI should prompt for one. */
   needGoalCondition?: boolean;
 }
 
@@ -377,7 +403,7 @@ export type ThemeId = (typeof THEME_IDS)[number];
 export type ColorMode = "light" | "dark";
 
 export const THEME_LABELS: Record<ThemeId, string> = {
-  default: "默认",
+  default: "榛樿",
   nord: "Nord",
   tokyo: "Tokyo Night",
   paper: "Warm Paper",
@@ -445,7 +471,7 @@ export interface ClientPrefs {
   sidebarWidth: number;
   /**
    * Whether the left session sidebar is collapsed to icon-only mode (56px).
-   * Auto-expands below the narrow-window threshold (≤960px).
+   * Auto-expands below the narrow-window threshold (鈮?60px).
    */
   sidebarCollapsed?: boolean;
   /** Right tool panel width in px. */
@@ -456,7 +482,7 @@ export interface ClientPrefs {
    */
   hiddenProjectKeys: string[];
   /**
-   * Project keys that opted out of the Godot ready-checklist steps (“不再提醒”).
+   * Project keys that opted out of the Godot ready-checklist steps (鈥滀笉鍐嶆彁閱掆€?.
    * Closing the strip only hides it for the current session.
    */
   dismissedReadyChecklistKeys: string[];
@@ -465,17 +491,17 @@ export interface ClientPrefs {
    */
   dismissedGodotToolsNudgeKeys: string[];
   /**
-   * Auto-compact when context occupancy percent reaches this threshold (1–100).
+   * Auto-compact when context occupancy percent reaches this threshold (1鈥?00).
    * `0` disables automatic compression.
    */
   autoCompactPercent: number;
   /**
-   * Goal mode auto-continue turn budget (1–200). Soft-stops with
+   * Goal mode auto-continue turn budget (1鈥?00). Soft-stops with
    * `budget_limited` when reached; user can raise and resume.
    */
   goalMaxTurns: number;
   /**
-   * Goal mode auto-continue token budget (10_000–10_000_000). Soft-stops with
+   * Goal mode auto-continue token budget (10_000鈥?0_000_000). Soft-stops with
    * `budget_limited` when reached; user can raise and resume.
    */
   goalMaxTokens: number;
@@ -492,9 +518,9 @@ export const DEFAULT_PREFS: ClientPrefs = {
   showThinking: true,
   lastProjectPath: null,
   lastSessionPath: null,
-  // 默认供应商/模型留空：首启动会按"已配置的 Pi 认证"或用户在"设置 → 供应商"中的选择
-  // 决定，避免给虚构的"deepseek-v4-flash"赋予虚假合法身份。已存在的 prefs 文件保留旧值，
-  // 迁移由 SessionHost.createSession 的 fallback 链通知 + 自动重写。
+  // 榛樿渚涘簲鍟?妯″瀷鐣欑┖锛氶鍚姩浼氭寜"宸查厤缃殑 Pi 璁よ瘉"鎴栫敤鎴峰湪"璁剧疆 鈫?渚涘簲鍟?涓殑閫夋嫨
+  // 鍐冲畾锛岄伩鍏嶇粰铏氭瀯鐨?deepseek-v4-flash"璧嬩簣铏氬亣鍚堟硶韬唤銆傚凡瀛樺湪鐨?prefs 鏂囦欢淇濈暀鏃у€硷紝
+  // 杩佺Щ鐢?SessionHost.createSession 鐨?fallback 閾鹃€氱煡 + 鑷姩閲嶅啓銆?
   provider: null,
   model: null,
   thinkingLevel: "high",
@@ -516,11 +542,11 @@ export const DEFAULT_PREFS: ClientPrefs = {
 
 /**
  * Runtime validation schemas for IPC `setPrefs` payloads.
- * - ClientPrefsSchema: strict,所有字段非 optional(读取已 normalize 的完整 prefs)
- * - ClientPrefsPatchSchema: 接受部分字段 + additionalProperties:false,拒绝任何未声明键
+ * - ClientPrefsSchema: strict,鎵€鏈夊瓧娈甸潪 optional(璇诲彇宸?normalize 鐨勫畬鏁?prefs)
+ * - ClientPrefsPatchSchema: 鎺ュ彈閮ㄥ垎瀛楁 + additionalProperties:false,鎷掔粷浠讳綍鏈０鏄庨敭
  *
- * 由 `app-runtime.ts` 中 setPrefs handler 入口通过 `Value.Check` 校验 patch,
- * 拒绝被攻陷的 renderer 写入任意字段(如 godotEditorPath、lastProjectPath、shellPath)。
+ * 鐢?`app-runtime.ts` 涓?setPrefs handler 鍏ュ彛閫氳繃 `Value.Check` 鏍￠獙 patch,
+ * 鎷掔粷琚敾闄风殑 renderer 鍐欏叆浠绘剰瀛楁(濡?godotEditorPath銆乴astProjectPath銆乻hellPath)銆?
  */
 export const ClientPrefsSchema = Type.Object({
   themeId: Type.Union(THEME_IDS.map((t) => Type.Literal(t)) as never),
@@ -603,7 +629,7 @@ export interface PromptResult {
  * Image attachment for a prompt. Mirrors the shape of Pi SDK's
  * `ImageContent` (declared in `@earendil-works/pi-ai/dist/types.d.ts`)
  * but lives in `shared/` so the renderer never has to import the
- * Pi SDK type directly — keeps the renderer bundle free of
+ * Pi SDK type directly 鈥?keeps the renderer bundle free of
  * `@earendil-works/pi-ai`.
  *
  * The data is the base64-encoded image body (no `data:` URL prefix).
@@ -617,7 +643,7 @@ export interface ImageContent {
 }
 
 /**
- * Payload for the renderer → main `prompt` IPC. `text` is required
+ * Payload for the renderer 鈫?main `prompt` IPC. `text` is required
  * but may be empty when `images` carries the message (e.g. paste a
  * screenshot with no caption). main-side rejects the call when both
  * are empty.
@@ -627,7 +653,7 @@ export interface PromptPayload {
   images?: ImageContent[];
 }
 
-/** Serializable chat history item shared by main ↔ renderer. */
+/** Serializable chat history item shared by main 鈫?renderer. */
 export type HistoryItem =
   | {
       kind: "user";
@@ -635,9 +661,9 @@ export type HistoryItem =
       text: string;
       entryId?: string;
       /**
-       * 已附图片 (粘贴截图 / 拖放图片). 由 renderer 在 appendPendingUser 时
-       * 写入;主进程 user_message 事件不带这个字段,apply-events 合并时保留
-       * 已有 images 不动 (#42 修复 #2:让 user bubble 显示已附图)。
+       * 宸查檮鍥剧墖 (绮樿创鎴浘 / 鎷栨斁鍥剧墖). 鐢?renderer 鍦?appendPendingUser 鏃?
+       * 鍐欏叆;涓昏繘绋?user_message 浜嬩欢涓嶅甫杩欎釜瀛楁,apply-events 鍚堝苟鏃朵繚鐣?
+       * 宸叉湁 images 涓嶅姩 (#42 淇 #2:璁?user bubble 鏄剧ず宸查檮鍥?銆?
        */
       images?: ImageContent[];
     }
@@ -648,13 +674,13 @@ export type HistoryItem =
       thinking: string;
       done: boolean;
       isError?: boolean;
-      /** Pi session tree entry id (for regenerate → preceding user). */
+      /** Pi session tree entry id (for regenerate 鈫?preceding user). */
       entryId?: string;
       /** Preceding user message entry id on the active branch. */
       userEntryId?: string;
-      /** Unified diff of the turn (shadow pre→post), attached after turn_end. */
+      /** Unified diff of the turn (shadow pre鈫抪ost), attached after turn_end. */
       diffText?: string;
-      /** Rel-paths changed in this turn (shadow pre→post). */
+      /** Rel-paths changed in this turn (shadow pre鈫抪ost). */
       diffPaths?: string[];
       /** True when diffText was truncated to the payload cap. */
       diffTruncated?: boolean;
@@ -678,12 +704,12 @@ export type HistoryItem =
     };
 
 /**
- * Stable keys for "replaceable" notice bubbles (mode / model / tools / …).
+ * Stable keys for "replaceable" notice bubbles (mode / model / tools / 鈥?.
  * Same key replaces the previous bubble in the transcript; different keys stack.
  *
- * Single source — host bag 子编排器都 import 这一个,避免 drift.
- * 2026-08-31 收口 (issue #59 主题 A C-108). 之前 lifecycle.ts / controller.ts
- * / session-host.ts 3 处手抄,controller 还漏了 "extension".
+ * Single source 鈥?host bag 瀛愮紪鎺掑櫒閮?import 杩欎竴涓?閬垮厤 drift.
+ * 2026-08-31 鏀跺彛 (issue #59 涓婚 A C-108). 涔嬪墠 lifecycle.ts / controller.ts
+ * / session-host.ts 3 澶勬墜鎶?controller 杩樻紡浜?"extension".
  */
 export type NoticeReplaceKey =
   | "session_mode"
@@ -730,7 +756,7 @@ export interface RetractPreview {
   restoreMode?: "shadow" | "baseline" | "none";
   /** True when Shadow Git checkpoints are active for this project. */
   shadowAvailable?: boolean;
-  /** Unified diff (pre→HEAD+worktree) of restorable paths; shadow mode only. */
+  /** Unified diff (pre鈫扝EAD+worktree) of restorable paths; shadow mode only. */
   diffText?: string;
   /** True when diffText was truncated to the payload cap. */
   diffTruncated?: boolean;
@@ -753,7 +779,7 @@ export type UiAgentEvent =
       type: "turn_diff";
       /** Preceding user message entry id (matches assistant.userEntryId). */
       userEntryId: string;
-      /** Rel-paths changed in this turn (shadow pre→post). */
+      /** Rel-paths changed in this turn (shadow pre鈫抪ost). */
       paths: string[];
       /** Unified diff text (already truncated). */
       diffText: string;
@@ -839,7 +865,7 @@ export type UiAgentEvent =
       /**
        * Thinking levels the current model actually supports (Pi `getAvailableThinkingLevels`).
        * Renderer uses this to filter the SelectMenu so users don't pick a level that
-       * Pi will silently clamp back to `off` (issue #30: thinking 切换被静默回弹).
+       * Pi will silently clamp back to `off` (issue #30: thinking 鍒囨崲琚潤榛樺洖寮?.
        */
       availableThinkingLevels: ThinkingLevel[];
       sessionPath?: string | null;
@@ -896,7 +922,7 @@ export interface HostStatus {
   sessionPath: string | null;
   model: ModelInfo | null;
   thinkingLevel: ThinkingLevel;
-  /** See {@link UiAgentEvent} session_info — for the renderer to filter the
+  /** See {@link UiAgentEvent} session_info 鈥?for the renderer to filter the
    *  Composer thinking SelectMenu. Falls back to all THINKING_LEVELS when the
    *  bundle is missing (no project open). */
   availableThinkingLevels?: ThinkingLevel[];
@@ -914,7 +940,7 @@ export interface GodotRpcRequestResult {
   ok: boolean;
   error?: string;
   result?: unknown;
-  /** C1: 请求实际送达的客户端 id（preferred 未鉴权时的 fallback）。 */
+  /** C1: 璇锋眰瀹為檯閫佽揪鐨勫鎴风 id锛坧referred 鏈壌鏉冩椂鐨?fallback锛夈€?*/
   routedTo?: string;
 }
 
@@ -1044,9 +1070,9 @@ export interface ProviderProfile {
   /** When true, profile is synced into Pi auth/models and appears in TopBar. */
   enabled: boolean;
   /**
-   * 盘上密文（safeStorage 解不开时的保留副本）。
-   * 解密失败时 apiKey 为空、此字段保留原 `enc:v1:` 串，保存时写回原密文，
-   * 避免「换机器/密钥环重置」后任一次保存把密钥永久覆盖丢失。
+   * 鐩樹笂瀵嗘枃锛坰afeStorage 瑙ｄ笉寮€鏃剁殑淇濈暀鍓湰锛夈€?
+   * 瑙ｅ瘑澶辫触鏃?apiKey 涓虹┖銆佹瀛楁淇濈暀鍘?`enc:v1:` 涓诧紝淇濆瓨鏃跺啓鍥炲師瀵嗘枃锛?
+   * 閬垮厤銆屾崲鏈哄櫒/瀵嗛挜鐜噸缃€嶅悗浠讳竴娆′繚瀛樻妸瀵嗛挜姘镐箙瑕嗙洊涓㈠け銆?
    */
   encryptedKey?: string;
 }
@@ -1061,7 +1087,7 @@ export interface ProviderProfileSummary {
   /** Synced into Pi / visible in TopBar model list. */
   enabled: boolean;
   updatedAt: string;
-  /** Masked key hint for UI, e.g. sk-…xxxx */
+  /** Masked key hint for UI, e.g. sk-鈥xxx */
   apiKeyHint: string;
 }
 
@@ -1073,7 +1099,7 @@ export interface ProviderPreset {
   baseUrl: string;
   models: ProviderModelEntry[];
   notes?: string;
-  /** UI grouping — aligned with cc-switch style categories */
+  /** UI grouping 鈥?aligned with cc-switch style categories */
   category?:
     | "official"
     | "cn"
@@ -1165,7 +1191,7 @@ export interface PrefsRecoveryNotice {
   error: string;
 }
 
-/** 1.3 启动期失败摘要（recover / bridge / package install）。 */
+/** 1.3 鍚姩鏈熷け璐ユ憳瑕侊紙recover / bridge / package install锛夈€?*/
 export type StartupIssueStage =
   | "shadow_recover"
   | "godot_rpc"
@@ -1181,9 +1207,9 @@ export interface StartupIssue {
  *
  * Encoded as a single string in `ClientPrefs.clientLogoId` so prefs round-trip
  * stays simple. Three shapes:
- *   - `"default"`        — original X-agent logo (build/icon.* + public/logo.png)
- *   - `"preset:NN-name"` — built-in preset under `apps/desktop/public/logos/`
- *   - `"custom:<uuid>"`  — user-uploaded image under
+ *   - `"default"`        鈥?original X-agent logo (build/icon.* + public/logo.png)
+ *   - `"preset:NN-name"` 鈥?built-in preset under `apps/desktop/public/logos/`
+ *   - `"custom:<uuid>"`  鈥?user-uploaded image under
  *                          `~/.pi/agent/x-agent-logos/<uuid>.png`
  *
  * Anything else is treated as `"default"` by `parseLogoId` (defensive).
@@ -1193,11 +1219,11 @@ export type ClientLogoId = string;
 export interface LogoPreset {
   /** Always `"preset:NN-<slug>"`. */
   id: string;
-  /** Human-readable Chinese label, e.g. "霓虹赛博". */
+  /** Human-readable Chinese label, e.g. "闇撹櫣璧涘崥". */
   label: string;
-  /** Renderer-relative path to the 1024×1024 webp (favicon / full-size). */
+  /** Renderer-relative path to the 1024脳1024 webp (favicon / full-size). */
   url: string;
-  /** Renderer-relative path to the 256×256 webp thumbnail (settings grid). */
+  /** Renderer-relative path to the 256脳256 webp thumbnail (settings grid). */
   thumbnailUrl: string;
   width: number;
   height: number;
@@ -1207,7 +1233,7 @@ export interface LogoPreset {
 export interface CustomLogo {
   /** Always `"custom:<uuid>"`. */
   id: string;
-  /** Display label: `<originalName> · YYYY-MM-DD HH:mm`. */
+  /** Display label: `<originalName> 路 YYYY-MM-DD HH:mm`. */
   label: string;
   /** Renderer-relative URL served via the `x-agent-logos://` custom protocol. */
   url: string;
@@ -1248,355 +1274,3 @@ export interface LogoClearResult {
 export type OpenProjectMode = "continue" | "new";
 
 /** Coarse workspace / session lifecycle facade (facade methods stay on window.xAgent). */
-export type WorkspaceApi = {
-  open: IpcInvokeMap["openProject"];
-  close: IpcInvokeMap["closeWorkspace"];
-  newSession: IpcInvokeMap["newSession"];
-  resume: IpcInvokeMap["resumeSession"];
-  listSessions: IpcInvokeMap["listSessions"];
-  deleteSession: IpcInvokeMap["deleteSession"];
-  deleteProjectSessions: IpcInvokeMap["deleteProjectSessions"];
-  renameSession: IpcInvokeMap["renameSession"];
-  getStatus: IpcInvokeMap["getStatus"];
-};
-
-/** Coarse turn / composer facade (facade methods stay on window.xAgent). */
-export type TurnApi = {
-  prompt: IpcInvokeMap["prompt"];
-  abort: IpcInvokeMap["abort"];
-  previewRetract: IpcInvokeMap["previewRetract"];
-  retract: IpcInvokeMap["retractToUserMessage"];
-  editAndResend: IpcInvokeMap["editAndResend"];
-  regenerate: IpcInvokeMap["regenerateFromUser"];
-};
-
-/** Coarse plan / goal mode facade (facade methods stay on window.xAgent). */
-export type PlanApi = {
-  setMode: IpcInvokeMap["setSessionMode"];
-  getMode: IpcInvokeMap["getSessionMode"];
-  build: IpcInvokeMap["buildPlan"];
-  getContent: IpcInvokeMap["getPlanContent"];
-  saveContent: IpcInvokeMap["savePlanContent"];
-  saveToWorkspace: IpcInvokeMap["savePlanToWorkspace"];
-  clear: IpcInvokeMap["clearPlan"];
-  setGoal: IpcInvokeMap["setGoal"];
-  pauseGoal: IpcInvokeMap["pauseGoal"];
-  resumeGoal: IpcInvokeMap["resumeGoal"];
-  clearGoal: IpcInvokeMap["clearGoal"];
-  getGoal: IpcInvokeMap["getGoal"];
-};
-
-/** Active session tuning / context facade. Prefer over flat in new code. */
-export type SessionApi = {
-  setModel: IpcInvokeMap["setModel"];
-  setThinkingLevel: IpcInvokeMap["setThinkingLevel"];
-  listModels: IpcInvokeMap["listModels"];
-  getSessionUsage: IpcInvokeMap["getSessionUsage"];
-  compactSession: IpcInvokeMap["compactSession"];
-  getToolDetail: IpcInvokeMap["getToolDetail"];
-  reloadResources: IpcInvokeMap["reloadResources"];
-  listSessionSlashItems: IpcInvokeMap["listSessionSlashItems"];
-};
-
-/** Client prefs + runtime dependency checks. */
-export type PrefsApi = {
-  get: IpcInvokeMap["getPrefs"];
-  set: IpcInvokeMap["setPrefs"];
-  getRecoveryNotice: IpcInvokeMap["getPrefsRecoveryNotice"];
-  getSecretCodecStatus: IpcInvokeMap["getSecretCodecStatus"];
-  checkBash: IpcInvokeMap["checkBash"];
-  checkBashLiveness: IpcInvokeMap["checkBashLiveness"];
-  applyBashShellPath: IpcInvokeMap["applyBashShellPath"];
-  pickBashShell: IpcInvokeMap["pickBashShell"];
-  checkGit: IpcInvokeMap["checkGit"];
-  checkAuth: IpcInvokeMap["checkAuth"];
-  checkPiCli: IpcInvokeMap["checkPiCli"];
-  installPiCli: IpcInvokeMap["installPiCli"];
-};
-
-/** Application-level diagnostics surfaced to the renderer (consumed-once). */
-export type AppReportApi = {
-  /** Drain and clear the boot-time issue queue (shadow_recover / godot_rpc / package install). */
-  getStartupReport: IpcInvokeMap["getStartupReport"];
-};
-
-/**
- * Client logo asset management. The actual `clientLogoId` selection lives in
- * `ClientPrefs` (set via `prefs.set`); this facade only handles the binary
- * asset side (preset enumeration, custom upload/clear).
- */
-export type LogoApi = {
-  listPresets: IpcInvokeMap["logoListPresets"];
-  uploadCustom: IpcInvokeMap["logoUploadCustom"];
-  clearCustom: IpcInvokeMap["logoClearCustom"];
-  /** Subscribe to main-process `logo:changed` pushes (e.g. when another window / a tool flips the active id). */
-  onChanged: (handler: (payload: { id: string }) => void) => () => void;
-};
-
-/** Godot editor RPC + addon lifecycle facade. */
-export type GodotApi = {
-  status: IpcInvokeMap["godotRpcStatus"];
-  start: IpcInvokeMap["godotRpcStart"];
-  stop: IpcInvokeMap["godotRpcStop"];
-  ping: IpcInvokeMap["godotRpcPing"];
-  request: IpcInvokeMap["godotRpcRequest"];
-  setActiveClient: IpcInvokeMap["godotRpcSetActiveClient"];
-  installAddon: IpcInvokeMap["installGodotRpcAddon"];
-  launchEditor: IpcInvokeMap["launchGodotEditor"];
-  pickEditor: IpcInvokeMap["pickGodotEditor"];
-  pickScene: IpcInvokeMap["pickGodotScene"];
-};
-
-/**
- * Authoritative invoke-channel signatures: every key is one `ipcRenderer.invoke`
- * channel (key name == channel name, enforced at compile time against
- * IPC_CHANNELS). Preload forwarding and main-process handlers are both typed
- * against this map, so a channel signature lives in exactly one place.
- */
-export type IpcInvokeMap = {
-  openProject: (path?: string, mode?: OpenProjectMode) => Promise<OpenProjectResult>;
-  prompt: (payload: PromptPayload) => Promise<PromptResult>;
-  abort: () => Promise<{ ok: boolean }>;
-  previewRetract: (entryId: string) => Promise<RetractPreview>;
-  retractToUserMessage: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
-  editAndResend: (entryId: string, text: string, options?: RetractOptions) => Promise<RetractResult>;
-  regenerateFromUser: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
-  newSession: (sessionType?: SessionType) => Promise<OpenProjectResult>;
-  setModel: (provider: string, id: string) => Promise<{ ok: boolean; error?: string }>;
-  setThinkingLevel: (
-    level: ThinkingLevel,
-  ) => Promise<{ ok: boolean; thinkingLevel?: ThinkingLevel }>;
-  setSessionMode: (mode: AgentSessionMode) => Promise<SessionModeResult>;
-  getSessionMode: () => Promise<SessionModeInfo>;
-  buildPlan: () => Promise<PromptResult>;
-  getPlanContent: () => Promise<PlanContentResult>;
-  savePlanContent: (markdown: string) => Promise<PlanMutateResult>;
-  savePlanToWorkspace: () => Promise<PlanMutateResult>;
-  clearPlan: () => Promise<PlanMutateResult>;
-  setGoal: (condition: string) => Promise<GoalResult>;
-  pauseGoal: () => Promise<GoalResult>;
-  resumeGoal: () => Promise<GoalResult>;
-  clearGoal: () => Promise<GoalResult>;
-  getGoal: () => Promise<GoalInfo | null>;
-  listModels: () => Promise<ModelInfo[]>;
-  listSessions: () => Promise<SessionInfo[]>;
-  resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;
-  deleteSession: (sessionPath: string) => Promise<{ ok: boolean; error?: string }>;
-  /** Delete all X-agent sessions for a project cwd. */
-  deleteProjectSessions: (
-    projectCwd: string,
-  ) => Promise<{ ok: boolean; deleted?: number; error?: string }>;
-  /** Close current workspace without deleting session files. */
-  closeWorkspace: () => Promise<{ ok: boolean; error?: string }>;
-  renameSession: (
-    sessionPath: string,
-    name: string,
-  ) => Promise<{ ok: boolean; error?: string }>;
-  getStatus: () => Promise<HostStatus>;
-  getToolDetail: (toolCallId: string) => Promise<ToolDetailDto | null>;
-  getSessionUsage: () => Promise<SessionUsageSnapshot | null>;
-  compactSession: (customInstructions?: string) => Promise<CompactSessionResult>;
-  reloadResources: () => Promise<{ ok: boolean; reloaded: boolean; error?: string }>;
-  getPrefs: () => Promise<ClientPrefs>;
-  setPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
-  /** Returns and clears the startup prefs-recovery notice, if any. */
-  getPrefsRecoveryNotice: () => Promise<PrefsRecoveryNotice | null>;
-  /** Returns and clears the startup-issue queue (recover / bridge / package install). */
-  getStartupReport: () => Promise<StartupIssue[]>;
-  getSecretCodecStatus: () => Promise<SecretCodecStatus>;
-  checkBash: () => Promise<BashCheckResult>;
-  checkBashLiveness: () => Promise<BashLivenessResult>;
-  applyBashShellPath: (shellPath?: string) => Promise<BashCheckResult>;
-  pickBashShell: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
-  checkGit: () => Promise<GitCheckResult>;
-  checkAuth: () => Promise<AuthStatus>;
-  checkPiCli: () => Promise<PiCliStatus>;
-  installPiCli: () => Promise<PiCliStatus>;
-  listProjectDir: (relPath?: string) => Promise<ListProjectDirResult>;
-  readProjectFile: (relPath: string) => Promise<ReadProjectFileResult>;
-  revealInFolder: (relPath: string) => Promise<{ ok: boolean; error?: string }>;
-  godotRpcStatus: () => Promise<GodotRpcStatusDto>;
-  godotRpcStart: () => Promise<GodotRpcStatusDto>;
-  godotRpcStop: () => Promise<{ ok: boolean }>;
-  godotRpcPing: () => Promise<GodotRpcRequestResult>;
-  godotRpcRequest: (
-    call: GodotRpcCallDto,
-    options?: { clientId?: string | null },
-  ) => Promise<GodotRpcRequestResult>;
-  godotRpcSetActiveClient: (
-    clientId: string | null,
-  ) => Promise<{ ok: boolean; status: GodotRpcStatusDto }>;
-  pickGodotEditor: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
-  launchGodotEditor: () => Promise<{
-    ok: boolean;
-    error?: string;
-    port?: number;
-    hint?: string;
-  }>;
-  installGodotRpcAddon: () => Promise<InstallGodotRpcAddonResult>;
-  pickGodotScene: () => Promise<{
-    ok: boolean;
-    path?: string;
-    canceled?: boolean;
-    error?: string;
-  }>;
-  listPlugins: (cwd?: string | null) => Promise<PluginItem[]>;
-  /** Skills + prompt templates + extension commands for composer `/` autocomplete. */
-  listSessionSlashItems: () => Promise<SessionSlashItem[]>;
-  readPlugin: (path: string) => Promise<PluginReadResult>;
-  writePlugin: (path: string, content: string) => Promise<PluginWriteResult>;
-  createPlugin: (input: PluginCreateInput) => Promise<PluginMutateResult>;
-  deletePlugin: (path: string) => Promise<{ ok: boolean; error?: string }>;
-  revealPlugin: (path: string) => Promise<{ ok: boolean; error?: string }>;
-  listProviderProfiles: () => Promise<ProviderProfileSummary[]>;
-  getProviderProfile: (id: string) => Promise<ProviderProfile | null>;
-  upsertProviderProfile: (
-    input: ProviderUpsertInput,
-  ) => Promise<{
-    ok: boolean;
-    profile?: ProviderProfile;
-    error?: string;
-    /** Profile was written into Pi auth/models (enabled profiles only). */
-    syncedToPi?: boolean;
-  }>;
-  deleteProviderProfile: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  setProviderProfileEnabled: (
-    id: string,
-    enabled: boolean,
-  ) => Promise<{ ok: boolean; error?: string; syncedToPi?: boolean }>;
-  listProviderPresets: () => Promise<ProviderPreset[]>;
-  importExistingProviderProfiles: () => Promise<ProviderImportResult>;
-  fetchProviderModels: (input: {
-    baseUrl: string;
-    apiKey: string;
-  }) => Promise<FetchProviderModelsResult>;
-  listInstalledPackages: () => Promise<InstalledPackageInfo[]>;
-  installPackage: (source: string) => Promise<PackageInstallResult>;
-  uninstallPackage: (
-    source: string,
-  ) => Promise<{ ok: boolean; error?: string; output?: string }>;
-  installGodotPiPackage: () => Promise<PackageInstallResult>;
-  openPiLogin: () => Promise<{ ok: boolean; error?: string; hint?: string }>;
-  /** Open an http(s) URL in the system browser. */
-  openExternalUrl: (url: string) => Promise<{ ok: boolean; error?: string }>;
-  getUpdateStatus: () => Promise<AppUpdateStatus>;
-  checkForUpdates: () => Promise<AppUpdateStatus>;
-  downloadUpdate: () => Promise<AppUpdateStatus>;
-  installUpdate: () => Promise<{ ok: boolean; error?: string }>;
-  getUsageSummary: (options?: {
-    days?: number;
-  }) => Promise<UsageSummary>;
-  clearUsageSummary: () => Promise<{ ok: boolean; error?: string }>;
-  /** Signal main process that renderer boot finished — closes splash and shows the main window. */
-  appReady: () => Promise<{ ok: boolean }>;
-  /** Built-in logo presets + user-uploaded customs + currently active id. */
-  logoListPresets: () => Promise<LogoList>;
-  /**
-   * Show a native file picker, validate the chosen file, save it under
-   * `~/.pi/agent/x-agent-logos/`, and return its descriptor. The renderer is
-   * expected to call `setPrefs({ clientLogoId: result.logo.id })` afterwards
-   * if the user wants this to become active.
-   *
-   * `result.ok === false` when the user cancels (code `INVALID_FILE` with
-   * `error: "已取消"`), the file fails validation, or write fails.
-   */
-  logoUploadCustom: () => Promise<LogoUploadResult>;
-  /** Delete a custom logo. If it was the active one, also reverts to `default`. */
-  logoClearCustom: (customId: string) => Promise<LogoClearResult>;
-};
-
-/**
- * Flat channel methods removed from `window.xAgent` — their functionality lives
- * on the workspace / turn / plan / session / prefs facades. Removing an entry
- * here is safe only if the renderer has no direct callers left (facades are
- * typed against IpcInvokeMap, not XAgentApiFlat).
- */
-export const DELETED_FLAT_KEYS = [
-  "openProject",
-  "prompt",
-  "abort",
-  "getStatus",
-  "newSession",
-  "setModel",
-  "setSessionMode",
-  "getSessionMode",
-  "buildPlan",
-  "getPlanContent",
-  "savePlanContent",
-  "savePlanToWorkspace",
-  "clearPlan",
-  "setGoal",
-  "pauseGoal",
-  "resumeGoal",
-  "clearGoal",
-  "getGoal",
-  "listModels",
-  "listSessions",
-  "resumeSession",
-  "deleteSession",
-  "deleteProjectSessions",
-  "closeWorkspace",
-  "renameSession",
-  "previewRetract",
-  "retractToUserMessage",
-  "editAndResend",
-  "regenerateFromUser",
-  "getSessionUsage",
-  "getPrefsRecoveryNotice",
-  "getSecretCodecStatus",
-  "compactSession",
-  "getToolDetail",
-  "reloadResources",
-  "listSessionSlashItems",
-] as const;
-
-export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
-
-/** Every invoke channel keyed by channel name — the generated preload surface. */
-export type FlatInvokeApi = { [K in IpcChannelKey]: IpcInvokeMap[K] };
-
-/** Flat IPC surface exposed directly on `window.xAgent` (legacy; prefer facades). */
-export type XAgentApiFlat = Omit<FlatInvokeApi, DeletedFlatKey> & {
-  notifyAppReady: () => Promise<{ ok: boolean }>;
-  onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
-  onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
-};
-
-/** Compile-time gate: IpcInvokeMap keys must exactly cover IPC_CHANNELS keys. */
-declare const _assertInvokeMapCoverage: Exclude<
-  IpcChannelKey,
-  keyof IpcInvokeMap
-> extends never
-  ? Exclude<keyof IpcInvokeMap, IpcChannelKey> extends never
-    ? true
-    : never
-  : never;
-
-/** Compile-time gate: DELETED_FLAT_KEYS entries must be real channel keys. */
-declare const _assertDeletedKeysValid: Exclude<
-  DeletedFlatKey,
-  IpcChannelKey
-> extends never
-  ? true
-  : never;
-
-export interface XAgentApi extends XAgentApiFlat {
-  workspace: WorkspaceApi;
-  turn: TurnApi;
-  plan: PlanApi;
-  session: SessionApi;
-  prefs: PrefsApi;
-  appReport: AppReportApi;
-  godot: GodotApi;
-  updates: UpdatesApi;
-  logo: LogoApi;
-}
-
-/** Update UX facade. */
-export type UpdatesApi = {
-  getStatus: IpcInvokeMap["getUpdateStatus"];
-  check: IpcInvokeMap["checkForUpdates"];
-  download: IpcInvokeMap["downloadUpdate"];
-  install: IpcInvokeMap["installUpdate"];
-  onStatus: XAgentApiFlat["onUpdateStatus"];
-};
