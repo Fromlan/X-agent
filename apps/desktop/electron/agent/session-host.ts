@@ -64,6 +64,7 @@ import {
 import { TurnFileTracker } from "./turn-file-tracker";
 import { ShadowCheckpointTracker } from "./shadow-checkpoints";
 import { applyXAgentSkillsFilter } from "./filter-session-skills";
+import { autoMaintain } from "./auto-maintain";
 import { listPlugins } from "./plugin-host";
 import { reloadAuthStorageCache } from "./model-runtime-auth";
 import {
@@ -520,6 +521,7 @@ export class SessionHost {
         },
       },
       maybeAutoTitleSession: () => this.maybeAutoTitleSession(),
+      autoMaintainIfNeeded: () => this.autoMaintainIfNeeded(),
       onAgentSettled: () => {
         void this.sessionMode.onAgentSettled();
       },
@@ -1272,6 +1274,45 @@ export class SessionHost {
         reloaded: false,
         error: err instanceof Error ? err.message : String(err),
       };
+    }
+  }
+
+  /**
+   * Run the snip-first + auto-compact pass. Called from
+   * `session-event-bridge` on `turn_end` and on every Nth `tool_execution_end`.
+   * Skips silently if there is no active bundle or the session is mid-stream.
+   * Never throws; failures are logged via `dbgWarn`.
+   */
+  async autoMaintainIfNeeded(): Promise<void> {
+    const bundle = this.bundle;
+    if (!bundle) return;
+    if (this.status === "streaming" || this.status === "retrying") return;
+    if (bundle.session.isCompacting) return;
+    const prefs = getCachedPrefs();
+    const report = await autoMaintain(bundle.session, prefs, {
+      log: (line) => dbgWarn("auto-maintain", line),
+    });
+    if (report.outcome === "compacted" || report.outcome === "snipped-and-compacted") {
+      this.emitReplaceableNotice(
+        "auto-maintain",
+        `已自动压缩上下文（释放约 ${report.compactFreedTokens ?? "?"} tokens）`,
+        "info",
+      );
+    } else if (report.outcome === "snip-cleared") {
+      this.emitReplaceableNotice(
+        "auto-maintain",
+        `已裁剪 ${report.snip.snippedCount} 个过大的工具结果，压缩暂不需要`,
+        "info",
+      );
+    } else if (report.outcome === "compact-failed") {
+      this.emitReplaceableNotice(
+        "auto-maintain",
+        `自动压缩失败：${report.detail ?? "未知原因"}`,
+        "warn",
+      );
+    }
+    if (report.outcome !== "below-threshold" && report.outcome !== "disabled" && report.outcome !== "debounced") {
+      this.emitUsageUpdate();
     }
   }
 

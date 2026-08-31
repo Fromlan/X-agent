@@ -32,7 +32,7 @@ try {
     result.recovered.backupPath && existsSync(result.recovered.backupPath),
   );
   assert.equal(result.prefs.themeId, DEFAULT_PREFS.themeId);
-  assert.equal(result.prefs.autoCompactPercent, 0);
+  assert.equal(result.prefs.autoCompactPercent, DEFAULT_PREFS.autoCompactPercent);
   assert.equal(result.prefs.clientLogoId, "default",
     "corrupt-file recovery yields default clientLogoId");
   assert.ok(!("updateSource" in result.prefs));

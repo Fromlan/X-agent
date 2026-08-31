@@ -85,6 +85,27 @@ export function buildDesignSessionTypeAppend(): string {
 }
 
 /**
+ * Tool economy — read with offset/limit, write in pieces, batch independent
+ * reads. Injected for every session type (code + design) so the LLM does
+ * not default to "read the whole 25KB file" + "write a brand-new 25KB file"
+ * in one turn, which is exactly how the 195k-context blowup happened.
+ *
+ * Injected as a stable prefix block between the type append and the
+ * mode-specific append; updating this string bumps the system-prompt cache
+ * key for every active session, so keep it short and durable.
+ */
+export const TOOL_ECONOMY_INSTRUCTIONS = [
+  "Read with offset/limit. For files > 500 lines, pass `offset` and `limit` (e.g. `offset=1 limit=200`) to page through. Avoid reading entire 25KB files into context when you only need a section.",
+  "Independent reads in the same round. When several reads have no data dependency (multiple source files you will cross-reference), issue them together in one assistant turn so they execute in parallel.",
+  "Edit, don't rewrite. Use `edit` (search/replace) for existing files. Use `write` only for new files or full rewrites — and keep `content` small. Single-shot `write` of multi-thousand-char content is the most common way to blow the context window.",
+  "Multi-file work across turns. Don't read all source files then write all new files in one turn. Read 1–2 files, plan, write 1–2 files, let the user (or the next turn) review before continuing.",
+].join("\n");
+
+export function buildToolEconomyAppend(): string {
+  return ["# X-agent Tool economy", TOOL_ECONOMY_INSTRUCTIONS].join("\n");
+}
+
+/**
  * GDD 布局引导 —— 给"整理/写入设计文档"任务列标准子模块。
  * 由 controller.composeModeAppend 在 design session 追加在 type append 之后。
  *

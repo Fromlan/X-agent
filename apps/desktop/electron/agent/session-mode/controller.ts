@@ -56,6 +56,7 @@ import {
   buildGameDesignLayoutGuide,
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
+  buildToolEconomyAppend,
 } from "../../../shared/mode-prompt";
 import { dbgLog } from "../../../shared/debug-log";
 import type { SessionModeHost } from "../host-interfaces";
@@ -144,6 +145,10 @@ export class SessionModeController {
     if (this.getSessionType() === "design") {
       out.push(buildGameDesignLayoutGuide());
     }
+    // Tool economy — read with offset/limit, edit over write, batch
+    // independent reads. Applies to every session type because the
+    // 195k-context blowup is just as easy to hit in code sessions.
+    out.push(buildToolEconomyAppend());
     if (this.agentMode === "ask") {
       out.push(buildAskModeSystemAppend());
     } else if (this.agentMode === "plan") {
