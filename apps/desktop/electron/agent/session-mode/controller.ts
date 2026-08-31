@@ -10,7 +10,6 @@ import type {
   PromptResult,
   SessionModeInfo,
   SessionModeResult,
-  UiAgentEvent,
 } from "../../../shared/ipc";
 import {
   DEFAULT_GOAL_MAX_TOKENS,
@@ -59,36 +58,10 @@ import {
   buildPlanModeSystemAppend,
 } from "../../../shared/mode-prompt";
 import { dbgLog } from "../../../shared/debug-log";
+import type { SessionModeHost } from "../host-interfaces";
 
-export type SessionModeHost = {
-  getBundle(): {
-    session: AgentSession;
-    cwd: string;
-    sessionPath?: string | null;
-    sessionType?: SessionType;
-  } | null;
-  getResourceLoader(): DefaultResourceLoader | null;
-  getBaseAppendPrompt(): string[];
-  emit(event: UiAgentEvent): void;
-  emitReplaceableNotice(
-    replaceKey:
-      | "session_mode"
-      | "model"
-      | "tools"
-      | "resources"
-      | "plan"
-      | "goal_eval"
-      | "session",
-    text: string,
-    level?: "info" | "warn" | "error",
-  ): void;
-  prompt(text: string): Promise<PromptResult>;
-  ensureRuntime(): Promise<ModelRuntime>;
-  /** Last assistant turn token total (0 if unknown). */
-  getLastTurnTokenTotal(): number;
-  /** Active user turn entry id (for goal budget ledger), if any. */
-  getActiveUserEntryId(): string | null;
-};
+// SessionModeHost 类型从 ../host-interfaces 导入 (issue #59 主题 A 收口).
+// 本地不再手抄, 避免 controller.ts:73-81 漏 "extension" 之类 drift 复发.
 
 type GoalTurnLedgerEntry = {
   /** User entry that started the agent turn being evaluated. */

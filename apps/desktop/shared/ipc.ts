@@ -674,8 +674,26 @@ export type HistoryItem =
       text: string;
       level?: "info" | "warn" | "error";
       /** When set, a later notice with the same key replaces this bubble. */
-      replaceKey?: string;
+      replaceKey?: NoticeReplaceKey;
     };
+
+/**
+ * Stable keys for "replaceable" notice bubbles (mode / model / tools / …).
+ * Same key replaces the previous bubble in the transcript; different keys stack.
+ *
+ * Single source — host bag 子编排器都 import 这一个,避免 drift.
+ * 2026-08-31 收口 (issue #59 主题 A C-108). 之前 lifecycle.ts / controller.ts
+ * / session-host.ts 3 处手抄,controller 还漏了 "extension".
+ */
+export type NoticeReplaceKey =
+  | "session_mode"
+  | "model"
+  | "tools"
+  | "resources"
+  | "plan"
+  | "goal_eval"
+  | "session"
+  | "extension";
 
 export type FileRestoreSkipReason =
   | "bash_unknown"
@@ -852,7 +870,7 @@ export type UiAgentEvent =
        * Same-key notices replace the previous bubble in the transcript
        * (e.g. session mode switches) instead of stacking.
        */
-      replaceKey?: string;
+      replaceKey?: NoticeReplaceKey;
     }
   | {
       type: "session_title";
