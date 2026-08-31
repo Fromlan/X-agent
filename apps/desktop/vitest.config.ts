@@ -16,6 +16,9 @@ export default defineConfig({
       "shared/**/*.test.ts",
       "src/**/*.test.ts",
     ],
+    // shadow-checkpoints 跑真实 git 操作（init/commit/diff），CI 慢时段 + coverage
+    // 模式下 5s 不够。15s 是经验值，本地通常 2-3s，CI 给到 3-5x 余量。
+    testTimeout: 15000,
     // 跳过 React 组件渲染测试 —— vitest 跑的是 node 环境, 没有 jsdom.
     // ComposerAttachments.test.tsx 留在仓库作为手测脚手架; 核心逻辑 (file
     // → ImageContent, 4 张 / 4MB / mimeType 校验) 由 src/lib/file-attachment.test.ts
