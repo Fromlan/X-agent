@@ -23,7 +23,7 @@ jobs:
     steps:
       # fetch-depth: 0 ensures git tag/diff operations see the full history
       # (e.g. for scripts that compare against the previous tag).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
