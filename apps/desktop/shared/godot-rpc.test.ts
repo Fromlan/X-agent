@@ -2,6 +2,8 @@
  * Vitest 套件 —— 锁住 Godot RPC 协议常量与类型守卫。
  * 覆盖 ROADMAP 1.2（tool 扩展）所需的协议面。
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   GODOT_LIST_FILES_DEFAULT_LIMIT,
@@ -278,5 +280,97 @@ describe("GODOT_RPC_METHOD_TOOL 工具开关映射", () => {
 
   it("未知方法返回 null（调用方先经 isAllowedGodotRpcMethod）", () => {
     expect(godotRpcMethodTool("rm_rf")).toBeNull();
+  });
+});
+
+/**
+ * 跨文件 drift check (issue #66 主题 I, 2026-08-31).
+ *
+ * 之前 GODOT_RPC_METHOD_TOOL 与 3 处 hardcoded 实现可能 drift:
+ * - `electron/agent/godot-tools.ts` 27 个 defineTool name 字符串
+ * - `packages/godot-pi/extensions/godot-helpers.ts` RPC_METHODS CSV 字符串
+ * (plugin.gd GDScript 端留 plugin 子仓, 不在本测试范围, 计划留给 GDScript
+ *  stub 生成 — 计划里说"超出本 issue 范围")
+ *
+ * 一旦 TS 端 drift, vitest 立即报错.
+ */
+
+const APPS_DESKTOP = join(process.cwd());
+const GODOT_TOOLS_PATH = join(APPS_DESKTOP, "electron", "agent", "godot-tools.ts");
+const GODOT_HELPERS_PATH = join(
+  APPS_DESKTOP,
+  "..",
+  "..",
+  "packages",
+  "godot-pi",
+  "extensions",
+  "godot-helpers.ts",
+);
+
+function extractGodotToolNames(src: string): string[] {
+  // 匹配 `name: "godot_xxx"` (defineTool 第 1 个字段) — 排除非 string 字面量
+  const re = /name:\s*"(godot_[a-z0-9_]+)"/g;
+  const out: string[] = [];
+  for (const m of src.matchAll(re)) out.push(m[1]!);
+  return out;
+}
+
+function extractHelpersRpcMethods(src: string): string[] {
+  // godot-helpers.ts 用 `"a, " + "b, " + ... "c";` 拼接. 简单 regex 会被前面的 import 末尾 `";` 截断.
+  // 策略: 找 `const RPC_METHODS` 之后到 `;` 之前所有 string literal, 拼接.
+  const start = src.indexOf("const RPC_METHODS");
+  if (start < 0) return [];
+  // 截到 `;` 终止 (只取这一句)
+  const semi = src.indexOf(";", start);
+  if (semi < 0) return [];
+  const stmt = src.substring(start, semi + 1);
+  // 提取 stmt 内所有 "..." 段
+  const stringParts: string[] = [];
+  const stringRe = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = stringRe.exec(stmt)) !== null) {
+    stringParts.push(m[1]!);
+  }
+  return stringParts.join(",").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+describe("godot-tools.ts 工具名 vs GODOT_RPC_METHOD_TOOL (主题 I 跨文件 drift)", () => {
+  it("所有 godot_xxx defineTool 名都注册在 GODOT_RPC_METHOD_TOOL (反向映射不漏)", () => {
+    const src = readFileSync(GODOT_TOOLS_PATH, "utf8");
+    const names = extractGodotToolNames(src);
+    expect(names.length).toBeGreaterThan(0);
+    // 收集 GODOT_RPC_METHOD_TOOL 所有 value
+    const registeredTools = new Set(
+      Object.values(GODOT_RPC_METHOD_TOOL).filter(
+        (v): v is string => v !== null,
+      ),
+    );
+    for (const name of names) {
+      expect(
+        registeredTools.has(name),
+        `godot-tools.ts "${name}" 未注册在 GODOT_RPC_METHOD_TOOL`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe("godot-helpers.ts RPC_METHODS vs GODOT_RPC_ALLOWED_METHODS (主题 I 跨包 drift)", () => {
+  it("CSV 字符串集合 = GODOT_RPC_ALLOWED_METHODS 集合 (无 drift)", () => {
+    const src = readFileSync(GODOT_HELPERS_PATH, "utf8");
+    const csvMethods = extractHelpersRpcMethods(src);
+    expect(csvMethods.length).toBe(GODOT_RPC_ALLOWED_METHODS.length);
+    const csvSet = new Set(csvMethods);
+    for (const m of GODOT_RPC_ALLOWED_METHODS) {
+      expect(
+        csvSet.has(m),
+        `godot-helpers.ts RPC_METHODS 缺 "${m}"`,
+      ).toBe(true);
+    }
+    for (const m of csvMethods) {
+      expect(
+        (GODOT_RPC_ALLOWED_METHODS as readonly string[]).includes(m),
+        `godot-helpers.ts RPC_METHODS 多出 "${m}" (不在 GODOT_RPC_ALLOWED_METHODS)`,
+      ).toBe(true);
+    }
   });
 });
