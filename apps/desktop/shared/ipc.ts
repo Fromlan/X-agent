@@ -23,7 +23,9 @@ export {
   type XAgentApiFlat,
   type XAgentApi,
   type DeletedFlatKey,
+  type SenderUntrustedError,
   DELETED_FLAT_KEYS,
+  isSenderUntrustedError,
 } from "./ipc-invoke-map";
 
 import { Type } from "typebox";
