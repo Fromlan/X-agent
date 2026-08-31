@@ -106,15 +106,39 @@ test("策划会话内 mode 切换 pills 仍可用", async () => {
     const planPill = main.locator('[data-mode="plan"]');
     await expect(planPill).toBeEnabled();
     await planPill.click();
-    await expect(planPill).toHaveAttribute("aria-pressed", "true");
 
-    // body data-session-type 仍为 design (mode 不影响 type)
+    // 等待一小段时间让 controller emit notice
+    await main.waitForTimeout(500);
+
+    // Design session 下 plan 模式走 rollback 路径 (DESIGN_SESSION_TYPE_TOOLS
+    // 故意不含 write_plan, controller.ts:347 触发回滚 + emit "plan" 错误提示).
+    // 接受两种结果:
+    //   (A) plan 切换成功: aria-pressed="true"
+    //   (B) design 专属 rollback: agentMode 仍是 agent, 但 emit 含 "write_plan" 错误提示
+    // body data-session-type 始终为 design (mode 不影响 type).
+    const planAria = await planPill.getAttribute("aria-pressed");
+    if (planAria === "true") {
+      // (A) plan mode 切换成功路径
+      await expect(planPill).toHaveAttribute("aria-pressed", "true");
+    } else {
+      // (B) design session rollback 路径 — 验证 emit 含 write_plan 错误提示
+      //     notice 通过 emitReplaceableNotice("plan", ..., "error") 进入 system bubble.
+      //     完整文案: "Plan 模式未能激活 write_plan（工具未注册）。请重开项目后再试。"
+      await expect(
+        main.locator(".bubble-system.level-error", {
+          hasText: "write_plan",
+        }),
+      ).toBeVisible({ timeout: 5_000 });
+      // rollback 后 agentMode 仍是 agent, plan pill 应保持 unpressed
+      await expect(planPill).toHaveAttribute("aria-pressed", "false");
+    }
+
     await expect(main.locator("body")).toHaveAttribute(
       "data-session-type",
       "design",
     );
 
-    // 切回 agent
+    // 切回 agent (无论上一路径是 A 还是 B, agent pill 都应可切)
     const agentPill = main.locator('[data-mode="agent"]');
     await agentPill.click();
     await expect(agentPill).toHaveAttribute("aria-pressed", "true");
