@@ -1,6 +1,5 @@
 import type { ProviderActivateResult } from "../../shared/ipc";
 import { getCachedPrefs, patchPrefs } from "./prefs";
-import { writeJsonAtomic } from "./lib/atomic-write";
 import { withStoreLock } from "./lib/store-mutex";
 import {
   modelEntryForPiModelsJson,
@@ -10,11 +9,21 @@ import {
   defaultProviderPaths,
   ensureParent,
   loadStore,
-  readJsonFile,
   saveStoreUnlocked,
   type ProviderPaths,
 } from "./provider-persist";
 import { invalidateAuthCache } from "./auth-check";
+import {
+  type PiAuthFile,
+  withAuthLock,
+  writeAuthFile,
+} from "./provider-pi-sync/pi-auth-port";
+import {
+  type PiModelEntry,
+  type PiModelsFile,
+  withModelsLock,
+  writeModelsFile,
+} from "./provider-pi-sync/pi-models-port";
 
 export type SyncProfileToPiOptions = {
   /**
@@ -32,6 +41,10 @@ export type SyncProfileToPiOptions = {
 /**
  * Write a catalog profile into Pi auth.json + models.json.
  * Does not reload ModelRuntime — caller should.
+ *
+ * 2026-08-31 收口 (issue #68 主题 J C-105): 原本散在函数里的 readJsonFile /
+ * writeJsonAtomic / withStoreLock 三件套抽到 pi-auth-port / pi-models-port.
+ * syncProfileToPi 只剩 orchestration (校验 + 各 port 调用 + store / prefs 更新).
  */
 export async function syncProfileToPi(
   id: string,
@@ -59,26 +72,21 @@ export async function syncProfileToPi(
   ensureParent(paths.authPath);
   ensureParent(paths.modelsPath);
 
-  // auth.json 读-改-写在 per-path 锁内原子落盘:跨档案并发激活不再互踩丢 key。
-  const auth = await withStoreLock(paths.authPath, async () => {
-    const a = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
+  // auth.json: 锁内 read-modify-write, 跨档案并发激活不再互踩丢 key。
+  await withAuthLock(paths, (auth) => {
     // Drop DeepSeek vs deepseek style shadows only — never remove a different
     // providerId (e.g. deepseek vs deepseek-anthropic must coexist).
-    pruneStaleProviderKeys(a, profile.providerId);
-    a[profile.providerId] = {
+    pruneStaleProviderKeys(auth, profile.providerId);
+    auth[profile.providerId] = {
       type: "api_key",
       key: profile.apiKey,
     };
-    await writeJsonAtomic(paths.authPath, a);
-    return a;
+    return writeAuthFile(paths, auth);
   });
   invalidateAuthCache();
 
-  // models.json 读-改-写同理,与 auth 各用各的锁(锁内无其他带锁调用,不死锁)。
-  const modelsFile = await withStoreLock(paths.modelsPath, async () => {
-    const m = await readJsonFile<{
-      providers?: Record<string, unknown>;
-    }>(paths.modelsPath, { providers: {} });
+  // models.json: 同理, 与 auth 各用各的锁 (锁内无其他带锁调用, 不死锁)。
+  await withModelsLock(paths, (m: PiModelsFile) => {
     if (!m.providers || typeof m.providers !== "object") {
       m.providers = {};
     }
@@ -87,17 +95,19 @@ export async function syncProfileToPi(
     m.providers[profile.providerId] = {
       baseUrl: profile.baseUrl,
       api: profile.api,
-      models: profile.models.map((entry) =>
-        modelEntryForPiModelsJson(
-          entry,
-          profile.api,
-          profile.providerId,
-          profile.baseUrl,
-        ),
+      // modelEntryForPiModelsJson 返回 Record<string, unknown>, Pi 强依赖 id 字段
+      // (已在 modelEntryForPiModelsJson 内部写入 entry.id). 强转数组类型.
+      models: profile.models.map(
+        (entry) =>
+          modelEntryForPiModelsJson(
+            entry,
+            profile.api,
+            profile.providerId,
+            profile.baseUrl,
+          ) as unknown as PiModelEntry,
       ),
     };
-    await writeJsonAtomic(paths.modelsPath, m);
-    return m;
+    return writeModelsFile(paths, m);
   });
 
   if (setActiveId) {
@@ -132,6 +142,10 @@ export async function syncProfileToPi(
  * 1. 大小写不敏感的 providerId 直接匹配 —— 删所有大小写变体。
  * 2. 没命中且档案带 baseUrl 时,按 baseUrl 家族兜底匹配 Pi models 里的条目,
  *    只删"baseUrl 完全一致"的 Pi key(避免误删 builtin OAuth 同名条目)。
+ *
+ * 2026-08-31 收口 (issue #68 主题 J C-105): 走 pi-auth-port / pi-models-port
+ * 抽象, read-modify-write 不再内联 readJsonFile / writeJsonAtomic /
+ * withStoreLock 三件套.
  */
 export async function pruneProviderIdFromPi(
   providerId: string,
@@ -187,12 +201,11 @@ export async function pruneProviderIdFromPi(
     return changed;
   };
 
-  // auth.json 锁内读-改-写;prune 是幂等删除,锁保证并发 prune 的读基于最新值。
-  const authChanged = await withStoreLock(paths.authPath, async () => {
-    const a = await readJsonFile<Record<string, unknown>>(paths.authPath, {});
+  // auth.json: 锁内读-改-写, prune 是幂等删除, 锁保证并发 prune 的读基于最新值。
+  const authChanged = await withAuthLock(paths, async (a: PiAuthFile) => {
     const changed = dropKeys(a);
     if (changed) {
-      await writeJsonAtomic(paths.authPath, a);
+      await writeAuthFile(paths, a);
     }
     return changed;
   });
@@ -200,26 +213,24 @@ export async function pruneProviderIdFromPi(
     invalidateAuthCache();
   }
 
-  // models.json 锁内读-改-写,含 baseUrl 家族兜底清理。
-  await withStoreLock(paths.modelsPath, async () => {
-    const m = await readJsonFile<{
-      providers?: Record<string, { baseUrl?: string }>;
-    }>(paths.modelsPath, { providers: {} });
+  // models.json: 锁内读-改-写, 含 baseUrl 家族兜底清理。
+  await withModelsLock(paths, (m: PiModelsFile) => {
     let changed = false;
     if (m.providers && dropKeys(m.providers)) {
       changed = true;
     }
-    // baseUrl 兜底:大小写匹配可能漏掉历史档案的拼写漂移(同 baseUrl 但 Pi key
-    // 与档案 providerId 不一致)。只要档案带 baseUrl,始终按 baseUrl 扫一遍
-    // 剩余 Pi key —— 同 baseUrl 的视为"指向同一供应商",一并清掉。
+    // baseUrl 兜底: 大小写匹配可能漏掉历史档案的拼写漂移(同 baseUrl 但 Pi key
+    // 与档案 providerId 不一致)。只要档案带 baseUrl, 始终按 baseUrl 扫一遍
+    // 剩余 Pi key —— 同 baseUrl 的视为"指向同一供应商", 一并清掉。
     if (ownBaseUrl && m.providers) {
       if (dropByBaseUrl(m.providers, ownBaseUrl, m.providers)) {
         changed = true;
       }
     }
     if (changed) {
-      await writeJsonAtomic(paths.modelsPath, m);
+      return writeModelsFile(paths, m);
     }
+    return undefined;
   });
 }
 
