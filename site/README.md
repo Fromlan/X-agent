@@ -4,8 +4,9 @@ X-agent 项目的官方营销站。纯静态、零构建工具、零 npm 依赖�
 
 ## 部署状态
 
-- 公网 URL: https://543vubbokrdfm.space.mcode.cn
+- 公网 URL: https://szxyo3odyfh6h.space.mcode.cn
 - 部署工具: `website_deploy`
+- 站点 node_id: `434928931172693`（in-place 更新必传）
 - 最近一次部署: 2026-08-26
 
 ## 目录
@@ -49,7 +50,7 @@ npx http-server D:/UGit/X-agent/site
 
 ```bash
 # 单步：传 site/ 到 website_deploy
-# 站点 ID: 434927810715917（如要 in-place 更新，传 node_id）
+# 站点 ID: 434928931172693（如要 in-place 更新，传 node_id）
 ```
 
 ## 内容来源
@@ -71,7 +72,7 @@ npx http-server D:/UGit/X-agent/site
 每次内容/样式变化时：
 
 1. 改 `site/` 下的源文件
-2. 重跑 `website_deploy`（可复用 `node_id = 434927810715917` 做 in-place 更新）
+2. 重跑 `website_deploy`（可复用 `node_id = 434928931172693` 做 in-place 更新）
 3. 不需要构建步骤
 
 ## 非目标

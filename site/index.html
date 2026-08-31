@@ -16,6 +16,9 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <link rel="icon" type="image/webp" href="./assets/img/favicon.webp" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/img/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/img/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/img/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -85,56 +88,58 @@
 
     <main id="top">
       <!-- ============== Hero ============== -->
-      <section class="hero container" id="product">
-        <div class="hero__status" data-reveal data-reveal-delay="1" aria-label="Project status">
-          <span data-i18n="hero.status">Early Beta · v</span><span data-version>v0.5.5</span>
-        </div>
-        <h1 class="hero__title" data-reveal data-reveal-delay="2" data-i18n="hero.title">
-          Godot 4 项目的桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。
-        </h1>
-        <p class="hero__sub" data-reveal data-reveal-delay="3" data-i18n="hero.sub">
-          基于 Pi SDK · Windows 10/11 · 17 个 Godot 工具 · Shadow Git 撤回 · 4 模式 + 2 类型硬闸
-        </p>
-        <div class="hero__cta" data-reveal data-reveal-delay="4">
-          <a
-            class="pill pill--solid pill--lg"
-            href="https://github.com/Fromlan/X-agent/releases/latest"
-            data-version-href
-            rel="noopener"
-          >
-            <span data-i18n="cta.downloadWin">下载 Windows 安装包</span>
-            <span data-version>v0.5.5</span>
+      <section class="hero" id="product">
+        <div class="hero__inner container">
+          <div class="hero__status" data-reveal data-reveal-delay="1" aria-label="Project status">
+            <span data-i18n="hero.status">Early Beta · v</span><span data-version>v0.5.5</span>
+          </div>
+          <h1 class="hero__title" data-reveal data-reveal-delay="2" data-i18n="hero.title">
+            Godot 4 项目的桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。
+          </h1>
+          <p class="hero__sub" data-reveal data-reveal-delay="3" data-i18n="hero.sub">
+            基于 Pi SDK · Windows 10/11 · 17 个 Godot 工具 · Shadow Git 撤回 · 4 模式 + 2 类型硬闸
+          </p>
+          <div class="hero__cta" data-reveal data-reveal-delay="4">
+            <a
+              class="pill pill--solid pill--lg"
+              href="https://github.com/Fromlan/X-agent/releases/latest"
+              data-version-href
+              rel="noopener"
+            >
+              <span data-i18n="cta.downloadWin">下载 Windows 安装包</span>
+              <span data-version>v0.5.5</span>
+            </a>
+            <a
+              class="pill pill--lg"
+              href="https://github.com/Fromlan/X-agent"
+              rel="noopener"
+              data-i18n="cta.star"
+            >GitHub Star</a>
+            <a
+              class="pill pill--lg"
+              href="https://github.com/Fromlan/X-agent/blob/master/README.md"
+              rel="noopener"
+              data-i18n="cta.readme"
+            >看 README</a>
+          </div>
+          <div class="hero__visual" data-reveal data-reveal-delay="5">
+            <img
+              class="hero__logo"
+              src="./assets/img/logo.png"
+              alt="X-agent logo"
+              width="160"
+              height="160"
+              fetchpriority="high"
+              decoding="async"
+            />
+          </div>
+          <a class="hero__scroll-hint" href="#pillars" aria-label="Scroll to features">
+            <span class="hero__scroll-mouse" aria-hidden="true">
+              <span class="hero__scroll-dot"></span>
+            </span>
+            <span data-i18n="hero.scrollHint">scroll</span>
           </a>
-          <a
-            class="pill pill--lg"
-            href="https://github.com/Fromlan/X-agent"
-            rel="noopener"
-            data-i18n="cta.star"
-          >GitHub Star</a>
-          <a
-            class="pill pill--lg"
-            href="https://github.com/Fromlan/X-agent/blob/master/README.md"
-            rel="noopener"
-            data-i18n="cta.readme"
-          >看 README</a>
         </div>
-        <div class="hero__visual" data-reveal data-reveal-delay="5">
-          <img
-            class="hero__logo"
-            src="./assets/img/logo.png"
-            alt="X-agent logo"
-            width="160"
-            height="160"
-            fetchpriority="high"
-            decoding="async"
-          />
-        </div>
-        <a class="hero__scroll-hint" href="#pillars" aria-label="Scroll to features">
-          <span class="hero__scroll-mouse" aria-hidden="true">
-            <span class="hero__scroll-dot"></span>
-          </span>
-          <span data-i18n="hero.scrollHint">scroll</span>
-        </a>
       </section>
 
       <!-- ============== Pillars (Three Pillars) ============== -->
