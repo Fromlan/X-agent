@@ -33,6 +33,8 @@
     "release:notes": "node scripts/extract-changelog.mjs",
     "release:test-changelog": "node scripts/test-extract-changelog.mjs",
     "release:dist": "npm run desktop:typecheck && npm run desktop:lint && npm run desktop:test && npm run desktop:dist",
-    "test:commit-msg": "node scripts/test-commit-msg-lint.mjs"
+    "test:commit-msg": "node scripts/test-commit-msg-lint.mjs",
+    "doc:drift": "node scripts/check-doc-drift.mjs",
+    "test:doc-drift": "node --test scripts/test-check-doc-drift.mjs"
   }
 }

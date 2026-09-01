@@ -4,7 +4,7 @@
 >
 > 本文不重复 `CLAUDE.md`（开发者向）和 `agent-context.md`（模型上下文原理）的细节，只点出 Agent 工作中**反复需要用到**的事实。
 >
-> 维护原则：对外约定请写在本文件、`context.md` 或 `CLAUDE.md`；`docs/` 下的 ADR / 调研 / code-review 草稿不入 git、不参与协作，清理后下次会话可重建。
+> 维护原则：对外约定请写在本文件、`context.md`、`CLAUDE.md` 或 `AGENTS.md`；`docs/` 是**公开文档目录**（已在 git 跟踪，CI 可见），个人草稿 / ADR / 调研请走 `.scratch/notes/`（已 gitignored，**不入** git）。
 
 ---
 
@@ -35,9 +35,9 @@
 
 ## 三、技术栈与版本下限
 
-- **Electron** ^43 + **electron-vite** ^5 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
-- **React** 19 + **TypeScript** ^7.0 + **Vite** ^7；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
-- **@earendil-works/pi-coding-agent** ^0.83（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
+- **Electron** ^43 + **electron-vite** ^6.0.0-beta.1 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
+- **React** 19 + **TypeScript** ^7.0 + **Vite** ^8.2.2；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
+- **@earendil-works/pi-coding-agent** ^0.84.3（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
 - **Node.js 22+**（开发时需要；运行时 Electron 自带）
 - Windows + Godot 4.x 为当前发布平台；macOS / Linux 不在 CI 矩阵内
@@ -57,7 +57,7 @@ npm install
 npm run desktop:dev            # Electron 开发（electron-vite dev）
 npm run desktop:build          # 仅打包 out/
 npm run desktop:typecheck      # tsc -p tsconfig.node.json && tsc -p tsconfig.web.json
-npm run desktop:test           # 离线断言脚本（约 57 个 tsx 脚本串联，见 apps/desktop/package.json:scripts.test）
+npm run desktop:test           # 离线断言脚本（60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联，见 apps/desktop/package.json:scripts.test）
 npm run desktop:smoke          # 真实模型冒烟（需本机认证）
 npm run desktop:dist           # electron-builder --win --publish never（仅 NSIS 安装包）
 npm run desktop:reset-tutorial # 重置教程环境（Windows 脚本）
@@ -217,7 +217,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - 主进程 / preload / renderer / shared 四层别名：`@/`、`@shared/`（Node 侧仅 `@shared/`）
 - 函数级注释 / 关键决策注释保留；新模块头部补一句"做什么 + 为什么"
 - 中文用户面文案以 `README.md` / 设置页为准；注释 / 标识符英文为主
-- **不要**在 `docs/` 下写对外约定（已 `.gitignore` 排除，CI 不可见）
+- **不要**在 `docs/` 下写**个人**草稿（个人草稿走 `.scratch/notes/`，已 gitignored）；`docs/` 是公开目录，CI 可见
 - 提交前：`npm run desktop:typecheck` + `npm test`（在 `apps/desktop` 内）；然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR，CI 三 job（`desktop` / `unit-test` / `e2e`）全绿后合并
 
 ---

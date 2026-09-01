@@ -19,7 +19,7 @@ cd apps/desktop
 npm install
 npm run typecheck        # tsc 两个 tsconfig：tsconfig.node.json + tsconfig.web.json
 npm run lint             # typecheck + echo lint-ok（CI 也会跑）
-npm test                 # 离线断言链：约 57 个 tsx 脚本串行（无需认证，见下）
+npm test                 # 离线断言链：60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联（无需认证，见下）
 npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
 npm run test:coverage    # vitest --coverage（CI 必跑）
 npm run test:e2e         # playwright E2E（需要先 npm run build）
@@ -77,7 +77,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 ## Godot 集成
 
 - RPC 桥 `electron/agent/godot-rpc-bridge.ts`：默认端口 8765（回退 8765–8774 内环绕，与插件候选表一致），仅监听 127.0.0.1，握手 token 校验；`GODOT_TOOLS` 默认**关闭**，需在 设置 → 工具 勾选，且 IPC 层强制校验开关。
-- 协议 `shared/godot-rpc.ts`（含 method→工具名映射 `GODOT_RPC_METHOD_TOOL`）；addon 在 `packages/godot-editor-rpc/addons/x_agent_rpc/`（当前 0.6.3）。`x-agent-godot-rpc.json` 残留是特性（下次启动复用旧 token，插件无需重装），`stop()` 不删。
+- 协议 `shared/godot-rpc.ts`（含 method→工具名映射 `GODOT_RPC_METHOD_TOOL`）；addon 在 `packages/godot-editor-rpc/addons/x_agent_rpc/`（当前 0.6.4）。`x-agent-godot-rpc.json` 残留是特性（下次启动复用旧 token，插件无需重装），`stop()` 不删。
 - `run_current_scene` / `play_main_scene` 短时收集报错，插件不因报错自动停止。
 - 多编辑器选路：显式 `clientId` 未鉴权时不静默改道（直接报错）；自动回退时响应带 `routedTo`。
 
@@ -85,7 +85,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 - 仅 Windows 在开发/CI 矩阵（Node 22+，CI 为 windows-latest）。
 - Pi `bash` 在 Windows 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。
-- `docs/` 与 `.scratch/` 被 `.gitignore` 排除，**不入 git 也不参与协作**——对外约定写 `CLAUDE.md` / `docs/agent.md` / `docs/context.md`，不要写进 `docs/`。
+- `docs/` 是**公开文档目录**，已在 git 跟踪、CI 可见（`.gitignore:7-8` 注释明示）；个人草稿 / ADR / 调研沉淀请走 `.scratch/notes/`（已 gitignored，**不入** git）。
 - 仓库目前没有 `opencode.json`。
 
 ## 编码与 UI 约定（与框架默认不同之处）

@@ -61,7 +61,7 @@ X-agent does three things other agents don't: **deep Godot integration**, **trus
 ### 🎮 Deep Godot integration
 
 - **Editor RPC (TCP)** — the agent drives your running Godot editor: open / reload scenes, run current or main scene, capture play errors and stream them back. Default port `8765` (fallback `8765–8774`), with explicit multi-editor routing. See [docs/agent.md §七](docs/agent.md)
-- **17 Godot tools** — scene introspection (node tree / properties) / debugger (breakpoints / state) / resource hygiene (unused / lint / import) / export (headless sub-process) / config R/W (`project.godot`) / read-only introspection (global classes / export templates / UID resolution)
+- **27 Godot tools** — scene introspection (node tree / properties / current scene / open scenes) / debugger (breakpoints / state) / resource hygiene (unused / lint / import / wait-for-import / UID resolve) / export (headless sub-process / templates / preset list) / config R/W (`project.godot`) / read-only introspection (global classes / conflict check / export templates / script inspect / project file list / editor info)
 - **`godot-docs-4-7` skill** — auto-discovered by Pi and surfaced in `<available_skills>`; load the full SKILL.md on demand via `read`—**0 tokens wasted on methodology you don't need**
 - **Ready checklist** — first-time setup wizard for Godot projects (auth / bash / RPC addon / Godot tools / docs)
 
@@ -110,6 +110,7 @@ Switch to **Goal mode** → set a completion condition (e.g. "add combo counter 
 | **🔮 thinking-orbs status animation** | 0.5.2 | Particle-orbit animation while running, not a spinner |
 | **📜 godot-docs-4-7** | 0.4.x | Engine-conventions skill, loaded on demand |
 | **↩️ Shadow Git rollback** | 0.4.x | Per-turn checkpoints, restore by diff path |
+| **📎 Composer attachments** | 0.6.1 | Paste/drag images & files, cwd-internal files expand inline |
 | **🎯 4 modes + 2 types hard-gate** | 0.3.6+ | Agent / Ask / Plan / Goal × code / design |
 | **🧠 Thinking levels + model clamp** | 0.2.5+ | Auto-clamp for DeepSeek etc., live editor feedback |
 
