@@ -130,5 +130,3 @@ export const IPC_EVENTS = {
   /** Emitted when `clientLogoId` changes (either via setPrefs or a clearCustom revert). */
   logoChanged: "logo:changed",
 } as const;
-
-export type IpcEventChannel = (typeof IPC_EVENTS)[keyof typeof IPC_EVENTS];

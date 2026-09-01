@@ -32,6 +32,7 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 - **/init 命令 + AGENT.md 自动加载**：composer `/` 菜单新增 `init` 命令，为当前项目一键生成根目录 AGENTS.md（已有时按 Mavis init 流程停下询问 skip / overwrite with backup / show diff，绝不绕过用户确认覆盖）；项目根的 `AGENT.md` / `agent.md` 单数变体自动并入模型上下文，与现有 `AGENTS.md` / `CLAUDE.md` 共存不冲突。
 - **Slash 命令走 `<cmd>` chip 渲染**：`/init` 等 Pi extension command 在 user bubble 渲染为可折叠的 `<cmd name="…">` chip（与 `<skill>` / `<prompt>` / `<file>` 同型），不再把整个 bootstrap body 作为 raw markdown 灌进 user bubble。
+- **清理未引用的代码与类型声明**：移除全仓零引用的 9 个 export（含 4 个 godot-rpc 类型别名、`isDebugMode` / `isSkipPiSyncForTests` / `isGodotPiPackageInstalled` / `gitDownloadUrl` / `IpcEventChannel`），以及与 vite/client 重复的 `src/assets/png.d.ts`。无用户可见行为变化。
 
 ## 0.6.1
 

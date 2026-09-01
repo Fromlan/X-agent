@@ -34,11 +34,6 @@ export function hasDebugEnvironment(): boolean {
 let debugMode =
   !app.isPackaged || hasDebugArgument(process.argv) || hasDebugEnvironment();
 
-/** Read debugMode from outside (用于 main.ts + 测试). */
-export function isDebugMode(): boolean {
-  return debugMode;
-}
-
 /** 打开当前窗口的独立 DevTools 窗口. */
 function openDebugTools(win: BrowserWindow | null): void {
   if (!alive(win)) return;

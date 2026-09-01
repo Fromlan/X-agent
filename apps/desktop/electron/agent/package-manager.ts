@@ -813,14 +813,6 @@ export async function installGodotPiPackage(): Promise<PackageInstallResult> {
 }
 
 /**
- * Whether a readable @x-agent/godot-pi is already listed in Pi settings
- * (any live path — not necessarily the current bundle resolve).
- */
-export function isGodotPiPackageInstalled(): boolean {
-  return findLivePackageSourcesByName(GODOT_PI_PACKAGE_NAME).length > 0;
-}
-
-/**
  * Install / refresh the native godot-pi package when missing or pointing at a
  * stale path. Does not throw; callers may ignore failures.
  */

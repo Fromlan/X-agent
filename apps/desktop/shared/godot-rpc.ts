@@ -72,29 +72,6 @@ export type GodotInspectMember = {
   hintString?: string;
 };
 
-export type GodotInspectResult = {
-  path: string;
-  base?: string;
-  extends?: string;
-  signals: GodotInspectMember[];
-  methods: GodotInspectMember[];
-  properties: GodotInspectMember[];
-  constants: GodotInspectMember[];
-};
-
-export type GodotFileEntry = {
-  path: string;
-  /** res:// 路径（与 path 同）。 */
-  type: GodotFileKind | string;
-  uid?: string;
-};
-
-export type GodotExportPreset = {
-  name: string;
-  platform: string;
-  index: number;
-};
-
 export type GodotExportTemplatesStatus = {
   installed: boolean;
   /** 当前 Godot 版本。 */

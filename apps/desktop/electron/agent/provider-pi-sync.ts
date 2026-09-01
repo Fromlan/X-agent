@@ -245,6 +245,3 @@ let SKIP_PI_SYNC_FOR_TESTS = false;
 export function setSkipPiSyncForTests(skip: boolean): void {
   SKIP_PI_SYNC_FOR_TESTS = skip;
 }
-export function isSkipPiSyncForTests(): boolean {
-  return SKIP_PI_SYNC_FOR_TESTS;
-}
