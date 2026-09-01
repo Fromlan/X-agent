@@ -39,6 +39,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run lint
+      - name: doc:drift
+        working-directory: ${{ github.workspace }}
+        run: npm run doc:drift
       - run: npm run build
 
   unit-test:
