@@ -53,6 +53,7 @@ import {
 } from "./plan-journal";
 import {
   buildAskModeSystemAppend,
+  buildCompletionDisciplineAppend,
   buildGameDesignLayoutGuide,
   buildGoalModeSystemAppend,
   buildPlanModeSystemAppend,
@@ -149,6 +150,10 @@ export class SessionModeController {
     // independent reads. Applies to every session type because the
     // 195k-context blowup is just as easy to hit in code sessions.
     out.push(buildToolEconomyAppend());
+    // Completion discipline — when to stop. Universal across all modes
+    // because Agent mode has no mode-specific append, and even Ask/Plan/Goal
+    // benefit from the explicit "verify before claiming done" rule.
+    out.push(buildCompletionDisciplineAppend());
     if (this.agentMode === "ask") {
       out.push(buildAskModeSystemAppend());
     } else if (this.agentMode === "plan") {

@@ -106,6 +106,29 @@ export function buildToolEconomyAppend(): string {
 }
 
 /**
+ * Completion discipline — when to stop, when to keep going. Injected for every
+ * session type and every mode (Agent / Ask / Plan / Goal) because the
+ * underlying issue is universal: MiniMax-M3 (and any LLM leaning concise)
+ * ends the turn after a small edit without verifying the change actually
+ * addressed the user's request. Goal mode has a stronger version of this
+ * rule, but Ask / Agent / Plan need it too. Sits after `Tool economy` and
+ * before the mode-specific append, so the order is "how to work" → "when to
+ * stop" → "mode-specific shape". Keep this short and durable; updating the
+ * string bumps the system-prompt cache key for every active session.
+ */
+export const COMPLETION_DISCIPLINE_INSTRUCTIONS = [
+  "Before ending the turn, verify the user's request is actually complete — not just plausible from reading code.",
+  "If you made changes, run a verification step (test, build, lint, simulation, or grep on the changed file) and report the actual output.",
+  "If the request has multiple parts (numbered list, several sub-asks), address each part and confirm each before saying 'done'.",
+  "If a step is blocked, name the blocker explicitly and what you tried — do not declare 'done' on a partial solution.",
+  "Default to continuing the same task in the same turn when more steps remain, instead of stopping for the user to say 'continue'.",
+].join("\n");
+
+export function buildCompletionDisciplineAppend(): string {
+  return ["# X-agent Completion discipline", COMPLETION_DISCIPLINE_INSTRUCTIONS].join("\n");
+}
+
+/**
  * GDD 布局引导 —— 给"整理/写入设计文档"任务列标准子模块。
  * 由 controller.composeModeAppend 在 design session 追加在 type append 之后。
  *

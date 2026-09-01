@@ -8,11 +8,13 @@ import {
   PLAN_MODE_INSTRUCTIONS,
   GOAL_MODE_INSTRUCTIONS,
   DESIGN_SESSION_TYPE_INSTRUCTIONS,
+  COMPLETION_DISCIPLINE_INSTRUCTIONS,
   buildAskModeSystemAppend,
   buildPlanModeSystemAppend,
   buildGoalModeSystemAppend,
   buildDesignSessionTypeAppend,
   buildGameDesignLayoutGuide,
+  buildCompletionDisciplineAppend,
   wrapWithModeBlock,
   stripModeBlocks,
   modeBlockLabel,
@@ -36,6 +38,20 @@ describe("mode-prompt instructions", () => {
   it("Goal 指令要求可验证证据", () => {
     expect(GOAL_MODE_INSTRUCTIONS).toContain("verifiable evidence");
   });
+
+  it("Completion discipline 覆盖 5 条核心规则(verify / multi-part / blocked / continue / verification step)", () => {
+    // 锁住根因:Agent 模式原本空,导致模型改 1 处就 end_turn。
+    // 5 条规则见 mode-prompt.ts COMPLETION_DISCIPLINE_INSTRUCTIONS 注释。
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/verify/i);
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
+      /multiple parts|numbered list|several sub-asks/i,
+    );
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/blocker|blocked/i);
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/continu/i);
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
+      /verification|test|build|lint|simulation|grep/i,
+    );
+  });
 });
 
 describe("mode-prompt builders", () => {
@@ -48,6 +64,14 @@ describe("mode-prompt builders", () => {
   it("buildGoalModeSystemAppend 注入条件", () => {
     const out = buildGoalModeSystemAppend("all tests pass");
     expect(out).toContain("GOAL CONDITION: all tests pass");
+  });
+
+  it("buildCompletionDisciplineAppend 带标题 + 长度 < 800 字符(防膨胀)", () => {
+    const out = buildCompletionDisciplineAppend();
+    expect(out.startsWith("# X-agent Completion discipline")).toBe(true);
+    expect(out).toContain(COMPLETION_DISCIPLINE_INSTRUCTIONS);
+    // 800 是缓存键稳定性预算:再长会让 system prompt 每次变更都重置缓存。
+    expect(out.length).toBeLessThan(800);
   });
 });
 
