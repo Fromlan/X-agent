@@ -62,7 +62,7 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
 ### 🎮 Godot 深度联动
 
 - **编辑器 RPC（TCP）** — Agent 直接驱动当前 Godot 编辑器：开/重载场景、运行当前或主场景、跑完收集报错回传。默认端口 `8765`（回退 `8765–8774`），多编辑器显式选路。详见 [docs/agent.md §七](docs/agent.md)
-- **17 个 Godot 工具** — 场景内省（节点树 / 属性）/ 调试器（断点 / 状态）/ 资源治理（unused / lint / 导入）/ 导出（headless 子进程）/ 配置读写（`project.godot`）/ 只读内省（全局类 / export 模板 / UID 解析）
+- **27 个 Godot 工具** — 场景内省（节点树 / 属性 / 当前场景 / 已打开场景）/ 调试器（断点 / 状态）/ 资源治理（unused / lint / 导入 / 等待导入完成 / UID 解析）/ 导出（headless 子进程 / 模板 / 预设列表）/ 配置读写（`project.godot`）/ 只读内省（全局类 / 冲突检查 / export 模板 / 脚本检视 / 项目文件列表 / 编辑器信息）
 - **godot-docs-4-7 技能** — Pi 自动发现并入 `<available_skills>`；按需 `read` 加载 SKILL.md，**0 token 浪费在"用不上的方法论"上**
 - **就绪清单** — 首次开 Godot 项目时一键引导（认证 / bash / RPC 插件 / Godot 工具 / 文档）
 
@@ -111,6 +111,7 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
 | **🔮 thinking-orbs 状态行动画** | 0.5.2 | 运行中粒子轨道而非转圈 |
 | **📜 godot-docs-4-7** | 0.4.x | 引擎惯例技能，按需 `read` |
 | **↩️ Shadow Git 撤回** | 0.4.x | 每轮检查点，按 diff 路径还原 |
+| **📎 Composer 附件** | 0.6.1 | 粘贴/拖放图片与文件，cwd 内文件内联展开 |
 | **🎯 4 模式 + 2 类型硬闸** | 0.3.6+ | Agent / Ask / Plan / Goal × code / design |
 | **🧠 Thinking 档位 + 模型钳制** | 0.2.5+ | DeepSeek 等自动钳制，编辑器实时反馈 |
 
