@@ -1,5 +1,6 @@
 import {
   splitUserMessageFileBlocks,
+  userMessageHasCmdBlocks,
   userMessageHasEmbeddedBlocks,
   userMessageHasFileBlocks,
   userMessageHasModeBlocks,
@@ -149,6 +150,33 @@ function assert(cond: boolean, msg: string): void {
     ),
     "prompt is embedded",
   );
+}
+
+{
+  // <cmd> block — emitted by Pi extension command handlers (e.g. /init).
+  // Renders as a compact chip parallel to <skill> / <prompt>.
+  const cmd = '<cmd name="init">\n/bootstrap instructions here\n</cmd>';
+  assert(userMessageHasCmdBlocks(cmd), "has cmd");
+  assert(userMessageHasEmbeddedBlocks(cmd), "cmd is embedded");
+  const segs = splitUserMessageFileBlocks(cmd);
+  assert(segs.length === 1, `cmd only got ${segs.length}`);
+  assert(
+    segs[0]?.kind === "cmd" &&
+      segs[0]?.name === "init" &&
+      segs[0]?.content === "/bootstrap instructions here",
+    "cmd chip",
+  );
+}
+
+{
+  // <cmd> block 跟其它 block 混排
+  const mixed =
+    '<cmd name="init">\nbody\n</cmd>\n请看\n<file name="a.md">\nx\n</file>';
+  const segs = splitUserMessageFileBlocks(mixed);
+  assert(segs.length === 3, `cmd+text+file got ${segs.length}`);
+  assert(segs[0]?.kind === "cmd" && segs[0]?.name === "init", "cmd first");
+  assert(segs[1]?.kind === "text" && segs[1]?.text.includes("请看"), "mid text");
+  assert(segs[2]?.kind === "file" && segs[2]?.name === "a.md", "file last");
 }
 
 console.log("test-user-message-files: ok");

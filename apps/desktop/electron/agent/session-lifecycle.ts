@@ -63,6 +63,8 @@ import {
   modelFromSession,
 } from "./session-host-helpers";
 import type { SessionLifecycleHost } from "./host-interfaces";
+import { createInitCommandExtension } from "./extensions/init-command";
+import { augmentAgentsFiles } from "./agents-md-context";
 
 export type SessionBundle = {
   session: AgentSession;
@@ -151,6 +153,13 @@ export class SessionLifecycle {
         this.a().setBaseAppendPrompt([...base]);
         return this.a().sessionMode.composeModeAppend(base);
       },
+      // Pi's `loadProjectContextFiles` only walks AGENTS.md / CLAUDE.md per
+      // directory. X-agent additionally picks up the single-name variants
+      // `AGENT.md` / `agent.md` (and case forms) so small projects / non-
+      // Claude-Code conventions still surface their context file. Augment
+      // is non-destructive: when a directory already has AGENTS.md (Pi's
+      // discovery), the singular file is not double-injected.
+      agentsFilesOverride: (base) => augmentAgentsFiles(base, { cwd, agentDir }),
       extensionFactories: [
         createPlanModeGuardExtension({
           getMode: () => this.a().sessionMode.getMode(),
@@ -171,6 +180,11 @@ export class SessionLifecycle {
             this.a().getBundle()?.sessionType ?? DEFAULT_SESSION_TYPE,
           getCwd: () => this.a().getBundle()?.cwd ?? null,
         }),
+        // `/init` slash command: bootstrap AGENTS.md for the current project.
+        // Body is the markdown imported via `?raw`; handler sends it as a
+        // user message so the model runs the procedure. Side-effect free on
+        // the host side. See `extensions/init-command.ts` for full design.
+        createInitCommandExtension(),
       ],
     });
     await loader.reload();

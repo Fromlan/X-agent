@@ -1,6 +1,6 @@
 /**
  * Display helpers for expanded payloads stored in user messages:
- * `<file>` / `<mode>` / `<skill>` / `<prompt>`.
+ * `<file>` / `<mode>` / `<skill>` / `<prompt>` / `<cmd>`.
  */
 
 import { MODE_BLOCK_RE } from "@shared/mode-prompt";
@@ -10,7 +10,8 @@ export type UserMessageSegment =
   | { kind: "file"; name: string; content: string }
   | { kind: "mode"; name: string; content: string }
   | { kind: "skill"; name: string; content: string; location?: string }
-  | { kind: "prompt"; name: string; content: string; args?: string };
+  | { kind: "prompt"; name: string; content: string; args?: string }
+  | { kind: "cmd"; name: string; content: string };
 
 export const FILE_BLOCK_RE =
   /<file\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/file>/g;
@@ -21,8 +22,19 @@ export const SKILL_BLOCK_RE =
 export const PROMPT_BLOCK_RE =
   /<prompt\s+name="([^"]*)"(?:\s+args="([^"]*)")?\s*>\r?\n?([\s\S]*?)\r?\n?<\/prompt>/g;
 
+/**
+ * `<cmd>` block — emitted by Pi extension command handlers (see
+ * `apps/desktop/electron/agent/extensions/init-command.ts` for the `/init`
+ * wire-up). The renderer collapses these into compact chips parallel to
+ * `<skill>` / `<prompt>`. Only `name` is parsed as an attribute today; if
+ * future commands need args or location, follow the prompt / skill shape
+ * and update the regex + parser together.
+ */
+export const CMD_BLOCK_RE =
+  /<cmd\s+name="([^"]*)"\s*>\r?\n?([\s\S]*?)\r?\n?<\/cmd>/g;
+
 const BLOCK_RE =
-  /<(file|mode|skill|prompt)\s+([^>]*)>(\r?\n)?([\s\S]*?)\r?\n?<\/\1>/g;
+  /<(file|mode|skill|prompt|cmd)\s+([^>]*)>(\r?\n)?([\s\S]*?)\r?\n?<\/\1>/g;
 
 function parseAttrs(attrStr: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -45,7 +57,8 @@ export function splitUserMessageFileBlocks(text: string): UserMessageSegment[] {
     !text.includes("<file") &&
     !text.includes("<mode") &&
     !text.includes("<skill") &&
-    !text.includes("<prompt")
+    !text.includes("<prompt") &&
+    !text.includes("<cmd")
   ) {
     return [{ kind: "text", text }];
   }
@@ -87,6 +100,12 @@ export function splitUserMessageFileBlocks(text: string): UserMessageSegment[] {
         content,
         ...(attrs.args ? { args: decodeAttr(attrs.args) } : {}),
       });
+    } else if (tag === "cmd") {
+      segments.push({
+        kind: "cmd",
+        name: attrs.name ?? "",
+        content,
+      });
     }
     last = match.index + match[0].length;
   }
@@ -119,11 +138,17 @@ export function userMessageHasPromptBlocks(text: string): boolean {
   return PROMPT_BLOCK_RE.test(text);
 }
 
+export function userMessageHasCmdBlocks(text: string): boolean {
+  CMD_BLOCK_RE.lastIndex = 0;
+  return CMD_BLOCK_RE.test(text);
+}
+
 export function userMessageHasEmbeddedBlocks(text: string): boolean {
   return (
     userMessageHasFileBlocks(text) ||
     userMessageHasModeBlocks(text) ||
     userMessageHasSkillBlocks(text) ||
-    userMessageHasPromptBlocks(text)
+    userMessageHasPromptBlocks(text) ||
+    userMessageHasCmdBlocks(text)
   );
 }
