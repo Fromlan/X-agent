@@ -39,9 +39,10 @@ describe("mode-prompt instructions", () => {
     expect(GOAL_MODE_INSTRUCTIONS).toContain("verifiable evidence");
   });
 
-  it("Completion discipline 覆盖 5 条核心规则(verify / multi-part / blocked / continue / verification step)", () => {
+  it("Completion discipline 覆盖 6 条核心规则(verify / multi-part / blocked / continue / verification step / thinking-budget checkpoint)", () => {
     // 锁住根因:Agent 模式原本空,导致模型改 1 处就 end_turn。
-    // 5 条规则见 mode-prompt.ts COMPLETION_DISCIPLINE_INSTRUCTIONS 注释。
+    // 第 6 条 (2026-09-01 #user-report) 解决 M3 + thinking_level=max 把 output 配额
+    // 全部花在 thinking 上、留下空 response 的特定问题。
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/verify/i);
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
       /multiple parts|numbered list|several sub-asks/i,
@@ -50,6 +51,13 @@ describe("mode-prompt instructions", () => {
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/continu/i);
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
       /verification|test|build|lint|simulation|grep/i,
+    );
+    // 第 6 条:thinking budget checkpoint
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
+      /output budget|max_tokens|truncated/i,
+    );
+    expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
+      /emit(ing|s| a tool call)?|tool call|checkpoint/i,
     );
   });
 });
@@ -66,12 +74,13 @@ describe("mode-prompt builders", () => {
     expect(out).toContain("GOAL CONDITION: all tests pass");
   });
 
-  it("buildCompletionDisciplineAppend 带标题 + 长度 < 800 字符(防膨胀)", () => {
+  it("buildCompletionDisciplineAppend 带标题 + 长度 < 1000 字符(防膨胀)", () => {
     const out = buildCompletionDisciplineAppend();
     expect(out.startsWith("# X-agent Completion discipline")).toBe(true);
     expect(out).toContain(COMPLETION_DISCIPLINE_INSTRUCTIONS);
-    // 800 是缓存键稳定性预算:再长会让 system prompt 每次变更都重置缓存。
-    expect(out.length).toBeLessThan(800);
+    // 1000 是缓存键稳定性预算:再长会让 system prompt 每次变更都重置缓存。
+    // 6 条规则完整后约 950 字符;新规则需要时可挤到 990 仍安全。
+    expect(out.length).toBeLessThan(1000);
   });
 });
 

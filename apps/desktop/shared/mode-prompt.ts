@@ -122,6 +122,7 @@ export const COMPLETION_DISCIPLINE_INSTRUCTIONS = [
   "If the request has multiple parts (numbered list, several sub-asks), address each part and confirm each before saying 'done'.",
   "If a step is blocked, name the blocker explicitly and what you tried — do not declare 'done' on a partial solution.",
   "Default to continuing the same task in the same turn when more steps remain, instead of stopping for the user to say 'continue'.",
+  "Long unbroken thinking can exhaust your output budget (max_tokens), leaving the turn truncated with no text or tool call. If you have been reasoning for a while without emitting one, stop and emit a tool call (read / grep / edit / run) to checkpoint. The next turn continues from your tool results, not from your thoughts.",
 ].join("\n");
 
 export function buildCompletionDisciplineAppend(): string {
