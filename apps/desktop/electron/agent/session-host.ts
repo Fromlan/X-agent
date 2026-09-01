@@ -99,12 +99,46 @@ import {
 export type { ToolDetailRecord } from "./session-host-helpers";
 
 
+/**
+ * Marker prefix for the system-injected recovery prompt. Used by `prompt()` to
+ * tell the recovery-prompt path apart from user-typed prompts, so that
+ * `consecutiveTruncationRetries` only resets when the user types something
+ * (not when the host re-prompts itself).
+ */
+export const TRUNCATION_RECOVERY_MARKER = "[system-recovery]";
+
+/**
+ * Build the one-shot recovery hint injected when an assistant turn was
+ * truncated by `max_tokens` with no text / no tool call. English, ~80 words,
+ * intentionally short so it doesn't itself risk hitting the same cap.
+ */
+export function buildTruncationRecoveryHint(): string {
+  return [
+    TRUNCATION_RECOVERY_MARKER,
+    "Your previous turn was truncated at max_tokens (output budget exhausted by thinking).",
+    "To recover, do not do deep reasoning this turn — emit exactly one tool call now",
+    "(read / grep / edit / run / godot_run_main_scene) to checkpoint progress, then",
+    "read its result, then continue. Save longer thinking for the next turn.",
+  ].join(" ");
+}
+
+
 export class SessionHost {
   private bundle: SessionBundle | null = null;
   private modelRuntime: ModelRuntime | null = null;
   private status: AgentStatus = "idle";
   /** Prevent overlapping model title requests for the same open session. */
   private autoTitleInFlight = false;
+  /**
+   * Consecutive-truncation retry counter. Incremented in `notifyTruncation`
+   * (event-bridge detects `stopReason: "length"` with no actionable content)
+   * and reset to 0 in `prompt()` whenever the text is not a recovery prompt
+   * (i.e. user-typed input). Capped at `MAX_TRUNCATION_RETRIES` — beyond that
+   * the host sets an error status and stops auto-retrying, asking the user
+   * to lower thinking level / switch model.
+   */
+  private consecutiveTruncationRetries = 0;
+  private static readonly MAX_TRUNCATION_RETRIES = 2;
   /**
    * True while prompt() is inside the preparePromptCheckpoint → session.prompt
    * transition (isStreaming is still false there, so a concurrent retract
@@ -525,6 +559,9 @@ export class SessionHost {
       onAgentSettled: () => {
         void this.sessionMode.onAgentSettled();
       },
+      notifyTruncation: (detail) => {
+        void this.notifyTruncation(detail);
+      },
     };
     return bridgeSessionEvents(session, deps);
   }
@@ -788,6 +825,59 @@ export class SessionHost {
     return this.lifecycle.dispose();
   }
 
+  /**
+   * Called by the event-bridge when the assistant message was truncated by
+   * `max_tokens` with no text / no tool call (thinking used all output budget).
+   * Injects a one-shot recovery prompt up to `MAX_TRUNCATION_RETRIES` times
+   * per consecutive truncation streak. On cap, surfaces an error status
+   * asking the user to lower thinking level or switch model — repeated
+   * auto-retry cannot shrink the input context that's the real culprit.
+   *
+   * Recovery prompt is dispatched via `queueMicrotask` so it lands after
+   * the current turn's `turn_end` event, otherwise Pi's `isStreaming` would
+   * still be true and `session.prompt` would steer instead of starting a
+   * fresh turn.
+   */
+  async notifyTruncation(detail: { messageId: string; outputTokens: number }): Promise<void> {
+    if (!this.bundle) {
+      dbgLog("session", "notifyTruncation skipped: no bundle");
+      return;
+    }
+    if (this.consecutiveTruncationRetries >= SessionHost.MAX_TRUNCATION_RETRIES) {
+      dbgLog("session", "notifyTruncation capped", {
+        attempts: this.consecutiveTruncationRetries,
+        messageId: detail.messageId,
+      });
+      this.setStatus(
+        "error",
+        `已自动重试 ${SessionHost.MAX_TRUNCATION_RETRIES} 次仍被 max_tokens 截断。请把设置里的 thinking 改为 off 或换 M2.7。`,
+      );
+      return;
+    }
+    this.consecutiveTruncationRetries += 1;
+    dbgLog("session", "notifyTruncation: scheduling retry", {
+      attempt: this.consecutiveTruncationRetries,
+      messageId: detail.messageId,
+      outputTokens: detail.outputTokens,
+    });
+    this.setStatus("retrying", "上一轮被 max_tokens 截断,正在自动重试…");
+    // Defer until after turn_end so the new turn starts cleanly.
+    queueMicrotask(() => {
+      const bundle = this.bundle;
+      if (!bundle) {
+        dbgLog("session", "notifyTruncation deferred call: bundle gone");
+        return;
+      }
+      void this.prompt({ text: buildTruncationRecoveryHint() }).catch((err) => {
+        dbgWarn(
+          "session",
+          "notifyTruncation prompt failed",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    });
+  }
+
   async prompt(payload: PromptPayload): Promise<PromptResult> {
     const bundle = this.bundle;
     if (!bundle) {
@@ -799,6 +889,12 @@ export class SessionHost {
     if (!text && (!images || images.length === 0)) {
       dbgLog("session", "prompt rejected: empty text and no images");
       return { ok: false, error: "消息不能为空" };
+    }
+    // User-typed prompt → reset truncation retry counter. Recovery prompts
+    // (system-injected via notifyTruncation) carry the marker; everything
+    // else (including extension commands) is treated as user input.
+    if (!text.startsWith(TRUNCATION_RECOVERY_MARKER)) {
+      this.consecutiveTruncationRetries = 0;
     }
 
     dbgLog("session", "prompt start", {

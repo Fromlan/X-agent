@@ -67,6 +67,17 @@ export interface SessionEventBridgeDeps {
   autoMaintainIfNeeded(): Promise<void> | void;
   /** Called after agent_end when not retrying — Goal Mode continuation hook. */
   onAgentSettled?: () => void;
+  /**
+   * Called when an assistant message ends with `stopReason: "length"` AND the
+   * content has no text / no tool call (only thinking). The host decides whether
+   * to inject a system-recovery prompt up to a per-session cap.
+   *
+   * Root cause: M3 + thinking_level=max has no thinking budget cap, so the
+   * 16K output ceiling can be fully consumed by thinking, leaving zero tokens
+   * for any visible response. The host treats this as a recovery-worthy
+   * truncation and re-prompts with a no-think-this-turn hint.
+   */
+  notifyTruncation?(detail: { messageId: string; outputTokens: number }): void;
 }
 
 /**
@@ -94,6 +105,26 @@ function bindActiveUserTurn(deps: SessionEventBridgeDeps): string | undefined {
     }
   }
   return entryId;
+}
+
+/**
+ * True iff the assistant message was truncated by `max_tokens` and contains
+ * no actionable content (only thinking). Exported so tests can lock the rule
+ * without a full Pi event stream. Uses weak typing on purpose — the message
+ * shape from Pi may shift across SDK releases; null guards are defensive.
+ */
+export function isTruncatedThinkingOnly(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const m = message as { stopReason?: unknown; content?: unknown };
+  if (m.stopReason !== "length") return false;
+  if (!Array.isArray(m.content)) return false;
+  for (const part of m.content) {
+    if (!part || typeof part !== "object") continue;
+    const t = (part as { type?: unknown }).type;
+    if (t === "text" || t === "toolCall") return false;
+  }
+  // length + no text + no toolCall + content array exists → truncation-only
+  return true;
 }
 
 /** Subscribes to `session`'s Pi events and forwards them via `deps`. Returns the unsubscribe function. */
@@ -275,6 +306,20 @@ export function bridgeSessionEvents(
           });
           if (isError && msg.errorMessage) {
             deps.setStatus("error", msg.errorMessage);
+          }
+          // M3 + thinking_level=max 撞墙:output 配额全花光在 thinking,
+          // 留下零 text / 零 tool_call。让 host 决定是否 inject 恢复 prompt。
+          if (!isError && !isAborted && deps.notifyTruncation) {
+            const assistantMsg = event.message as {
+              content?: Array<{ type?: string }>;
+              usage?: { output?: number };
+            };
+            if (isTruncatedThinkingOnly(assistantMsg)) {
+              deps.notifyTruncation({
+                messageId: deps.messageIdFrom(event.message),
+                outputTokens: Number(assistantMsg.usage?.output ?? 0),
+              });
+            }
           }
         }
         break;
