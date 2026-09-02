@@ -35,6 +35,7 @@
     "release:dist": "npm run desktop:typecheck && npm run desktop:lint && npm run desktop:test && npm run desktop:dist",
     "test:commit-msg": "node scripts/test-commit-msg-lint.mjs",
     "doc:drift": "node scripts/check-doc-drift.mjs",
-    "test:doc-drift": "node --test scripts/test-check-doc-drift.mjs"
+    "test:doc-drift": "node --test scripts/test-check-doc-drift.mjs",
+    "plugin:sync": "node scripts/sync-godot-connector-plugin.mjs"
   }
 }

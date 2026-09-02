@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "name": "godot-connector",
+  "displayName": "Godot Connector",
+  "version": "0.1.0",
+  "description": "Connect MiniMax Code to the Godot editor via a local TCP bridge. Exposes 28 editor-driving MCP tools (open/run/lint/export/inspect scenes and resources) and a vendored Godot 4.7 docs skill. Source: fromlan/x-agent.",
+  "author": "Fromlan",
+  "icon": "icon.png",
+  "category": "Code",
+  "exampleQueries": [
+    "Use godot_editor_info to show the currently running Godot editor state.",
+    "Open res://scenes/main.tscn and run it with godot_run_scene, then report any play errors.",
+    "Lint the scripts under res://scripts with godot_lint_scripts and summarize the failures.",
+    "Export the project using the 'Linux/X11' preset via godot_export_project."
+  ],
+  "apps": [],
+  "mcpServers": [
+    "servers.mcp.json"
+  ],
+  "skills": [
+    "skills/godot-connector-setup/SKILL.md",
+    "skills/godot-docs-4-7/SKILL.md"
+  ],
+  "hooks": [
+    "hooks/hooks.json"
+  ]
+}
