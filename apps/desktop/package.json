@@ -55,7 +55,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "diff": "^9.0.0",
     "electron": "^43.4.1",
     "electron-builder": "^26.15.3",
@@ -63,7 +63,7 @@
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.0"
   },
   "build": {
     "appId": "works.earendil.x-agent",
