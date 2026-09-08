@@ -10,14 +10,15 @@
  * protocol (registered in `electron/main.ts`).
  *
  * The active choice lives in `ClientPrefs.clientLogoId`; this module owns
- * the binary side (presets + custom upload / list / delete / path resolve).
- * The renderer-facing `logo:changed` event push + BrowserWindow title-bar
- * icon refresh lives in `app-runtime.ts` (`notifyLogoChange`) — this module
- * only re-exports the resolver it needs. (2026-08-31 seam 注释修正, issue
- * #68 主题 J C-405: 原注释把 `notifyLogoChange` 写成本模块 export,实际
- * 在 app-runtime.ts:382.)
+ * the full logo lifecycle:
+ * 1. binary side (presets + custom upload / list / delete / path resolve)
+ * 2. renderer-facing `logo:changed` event push + BrowserWindow title-bar
+ *    icon refresh (`notifyLogoChange`) — moved here from `app-runtime.ts`
+ *    so the logo module owns the entire side effect (issue #68 主题 J C-405,
+ *    2026-08-31 seam 修复). app-runtime.ts imports `notifyLogoChange` from
+ *    here to keep the launch wiring in one place.
  */
-import { app } from "electron";
+import { app, type BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
@@ -28,6 +29,8 @@ import type {
   LogoUploadError,
   LogoUploadResult,
 } from "../../shared/ipc";
+import { IPC_EVENTS } from "../../shared/ipc-channels";
+import { dbgWarn } from "../../shared/debug-log";
 
 /** Built-in preset catalog. Order is the render order in the settings grid. */
 interface PresetSpec {
@@ -342,4 +345,52 @@ export function resolveLogoFilePath(logoId: string): string | null {
 
 function err(code: LogoUploadError["code"], message: string): LogoUploadError {
   return { ok: false, error: message, code };
+}
+
+/**
+ * Push a `logo:changed` event to the renderer and (best-effort) refresh the
+ * BrowserWindow title-bar / taskbar icon. Falls back silently if the window
+ * is gone or the resolved file is missing.
+ *
+ * Lives here (issue #68 主题 J C-405, 2026-08-31) so the logo module owns
+ * the entire lifecycle — presets / customs / path resolve / event push.
+ * app-runtime.ts imports this and feeds it `getMainWindow()` from the
+ * runtime hooks; no launch-path logic moved.
+ */
+export function notifyLogoChange(logoId: string, win: BrowserWindow | null): void {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.send(IPC_EVENTS.logoChanged, { id: logoId });
+  } catch (err) {
+    dbgWarn("logo", "send logo:changed failed", err instanceof Error ? err.message : String(err));
+  }
+  const file = resolveLogoFilePath(logoId);
+  if (file) {
+    // Windows taskbar 经常把 AUMID 关联的图标缓存住;直接 setIcon(file)
+    // 偶尔不会立刻刷新。两次调用 + 短暂 setIcon(null) 触发 Explorer
+    // 重读磁盘上的新图标。setIcon(null) 在某些 Electron 版本上
+    // 签名不收,失败被 catch 吞掉。
+    try {
+      win.setIcon(file);
+    } catch (err) {
+      dbgWarn("logo", "setIcon failed", err instanceof Error ? err.message : String(err));
+    }
+    if (process.platform === "win32") {
+      setTimeout(() => {
+        if (!win || win.isDestroyed()) return;
+        try {
+          // null = 退回 default (app 入口处的 build/icon.ico),让 Explorer
+          // 视为新图标,下一帧再 setIcon(file) 写入新文件。
+          (win.setIcon as unknown as (img: string | null) => void)(null);
+        } catch {
+          /* setIcon(null) 可能签名不收,忽略 */
+        }
+        try {
+          win.setIcon(file);
+        } catch {
+          /* 同上 */
+        }
+      }, 60);
+    }
+  }
 }

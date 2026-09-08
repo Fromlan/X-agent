@@ -37,7 +37,7 @@ import { getSecretCodecStatus } from "./agent/secret-codec";
 import {
   deleteCustomLogo,
   listLogos,
-  resolveLogoFilePath,
+  notifyLogoChange,
   saveCustomLogo,
 } from "./agent/agent-logos";
 import {
@@ -47,7 +47,7 @@ import {
   PrefsRecoveryNotice,
 } from "../shared/ipc";
 import { ALL_TOGGLEABLE_TOOLS } from "../shared/ipc";
-import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
+import { IPC_CHANNELS } from "../shared/ipc-channels";
 import { coerceSessionType } from "../shared/session-type";
 import { registerWorkspaceIpc } from "./ipc/register-workspace-ipc";
 import { registerTurnIpc } from "./ipc/register-turn-ipc";
@@ -374,50 +374,10 @@ function registerIpc(
   });
 }
 
-/**
- * Push a `logo:changed` event to the renderer and (best-effort) refresh the
- * BrowserWindow title-bar / taskbar icon. Falls back silently if the window
- * is gone or the resolved file is missing.
- */
-export function notifyLogoChange(logoId: string, win: BrowserWindow | null): void {
-  if (!win || win.isDestroyed()) return;
-  try {
-    win.webContents.send(IPC_EVENTS.logoChanged, { id: logoId });
-  } catch (err) {
-    dbgWarn("logo", "send logo:changed failed", err instanceof Error ? err.message : String(err));
-  }
-  const file = resolveLogoFilePath(logoId);
-  if (file) {
-    // Windows taskbar 经常把 AUMID 关联的图标缓存住;直接 setIcon(file)
-    // 偶尔不会立刻刷新。两次调用 + 短暂 setIcon(null) 触发 Explorer
-    // 重读磁盘上的新图标。setIcon(null) 在某些 Electron 版本上
-    // 签名不收,失败被 catch 吞掉。
-    try {
-      win.setIcon(file);
-    } catch (err) {
-      dbgWarn("logo", "setIcon failed", err instanceof Error ? err.message : String(err));
-    }
-    if (process.platform === "win32") {
-      setTimeout(() => {
-        if (!win || win.isDestroyed()) return;
-        try {
-          // null = 退回 default (app 入口处的 build/icon.ico),让 Explorer
-          // 视为新图标,下一帧再 setIcon(file) 写入新文件。
-          (win.setIcon as unknown as (img: string | null) => void)(null);
-        } catch {
-          /* setIcon(null) 可能签名不收,忽略 */
-        }
-        try {
-          win.setIcon(file);
-        } catch {
-          /* 同上 */
-        }
-      }, 60);
-    }
-  }
-}
-
 /** Call only after splash is visible. */
+// Re-export so main.ts's `runtime.notifyLogoChange(...)` call site still
+// works after C-405 moved the implementation to agent-logos.ts.
+export { notifyLogoChange };
 export function bootRuntime(hooks: RuntimeHooks): void {
   applyStartupPrefsLoad(loadPrefsWithRecovery());
   godotRpc = new GodotRpcBridge();

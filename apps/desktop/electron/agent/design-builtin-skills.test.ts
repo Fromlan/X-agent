@@ -1,9 +1,10 @@
 /**
  * Vitest 单元测试 — design builtin skills 5 条契约 + 懒写幂等性.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join, posix } from "path";
+import { dirname, join, posix, resolve } from "path";
+import { fileURLToPath } from "url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   BUILTIN_DESIGN_SKILL_IDS,
@@ -21,6 +22,24 @@ describe("DESIGN_BUILTIN_SKILLS 契约", () => {
     expect(DESIGN_BUILTIN_SKILLS.length).toBe(5);
     const ids = DESIGN_BUILTIN_SKILLS.map((s) => s.id);
     expect(new Set(ids).size).toBe(5);
+  });
+
+  // C-101 收口: 5 条 SKILL.md 在 build-time 由 Vite `?raw` 内联进 bundle.
+  // 单独验证 .md 在 skills/builtin/ 目录存在, 防止 .md 误删/误改路径后
+  // `?raw` import 静默 build 失败 (vitest 跑在 node 环境, 不会触发 Vite
+  // resolver 报错, 必须显式检查源文件存在).
+  it("5 条 .md body 源文件存在于 skills/builtin/<id>/SKILL.md (C-101 收口)", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const builtinDir = resolve(here, "skills", "builtin");
+    expect(existsSync(builtinDir), `内置 skills 目录应存在: ${builtinDir}`).toBe(true);
+    for (const skill of DESIGN_BUILTIN_SKILLS) {
+      const mdPath = join(builtinDir, skill.id, "SKILL.md");
+      expect(existsSync(mdPath), `${mdPath} 应存在`).toBe(true);
+      // 磁盘文件首行必须是 `# ` 标题, 防止空白文件被 ?raw 静默吞.
+      const text = readFileSync(mdPath, "utf8");
+      expect(text.length, `${mdPath} 长度`).toBeGreaterThanOrEqual(200);
+      expect(text, `${mdPath} 首行`).toMatch(/^#\s+\S/m);
+    }
   });
 
   it("BUILTIN_DESIGN_SKILL_IDS 与 DESIGN_BUILTIN_SKILLS 顺序一致", () => {

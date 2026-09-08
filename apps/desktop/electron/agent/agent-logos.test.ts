@@ -10,6 +10,9 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
+const sendMock = vi.fn();
+const setIconMock = vi.fn();
+
 vi.mock("electron", () => ({
   app: {
     isPackaged: false,
@@ -19,6 +22,7 @@ vi.mock("electron", () => ({
       return process.cwd();
     },
   },
+  BrowserWindow: class {},
 }));
 
 import {
@@ -30,7 +34,9 @@ import {
   resolveLogoFilePath,
   listLogos,
   LOGO_PROTOCOL,
+  notifyLogoChange,
 } from "./agent-logos";
+import { IPC_EVENTS } from "../../shared/ipc-channels";
 
 let work = "";
 let fakeHome = "";
@@ -261,5 +267,66 @@ describe("agent-logos / listLogos", () => {
 describe("agent-logos / LOGO_PROTOCOL", () => {
   it("protocol name is x-agent-logos", () => {
     expect(LOGO_PROTOCOL).toBe("x-agent-logos");
+  });
+});
+
+describe("agent-logos / notifyLogoChange (C-405 seam 修复)", () => {
+  // C-405 收口: notifyLogoChange 实现迁到本模块, 验证三件事:
+  // 1) 推 logo:changed 事件给 renderer (走 IPC_EVENTS.logoChanged)
+  // 2) 给 BrowserWindow setIcon 解析到的文件路径
+  // 3) win 缺失 / 销毁时静默 no-op, 不抛错
+  function makeWin(): { isDestroyed: () => boolean; webContents: { send: typeof sendMock }; setIcon: typeof setIconMock } {
+    return {
+      isDestroyed: () => false,
+      webContents: { send: sendMock },
+      setIcon: setIconMock,
+    };
+  }
+
+  beforeEach(() => {
+    sendMock.mockReset();
+    setIconMock.mockReset();
+  });
+
+  it("win === null 时静默 no-op", () => {
+    notifyLogoChange("default", null);
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(setIconMock).not.toHaveBeenCalled();
+  });
+
+  it("win 已销毁时静默 no-op", () => {
+    const win = {
+      isDestroyed: () => true,
+      webContents: { send: sendMock },
+      setIcon: setIconMock,
+    };
+    notifyLogoChange("default", win);
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(setIconMock).not.toHaveBeenCalled();
+  });
+
+  it("default logo: send event 但不 setIcon (无文件)", () => {
+    notifyLogoChange("default", makeWin());
+    expect(sendMock).toHaveBeenCalledWith(IPC_EVENTS.logoChanged, { id: "default" });
+    expect(setIconMock).not.toHaveBeenCalled();
+  });
+
+  it("未知 logo id: send event 但不 setIcon (resolveLogoFilePath 返回 null)", () => {
+    notifyLogoChange("garbage", makeWin());
+    expect(sendMock).toHaveBeenCalledWith(IPC_EVENTS.logoChanged, { id: "garbage" });
+    expect(setIconMock).not.toHaveBeenCalled();
+  });
+
+  it("custom logo 解析到 disk 文件: setIcon 被调用", () => {
+    const src = join(work, "for-notify.png");
+    write64x64Png(src);
+    const saved = saveCustomLogo(src);
+    if (!saved.ok) throw new Error("setup failed");
+    notifyLogoChange(saved.logo.id, makeWin());
+    expect(sendMock).toHaveBeenCalledWith(IPC_EVENTS.logoChanged, { id: saved.logo.id });
+    expect(setIconMock).toHaveBeenCalledTimes(1);
+    const callArg = setIconMock.mock.calls[0]![0] as string;
+    expect(typeof callArg).toBe("string");
+    expect(existsSync(callArg)).toBe(true);
   });
 });
