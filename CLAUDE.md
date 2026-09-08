@@ -79,7 +79,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 监听 push / PR,三 job 并行
 - `concurrency: cancel-in-progress: true`(同 ref 旧运行自动取消)
-- 失败必须修;依赖更新暂不启用 Dependabot(避免噪音),改用 `npm outdated` 季度手工检查
+- 失败必须修;依赖更新走 Dependabot(配置见 [`.github/dependabot.yml`](.github/dependabot.yml),细节见 §9),季度再 `npm outdated` 复核
 - [`.github/workflows/release.yml`](.github/workflows/release.yml) 仅在 tag push / workflow_dispatch 触发,见 §7
 
 ### 7. 发版流程
