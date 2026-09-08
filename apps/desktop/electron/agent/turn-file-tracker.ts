@@ -14,6 +14,7 @@ import {
   baselineDiffTextForEntry,
   joinBaselineDiffs,
 } from "./baseline-diff";
+import { MUTATING_GODOT_TOOLS } from "./godot-tools";
 import type {
   RestoreAttempt,
   RestorePreview,
@@ -26,26 +27,7 @@ export const FILE_BASELINE_CUSTOM_TYPE = "x-agent-file-baselines";
 export const MAX_BASELINE_BYTES = 2 * 1024 * 1024;
 
 const MUTATING_TOOLS = new Set(["write", "edit"]);
-/** Godot tools that change editor/runtime state (not read-only probes). */
-const MUTATING_GODOT_TOOLS = new Set<string>([
-  "godot_open_scene",
-  "godot_reload_scene",
-  "godot_run_scene",
-  "godot_run_main_scene",
-  "godot_import_resources",
-  "godot_stop_scene",
-  // 1.2 扩展：会改动编辑器 / 项目状态的工具
-  "godot_set_breakpoint",
-  "godot_export_project",
-  "godot_set_project_setting",
-]);
-
-export type SegmentScan = {
-  mutationPaths: string[];
-  userEntryIds: string[];
-  hasBash: boolean;
-  hasGodot: boolean;
-};
+const MUTATING_GODOT_TOOLS_SET: ReadonlySet<string> = new Set(MUTATING_GODOT_TOOLS);
 
 export type BaselinePersistPayload = {
   /** userEntryId → rel path → base64 | null（兼容旧格式：null = absent, base64 = file） */
@@ -65,29 +47,8 @@ type BaselineEntry =
   | { kind: "absent" }
   | { kind: "symlink"; target: string };
 
-type SessionEntryLike = {
-  type: string;
-  id: string;
-  customType?: string;
-  data?: unknown;
-  message?: {
-    role?: string;
-    content?: unknown;
-    toolName?: string;
-  };
-};
-
-type SessionManagerLike = {
-  getBranch: (fromId?: string) => SessionEntryLike[];
-  getEntries: () => SessionEntryLike[];
-  getEntry: (id: string) => SessionEntryLike | undefined;
-  appendCustomEntry: (customType: string, data?: unknown) => string;
-};/**
- * 工具入参键集合，按使用频率排序。
- * - `path` / `file_path` / `filePath` / `file`：通用文件路径
- * - `notebook_path`：Jupyter 风格
- * - `uri` / `dst` / `target`：URI / 目标符号 / 移动目标
- */
+/** 工具入参键：通用 `path` / `file_path` / `filePath` / `file`、
+ *  Jupyter 风格 `notebook_path`、URI / 目标 `uri` / `dst` / `target`。 */
 const TOOL_PATH_KEYS = [
   "path",
   "file_path",
@@ -99,9 +60,7 @@ const TOOL_PATH_KEYS = [
   "target",
 ] as const;
 
-/**
- * 从工具入参中识别"被操作的路径"。支持多种键名，避免新工具换键后漏抓导致基线缺失。
- */
+/** 从工具入参中识别被操作的路径(多键名扫描,避免新工具换键后漏抓)。 */
 function pathFromToolArgs(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
   const o = args as Record<string, unknown>;
@@ -128,24 +87,14 @@ function toolCallsFromAssistantContent(
   const out: Array<{ name: string; args: unknown }> = [];
   for (const part of content) {
     if (!part || typeof part !== "object") continue;
-    const p = part as {
-      type?: string;
-      name?: string;
-      arguments?: unknown;
-      args?: unknown;
-    };
+    const p = part as { type?: string; name?: string; arguments?: unknown; args?: unknown };
     if (p.type !== "toolCall") continue;
-    out.push({
-      name: p.name ?? "",
-      args: p.arguments ?? p.args,
-    });
+    out.push({ name: p.name ?? "", args: p.arguments ?? p.args });
   }
   return out;
 }
 
-/**
- * Tracks pre-mutation file bytes per user-turn so retract can restore them.
- */
+/** Tracks pre-mutation file bytes per user-turn so retract can restore them. */
 export class TurnFileTracker implements RestoreSource {
   readonly kind = "baseline" as const;
   readonly label = "write/edit 基线";
@@ -161,10 +110,8 @@ export class TurnFileTracker implements RestoreSource {
   /** B9: 自上次持久化以来被删除的 turn（撤回 drop）。 */
   private droppedTurns = new Set<string>();
 
-  /**
-   * 切换项目工作目录。cwd 变更意味着所有旧基线的相对路径已失效，
-   * 必须清空避免把旧项目的文件字节还原到新项目目录里。
-   */
+  /** 切换项目工作目录。cwd 变更意味着所有旧基线的相对路径已失效,
+   * 必须清空避免把旧项目的文件字节还原到新项目目录里。 */
   setCwd(cwd: string): void {
     this.cwd = cwd;
     this.turnBaselines.clear();
@@ -206,118 +153,99 @@ export class TurnFileTracker implements RestoreSource {
    */
   captureBeforeTool(toolName: string, args: unknown): void {
     if (!MUTATING_TOOLS.has(toolName)) return;
-    if (!this.cwd || !this.activeUserEntryId) return;
+    const uid = this.activeUserEntryId;
+    if (!this.cwd || !uid) return;
     const raw = pathFromToolArgs(args);
     if (!raw) return;
     const resolved = resolveInsideCwd(this.cwd, raw);
     if (!resolved.ok || !resolved.rel) return;
     const rel = resolved.rel;
-    if (this.oversized.has(`${this.activeUserEntryId}:${rel}`)) return;
+    if (this.oversized.has(`${uid}:${rel}`)) return;
 
-    let map = this.turnBaselines.get(this.activeUserEntryId);
+    let map = this.turnBaselines.get(uid);
     if (!map) {
       map = new Map();
-      this.turnBaselines.set(this.activeUserEntryId, map);
+      this.turnBaselines.set(uid, map);
     }
     if (map.has(rel)) return;
+    const markDirty = () => {
+      this.dirty = true;
+      this.dirtyTurns.add(uid);
+    };
 
     try {
       if (!existsSync(resolved.abs)) {
         map.set(rel, { kind: "absent" });
-        this.dirty = true;
-        this.dirtyTurns.add(this.activeUserEntryId);
+        markDirty();
         return;
       }
-      // lstat 不跟随 symlink：用其判断文件类型
-      const lst = lstatSync(resolved.abs);
-      if (lst.isSymbolicLink()) {
+      // lstat 不跟随 symlink:用它判文件类型。symlink 自身即 target 字符串;
+      // readlink on Windows may fail for unprivileged links → fall back。
+      if (lstatSync(resolved.abs).isSymbolicLink()) {
+        let target = "";
         try {
-          const target = readFileSync(resolved.abs); // symlink 自身即 target 字符串
-          map.set(rel, { kind: "symlink", target: target.toString("utf8") });
-          this.dirty = true;
-          this.dirtyTurns.add(this.activeUserEntryId);
+          target = readFileSync(resolved.abs).toString("utf8");
         } catch {
-          // readlink on Windows may fail for unprivileged links; fall back to stat
-          map.set(rel, { kind: "symlink", target: "" });
-          this.dirty = true;
-          this.dirtyTurns.add(this.activeUserEntryId);
+          /* keep target empty */
         }
+        map.set(rel, { kind: "symlink", target });
+        markDirty();
         return;
       }
       const buf = readFileSync(resolved.abs);
       if (buf.length > MAX_BASELINE_BYTES) {
-        this.oversized.add(`${this.activeUserEntryId}:${rel}`);
+        this.oversized.add(`${uid}:${rel}`);
         return;
       }
       map.set(rel, { kind: "file", bytes: buf });
-      this.dirty = true;
-      this.dirtyTurns.add(this.activeUserEntryId);
+      markDirty();
     } catch {
       // ignore capture failures
     }
   }
 
   /**
-   * 扫描 active branch 中 entryId 之后的 segment。
-   * 收集 write/edit 触及的相对路径、user turn id 列表，是否含 bash / Godot。
+   * RestoreSource seam: scan (entryId → segment scan).
+   * 编排器只调 `scan`,CompositeRestoreSource 通过 RestoreSource 接口
+   * (scan 显式声明) 派发,只 baseline 源实现该方法 (mutation tracing
+   * 是 tracker 职责,shadow 源不做). 显式可选,不再 duck-type.
    *
    * **不变量**: 必须在 `session.navigateTree(entryId)` 之前调用. nav 之后
-   * abandoned write/edit 不在 active branch,scan 看不到. 这是撤回撤销的
-   * 硬时序,见 restore-source.ts 顶部说明. 编排器走 {@link scan} (seam),
-   * 内部走此方法. 2026-08-31 收口为 private (issue #64 主题 C C-104).
+   * abandoned write/edit 不在 active branch,scan 看不到. 硬时序见
+   * restore-source.ts 顶部说明. (issue #64 主题 C C-104 收口.)
    */
-  private scanSegmentSince(sm: SessionManagerLike, entryId: string): SegmentScan {
+  scan(sm: RestoreSessionManager, entryId: string): RestoreSegmentScan {
     const branch = sm.getBranch();
     const idx = branch.findIndex((e) => e.id === entryId);
     const segment = idx >= 0 ? branch.slice(idx) : branch;
-
     const mutationPaths = new Set<string>();
     const userEntryIds: string[] = [];
     let hasBash = false;
     let hasGodot = false;
-
     for (const entry of segment) {
-      if (entry.type !== "message" || !entry.message) continue;
       const msg = entry.message;
+      if (!msg) continue;
       if (msg.role === "user") {
         userEntryIds.push(entry.id);
-        continue;
-      }
-      if (msg.role === "assistant") {
+      } else if (msg.role === "assistant") {
         for (const call of toolCallsFromAssistantContent(msg.content)) {
           const name = call.name;
           if (name === "bash") hasBash = true;
-          if (MUTATING_GODOT_TOOLS.has(name)) hasGodot = true;
-          if (MUTATING_TOOLS.has(name)) {
-            const raw = pathFromToolArgs(call.args);
-            if (!raw) continue;
-            const resolved = resolveInsideCwd(this.cwd, raw);
-            if (resolved.ok && resolved.rel) {
-              mutationPaths.add(resolved.rel);
-            }
-          }
+          if (MUTATING_GODOT_TOOLS_SET.has(name)) hasGodot = true;
+          if (!MUTATING_TOOLS.has(name)) continue;
+          const raw = pathFromToolArgs(call.args);
+          if (!raw) continue;
+          const r = resolveInsideCwd(this.cwd, raw);
+          if (r.ok && r.rel) mutationPaths.add(r.rel);
         }
       }
     }
-
     return {
       mutationPaths: [...mutationPaths],
       userEntryIds,
       hasBash,
       hasGodot,
     };
-  }
-
-  /**
-   * RestoreSource seam: scan (entryId → segment scan).
-   * Public seam entry point —编排器只调 `scan`,内部走 private
-   * `scanSegmentSince` 拿实现. CompositeRestoreSource 用 duck-type 派发
-   * 到本方法,RestoreSource 接口只 3 方法 (scan/preview/restore).
-   *
-   * **不变量**: 必须在 `session.navigateTree(entryId)` 之前调用.
-   */
-  scan(sm: SessionManagerLike, entryId: string): RestoreSegmentScan {
-    return this.scanSegmentSince(sm, entryId);
   }
 
   /**
@@ -343,67 +271,39 @@ export class TurnFileTracker implements RestoreSource {
   }
 
   /**
-   * @deprecated Use {@link preview} (seam method) — this is the pre-seam
-   * implementation. Kept private to enforce seam usage; tests in this module
-   * still cover it directly through the public `preview` path.
+   * RestoreSource seam: preview — baseline always answers with its own scan.
+   * (issue #64 主题 C C-104 收口:pre-seam `previewRestore` 已并入.)
    */
-  private previewRestore(
-    sm: SessionManagerLike,
-    entryId: string,
-  ): {
-    restorablePaths: string[];
-    unrestorablePaths: string[];
-    hasBash: boolean;
-    hasGodot: boolean;
-    warnings: string[];
-    diffText?: string;
-    diffTruncated?: boolean;
-  } {
-    const scan = this.scanSegmentSince(sm, entryId);
-    const restorablePaths: string[] = [];
-    const unrestorablePaths: string[] = [];
+  async preview(
+    sm: RestoreSessionManager,
+    targetUserEntryId: string,
+    _scan: RestoreSegmentScan,
+  ): Promise<RestorePreview> {
+    const scan = this.scan(sm, targetUserEntryId);
+    const restorable: string[] = [];
+    const unrestorable: string[] = [];
+    const baselines: Array<{ rel: string; entry: BaselineEntry }> = [];
     for (const rel of scan.mutationPaths) {
       const hit = this.baselineForPath(rel, scan.userEntryIds);
-      if (hit.ok) restorablePaths.push(rel);
-      else unrestorablePaths.push(rel);
+      if (hit.ok) {
+        restorable.push(rel);
+        if (this.cwd) baselines.push({ rel, entry: hit.entry });
+      } else unrestorable.push(rel);
     }
     const warnings: string[] = [];
-    if (scan.hasBash) {
-      warnings.push("该段包含 bash，命令副作用无法保证还原。");
-    }
-    if (scan.hasGodot) {
-      warnings.push("该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。");
-    }
-    if (unrestorablePaths.length > 0) {
-      warnings.push(
-        `${unrestorablePaths.length} 个文件缺少基线，无法自动还原。`,
-      );
-    }
-    // 无 Git 降级：基于 write/edit 基线对比当前盘上内容，产出撤回预览 diff。
-    const diffParts: Array<{ rel: string; diffText: string }> = [];
-    if (this.cwd) {
-      for (const rel of restorablePaths) {
-        const hit = this.baselineForPath(rel, scan.userEntryIds);
-        if (!hit.ok) continue;
-        const res = baselineDiffTextForEntry(rel, hit.entry, this.cwd);
-        if ("diffText" in res) diffParts.push({ rel, diffText: res.diffText });
-      }
-    }
-    let diffText: string | undefined;
-    let diffTruncated: boolean | undefined;
-    if (diffParts.length > 0) {
-      const joined = joinBaselineDiffs(diffParts);
-      diffText = joined.diffText;
-      diffTruncated = joined.truncated;
-    }
+    if (scan.hasBash) warnings.push("该段包含 bash，命令副作用无法保证还原。");
+    if (scan.hasGodot) warnings.push("该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。");
+    if (unrestorable.length > 0) warnings.push(`${unrestorable.length} 个文件缺少基线，无法自动还原。`);
+    const diff = this.diffForBaselines(baselines);
     return {
-      restorablePaths,
-      unrestorablePaths,
+      mode: "baseline",
+      restorablePaths: restorable,
+      unrestorablePaths: unrestorable,
       hasBash: scan.hasBash,
       hasGodot: scan.hasGodot,
       warnings,
-      ...(diffText !== undefined ? { diffText } : {}),
-      ...(diffTruncated !== undefined ? { diffTruncated } : {}),
+      ...(diff?.diffText !== undefined ? { diffText: diff.diffText } : {}),
+      ...(diff?.truncated ? { diffTruncated: true } : {}),
     };
   }
 
@@ -413,11 +313,7 @@ export class TurnFileTracker implements RestoreSource {
   ): Array<{ rel: string; entry: BaselineEntry }> {
     const map = this.turnBaselines.get(userEntryId);
     if (!map) return [];
-    const out: Array<{ rel: string; entry: BaselineEntry }> = [];
-    for (const [rel, entry] of map) {
-      out.push({ rel, entry });
-    }
-    return out;
+    return Array.from(map, ([rel, entry]) => ({ rel, entry }));
   }
 
   /**
@@ -428,9 +324,14 @@ export class TurnFileTracker implements RestoreSource {
   diffTextForTurn(
     userEntryId: string,
   ): { diffText: string; paths: string[]; truncated?: boolean } | null {
-    if (!this.cwd) return null;
-    const baselines = this.getTurnBaselines(userEntryId);
-    if (baselines.length === 0) return null;
+    return this.diffForBaselines(this.getTurnBaselines(userEntryId));
+  }
+
+  /** 共享的「基线集合 → diff 文本」实现。空集合 / 无 cwd / 无 diff 都返回 null。 */
+  private diffForBaselines(
+    baselines: Array<{ rel: string; entry: BaselineEntry }>,
+  ): { diffText: string; paths: string[]; truncated?: boolean } | null {
+    if (!this.cwd || baselines.length === 0) return null;
     const parts: Array<{ rel: string; diffText: string }> = [];
     const paths: string[] = [];
     for (const { rel, entry } of baselines) {
@@ -450,8 +351,8 @@ export class TurnFileTracker implements RestoreSource {
   }
 
   /**
-   * @deprecated Use {@link restore} (seam method). Kept private to enforce
-   * seam usage.
+   * 文件级还原：按 (rel, baseline entry) 落盘 / 删除。`restore` seam 的核心实现。
+   * Bash/Godot 警告在 `restore` 中追加,本方法只做 I/O。
    */
   private restorePaths(
     rels: string[],
@@ -461,7 +362,6 @@ export class TurnFileTracker implements RestoreSource {
     const deleted: string[] = [];
     const skipped: FileRestoreReport["skipped"] = [];
     const warnings: string[] = [];
-
     if (!this.cwd) {
       return {
         restored,
@@ -470,6 +370,10 @@ export class TurnFileTracker implements RestoreSource {
         warnings: ["未打开项目，无法还原文件"],
       };
     }
+    // 若 abs 存在(文件 / symlink / 死 symlink),unlink 掉。
+    const clearIfPresent = (abs: string) => {
+      if (existsSync(abs) || lstatSyncSafe(abs)) unlinkSync(abs);
+    };
 
     for (const rel of rels) {
       const hit = this.baselineForPath(rel, userEntryIds);
@@ -479,47 +383,30 @@ export class TurnFileTracker implements RestoreSource {
       }
       const resolved = resolveInsideCwd(this.cwd, rel);
       if (!resolved.ok) {
-        skipped.push({
-          path: rel,
-          reason: "outside_cwd",
-          detail: resolved.error,
-        });
+        skipped.push({ path: rel, reason: "outside_cwd", detail: resolved.error });
         continue;
       }
       try {
-        switch (hit.entry.kind) {
-          case "absent": {
-            // 基线是"原本不存在" → 现状是文件 / symlink 都删
-            const lst = existsSync(resolved.abs) ? lstatSync(resolved.abs) : null;
-            if (lst) {
-              unlinkSync(resolved.abs);
-              deleted.push(rel);
-            }
-            break;
+        const e = hit.entry;
+        if (e.kind === "absent") {
+          if (existsSync(resolved.abs)) {
+            unlinkSync(resolved.abs);
+            deleted.push(rel);
           }
-          case "symlink": {
-            // 还原为 symlink：先清现状，再创建 symlink 指向原 target
-            if (existsSync(resolved.abs) || lstatSyncSafe(resolved.abs)) {
-              unlinkSync(resolved.abs);
-            }
-            if (hit.entry.target) {
-              symlinkSync(hit.entry.target, resolved.abs);
-              restored.push(rel);
-            } else {
-              // target 为空（极端情况）至少把 link 删除
-              deleted.push(rel);
-            }
-            break;
-          }
-          case "file": {
-            if (existsSync(resolved.abs) || lstatSyncSafe(resolved.abs)) {
-              unlinkSync(resolved.abs);
-            }
-            mkdirSync(dirname(resolved.abs), { recursive: true });
-            writeFileSync(resolved.abs, hit.entry.bytes);
+        } else if (e.kind === "symlink") {
+          clearIfPresent(resolved.abs);
+          // target 为空(极端)至少把 link 删除;否则建回原 symlink
+          if (e.target) {
+            symlinkSync(e.target, resolved.abs);
             restored.push(rel);
-            break;
+          } else {
+            deleted.push(rel);
           }
+        } else {
+          clearIfPresent(resolved.abs);
+          mkdirSync(dirname(resolved.abs), { recursive: true });
+          writeFileSync(resolved.abs, e.bytes);
+          restored.push(rel);
         }
       } catch (err) {
         skipped.push({
@@ -529,47 +416,19 @@ export class TurnFileTracker implements RestoreSource {
         });
       }
     }
-
     return { restored, deleted, skipped, warnings };
   }
 
-  /** RestoreSource seam: preview — baseline always answers with its own scan. */
-  async preview(
-    sm: RestoreSessionManager,
-    targetUserEntryId: string,
-    _scan: RestoreSegmentScan,
-  ): Promise<RestorePreview> {
-    const p = this.previewRestore(sm, targetUserEntryId);
-    return { mode: "baseline", ...p };
-  }
-
-  /** RestoreSource seam: restore — replays baselines recorded before mutations. */
+  /**
+   * RestoreSource seam: restore — replays baselines recorded before mutations.
+   * (issue #64 主题 C C-104 收口:pre-seam `restoreSegment` / `restoreSince` 已并入.)
+   * 注:drop baselines 由编排器 (retract-orchestrator) 拥有,本方法只还原。
+   */
   async restore(
-    sm: RestoreSessionManager,
+    _sm: RestoreSessionManager,
     _targetUserEntryId: string,
     scan: RestoreSegmentScan,
   ): Promise<RestoreAttempt> {
-    return {
-      used: "baseline",
-      report: this.restorePaths(scan.mutationPaths, scan.userEntryIds),
-    };
-  }
-
-  /**
-   * @deprecated Internal pre-seam helper — restored via {@link restore}
-   * (seam method). Kept private to enforce seam usage.
-   *
-   * Restore files for a segment still present on the active branch.
-   * Production retract scans *before* navigateTree, then calls
-   * {@link restorePaths} with that scan — do not call this after nav
-   * (abandoned tool calls leave the branch).
-   * Call {@link dropBaselinesForTurns} after a successful restore.
-   */
-  private restoreSegment(sm: SessionManagerLike, entryId: string): {
-    report: FileRestoreReport;
-    userEntryIds: string[];
-  } {
-    const scan = this.scanSegmentSince(sm, entryId);
     const report = this.restorePaths(scan.mutationPaths, scan.userEntryIds);
     if (scan.hasBash) {
       report.skipped.push({ reason: "bash_unknown" });
@@ -577,28 +436,16 @@ export class TurnFileTracker implements RestoreSource {
     }
     if (scan.hasGodot) {
       report.skipped.push({ reason: "godot" });
-      report.warnings.push(
-        "该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。",
-      );
+      report.warnings.push("该段包含会改编辑器状态的 Godot 工具，编辑器内存态无法还原。");
     }
-    return { report, userEntryIds: scan.userEntryIds };
-  }
-
-  /**
-   * @deprecated Use {@link restore} (seam method). Kept private to enforce
-   * seam usage.
-   */
-  private restoreSince(sm: SessionManagerLike, entryId: string): FileRestoreReport {
-    const { report, userEntryIds } = this.restoreSegment(sm, entryId);
-    this.dropBaselinesForTurns(userEntryIds);
-    return report;
+    return { used: "baseline", report };
   }
 
   /** Drop baselines for turns after a successful retract. */
   dropBaselinesForTurns(userEntryIds: string[]): void {
+    // B9: droppedTurns 记录删除以便增量持久化（旧快照不得复活）。
     for (const uid of userEntryIds) {
       this.turnBaselines.delete(uid);
-      // B9: 记录删除以便增量持久化（否则旧快照会把它「复活」）。
       this.droppedTurns.add(uid);
       this.dirtyTurns.delete(uid);
     }
@@ -611,7 +458,7 @@ export class TurnFileTracker implements RestoreSource {
    * 被删除的 turn 走 droppedTurns（loadFromSession 按 entry 顺序先删后合，
    * 旧快照中的已删 turn 不会复活）。
    */
-  persistDirty(sm: SessionManagerLike): void {
+  persistDirty(sm: RestoreSessionManager): void {
     if (!this.dirty) return;
     const turns: Record<string, Record<string, string | null>> = {};
     const symlinks: Record<string, Record<string, string>> = {};
@@ -621,16 +468,10 @@ export class TurnFileTracker implements RestoreSource {
       const paths: Record<string, string | null> = {};
       const links: Record<string, string> = {};
       for (const [rel, entry] of map) {
-        switch (entry.kind) {
-          case "absent":
-            paths[rel] = null;
-            break;
-          case "file":
-            paths[rel] = entry.bytes.toString("base64");
-            break;
-          case "symlink":
-            links[rel] = entry.target;
-            break;
+        if (entry.kind === "symlink") {
+          links[rel] = entry.target;
+        } else {
+          paths[rel] = entry.kind === "absent" ? null : entry.bytes.toString("base64");
         }
       }
       turns[uid] = paths;
@@ -639,9 +480,7 @@ export class TurnFileTracker implements RestoreSource {
     try {
       const payload: BaselinePersistPayload = { turns };
       if (Object.keys(symlinks).length > 0) payload.symlinks = symlinks;
-      if (this.droppedTurns.size > 0) {
-        payload.droppedTurns = [...this.droppedTurns];
-      }
+      if (this.droppedTurns.size > 0) payload.droppedTurns = [...this.droppedTurns];
       sm.appendCustomEntry(FILE_BASELINE_CUSTOM_TYPE, payload);
       this.dirty = false;
       this.dirtyTurns.clear();
@@ -651,15 +490,39 @@ export class TurnFileTracker implements RestoreSource {
     }
   }
 
-  loadFromSession(sm: SessionManagerLike): void {
-    const entries = sm.getEntries();
-    for (const entry of entries) {
-      if (
-        entry.type !== "custom" ||
-        entry.customType !== FILE_BASELINE_CUSTOM_TYPE
-      ) {
-        continue;
+  loadFromSession(sm: RestoreSessionManager): void {
+    const ensureTurnMap = (uid: string): Map<string, BaselineEntry> => {
+      let m = this.turnBaselines.get(uid);
+      if (!m) {
+        m = new Map();
+        this.turnBaselines.set(uid, m);
       }
+      return m;
+    };
+    const decodeFileEntry = (b64: string | null): BaselineEntry | undefined => {
+      if (b64 === null) return { kind: "absent" };
+      if (typeof b64 !== "string") return undefined;
+      try {
+        return { kind: "file", bytes: Buffer.from(b64, "base64") };
+      } catch {
+        return undefined;
+      }
+    };
+    // 把 b64 表塞到指定 turn map（先到先得,后续 snapshot 不覆盖已有 rel）。
+    const applyB64Map = (
+      map: Map<string, BaselineEntry>,
+      table: Record<string, string | null>,
+    ) => {
+      for (const [rel, b64] of Object.entries(table)) {
+        const key = rel.replace(/\\/g, "/");
+        if (map.has(key)) continue;
+        const e = decodeFileEntry(b64);
+        if (e) map.set(key, e);
+      }
+    };
+
+    for (const entry of sm.getEntries()) {
+      if (entry.type !== "custom" || entry.customType !== FILE_BASELINE_CUSTOM_TYPE) continue;
       const data = entry.data as
         | BaselinePersistPayload
         | { paths?: Record<string, string | null> }
@@ -667,57 +530,25 @@ export class TurnFileTracker implements RestoreSource {
       if (!data || typeof data !== "object") continue;
 
       // B9: 增量删除 —— 旧快照中的已删 turn 不得复活（先删后合）。
-      if (
-        "droppedTurns" in data &&
-        Array.isArray((data as BaselinePersistPayload).droppedTurns)
-      ) {
-        for (const uid of (data as BaselinePersistPayload).droppedTurns!) {
-          this.turnBaselines.delete(uid);
-        }
+      const dropped = (data as BaselinePersistPayload).droppedTurns;
+      if (Array.isArray(dropped)) {
+        for (const uid of dropped) this.turnBaselines.delete(uid);
       }
 
-      // New format: per-turn
       if ("turns" in data && data.turns && typeof data.turns === "object") {
+        // New format: per-turn
         for (const [uid, paths] of Object.entries(data.turns)) {
-          let map = this.turnBaselines.get(uid);
-          if (!map) {
-            map = new Map();
-            this.turnBaselines.set(uid, map);
-          }
-          for (const [rel, b64] of Object.entries(paths)) {
-            const key = rel.replace(/\\/g, "/");
-            if (map.has(key)) continue;
-            if (b64 === null) map.set(key, { kind: "absent" });
-            else if (typeof b64 === "string") {
-              try {
-                map.set(key, {
-                  kind: "file",
-                  bytes: Buffer.from(b64, "base64"),
-                });
-              } catch {
-                // skip
-              }
-            }
-          }
+          applyB64Map(ensureTurnMap(uid), paths);
         }
         // Symlink 表（与 turns 互斥）
-        if (
-          "symlinks" in data &&
-          data.symlinks &&
-          typeof data.symlinks === "object"
-        ) {
-          for (const [uid, links] of Object.entries(data.symlinks)) {
-            let map = this.turnBaselines.get(uid);
-            if (!map) {
-              map = new Map();
-              this.turnBaselines.set(uid, map);
-            }
+        const symlinks = (data as BaselinePersistPayload).symlinks;
+        if (symlinks && typeof symlinks === "object") {
+          for (const [uid, links] of Object.entries(symlinks)) {
+            const map = ensureTurnMap(uid);
             for (const [rel, target] of Object.entries(links)) {
               const key = rel.replace(/\\/g, "/");
-              if (map.has(key)) continue;
-              if (typeof target === "string") {
-                map.set(key, { kind: "symlink", target });
-              }
+              if (map.has(key) || typeof target !== "string") continue;
+              map.set(key, { kind: "symlink", target });
             }
           }
         }
@@ -725,28 +556,9 @@ export class TurnFileTracker implements RestoreSource {
       }
 
       // Legacy flat format → attach under synthetic turn id
-      if ("paths" in data && data.paths && typeof data.paths === "object") {
-        const uid = "_legacy";
-        let map = this.turnBaselines.get(uid);
-        if (!map) {
-          map = new Map();
-          this.turnBaselines.set(uid, map);
-        }
-        for (const [rel, b64] of Object.entries(data.paths)) {
-          const key = rel.replace(/\\/g, "/");
-          if (map.has(key)) continue;
-          if (b64 === null) map.set(key, { kind: "absent" });
-          else if (typeof b64 === "string") {
-            try {
-              map.set(key, {
-                kind: "file",
-                bytes: Buffer.from(b64, "base64"),
-              });
-            } catch {
-              // skip
-            }
-          }
-        }
+      const legacy = (data as { paths?: Record<string, string | null> }).paths;
+      if (legacy && typeof legacy === "object") {
+        applyB64Map(ensureTurnMap("_legacy"), legacy);
       }
     }
     this.dirty = false;
@@ -756,5 +568,3 @@ export class TurnFileTracker implements RestoreSource {
 export function pathFromArgsForTest(args: unknown): string | null {
   return pathFromToolArgs(args);
 }
-
-export type { FileRestoreSkipReason };

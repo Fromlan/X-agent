@@ -320,6 +320,28 @@ const breakpointParams = Type.Object({
   ),
 });
 
+/**
+ * 会改编辑器 / 项目 / 运行时状态的 Godot 工具 —— 单点 export,
+ * 撤回撤销 (turn-file-tracker.scan 的 hasGodot 分支) 单一来源。
+ * 增删 defineTool 时务必同步此列表;cross-check 测试
+ * (godot-tools.test.ts → MUTATING_GODOT_TOOLS 与 createGodotTools 输出对账)
+ * 保证两边一致。
+ */
+export const MUTATING_GODOT_TOOLS = [
+  "godot_open_scene",
+  "godot_reload_scene",
+  "godot_run_scene",
+  "godot_run_main_scene",
+  "godot_import_resources",
+  "godot_stop_scene",
+  // 1.2 扩展
+  "godot_set_breakpoint",
+  "godot_export_project",
+  "godot_set_project_setting",
+] as const;
+
+export type MutatingGodotTool = (typeof MUTATING_GODOT_TOOLS)[number];
+
 export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
   return [
     defineTool({

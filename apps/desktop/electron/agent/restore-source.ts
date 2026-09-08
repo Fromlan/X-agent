@@ -66,10 +66,10 @@ export type RestoreAttempt = {
  * only "owns" a segment when its preview/attempt mode equals its `kind`
  * (e.g. shadow saying "baseline" means "not me — keep going").
  *
- * `scan` is intentionally NOT in the interface: scan is a tracker
- * concern (mutation tracing), not a restore concern. It lives on the
- * composite so the orchestrator calls one method (`sources.scan(...)`)
- * instead of knowing which source owns the scan. See CompositeRestoreSource.
+ * `scan` is OPTIONAL: only baseline-kind sources implement it (mutation
+ * tracing is a tracker concern, not a restore concern). CompositeRestoreSource
+ * dispatches via the interface instead of duck-typing. (issue #64 主题 C
+ * C-104 收口.)
  */
 export interface RestoreSource {
   /** The mode this source can produce. */
@@ -78,6 +78,15 @@ export interface RestoreSource {
   readonly label: string;
   /** Warning shown when this source failed and the next one takes over. */
   readonly fallbackWarning: string;
+  /**
+   * Optional scan for the active branch segment. Only baseline-kind sources
+   * implement it. Called before `session.navigateTree(targetUserEntryId)`
+   * (硬时序,见模块顶部不变量 #1).
+   */
+  scan?: (
+    sm: RestoreSessionManager,
+    targetUserEntryId: string,
+  ) => RestoreSegmentScan;
   preview(
     sm: RestoreSessionManager,
     targetUserEntryId: string,
@@ -119,11 +128,11 @@ function emptyScan(): RestoreSegmentScan {
  * source and records the reason. Bash / Godot unrecoverability is appended to
  * the final report here so all callers see the same warnings.
  *
- * `scan` is the 4th method on the seam (the interface keeps 3, but the
- * composite exposes scan as a first-class operation). It delegates to the
- * source that owns mutation tracing: by convention the baseline-kind source
- * (TurnFileTracker). If no baseline-kind source is present, scan returns an
- * empty scan.
+ * `scan` is the 4th method on the seam (the interface declares it optional
+ * because only baseline-kind sources implement it). The composite dispatches
+ * to the baseline-kind source's `scan`; if none, returns an empty scan.
+ * (issue #64 主题 C C-104 收口:scan 已是 RestoreSource 接口的显式可选方法,
+ * 不再 duck-type.)
  */
 export class CompositeRestoreSource {
   constructor(private readonly sources: readonly RestoreSource[]) {}
@@ -137,17 +146,9 @@ export class CompositeRestoreSource {
     targetUserEntryId: string,
   ): RestoreSegmentScan {
     const scanSource = this.sources.find((s) => s.kind === "baseline");
-    if (!scanSource) return emptyScan();
-    // scanSource is expected to be TurnFileTracker. To keep the interface
-    // 3-method, we duck-type access a `scan` capability. Both adapters
-    // expose `scan` as the seam method (TurnFileTracker does it natively;
-    // ShadowCheckpoints delegates to fileTracker if it owns one).
-    const fn = (scanSource as unknown as {
-      scan?: (sm: RestoreSessionManager, id: string) => RestoreSegmentScan;
-    }).scan;
-    if (typeof fn !== "function") return emptyScan();
+    if (!scanSource || typeof scanSource.scan !== "function") return emptyScan();
     try {
-      return fn(sm, targetUserEntryId);
+      return scanSource.scan(sm, targetUserEntryId);
     } catch (err) {
       // Defensive: if scan throws, return empty scan so the orchestrator
       // can still proceed (with no files to restore).

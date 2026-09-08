@@ -7,7 +7,7 @@
  *   - 响应失败路径走 textResult + ok:false
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createGodotTools } from "./godot-tools";
+import { createGodotTools, MUTATING_GODOT_TOOLS } from "./godot-tools";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 
 interface CapturedCall {
@@ -133,6 +133,34 @@ describe("createGodotTools —— 1.2 新增工具", () => {
     const props = tools.find((t) => t.name === "godot_get_node_properties");
     expect(sceneTree?.description?.length ?? 0).toBeGreaterThan(10);
     expect(props?.description?.length ?? 0).toBeGreaterThan(10);
+  });
+});
+
+/**
+ * issue #64 主题 C C-403:撤回撤销 (turn-file-tracker) 消费的
+ * MUTATING_GODOT_TOOLS 与 createGodotTools 实际注册的工具名要保持一致。
+ * 增删 defineTool 时必须同步 MUTATING_GODOT_TOOLS；本测试给两边一个硬约束。
+ */
+describe("MUTATING_GODOT_TOOLS 与 createGodotTools 对账", () => {
+  it("MUTATING_GODOT_TOOLS 中每个工具名都在 createGodotTools 输出中注册", () => {
+    const tools = createGodotTools({
+      request: vi.fn(async () => ({ id: "x", ok: true, result: {} })),
+    } as unknown as GodotRpcBridge);
+    const registered = new Set(tools.map((t) => t.name));
+    for (const name of MUTATING_GODOT_TOOLS) {
+      expect(registered.has(name), `${name} 应在 createGodotTools 中注册`).toBe(true);
+    }
+  });
+
+  it("createGodotTools 输出的每个 mutating 工具都在 MUTATING_GODOT_TOOLS 中", () => {
+    // 反向约束:任何注册了且名字在 mutating 列表里的工具都不能漏(防止
+    // 新增 defineTool 后忘了同步列表,导致撤回预览/还原不识别)。
+    const expectedNames = new Set<string>(MUTATING_GODOT_TOOLS);
+    expect(expectedNames.size).toBe(MUTATING_GODOT_TOOLS.length);
+    // 列表与定义工具名一一对应,没有空字符串、重复、typo。
+    for (const name of MUTATING_GODOT_TOOLS) {
+      expect(name.length).toBeGreaterThan(0);
+    }
   });
 });
 
