@@ -1,21 +1,26 @@
 /**
  * Godot helper extension for X-agent / Pi.
  * Registers /godot-rpc-status and a lightweight project detector tool.
+ *
+ * 主题 I (issue #66 C-406) — RPC method 列表 single-source of truth:
+ * 改 `apps/desktop/shared/godot-rpc/protocol.ts` 的 `GODOT_RPC_METHOD_NAMES`
+ * 这一处即可, 本文件从同一源消费, 不再 hardcode CSV.
+ * cross-check 测试 `apps/desktop/shared/godot-rpc.test.ts` 锁住
+ * `godot-helpers.ts` 解析出来的 method 集合 == `GODOT_RPC_METHOD_NAMES`.
+ *
+ * packages/godot-pi 是 npm 子包, 不能 reverse-import apps/desktop; 这里
+ * 用相对路径访问 apps/desktop/shared/godot-rpc/protocol.ts. 该文件没有
+ * 任何 import 依赖 (纯常量 + 类型), 所以即使是子包也能直接拿.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { GODOT_RPC_METHOD_NAMES } from "../../../apps/desktop/shared/godot-rpc/protocol";
 import {
   detectGodotProject,
   formatGodotProjectInfo,
 } from "../helpers/godot-project-detect";
 
-const RPC_METHODS =
-  "ping, get_editor_info, get_open_scenes, get_edited_scene, open_scene, reload_scene, " +
-  "get_scene_tree, get_node_properties, run_current_scene, play_main_scene, import_resources, " +
-  "get_play_errors, stop_scene, get_debugger_state, set_breakpoint, find_unused_resources, " +
-  "export_project, get_project_setting, set_project_setting, lint_scripts, " +
-  "list_project_files, resolve_uid, wait_for_import_done, list_global_classes, " +
-  "find_class_name_conflicts, inspect_script, list_export_presets, check_export_templates";
+const RPC_METHODS = GODOT_RPC_METHOD_NAMES.join(", ");
 
 export default function godotHelpersExtension(pi: ExtensionAPI): void {
   pi.registerCommand("godot-rpc-status", {

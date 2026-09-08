@@ -8,12 +8,28 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import type { GodotRpcCall, GodotRpcResponse } from "../../shared/godot-rpc";
 import {
+  GODOT_RPC_METHOD_NAMES,
   clampGodotListLimit,
   clampGodotRunWaitMs,
   clampGodotWaitMs,
   godotRpcTimeoutMs,
+  type GodotRpcMethodName,
 } from "../../shared/godot-rpc";
 import { validateProjectSettingPayload } from "../../shared/godot-project-setting";
+
+/**
+ * 主题 I (issue #66 C-406) — RPC method 名 single-source of truth.
+ *
+ * 改 `shared/godot-rpc/protocol.ts` 的 `GODOT_RPC_METHOD_NAMES` 这一处
+ * 即可. 本文件只从同一源消费, 不再 hardcode method 名字符串.
+ * 下行把导入的字面量集合锁成 `GodotRpcMethodName` 引用, 防止
+ * unused-elide 把它从生产代码里删掉, 同时给读者一个 typecheck-only
+ * 的"消费 shared schema"标记.
+ */
+const SHARED_RPC_METHODS: ReadonlySet<GodotRpcMethodName> = new Set(
+  GODOT_RPC_METHOD_NAMES,
+);
+void SHARED_RPC_METHODS;
 
 /** C8: 单个 Godot 工具结果的字节上限（防止巨型响应撑爆模型上下文）。 */
 const GODOT_TOOL_RESULT_MAX_CHARS = 200_000;

@@ -28,6 +28,13 @@ export {
   GODOT_RPC_EXPORT_TIMEOUT_MS,
   GODOT_RPC_EXPORT_GRACE_MS,
   GODOT_RPC_GRACE_PERIOD_MS,
+  /**
+   * RPC method name single-source of truth (issue #66 主题 I).
+   * 改这一处即可, 其余 TS 端 (`gating.ts` / `godot-tools.ts` /
+   * `godot-helpers.ts`) 与 cross-check 测试 (`godot-rpc.test.ts` /
+   * `gating.test.ts`) 全部从这一源派生.
+   */
+  GODOT_RPC_METHOD_NAMES,
   type GodotRpcClientInfo,
   type GodotFileKind,
   type GodotInspectMember,

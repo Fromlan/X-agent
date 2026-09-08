@@ -1,22 +1,75 @@
 /**
- * shared/godot-rpc 子模块 — 协议 (issue #60 主题 D C-302).
+ * shared/godot-rpc 子模块 — 协议 (issue #60 主题 D C-302, issue #66 主题 I).
  *
- * 仅含 wire protocol 常量 + 类型, 不含 gating / policy.
+ * 含 wire protocol 常量 + 类型 + 方法名 **single-source of truth**。
+ * 增删 RPC method 时, 这是唯一需要修改的源:
+ *   1. 在 `GODOT_RPC_METHOD_NAMES` 加/减字面量
+ *   2. 在 `GodotRpcCall` 联合类型加/减对应分支
+ *   3. 在 `gating.ts` 的 `GODOT_RPC_METHOD_TOOL` 加/减映射
+ *   4. 在 `electron/agent/godot-tools.ts` 加/减 `defineTool`
+ *   5. 在 `packages/godot-pi/extensions/godot-helpers.ts` 消费同一源(随本 issue I-2 自动同步)
+ *   6. 在 `packages/godot-editor-rpc/addons/x_agent_rpc/plugin.gd` 加/减 match 分支
  *
- * - 端口 / 超时常量 (GODOT_RPC_DEFAULT_PORT / GODOT_RPC_FALLBACK_PORT_END
- *   / GODOT_RPC_DEFAULT_WAIT_MS / GODOT_RPC_MAX_WAIT_MS /
- *   GODOT_RPC_BASE_TIMEOUT_MS / GODOT_RPC_EXPORT_TIMEOUT_MS /
- *   GODOT_RPC_EXPORT_GRACE_MS / GODOT_RPC_GRACE_PERIOD_MS)
- * - 协议类型 (GodotRpcCall / GodotRpcRequest / GodotRpcResponse /
- *   GodotRpcEvent / GodotRpcBridgeStatus / GodotRpcClientInfo /
- *   GodotFileKind / GodotInspectMember / GodotExportTemplatesStatus /
- *   GodotRpcHandshakeFailure / GodotRpcRequestOptions)
- * - 桥状态枚举 (GodotRpcBridgeStatus)
+ * cross-check 测试在 `godot-rpc.test.ts`:
+ *   - `godot-tools.ts` defineTool name vs `GODOT_RPC_METHOD_TOOL.values`
+ *   - `godot-helpers.ts` RPC_METHODS CSV vs `GODOT_RPC_METHOD_NAMES`
+ *   - `plugin.gd` match method: case names vs `GODOT_RPC_METHOD_NAMES`
+ *
+ * 任何一处 drift, vitest 立即报错.
  *
  * gating (白名单 + tool 开关映射) 在 ./gating.ts, policy (clamp +
  * timeout) 在 ./policy.ts.
  */
 export const GODOT_RPC_DEFAULT_PORT = 8765;
+
+/**
+ * RPC 方法名白名单 — single-source of truth.
+ *
+ * 整个仓库 (TS 端 / GDScript 端 / cross-check 测试) 都从这里派生。
+ * 加减方法: 改这一处 + `GodotRpcCall` 联合类型, 其余地方由
+ *   - `gating.ts` (re-export + 工具开关映射)
+ *   - `godot-tools.ts` (`defineTool` 注册)
+ *   - `godot-helpers.ts` (CSV 字符串)
+ *   - `plugin.gd` (match method: 分支)
+ * 在编译期 / 测试期被锁定.
+ *
+ * `as const` 让 TS 把字面量锁成 tuple, 再用 `(typeof X)[number]` 派生
+ * `GodotRpcMethodName` 字面量联合, 这样 drift 测试可以直接读这个数组.
+ */
+export const GODOT_RPC_METHOD_NAMES = [
+  "ping",
+  "get_editor_info",
+  "get_open_scenes",
+  "get_edited_scene",
+  "open_scene",
+  "reload_scene",
+  "get_scene_tree",
+  "get_node_properties",
+  "run_current_scene",
+  "play_main_scene",
+  "import_resources",
+  "get_play_errors",
+  "stop_scene",
+  // 1.2 扩展：调试器 / 资源治理 / 导出 / 配置读写 / lint
+  "get_debugger_state",
+  "set_breakpoint",
+  "find_unused_resources",
+  "export_project",
+  "get_project_setting",
+  "set_project_setting",
+  "lint_scripts",
+  // 1.3 扩展：只读文件内省 / UID / 类名 / 脚本反射 / 导出预检
+  "list_project_files",
+  "resolve_uid",
+  "wait_for_import_done",
+  "list_global_classes",
+  "find_class_name_conflicts",
+  "inspect_script",
+  "list_export_presets",
+  "check_export_templates",
+] as const;
+
+export type GodotRpcMethodName = (typeof GODOT_RPC_METHOD_NAMES)[number];
 
 /** 桥与插件一致的回退端口上限（插件候选表 8765–8774）。 */
 export const GODOT_RPC_FALLBACK_PORT_END = 8774;
