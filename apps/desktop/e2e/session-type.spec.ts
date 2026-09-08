@@ -102,20 +102,34 @@ test("策划会话内 mode 切换 pills 仍可用", async () => {
       "design",
     );
 
-    // 切到 plan 模式 (策划会话内 mode 仍可互切)
-    const planPill = main.locator('[data-mode="plan"]');
-    await expect(planPill).toBeEnabled();
-    await planPill.click();
-
-    // 等待一小段时间让 controller emit notice
-    await main.waitForTimeout(500);
-
+    // 切到 plan 模式 (策划会话内 mode 仍可互切).
     // Design session 下 plan 模式走 rollback 路径 (DESIGN_SESSION_TYPE_TOOLS
     // 故意不含 write_plan, controller.ts:347 触发回滚 + emit "plan" 错误提示).
     // 接受两种结果:
     //   (A) plan 切换成功: aria-pressed="true"
     //   (B) design 专属 rollback: agentMode 仍是 agent, 但 emit 含 "write_plan" 错误提示
     // body data-session-type 始终为 design (mode 不影响 type).
+    //
+    // Windows runner 上 IPC 经常跑 30+ 秒 (#79 锁定), 不能 click 后立刻查 aria-pressed.
+    // 用一个 15s 的 waitForFunction 同时观察两条 settle 信号, 任一命中即通过.
+    const planPill = main.locator('[data-mode="plan"]');
+    await expect(planPill).toBeEnabled();
+    await planPill.click();
+    await main
+      .waitForFunction(
+        () => {
+          const pill = document.querySelector('[data-mode="plan"]');
+          const notice = document.querySelector(".bubble-system.level-error");
+          if (pill?.getAttribute("aria-pressed") === "true") return true;
+          if (notice?.textContent?.includes("write_plan")) return true;
+          return false;
+        },
+        { timeout: 15_000 },
+      )
+      .catch(() => {
+        // 让下面的最终断言给出更具体的错误
+      });
+
     const planAria = await planPill.getAttribute("aria-pressed");
     if (planAria === "true") {
       // (A) plan mode 切换成功路径
@@ -128,7 +142,7 @@ test("策划会话内 mode 切换 pills 仍可用", async () => {
         main.locator(".bubble-system.level-error", {
           hasText: "write_plan",
         }),
-      ).toBeVisible({ timeout: 5_000 });
+      ).toBeVisible({ timeout: 15_000 });
       // rollback 后 agentMode 仍是 agent, plan pill 应保持 unpressed
       await expect(planPill).toHaveAttribute("aria-pressed", "false");
     }
