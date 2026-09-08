@@ -18,9 +18,16 @@ import {
  * only the main window's webContents (and a frame whose origin matches the
  * renderer URL / file: protocol) may invoke channels.
  *
- * 不可信 sender 现在抛 `SenderUntrustedError` (issue #65 主题 H, 2026-08-31),
- * renderer 端可用 `isSenderUntrustedError` typeguard 区分. 不再加进 IpcInvokeMap[K]
- * (会让 100+ consumer 全部 typecheck 失败, 详见 SenderUntrustedError doc).
+ * **Sender-trust 契约 (issue #65 主题 H, 2026-08-31)**:
+ *   - 不可信 sender 抛 `SenderUntrustedError`, IPC 协议让该 throw 透传到
+ *     renderer 端 `await` 的 reject 路径, 渲染端 catch 块拿到
+ *     `SenderUntrustedError` 对象, 可用 `isSenderUntrustedError` typeguard
+ *     区分业务错误.
+ *   - 这个 throw 不会进 IpcInvokeMap[K] 的 resolve union, 因为 TS Promise
+ *     resolve 路径不携带 throw 类型. 协议层契约用派生类型 `IpcInvokeResult<K>`
+ *     表达 (详见 ./../../shared/ipc-invoke-map.ts).
+ *   - `SenderUntrustedError` 字段 `ok: false` 让 `Result | SenderUntrustedError`
+ *     union 在 `if (!result.ok)` narrowing 时仍然 work.
  */
 export type IpcHandler<K extends IpcChannelKey> = IpcInvokeMap[K] extends (
   ...args: infer Args
@@ -48,6 +55,15 @@ export function configureIpcSenderGuard(
   }
 }
 
+/**
+ * 把 sender guard 内部状态重置回 "unconfigured" (issue #65 主题 H 测试 hook).
+ * 仅供单元测试在 case 间复位 module 单例, 不在生产代码使用.
+ */
+export function resetIpcSenderGuard(): void {
+  trustedWindowProvider = null;
+  trustedRendererOrigin = null;
+}
+
 /** 来源是否可信：主窗口 webContents + frame URL 属于应用自身。 */
 function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   if (!trustedWindowProvider) return true; // guard 未配置（离线测试）
@@ -65,6 +81,19 @@ function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   }
 }
 
+/**
+ * 构造不可信 sender 异常 (issue #65 主题 H, 2026-08-31). 导出供测试与未来
+ * sender-guard 旁路 (例如诊断模式) 共用. `ok: false` 字段让 union narrowing
+ * 兼容.
+ */
+export function makeSenderUntrustedError(channel: string): SenderUntrustedError {
+  return {
+    __senderUntrusted: true,
+    channel,
+    ok: false,
+  };
+}
+
 /** Register one invoke handler with its signature anchored to IpcInvokeMap. */
 export function handle<K extends IpcChannelKey>(
   ipcMain: IpcMain,
@@ -77,11 +106,9 @@ export function handle<K extends IpcChannelKey>(
       // 抛契约化异常 (issue #65 主题 H, 2026-08-31). 之前 throw new Error(...)
       // 让 renderer 端 catch 块拿到普通 Error, 无法与业务错误区分. 现在用
       // __senderUntrusted tag 让 typeguard 识别, channel 字段方便日志追踪.
-      const err: SenderUntrustedError = {
-        __senderUntrusted: true,
-        channel,
-      };
-      throw err;
+      // `ok: false` 字段让 SenderUntrustedError 与业务 Result union 后 narrowing
+      // 仍 work (IpcInvokeResult[K] = Result | SenderUntrustedError).
+      throw makeSenderUntrustedError(channel);
     }
     return handler(event, ...args);
   });

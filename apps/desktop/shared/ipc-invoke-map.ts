@@ -92,13 +92,16 @@ export type WorkspaceApi = {
  * 字段 `__senderUntrusted: true` 是 tag (类似 fp-ts 的 Discriminated Union),
  * 不会被业务 Result 误判. `channel` 字段方便日志追踪是哪个 IPC 通道拒绝.
  *
- * 不在 IpcInvokeMap[K] 联合类型中加这个变体: 那样会让 100+ 个 renderer consumer
- * 全部 typecheck 失败 (Result 多了一个无 `.ok` 字段的变体). 当前只把契约暴露给
- * sender guard 测试 + 给未来 IpcInvokeMap 二次改造留 hook. 详见 register-ipc.ts.
+ * `ok: false` 字段让 SenderUntrustedError 与业务 Result union 后仍然 narrowing
+ * 兼容 (Result 都是 `{ ok: boolean; ... }`); renderer 端 `if (!result.ok)` 不会
+ * 因为多了一个变体而 typecheck 失败, 然后用 `isSenderUntrustedError(result)`
+ * 进一步 narrow. 这就是 IpcInvokeResult<K] 派生类型能直接表达 `Result |
+ * SenderUntrustedError` 的关键.
  */
 export interface SenderUntrustedError {
   readonly __senderUntrusted: true;
   readonly channel: string;
+  readonly ok: false;
 }
 
 /** Typeguard: e 是 register-ipc.ts 抛的不可信 sender 异常. */
@@ -204,6 +207,15 @@ export type GodotApi = {
  * channel (key name == channel name, enforced at compile time against
  * IPC_CHANNELS). Preload forwarding and main-process handlers are both typed
  * against this map, so a channel signature lives in exactly one place.
+ *
+ * **Sender-trust 契约 (issue #65 主题 H, 2026-08-31)**: 每个 channel 的 resolve
+ * 类型是它原本的 Result (例如 `PromptResult`); 但 register-ipc.ts 在 main 端
+ * 校验 sender 不可信时会 throw `SenderUntrustedError`, IPC 协议让该 throw 透
+ * 传到 renderer 端 `await` 的 reject 路径, 渲染端 catch 块拿到
+ * `SenderUntrustedError` 对象. 这个契约在 resolve 类型层面不可表达 (TS 的
+ * Promise resolve 路径不携带 throw 类型), 所以用派生类型 `IpcInvokeResult<K>`
+ * 把契约显式建模: `Result | SenderUntrustedError`. 详见 SenderUntrustedError
+ * doc (为什么 `ok: false` 字段让 union narrowing 仍然 work).
  */
 export type IpcInvokeMap = {
   openProject: (path?: string, mode?: OpenProjectMode) => Promise<OpenProjectResult>;
@@ -400,6 +412,36 @@ export const DELETED_FLAT_KEYS = [
 ] as const;
 
 export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
+
+/**
+ * 协议层 IPC 通道产出契约 (issue #65 主题 H, 2026-08-31).
+ *
+ * 表达 "成功 resolve 为 IpcInvokeMap[K] 的返回类型, 失败 throw 被 catch 时
+ * 拿到 SenderUntrustedError" 的 union 类型. 调用方写穷举 catch 时可以用:
+ *
+ * ```ts
+ * try {
+ *   const result = await window.xAgent.prompt(payload);
+ *   // result: Awaited<ReturnType<typeof window.xAgent.prompt>>
+ * } catch (e) {
+ *   if (isSenderUntrustedError(e)) {
+ *     // 渲染端拒绝, sender 不可信
+ *   } else {
+ *     // 业务错误
+ *   }
+ * }
+ * ```
+ *
+ * 用 `Awaited<ReturnType<...>>` 而不是直接 `ReturnType<...>` 因为 IPC 通道
+ * 都是 async (返回 `Promise<...>`), 需要把 Promise 包装拆开.
+ *
+ * 这个派生类型不改 IpcInvokeMap[K] 的 resolve 类型 (避免 100+ consumer narrowing
+ * 失败), 仅作为 "类型层契约" 暴露. 真实 channel 的 catch 块 contract 始终
+ * 是 `unknown`, typeguard 永远要走 `isSenderUntrustedError`.
+ */
+export type IpcInvokeResult<K extends keyof IpcInvokeMap> =
+  | Awaited<ReturnType<IpcInvokeMap[K]>>
+  | SenderUntrustedError;
 
 /** Every invoke channel keyed by channel name — the generated preload surface. */
 export type FlatInvokeApi = { [K in IpcChannelKey]: IpcInvokeMap[K] };

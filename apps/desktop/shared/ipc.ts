@@ -44,6 +44,7 @@ export {
 export type {
   IpcInvokeMap,
   FlatInvokeApi,
+  IpcInvokeResult,
 } from "./ipc/protocol";
 export type {
   WorkspaceApi,

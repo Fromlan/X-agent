@@ -21,6 +21,7 @@ export {
   type XAgentApi,
   type DeletedFlatKey,
   type SenderUntrustedError,
+  type IpcInvokeResult,
   DELETED_FLAT_KEYS,
   isSenderUntrustedError,
 } from "../ipc-invoke-map";

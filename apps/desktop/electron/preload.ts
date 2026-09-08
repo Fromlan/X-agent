@@ -20,6 +20,16 @@ import { mountXAgentPath } from "./preload-path-helper";
  * (IPC_CHANNELS + IpcInvokeMap). The generated methods are plain
  * `(...args) => ipcRenderer.invoke(channel, ...args)` forwards; key name ==
  * channel name is guaranteed by the compile-time coverage gate in shared/ipc.ts.
+ *
+ * **Sender-trust 透传契约 (issue #65 主题 H, 2026-08-31)**:
+ * 不可信 sender 抛的 `SenderUntrustedError` 是 main 端 `ipcMain.handle` 抛出,
+ * IPC 协议把它序列化进 reject payload, 这里的 forwarder **不 catch 不 wrap**,
+ * 让它原样作为 rejected promise 传到 renderer 端 `await` 的 catch 块.
+ * 渲染端用 `isSenderUntrustedError(e)` typeguard 区分业务错误.
+ *
+ * 这是 forwarder 必须保持的最小契约: 一旦 wrap 成 `throw new Error(...)`,
+ * SenderUntrustedError tag 与 channel 字段都会丢, 渲染端退化到不能区分 sender
+ * 不可信 vs 业务错误.
  */
 function makeInvokeApi(): FlatInvokeApi {
   const api = {} as FlatInvokeApi;
@@ -28,6 +38,8 @@ function makeInvokeApi(): FlatInvokeApi {
   const writer = api as Record<IpcChannelKey, IpcInvokeMap[IpcChannelKey]>;
   for (const key of Object.keys(IPC_CHANNELS)) {
     const channelKey = key as IpcChannelKey;
+    // 故意吞下 catch: ipcRenderer.invoke 的 reject 必须透传到 renderer 端,
+    // 这里 wrap 会破坏 SenderUntrustedError 契约.
     const invoke: IpcInvokeMap[IpcChannelKey] = ((...args: unknown[]) =>
       ipcRenderer.invoke(channelKey, ...args)) as IpcInvokeMap[IpcChannelKey];
     writer[channelKey] = invoke;
