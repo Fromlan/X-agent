@@ -10,7 +10,7 @@ import {
   SessionModeController,
   type SessionModeHost,
 } from "../electron/agent/session-mode/index.ts";
-import { setAgentDirOverrideForTests } from "../electron/agent/prefs.ts";
+import { patchPrefs, setAgentDirOverrideForTests } from "../electron/agent/prefs.ts";
 import { loadGoalJournal } from "../electron/agent/session-mode/goal-journal.ts";
 import type { UiAgentEvent } from "../shared/ipc.ts";
 
@@ -19,7 +19,7 @@ setAgentDirOverrideForTests(dir);
 
 type MockSession = {
   isStreaming: boolean;
-  model: { id: string } | null;
+  model: { id: string; provider: string } | null;
   messages: unknown[];
   tools: string[];
   getActiveToolNames: () => string[];
@@ -28,13 +28,15 @@ type MockSession = {
 
 function createHarness(opts?: {
   sessionPath?: string;
+  /** Extra models the mock runtime should resolve (issue #1 evaluator pref). */
+  evaluatorModels?: ReadonlyMap<string, { id: string; provider: string }>;
 }) {
   const events: UiAgentEvent[] = [];
   const notices: string[] = [];
   const prompts: string[] = [];
   const session: MockSession = {
     isStreaming: false,
-    model: { id: "test" },
+    model: { id: "test", provider: "test-provider" },
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
     tools: ["read", "bash", "write", "edit", "grep", "find", "ls"],
     getActiveToolNames() {
@@ -48,6 +50,8 @@ function createHarness(opts?: {
     stopReason: "stop",
     content: [{ type: "text", text: "NO\nstill working" }],
   };
+  /** Models that completeSimple was called with, in order. */
+  const evalCalls: { modelId: string; provider: string }[] = [];
   const bundle = {
     session: session as never,
     cwd: join(dir, "proj"),
@@ -71,7 +75,16 @@ function createHarness(opts?: {
     },
     ensureRuntime: async () =>
       ({
-        completeSimple: async () => evalResult,
+        completeSimple: async (model: { id: string; provider: string }) => {
+          evalCalls.push({ modelId: model.id, provider: model.provider });
+          return evalResult;
+        },
+        getModel: (provider: string, id: string) => {
+          if (opts?.evaluatorModels?.has(`${provider}/${id}`)) {
+            return { id, provider };
+          }
+          return undefined;
+        },
       }) as never,
     getLastTurnTokenTotal: () => lastTurnTokens,
     getActiveUserEntryId: () => activeUserEntryId,
@@ -83,6 +96,7 @@ function createHarness(opts?: {
     events,
     notices,
     prompts,
+    evalCalls,
     setEval(result: typeof evalResult) {
       evalResult = result;
     },
@@ -218,6 +232,73 @@ function createHarness(opts?: {
   assert.equal(h.controller.getGoal()?.status, "budget_limited");
   assert.equal(h.controller.getGoal()?.tokensUsed, 120);
   assert.equal(h.controller.getGoal()?.turns, 0);
+}
+
+// ===== Issue #1: dedicated evaluator model pref =====
+{
+  // 1) pref unset → eval call uses the session model
+  const h = createHarness({ sessionPath: join(dir, "s-eval-default.jsonl") });
+  await patchPrefs({ goalEvaluatorModel: null });
+  await h.controller.setGoal("default eval");
+  h.setEval({
+    stopReason: "stop",
+    content: [{ type: "text", text: "NO\nstill" }],
+  });
+  await h.controller.onAgentSettled();
+  assert.equal(h.evalCalls.length, 1, "evaluator called once");
+  assert.deepEqual(h.evalCalls[0], { modelId: "test", provider: "test-provider" },
+    "no pref → evaluator uses session model");
+}
+
+{
+  // 2) pref set, runtime resolves → eval call uses the pref model
+  const evalModels = new Map([
+    ["anthropic/claude-haiku-4-5", { id: "claude-haiku-4-5", provider: "anthropic" }],
+  ]);
+  const h = createHarness({
+    sessionPath: join(dir, "s-eval-pref.jsonl"),
+    evaluatorModels: evalModels,
+  });
+  await patchPrefs({ goalEvaluatorModel: "anthropic/claude-haiku-4-5" });
+  await h.controller.setGoal("use pref model");
+  h.setEval({
+    stopReason: "stop",
+    content: [{ type: "text", text: "NO\nstill" }],
+  });
+  await h.controller.onAgentSettled();
+  assert.equal(h.evalCalls.length, 1, "evaluator called once with pref");
+  assert.deepEqual(h.evalCalls[0], {
+    modelId: "claude-haiku-4-5",
+    provider: "anthropic",
+  }, "pref honored → evaluator uses dedicated small model");
+  assert.ok(
+    !h.notices.some((n) => n.includes("回退")),
+    "no fallback warning when pref resolved",
+  );
+}
+
+{
+  // 3) pref set but runtime cannot resolve → fallback to session + warn
+  const h = createHarness({
+    sessionPath: join(dir, "s-eval-fallback.jsonl"),
+    evaluatorModels: new Map(), // nothing resolves
+  });
+  await patchPrefs({ goalEvaluatorModel: "anthropic/does-not-exist" });
+  await h.controller.setGoal("fallback to session");
+  h.setEval({
+    stopReason: "stop",
+    content: [{ type: "text", text: "NO\nstill" }],
+  });
+  await h.controller.onAgentSettled();
+  assert.equal(h.evalCalls.length, 1, "evaluator still runs after fallback");
+  assert.deepEqual(h.evalCalls[0], { modelId: "test", provider: "test-provider" },
+    "unresolvable pref → eval falls back to session model");
+  assert.ok(
+    h.notices.some(
+      (n) => n.includes("回退") && n.includes("anthropic/does-not-exist"),
+    ),
+    "fallback emits a warning that names the bad spec",
+  );
 }
 
 setAgentDirOverrideForTests(null);

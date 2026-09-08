@@ -522,10 +522,20 @@ export interface ClientPrefs {
    */
   goalMaxTurns: number;
   /**
-   * Goal mode auto-continue token budget (10_000鈥?0_000_000). Soft-stops with
+   * Goal mode auto-continue token budget (10_000–10_000_000). Soft-stops with
    * `budget_limited` when reached; user can raise and resume.
    */
   goalMaxTokens: number;
+  /**
+   * Optional dedicated small/fast model for the Goal-mode yes/no evaluator
+   * (issue #1). Encoded as `"<provider>/<modelId>"` (matches the
+   * `<provider>/<modelId>` key shown in the TopBar). `null` (default) means
+   * fall back to the session model for evaluator prompts — i.e. current
+   * behavior. When set, the controller resolves it against
+   * `ModelRuntime.getModel(provider, modelId)`; an unresolvable value falls
+   * back to the session model and emits a one-time warning.
+   */
+  goalEvaluatorModel: string | null;
   /**
    * User-selected client logo. See `ClientLogoId` for the encoding.
    * Persisted as-is; unknown values fall back to `"default"` at load time.
@@ -561,6 +571,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   autoSnipTailKeep: 1024,
   goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
   goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
+  goalEvaluatorModel: null,
   clientLogoId: "default",
 };
 
@@ -609,6 +620,11 @@ export const ClientPrefsSchema = Type.Object({
   autoSnipTailKeep: Type.Number(),
   goalMaxTurns: Type.Number(),
   goalMaxTokens: Type.Number(),
+  // Optional dedicated evaluator model (issue #1). Loose string schema so the
+  // IPC handler doesn't have to track every "<provider>/<modelId>" pair that
+  // appears in a model list; the controller resolves it against the runtime
+  // and falls back to the session model on miss.
+  goalEvaluatorModel: Type.Union([Type.Null(), Type.String()]),
   // Encoded as a free-form string; renderer side filters against the known
   // preset/custom list. Loose string schema here keeps IPC handler small and
   // lets new presets/customs flow through without schema bumps.

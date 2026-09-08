@@ -40,6 +40,7 @@ import {
   buildGoalEvalPrompt,
   buildGoalTranscript,
   parseGoalEvalResponse,
+  selectEvaluatorModel,
 } from "./goal-evaluator";
 import {
   clearGoalJournal,
@@ -886,8 +887,8 @@ export class SessionModeController {
         bundle.session.messages as readonly unknown[],
       );
       const evalPrompt = buildGoalEvalPrompt(goal.condition, transcript);
-      const model = bundle.session.model;
-      if (!model) {
+      const sessionModel = bundle.session.model;
+      if (!sessionModel) {
         this.pauseAfterEvalFailure(goal, "当前无可用模型");
         return;
       }
@@ -901,6 +902,38 @@ export class SessionModeController {
         return;
       }
       if (this.goal.status !== "pursuing") return;
+      // Issue #1: pick a dedicated small/fast evaluator model when the user
+      // has set `goalEvaluatorModel` in prefs. Falls back to the session model
+      // when the pref is empty or unresolvable. We re-resolve from the
+      // runtime in the `"pref"` branch so we pass a full `Model<TApi>` to
+      // `completeSimple`; otherwise just keep the live session model.
+      const selection = selectEvaluatorModel({
+        runtime,
+        sessionModel: { id: sessionModel.id, provider: sessionModel.provider },
+        pref: getCachedPrefs().goalEvaluatorModel,
+      });
+      let model: typeof sessionModel;
+      if (selection.source === "pref" && selection.model) {
+        const full = runtime.getModel(
+          selection.model.provider,
+          selection.model.id,
+        );
+        // We just confirmed `getModel` returns the pref model, so this cast
+        // is safe. (Re-resolve rather than fabricating a partial Model.)
+        model = (full ?? sessionModel) as typeof sessionModel;
+      } else {
+        model = sessionModel;
+      }
+      if (selection.source === "fallback") {
+        // Pref was set but couldn't be resolved. Warn once so the user can
+        // either fix the spec or unset it. We do this here (not in the helper)
+        // because the helper is intentionally pure / no I/O.
+        this.host().emitReplaceableNotice(
+          "goal_eval",
+          `目标评估模型 ${selection.prefRequested ?? ""} 不可用，已回退到当前会话模型`,
+          "warn",
+        );
+      }
       const result = await runtime.completeSimple(
         model,
         {

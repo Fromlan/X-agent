@@ -125,6 +125,16 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     rawGoalTokens >= 10_000
       ? Math.min(10_000_000, Math.floor(rawGoalTokens))
       : DEFAULT_PREFS.goalMaxTokens;
+  // goalEvaluatorModel (issue #1): encoded as "<provider>/<modelId>".
+  // null/empty/non-string → null (use session model). The controller does the
+  // runtime lookup; we never throw on load — a stale value just falls back to
+  // the session model and the user gets a one-time warning.
+  const rawGoalEvaluatorModel = rest.goalEvaluatorModel;
+  const goalEvaluatorModel =
+    typeof rawGoalEvaluatorModel === "string" &&
+    rawGoalEvaluatorModel.trim().length > 0
+      ? rawGoalEvaluatorModel.trim()
+      : null;
   const { themeId, colorMode } = normalizeThemePrefs(raw);
   // clientLogoId: defensive parse. Unknown shapes (legacy / corrupted values
   // / future formats) fall back to the built-in default; we never throw on
@@ -154,6 +164,7 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     autoSnipTailKeep,
     goalMaxTurns,
     goalMaxTokens,
+    goalEvaluatorModel,
     clientLogoId,
   };
 }
@@ -313,6 +324,20 @@ export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPre
       next.goalMaxTokens = Number.isFinite(patch.goalMaxTokens)
         ? Math.min(10_000_000, Math.max(10_000, Math.floor(patch.goalMaxTokens)))
         : DEFAULT_PREFS.goalMaxTokens;
+    }
+    // goalEvaluatorModel (issue #1): null/empty/whitespace → null (回到
+    // session model). 拒绝后保持原值,避免被攻陷 renderer 通过 patch 塞
+    // 无效字符串;空字符串视为"清空"。
+    if (patch.goalEvaluatorModel !== undefined) {
+      const candidate = patch.goalEvaluatorModel;
+      if (candidate === null) {
+        next.goalEvaluatorModel = null;
+      } else if (typeof candidate === "string") {
+        const trimmed = candidate.trim();
+        next.goalEvaluatorModel = trimmed.length > 0 ? trimmed : null;
+      } else {
+        next.goalEvaluatorModel = prev.goalEvaluatorModel;
+      }
     }
     if (patch.disabledSkills !== undefined) {
       next.disabledSkills = Array.isArray(patch.disabledSkills)

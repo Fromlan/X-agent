@@ -38,6 +38,13 @@ assert.equal(DEFAULT_PREFS.autoSnipHeadKeep, 4096);
 assert.equal(DEFAULT_PREFS.autoSnipTailKeep, 1024);
 assert.equal(DEFAULT_PREFS.goalMaxTurns, 20);
 assert.equal(DEFAULT_PREFS.goalMaxTokens, 500_000);
+// issue #1: dedicated evaluator model is opt-in; default = null means
+// fall back to the session model (existing behavior preserved).
+assert.equal(
+  DEFAULT_PREFS.goalEvaluatorModel,
+  null,
+  "DEFAULT_PREFS.goalEvaluatorModel 必须是 null (issue #1)",
+);
 assert.equal(DEFAULT_PREFS.clientLogoId, "default", "DEFAULT_PREFS.clientLogoId");
 assert.ok(!("updateSource" in DEFAULT_PREFS));
 assert.deepEqual(DEFAULT_PREFS.tools, [
@@ -186,6 +193,62 @@ try {
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(logoPrefsDir, { recursive: true, force: true });
+}
+
+// 8. goalEvaluatorModel (issue #1) — 归一化 + patch 闸
+const evalPrefsDir = mkdtempSync(join(tmpdir(), "x-agent-eval-prefs-"));
+try {
+  setAgentDirOverrideForTests(evalPrefsDir);
+
+  // null → null (no change)
+  const cleared = await patchPrefs({ goalEvaluatorModel: null });
+  assert.equal(
+    cleared.goalEvaluatorModel,
+    null,
+    "null clears goalEvaluatorModel",
+  );
+
+  // 有效 spec → trim 后保留
+  const set = await patchPrefs({
+    goalEvaluatorModel: "  anthropic/claude-haiku-4-5  ",
+  });
+  assert.equal(
+    set.goalEvaluatorModel,
+    "anthropic/claude-haiku-4-5",
+    "valid spec is trimmed and stored",
+  );
+
+  // 空字符串 → null (清空)
+  const blanked = await patchPrefs({ goalEvaluatorModel: "" });
+  assert.equal(blanked.goalEvaluatorModel, null, "empty string clears");
+
+  // 重新设置后用非法 patch 试图覆盖 → 保留原值
+  await patchPrefs({ goalEvaluatorModel: "openai/gpt-4o-mini" });
+  // patchPrefs 对无效输入(对象/数字等)会保持原值;此处用 number 试探
+  const guarded = await patchPrefs({ goalEvaluatorModel: 42 as never });
+  assert.equal(
+    guarded.goalEvaluatorModel,
+    "openai/gpt-4o-mini",
+    "non-string patch is ignored, keeps previous value",
+  );
+
+  // 加载时：磁盘上是非 string → null
+  writeFileSync(
+    join(evalPrefsDir, "x-agent.json"),
+    JSON.stringify({ ...DEFAULT_PREFS, goalEvaluatorModel: 123 }),
+    "utf8",
+  );
+  setAgentDirOverrideForTests(null);
+  setAgentDirOverrideForTests(evalPrefsDir);
+  const reloaded = loadPrefs();
+  assert.equal(
+    reloaded.goalEvaluatorModel,
+    null,
+    "on-disk non-string value is normalized to null",
+  );
+} finally {
+  setAgentDirOverrideForTests(null);
+  rmSync(evalPrefsDir, { recursive: true, force: true });
 }
 
 console.log("DEFAULT_PREFS migration: ok");
