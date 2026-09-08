@@ -18,5 +18,6 @@
 | **工作区生命周期** | open / resume / dispose / createSession 编排 | `session-lifecycle.ts`；`SessionHost` 组合壳转发 |
 | **计划会话** | 右栏计划 CRUD、脏保存、执行计划、自动打开 Plan 页 | `usePlanSession.ts`、`PlanTab.tsx` |
 | **应用更新 UX** | 打包版检查 / 下载 / 安装 / 横幅 dismiss | `useAppUpdate.ts`；主进程 `auto-updater.ts` + `update-feed.ts`；IPC `register-update-ipc.ts` |
+| **桌面端 `extraResources` 范围** | `apps/desktop/package.json#build.extraResources` **只打包** `build/icon.ico` + `build/icon.png` + `packages/godot-editor-rpc/addons/x_agent_rpc` + `packages/godot-pi`。`packages/godot-connector/` **故意不在** `extraResources` —— 它是 MiniMax Plugin (独立仓库 [Fromlan/godot-connector](https://github.com/Fromlan/godot-connector))，住在用户本地 plugin install dir (`%USERPROFILE%/.MiniMax/plugins/...`)，不是 desktop release 的一部分。`build."//"` 注释键会被 electron-builder 26.15.3 严格 schema 校验拒绝（issue: v0.6.2 release dist 失败 4 秒），所以这条约定**只能写在这里 / docs / commit message，不能塞回 `package.json`**。`packages/godot-editor-rpc`（addon / `godot-addon-install.ts`）和 `packages/godot-pi`（惯例 skill 索引）随 desktop 走；`godot-connector` 单独发版。 | `apps/desktop/package.json#build.extraResources`；`apps/desktop/electron/agent/godot-addon-install.ts`（addon 拉取）；`packages/godot-connector/README.md`（plugin 自述）；`scripts/extract-changelog.mjs`（不变） |
 
 相关：[`agent-context.md`](agent-context.md)（模型上下文如何组装）、[`CLAUDE.md`](CLAUDE.md)（仓库指引）。项目内不再保留 `docs/adr/` 子目录。
