@@ -38,7 +38,7 @@ export function useProjectReadiness(options: {
         return;
       }
       try {
-        const listed = await window.xAgent.listProjectDir("");
+        const listed = await window.xAgent.files.list("");
         const godot = Boolean(
           listed.ok &&
             listed.entries?.some(
@@ -52,8 +52,8 @@ export function useProjectReadiness(options: {
           return;
         }
         const [rpc, addonDir] = await Promise.all([
-          window.xAgent.godotRpcStatus(),
-          window.xAgent.listProjectDir("addons"),
+          window.xAgent.godot.status(),
+          window.xAgent.files.list("addons"),
         ]);
         setRpcStatus(rpc);
         const hasAddon = Boolean(
@@ -78,7 +78,7 @@ export function useProjectReadiness(options: {
   useEffect(() => {
     if (!cwd || !isGodotProject) return;
     const timer = window.setInterval(() => {
-      void window.xAgent.godotRpcStatus().then(setRpcStatus);
+      void window.xAgent.godot.status().then(setRpcStatus);
     }, 4000);
     return () => window.clearInterval(timer);
   }, [cwd, isGodotProject]);

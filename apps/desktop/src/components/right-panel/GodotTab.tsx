@@ -26,7 +26,7 @@ export function GodotTab({ active, items }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const s = await window.xAgent.godotRpcStatus();
+      const s = await window.xAgent.godot.status();
       setStatus(s);
       setError(s.error ?? null);
     } catch (err) {
@@ -53,7 +53,7 @@ export function GodotTab({ active, items }: Props) {
   const startBridge = async () => {
     setBusy(true);
     try {
-      const s = await window.xAgent.godotRpcStart();
+      const s = await window.xAgent.godot.start();
       setStatus(s);
       setError(s.error ?? null);
     } finally {
@@ -64,7 +64,7 @@ export function GodotTab({ active, items }: Props) {
   const stopBridge = async () => {
     setBusy(true);
     try {
-      await window.xAgent.godotRpcStop();
+      await window.xAgent.godot.stop();
       await refresh();
     } finally {
       setBusy(false);
@@ -74,7 +74,7 @@ export function GodotTab({ active, items }: Props) {
   const ping = async () => {
     setBusy(true);
     try {
-      const res = await window.xAgent.godotRpcPing();
+      const res = await window.xAgent.godot.ping();
       setPingOut(
         res.ok
           ? formatMaybeJson(res.result)
@@ -89,7 +89,7 @@ export function GodotTab({ active, items }: Props) {
   const setActiveClient = async (clientId: string | null) => {
     setBusy(true);
     try {
-      const res = await window.xAgent.godotRpcSetActiveClient(clientId);
+      const res = await window.xAgent.godot.setActiveClient(clientId);
       setStatus(res.status);
     } finally {
       setBusy(false);

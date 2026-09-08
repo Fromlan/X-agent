@@ -57,8 +57,8 @@ export function usePluginsState(opts: {
 
   const refresh = useCallback(async () => {
     const [list, pkgs] = await Promise.all([
-      window.xAgent.listPlugins(cwd),
-      window.xAgent.listInstalledPackages(),
+      window.xAgent.plugin.list(cwd),
+      window.xAgent.package.list(),
     ]);
     setItems(list);
     setPackages(pkgs);
@@ -68,7 +68,7 @@ export function usePluginsState(opts: {
     setSelectedPath(item.path);
     setError(null);
     setMessage(null);
-    const result = await window.xAgent.readPlugin(item.path);
+    const result = await window.xAgent.plugin.read(item.path);
     if (!result.ok) {
       setError(result.error ?? "读取失败");
       setContent("");
@@ -165,7 +165,7 @@ export function usePluginsState(opts: {
     if (!selectedPath) return;
     setBusy(true);
     setError(null);
-    const result = await window.xAgent.writePlugin(selectedPath, content);
+    const result = await window.xAgent.plugin.write(selectedPath, content);
     setBusy(false);
     if (!result.ok) {
       setError(result.error ?? "保存失败");
@@ -182,7 +182,7 @@ export function usePluginsState(opts: {
     if (isPackageTab) return;
     setBusy(true);
     setError(null);
-    const result = await window.xAgent.createPlugin({
+    const result = await window.xAgent.plugin.create({
       kind: kind as PluginKind,
       scope: createScope,
       name: createName.trim(),
@@ -211,7 +211,7 @@ export function usePluginsState(opts: {
     });
     if (!ok) return;
     setBusy(true);
-    const result = await window.xAgent.deletePlugin(selected.path);
+    const result = await window.xAgent.plugin.delete(selected.path);
     setBusy(false);
     if (!result.ok) {
       setError(result.error ?? "删除失败");
@@ -227,7 +227,7 @@ export function usePluginsState(opts: {
     async (source: string) => {
       setBusy(true);
       setError(null);
-      const result = await window.xAgent.installPackage(source);
+      const result = await window.xAgent.package.install(source);
       setBusy(false);
       if (!result.ok) {
         setError(
@@ -265,7 +265,7 @@ export function usePluginsState(opts: {
   const installGodotPi = useCallback(async () => {
     setBusy(true);
     setError(null);
-    const result = await window.xAgent.installGodotPiPackage();
+    const result = await window.xAgent.package.installGodotPi();
     setBusy(false);
     if (!result.ok) {
       setError(
@@ -306,7 +306,7 @@ export function usePluginsState(opts: {
       });
       if (!ok) return;
       setBusy(true);
-      const res = await window.xAgent.uninstallPackage(source);
+      const res = await window.xAgent.package.uninstall(source);
       setBusy(false);
       if (!res.ok) setError(res.error ?? "卸载失败");
       else {

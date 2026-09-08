@@ -43,7 +43,7 @@ export function UsageSettingsPage({ active }: Props) {
     if (!opts?.silent) setLoading(true);
     setError(null);
     try {
-      const data = await window.xAgent.getUsageSummary({ days: 30 });
+      const data = await window.xAgent.usage.getSummary({ days: 30 });
       setSummary(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -100,7 +100,7 @@ export function UsageSettingsPage({ active }: Props) {
     setMsg(null);
     setError(null);
     try {
-      const result = await window.xAgent.clearUsageSummary();
+      const result = await window.xAgent.usage.clearSummary();
       if (!result.ok) {
         setError(result.error ?? "清空失败");
         return;

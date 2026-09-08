@@ -868,7 +868,7 @@ export default function App() {
   };
 
   const applyBash = async () => {
-    const result = await window.xAgent.applyBashShellPath(
+    const result = await window.xAgent.prefs.applyBashShellPath(
       bash?.suggestedShellPath ?? undefined,
     );
     setBash(result);
@@ -878,7 +878,7 @@ export default function App() {
 
   const openGitDownload = async () => {
     setError(null);
-    const result = await window.xAgent.openExternalUrl(
+    const result = await window.xAgent.files.openExternal(
       GIT_FOR_WINDOWS_DOWNLOAD_URL,
     );
     if (!result.ok) {
@@ -890,7 +890,7 @@ export default function App() {
 
   const openNodeDownload = async () => {
     setError(null);
-    const result = await window.xAgent.openExternalUrl(NODE_JS_DOWNLOAD_URL);
+    const result = await window.xAgent.files.openExternal(NODE_JS_DOWNLOAD_URL);
     if (!result.ok) {
       setError(result.error ?? "无法打开 Node.js 下载页");
       return;
@@ -954,12 +954,12 @@ export default function App() {
   const installRpcAddon = async () => {
     setReadyBusy(true);
     try {
-      const res = await window.xAgent.installGodotRpcAddon();
+      const res = await window.xAgent.godot.installAddon();
       if (!res.ok) {
         setError(res.error ?? res.hint ?? "安装 RPC 插件失败");
       } else {
         setAddonInstalled(true);
-        await window.xAgent.godotRpcStart().then(setRpcStatus).catch(() => {});
+        await window.xAgent.godot.start().then(setRpcStatus).catch(() => {});
       }
       await refreshProjectReadiness(cwd);
     } finally {
@@ -972,7 +972,7 @@ export default function App() {
     setReadyNotice(null);
     setError(null);
     try {
-      const status = await window.xAgent.godotRpcStart();
+      const status = await window.xAgent.godot.start();
       setRpcStatus(status);
       if (status.error) {
         setError(status.error);
@@ -1005,14 +1005,14 @@ export default function App() {
     setError(null);
     try {
       // Ensure bridge is up before launching the editor.
-      const status = await window.xAgent.godotRpcStart();
+      const status = await window.xAgent.godot.start();
       setRpcStatus(status);
       if (status.error) {
         setError(status.error);
         setReadyNotice(status.error);
         return;
       }
-      const res = await window.xAgent.launchGodotEditor();
+      const res = await window.xAgent.godot.launchEditor();
       if (!res.ok) {
         const msg = res.error ?? "启动 Godot 编辑器失败";
         setError(msg);
@@ -1023,7 +1023,7 @@ export default function App() {
         res.hint ??
           `已请求启动编辑器；桥接端口 ${status.port}，等待插件连入。`,
       );
-      setRpcStatus(await window.xAgent.godotRpcStatus());
+      setRpcStatus(await window.xAgent.godot.status());
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -1042,7 +1042,7 @@ export default function App() {
 
   const openPiLogin = async () => {
     setError(null);
-    const result = await window.xAgent.openPiLogin();
+    const result = await window.xAgent.provider.login();
     if (!result.ok) {
       setError(
         [result.error, result.hint].filter(Boolean).join(" — ") ||
@@ -1057,7 +1057,7 @@ export default function App() {
     setPiCliInstalling(true);
     setError(null);
     try {
-      const result = await window.xAgent.installPiCli();
+      const result = await window.xAgent.prefs.installPiCli();
       setPiCli(result);
       if (!result.ok) setError(result.message);
     } finally {

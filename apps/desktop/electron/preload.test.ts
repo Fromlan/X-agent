@@ -1,10 +1,14 @@
 /**
- * preload 跨进程 sender-trust 透传契约测试 (issue #65 主题 H, 2026-08-31).
+ * preload 跨进程 sender-trust 透传契约测试 (issue #65 主题 H, 2026-08-31,
+ * #2 flat-API 收尾, 2026-09-08).
  *
  * 验证: 不可信 sender 在 main 端抛出 `SenderUntrustedError` 后, 走
  * `ipcRenderer.invoke(channel, ...args)` 的 reject 路径, 透传到 renderer
  * 端 `await` 的 catch 块, 不被 forwarder wrap 吞掉. 渲染端能用
  * `isSenderUntrustedError(e)` typeguard 识别.
+ *
+ * 2026-09-08 (issue #2): flat surface 已删, 所有 invoke 都走 facade 调.
+ * 之前测 revealInFolder 走 flat 的用例换成 files.reveal (新 facade).
  *
  * 这条契约的脆弱点: 一旦 forwarder 内部 `try { ... } catch (e) { throw new Error(...) }`,
  * SenderUntrustedError 的 `__senderUntrusted` tag + `channel` 字段都会丢,
@@ -57,10 +61,12 @@ import { IPC_CHANNELS } from "../shared/ipc-channels";
 import "./preload";
 
 interface ExposedXAgent {
-  revealInFolder: (path: string) => Promise<unknown>;
+  files: { reveal: (path: string) => Promise<unknown> };
   workspace: { open: (...args: unknown[]) => Promise<unknown> };
   turn: { prompt: (...args: unknown[]) => Promise<unknown> };
   session: { setModel: (...args: unknown[]) => Promise<unknown> };
+  onEvent: (handler: (event: unknown) => void) => () => void;
+  notifyAppReady: () => Promise<unknown>;
 }
 
 describe("preload forwarder (issue #65 主题 H sender-trust 透传)", () => {
@@ -126,15 +132,15 @@ describe("preload forwarder (issue #65 主题 H sender-trust 透传)", () => {
     expect(isSenderUntrustedError(caught)).toBe(false);
   });
 
-  it("SenderUntrustedError 在多个 channel 上都一致透传 (调 revealInFolder)", async () => {
+  it("SenderUntrustedError 在多个 channel 上都一致透传 (调 files.reveal)", async () => {
     // 验证契约不只对 prompt channel 生效, 任意 channel 拒时都一致
-    // 用 revealInFolder (不在 DELETED_FLAT_KEYS 里) 走 flat forwarder
+    // 用 files.reveal (issue #2 新 facade) 走 facade forwarder
     const rejection = makeSenderUntrustedError(IPC_CHANNELS.revealInFolder);
     invoke.mockRejectedValueOnce(rejection);
 
     let caught: unknown;
     try {
-      await exposed.revealInFolder("README.md");
+      await exposed.files.reveal("README.md");
     } catch (e) {
       caught = e;
     }
@@ -142,5 +148,188 @@ describe("preload forwarder (issue #65 主题 H sender-trust 透传)", () => {
     if (isSenderUntrustedError(caught)) {
       expect(caught.channel).toBe(IPC_CHANNELS.revealInFolder);
     }
+  });
+});
+
+describe("preload surface (issue #2 flat-API 收尾)", () => {
+  let exposed: ExposedXAgent;
+
+  beforeAll(() => {
+    exposed = getExposedXAgent() as ExposedXAgent;
+  });
+
+  it("顶层只 expose 14 个 facade + onEvent + notifyAppReady, 没有 flat surface", () => {
+    const expectedFacades = [
+      "workspace",
+      "turn",
+      "plan",
+      "session",
+      "prefs",
+      "appReport",
+      "godot",
+      "updates",
+      "logo",
+      "files",
+      "provider",
+      "plugin",
+      "package",
+      "usage",
+    ];
+    for (const name of expectedFacades) {
+      expect(exposed[name], `facade ${name} 应该暴露`).toBeDefined();
+      expect(typeof exposed[name]).toBe("object");
+    }
+    expect(typeof exposed.onEvent).toBe("function");
+    expect(typeof exposed.notifyAppReady).toBe("function");
+  });
+
+  it("不存在 flat IPC channel 顶层方法 (issue #2 收尾)", () => {
+    // 老 flat surface 方法都不应再出现: prompt / setModel / openProject / ...
+    // 渲染端必须走 facade, 顶层除了 onEvent + notifyAppReady 不应有别的 invoke 方法.
+    const flatForbidden = [
+      "prompt",
+      "abort",
+      "openProject",
+      "newSession",
+      "getStatus",
+      "setModel",
+      "getSessionUsage",
+      "compactSession",
+      "setSessionMode",
+      "getSessionMode",
+      "getPrefsRecoveryNotice",
+      "getSecretCodecStatus",
+      "applyBashShellPath",
+      "pickBashShell",
+      "installPiCli",
+      "openPiLogin",
+      "openExternalUrl",
+      "listProjectDir",
+      "readProjectFile",
+      "revealInFolder",
+      "godotRpcStatus",
+      "godotRpcStart",
+      "godotRpcStop",
+      "godotRpcPing",
+      "godotRpcRequest",
+      "godotRpcSetActiveClient",
+      "installGodotRpcAddon",
+      "launchGodotEditor",
+      "pickGodotEditor",
+      "pickGodotScene",
+      "listPlugins",
+      "readPlugin",
+      "writePlugin",
+      "createPlugin",
+      "deletePlugin",
+      "revealPlugin",
+      "listInstalledPackages",
+      "installPackage",
+      "uninstallPackage",
+      "installGodotPiPackage",
+      "getUsageSummary",
+      "clearUsageSummary",
+      "listProviderProfiles",
+      "getProviderProfile",
+      "upsertProviderProfile",
+      "deleteProviderProfile",
+      "setProviderProfileEnabled",
+      "listProviderPresets",
+      "importExistingProviderProfiles",
+      "fetchProviderModels",
+      "setThinkingLevel",
+      "listModels",
+      "getToolDetail",
+      "reloadResources",
+      "listSessionSlashItems",
+      "getPrefs",
+      "setPrefs",
+      "checkBash",
+      "checkBashLiveness",
+      "checkGit",
+      "checkAuth",
+      "checkPiCli",
+      "listSessions",
+      "resumeSession",
+      "deleteSession",
+      "deleteProjectSessions",
+      "renameSession",
+      "closeWorkspace",
+      "getUpdateStatus",
+      "checkForUpdates",
+      "downloadUpdate",
+      "installUpdate",
+      "logoListPresets",
+      "logoUploadCustom",
+      "logoClearCustom",
+      "listSessionSlashItems",
+      "listProjectDir",
+      "readProjectFile",
+      "revealInFolder",
+    ];
+    for (const name of flatForbidden) {
+      expect(
+        (exposed as unknown as Record<string, unknown>)[name],
+        `flat method ${name} 不应再出现在顶层`,
+      ).toBeUndefined();
+    }
+  });
+
+  it("14 个 facade 都有正确的方法 (smoke)", () => {
+    // 锁住 facade 形态, 防止以后漏加新方法或拼错名字
+    expect(Object.keys(exposed.workspace).sort()).toEqual([
+      "close",
+      "deleteProjectSessions",
+      "deleteSession",
+      "getStatus",
+      "listSessions",
+      "newSession",
+      "open",
+      "renameSession",
+      "resume",
+    ]);
+    expect(Object.keys(exposed.turn).sort()).toEqual([
+      "abort",
+      "editAndResend",
+      "previewRetract",
+      "prompt",
+      "regenerate",
+      "retract",
+    ]);
+    expect(Object.keys(exposed.files).sort()).toEqual([
+      "list",
+      "openExternal",
+      "read",
+      "reveal",
+    ]);
+    expect(Object.keys(exposed.provider).sort()).toEqual([
+      "deleteProfile",
+      "fetchModels",
+      "getProfile",
+      "importExisting",
+      "listPresets",
+      "listProfiles",
+      "login",
+      "setProfileEnabled",
+      "upsertProfile",
+    ]);
+    expect(Object.keys(exposed.plugin).sort()).toEqual([
+      "create",
+      "delete",
+      "list",
+      "read",
+      "reveal",
+      "write",
+    ]);
+    expect(Object.keys(exposed.package).sort()).toEqual([
+      "install",
+      "installGodotPi",
+      "list",
+      "uninstall",
+    ]);
+    expect(Object.keys(exposed.usage).sort()).toEqual([
+      "clearSummary",
+      "getSummary",
+    ]);
   });
 });

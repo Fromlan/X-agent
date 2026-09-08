@@ -53,7 +53,7 @@ export function PluginEditor({ state, prefs }: Props) {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            onClick={() => void window.xAgent.revealPlugin(selected.path)}
+            onClick={() => void window.xAgent.plugin.reveal(selected.path)}
           >
             <FolderOpen size={13} />
             打开位置

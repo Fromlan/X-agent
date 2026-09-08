@@ -119,7 +119,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   const [showFetchPanel, setShowFetchPanel] = useState(false);
 
   const refreshProfiles = useCallback(async () => {
-    setProfiles(await window.xAgent.listProviderProfiles());
+    setProfiles(await window.xAgent.provider.listProfiles());
   }, []);
 
   const existingIds = useMemo(
@@ -132,8 +132,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     let cancelled = false;
     (async () => {
       const [list, presetList] = await Promise.all([
-        window.xAgent.listProviderProfiles(),
-        window.xAgent.listProviderPresets(),
+        window.xAgent.provider.listProfiles(),
+        window.xAgent.provider.listPresets(),
       ]);
       if (cancelled) return;
       setProfiles(list);
@@ -214,7 +214,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   };
 
   const openEdit = async (id: string) => {
-    const profile = await window.xAgent.getProviderProfile(id);
+    const profile = await window.xAgent.provider.getProfile(id);
     if (!profile) {
       setError("档案不存在");
       return;
@@ -307,7 +307,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     setError(null);
     setMessage(null);
     try {
-      const result = await window.xAgent.fetchProviderModels({
+      const result = await window.xAgent.provider.fetchModels({
         baseUrl: form.baseUrl,
         apiKey: form.apiKey,
       });
@@ -428,7 +428,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
           })
           .filter((m): m is ProviderModelEntry => !!m),
       };
-      const result = await window.xAgent.upsertProviderProfile(input);
+      const result = await window.xAgent.provider.upsertProfile(input);
       if (!result.ok || !result.profile) {
         setError(result.error ?? "保存失败");
         return;
@@ -452,7 +452,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     setError(null);
     setMessage(null);
     try {
-      const result = await window.xAgent.setProviderProfileEnabled(
+      const result = await window.xAgent.provider.setProfileEnabled(
         profile.id,
         enabled,
       );
@@ -490,7 +490,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const result = await window.xAgent.deleteProviderProfile(profile.id);
+      const result = await window.xAgent.provider.deleteProfile(profile.id);
       if (!result.ok) {
         setError(result.error ?? "删除失败");
         return;
@@ -507,7 +507,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     setError(null);
     setMessage(null);
     try {
-      const result = await window.xAgent.importExistingProviderProfiles();
+      const result = await window.xAgent.provider.importExisting();
       if (!result.ok) {
         setError(result.error ?? "导入失败");
         return;

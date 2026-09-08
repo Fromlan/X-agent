@@ -72,7 +72,7 @@ export async function expandAtPathsInPrompt(
   for (const r of extraRefs) {
     const abs = r.absPath;
     if (!abs) continue;
-    const res = await window.xAgent.readProjectFile(abs);
+    const res = await window.xAgent.files.read(abs);
     if (res.ok && res.content != null) {
       extraBlocks.push(`<file name="${abs}">\n${res.content}\n</file>`);
     } else {
@@ -92,7 +92,7 @@ export async function expandAtPathsInPrompt(
 
   await Promise.all(
     unique.map(async (rel) => {
-      const res = await window.xAgent.readProjectFile(rel);
+      const res = await window.xAgent.files.read(rel);
       if (res.ok && res.content != null) {
         expansions.set(
           rel,

@@ -42,14 +42,14 @@ export function GodotSettingsPage({
   const [importPaths, setImportPaths] = useState("res://");
 
   const refreshRpc = useCallback(async () => {
-    setRpc(await window.xAgent.godotRpcStatus());
+    setRpc(await window.xAgent.godot.status());
   }, []);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      const status = await window.xAgent.godotRpcStatus();
+      const status = await window.xAgent.godot.status();
       if (cancelled) return;
       setRpc(status);
     })();
@@ -72,7 +72,7 @@ export function GodotSettingsPage({
   }, [open]);
 
   const runRpc = async (call: GodotRpcCallDto) => {
-    const res = await window.xAgent.godotRpcRequest(call);
+    const res = await window.xAgent.godot.request(call);
     if (!res.ok) {
       setRpcMsg(res.error ?? "RPC 调用失败");
     } else {
@@ -104,7 +104,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={async () => {
-              const res = await window.xAgent.pickGodotEditor();
+              const res = await window.xAgent.godot.pickEditor();
               if (res.canceled) return;
               if (!res.ok || !res.path) {
                 setRpcMsg("未选择引擎");
@@ -121,7 +121,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={async () => {
-              const res = await window.xAgent.launchGodotEditor();
+              const res = await window.xAgent.godot.launchEditor();
               setRpcMsg(
                 res.ok
                   ? res.hint ?? "已启动 Godot 编辑器"
@@ -164,7 +164,7 @@ export function GodotSettingsPage({
               }))}
               onChange={(id) => {
                 void (async () => {
-                  const res = await window.xAgent.godotRpcSetActiveClient(
+                  const res = await window.xAgent.godot.setActiveClient(
                     id || null,
                   );
                   setRpc(res.status);
@@ -184,7 +184,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={async () => {
-              const res = await window.xAgent.installGodotRpcAddon();
+              const res = await window.xAgent.godot.installAddon();
               setRpcMsg(
                 res.ok
                   ? res.hint ?? "插件安装完成"
@@ -199,7 +199,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={async () => {
-              const status = await window.xAgent.godotRpcStart();
+              const status = await window.xAgent.godot.start();
               setRpc(status);
               setRpcMsg(
                 status.error
@@ -218,7 +218,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={async () => {
-              await window.xAgent.godotRpcStop();
+              await window.xAgent.godot.stop();
               await refreshRpc();
               setRpcMsg(null);
             }}
@@ -229,7 +229,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={async () => {
-              const res = await window.xAgent.godotRpcRequest({
+              const res = await window.xAgent.godot.request({
                 method: "ping",
               });
               if (res.ok) {
@@ -340,7 +340,7 @@ export function GodotSettingsPage({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={async () => {
-              const res = await window.xAgent.pickGodotScene();
+              const res = await window.xAgent.godot.pickScene();
               if (res.canceled) return;
               if (!res.ok || !res.path) {
                 setRpcMsg(res.error ?? "未选择场景");

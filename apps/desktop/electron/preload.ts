@@ -1,16 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { DELETED_FLAT_KEYS } from "../shared/ipc";
-import type {
-  AppUpdateStatus,
-  DeletedFlatKey,
-  FlatInvokeApi,
-  IpcChannelKey,
-  IpcInvokeMap,
-  PromptPayload,
-  UiAgentEvent,
-  XAgentApi,
-  XAgentApiFlat,
-} from "../shared/ipc";
+import type { AppUpdateStatus, PromptPayload, UiAgentEvent, XAgentApi } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 import { dbgLog, dbgTimer } from "../shared/debug-log";
 import { mountXAgentPath } from "./preload-path-helper";
@@ -31,18 +20,15 @@ import { mountXAgentPath } from "./preload-path-helper";
  * SenderUntrustedError tag 与 channel 字段都会丢, 渲染端退化到不能区分 sender
  * 不可信 vs 业务错误.
  */
-function makeInvokeApi(): FlatInvokeApi {
-  const api = {} as FlatInvokeApi;
-  // Index assignment through the mapped type is conservative (intersection);
-  // write via a record whose value type does not depend on the key.
-  const writer = api as Record<IpcChannelKey, IpcInvokeMap[IpcChannelKey]>;
+function makeInvokeApi(): Record<string, (...args: unknown[]) => Promise<unknown>> {
+  const api: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   for (const key of Object.keys(IPC_CHANNELS)) {
-    const channelKey = key as IpcChannelKey;
+    const channelKey = key as keyof typeof IPC_CHANNELS;
     // 故意吞下 catch: ipcRenderer.invoke 的 reject 必须透传到 renderer 端,
     // 这里 wrap 会破坏 SenderUntrustedError 契约.
-    const invoke: IpcInvokeMap[IpcChannelKey] = ((...args: unknown[]) =>
-      ipcRenderer.invoke(channelKey, ...args)) as IpcInvokeMap[IpcChannelKey];
-    writer[channelKey] = invoke;
+    const invoke = ((...args: unknown[]) =>
+      ipcRenderer.invoke(channelKey, ...args)) as (...args: unknown[]) => Promise<unknown>;
+    api[channelKey] = invoke;
   }
   return api;
 }
@@ -50,7 +36,8 @@ function makeInvokeApi(): FlatInvokeApi {
 const api = makeInvokeApi();
 
 // Channel-keyed methods that keep custom logging on the renderer side.
-api.prompt = ((payload: PromptPayload) => {
+api.prompt = ((...args: unknown[]) => {
+  const payload = args[0] as PromptPayload;
   dbgLog("preload", "invoke prompt", {
     textLen: payload?.text?.length,
     imageCount: payload?.images?.length ?? 0,
@@ -66,46 +53,39 @@ api.prompt = ((payload: PromptPayload) => {
     dbgLog("preload", "prompt result", result);
     return result;
   });
-}) as IpcInvokeMap["prompt"];
+});
 
-/** Flat surface: generated invoke methods minus the facade-covered ones. */
-const flatApi: XAgentApiFlat = {
-  ...pickInvokeApi(api),
-  notifyAppReady: () => ipcRenderer.invoke(IPC_CHANNELS.appReady),
-  onEvent: (handler: (event: UiAgentEvent) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
-      handler(event);
-    };
-    ipcRenderer.on(IPC_EVENTS.agentEvent, listener);
-    return () => {
-      ipcRenderer.removeListener(IPC_EVENTS.agentEvent, listener);
-    };
-  },
-  onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, status: AppUpdateStatus) => {
-      handler(status);
-    };
-    ipcRenderer.on(IPC_EVENTS.updateStatus, listener);
-    return () => {
-      ipcRenderer.removeListener(IPC_EVENTS.updateStatus, listener);
-    };
-  },
+const onEvent = (handler: (event: UiAgentEvent) => void) => {
+  const listener = (_: Electron.IpcRendererEvent, event: UiAgentEvent) => {
+    handler(event);
+  };
+  ipcRenderer.on(IPC_EVENTS.agentEvent, listener);
+  return () => {
+    ipcRenderer.removeListener(IPC_EVENTS.agentEvent, listener);
+  };
 };
 
-function pickInvokeApi(source: FlatInvokeApi): Omit<FlatInvokeApi, DeletedFlatKey> {
-  const kept = {} as FlatInvokeApi;
-  const writer = kept as Record<keyof FlatInvokeApi, IpcInvokeMap[IpcChannelKey]>;
-  const deleted = DELETED_FLAT_KEYS as readonly string[];
-  for (const key of Object.keys(source)) {
-    if (!deleted.includes(key)) {
-      writer[key as keyof FlatInvokeApi] = source[key as keyof FlatInvokeApi];
-    }
-  }
-  return kept as Omit<FlatInvokeApi, DeletedFlatKey>;
-}
+const onUpdateStatus = (handler: (status: AppUpdateStatus) => void) => {
+  const listener = (_: Electron.IpcRendererEvent, status: AppUpdateStatus) => {
+    handler(status);
+  };
+  ipcRenderer.on(IPC_EVENTS.updateStatus, listener);
+  return () => {
+    ipcRenderer.removeListener(IPC_EVENTS.updateStatus, listener);
+  };
+};
+
+const onLogoChanged = (handler: (payload: { id: string }) => void) => {
+  const listener = (_: Electron.IpcRendererEvent, payload: { id: string }) => {
+    handler(payload);
+  };
+  ipcRenderer.on(IPC_EVENTS.logoChanged, listener);
+  return () => {
+    ipcRenderer.removeListener(IPC_EVENTS.logoChanged, listener);
+  };
+};
 
 const exposed: XAgentApi = {
-  ...flatApi,
   workspace: {
     open: api.openProject,
     close: api.closeWorkspace,
@@ -183,22 +163,51 @@ const exposed: XAgentApi = {
     check: api.checkForUpdates,
     download: api.downloadUpdate,
     install: api.installUpdate,
-    onStatus: flatApi.onUpdateStatus,
+    onStatus: onUpdateStatus,
   },
   logo: {
     listPresets: api.logoListPresets,
     uploadCustom: api.logoUploadCustom,
     clearCustom: api.logoClearCustom,
-    onChanged: (handler: (payload: { id: string }) => void) => {
-      const listener = (_: Electron.IpcRendererEvent, payload: { id: string }) => {
-        handler(payload);
-      };
-      ipcRenderer.on(IPC_EVENTS.logoChanged, listener);
-      return () => {
-        ipcRenderer.removeListener(IPC_EVENTS.logoChanged, listener);
-      };
-    },
+    onChanged: onLogoChanged,
   },
+  files: {
+    list: api.listProjectDir,
+    read: api.readProjectFile,
+    reveal: api.revealInFolder,
+    openExternal: api.openExternalUrl,
+  },
+  provider: {
+    listProfiles: api.listProviderProfiles,
+    getProfile: api.getProviderProfile,
+    upsertProfile: api.upsertProviderProfile,
+    deleteProfile: api.deleteProviderProfile,
+    setProfileEnabled: api.setProviderProfileEnabled,
+    listPresets: api.listProviderPresets,
+    importExisting: api.importExistingProviderProfiles,
+    fetchModels: api.fetchProviderModels,
+    login: api.openPiLogin,
+  },
+  plugin: {
+    list: api.listPlugins,
+    read: api.readPlugin,
+    write: api.writePlugin,
+    create: api.createPlugin,
+    delete: api.deletePlugin,
+    reveal: api.revealPlugin,
+  },
+  package: {
+    list: api.listInstalledPackages,
+    install: api.installPackage,
+    uninstall: api.uninstallPackage,
+    installGodotPi: api.installGodotPiPackage,
+  },
+  usage: {
+    getSummary: api.getUsageSummary,
+    clearSummary: api.clearUsageSummary,
+  },
+  onEvent,
+  notifyAppReady: () => ipcRenderer.invoke(IPC_CHANNELS.appReady),
 } as XAgentApi;
 
 contextBridge.exposeInMainWorld("xAgent", exposed);

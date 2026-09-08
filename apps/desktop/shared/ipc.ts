@@ -13,6 +13,11 @@
  *   - 协议 + facade + 注册表 re-export
  *     → ./ipc/{protocol,facades,registries}.ts
  *
+ * 2026-09-08 (issue #2 flat-API 收尾): 删 XAgentApiFlat / FlatInvokeApi /
+ * DELETED_FLAT_KEYS / DeletedFlatKey re-export. XAgentApi 接口只剩 14 个
+ * facade + onEvent + notifyAppReady. 加 5 个新 facade: FilesApi / ProviderApi /
+ * PluginApi / PackageApi / UsageApi.
+ *
  * 本文件只剩 ~50 行 barrel re-export, 老的 ~100 个 consumer import
  * 路径 (`from "@shared/ipc"`) 不用改. 保持 #1 加的 `goalEvaluatorModel`
  * 字段在 ClientPrefs / DEFAULT_PREFS / ClientPrefsSchema 中(三个
@@ -41,11 +46,7 @@ export {
 } from "./mode-tools";
 
 // ----- protocol / facades / registries / types / prefs -----
-export type {
-  IpcInvokeMap,
-  FlatInvokeApi,
-  IpcInvokeResult,
-} from "./ipc/protocol";
+export type { IpcInvokeMap, IpcInvokeResult } from "./ipc/protocol";
 export type {
   WorkspaceApi,
   TurnApi,
@@ -56,15 +57,15 @@ export type {
   LogoApi,
   GodotApi,
   UpdatesApi,
-  XAgentApiFlat,
+  FilesApi,
+  ProviderApi,
+  PluginApi,
+  PackageApi,
+  UsageApi,
   XAgentApi,
-  DeletedFlatKey,
   SenderUntrustedError,
 } from "./ipc/facades";
-export {
-  DELETED_FLAT_KEYS,
-  isSenderUntrustedError,
-} from "./ipc/facades";
+export { isSenderUntrustedError } from "./ipc/facades";
 export {
   AVAILABLE_TOOLS,
   type BuiltinToolName,

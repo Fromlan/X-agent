@@ -67,7 +67,7 @@ function TreeNode({
     setLoading(true);
     setError(null);
     try {
-      const res = await window.xAgent.listProjectDir(relDir);
+      const res = await window.xAgent.files.list(relDir);
       if (!res.ok) {
         setError(res.error ?? "列出目录失败");
         setEntries([]);
@@ -190,7 +190,7 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
     setLoading(true);
     setError(null);
     setPreviewTruncated(false);
-    void window.xAgent.readProjectFile(previewPath).then((res) => {
+    void window.xAgent.files.read(previewPath).then((res) => {
       if (cancelled) return;
       setLoading(false);
       if (!res.ok) {
@@ -281,7 +281,7 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
       return;
     }
     if (action === "reveal") {
-      await window.xAgent.revealInFolder(relPath);
+      await window.xAgent.files.reveal(relPath);
       return;
     }
     if (action === "copyAbs") {
@@ -330,7 +330,7 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => void window.xAgent.revealInFolder(previewPath)}
+                onClick={() => void window.xAgent.files.reveal(previewPath)}
               >
                 在资源管理器中显示
               </button>

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  DELETED_FLAT_KEYS,
   isSenderUntrustedError,
   type IpcInvokeResult,
 } from "../../shared/ipc";
@@ -17,24 +16,6 @@ describe("ipc channel registry", () => {
     for (const [key, value] of Object.entries(IPC_CHANNELS)) {
       expect(value).toBe(key);
     }
-  });
-
-  it("DELETED_FLAT_KEYS are real, unique channel keys", () => {
-    const keys = new Set(Object.keys(IPC_CHANNELS));
-    for (const key of DELETED_FLAT_KEYS) {
-      expect(keys.has(key)).toBe(true);
-    }
-    expect(new Set(DELETED_FLAT_KEYS).size).toBe(DELETED_FLAT_KEYS.length);
-  });
-
-  it("flat surface keeps every non-deleted channel (XAgentApiFlat coverage gate)", () => {
-    const kept = Object.keys(IPC_CHANNELS).filter(
-      (k) => !(DELETED_FLAT_KEYS as readonly string[]).includes(k),
-    );
-    // The XAgentApiFlat type is derived as Omit<FlatInvokeApi, DeletedFlatKey>;
-    // this runtime check mirrors that derivation so a wrong DELETED_FLAT_KEYS
-    // entry cannot silently widen the flat surface again.
-    expect(kept.length).toBe(Object.keys(IPC_CHANNELS).length - DELETED_FLAT_KEYS.length);
   });
 });
 

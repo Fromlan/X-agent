@@ -1,12 +1,18 @@
 /**
- * IPC invoke channel signatures + 9 facade types (workspace/turn/plan/
- * session/prefs/appReport/logo/godot/updates). Single source for
- * preload ↔ main IPC contracts.
+ * IPC invoke channel signatures + 14 facade types (workspace/turn/plan/
+ * session/prefs/appReport/logo/godot/updates/files/provider/plugin/
+ * package/usage). Single source for preload ↔ main IPC contracts.
  *
- * Split from shared/ipc.ts (issue #60 主题 D C-301, 2026-08-31):
- * 原 1475 行 god file 拆出 IpcInvokeMap + DELETED_FLAT_KEYS + 9 facade
- * (~225 行) 到此文件; 共享类型 (OpenProjectResult, PromptResult 等)
- * 仍从 shared/ipc.ts re-export 走 barrel, 避免双源.
+ * History:
+ *  - 2026-08-31 issue #60 主题 D C-301: 原 1475 行 god file 拆出
+ *    IpcInvokeMap + DELETED_FLAT_KEYS + 9 facade 到此文件.
+ *  - 2026-09-08 issue #65 主题 H: 加 IpcInvokeResult<K> 派生类型
+ *    表达 "Result | SenderUntrustedError" 契约.
+ *  - 2026-09-08 issue #2 flat-API 收尾:
+ *    删 XAgentApiFlat / FlatInvokeApi / DELETED_FLAT_KEYS / DeletedFlatKey.
+ *    渲染端必须走 facade 调用. 漏的 5 个分类(files / provider / plugin /
+ *    package / usage)各加一个 facade, openPiLogin 归到 provider.login.
+ *    XAgentApi 直接含 14 facade + onEvent + notifyAppReady (无 flat 表面).
  */
 import type { IpcChannelKey } from "./ipc-channels";
 import type { SessionType } from "./session-type";
@@ -203,6 +209,77 @@ export type GodotApi = {
 };
 
 /**
+ * Project file-system + external URL operations (issue #2 flat-API 收尾).
+ *
+ * 涵盖原来 renderer 裸调的 4 个 channel: `listProjectDir`, `readProjectFile`,
+ * `revealInFolder`, `openExternalUrl`. 后者虽然名字带"external", 但
+ * 跟文件系统操作 (read / reveal) 都属于"宿主 shell / OS 资源"侧,
+ * 放进 files facade 比新开 system facade 更紧凑.
+ */
+export type FilesApi = {
+  list: IpcInvokeMap["listProjectDir"];
+  read: IpcInvokeMap["readProjectFile"];
+  reveal: IpcInvokeMap["revealInFolder"];
+  openExternal: IpcInvokeMap["openExternalUrl"];
+};
+
+/**
+ * Provider profile CRUD + Pi authentication facade (issue #2 flat-API 收尾).
+ *
+ * 9 个 channel 都跟"供应商 / 模型"有关, 原来在 XAgentApiFlat 裸调.
+ * `login` 调起 Pi 登录流程 (Pi CLI), 跟 model 选型紧密相关, 一起放这里.
+ */
+export type ProviderApi = {
+  listProfiles: IpcInvokeMap["listProviderProfiles"];
+  getProfile: IpcInvokeMap["getProviderProfile"];
+  upsertProfile: IpcInvokeMap["upsertProviderProfile"];
+  deleteProfile: IpcInvokeMap["deleteProviderProfile"];
+  setProfileEnabled: IpcInvokeMap["setProviderProfileEnabled"];
+  listPresets: IpcInvokeMap["listProviderPresets"];
+  importExisting: IpcInvokeMap["importExistingProviderProfiles"];
+  fetchModels: IpcInvokeMap["fetchProviderModels"];
+  login: IpcInvokeMap["openPiLogin"];
+};
+
+/**
+ * Plugin CRUD facade (issue #2 flat-API 收尾).
+ *
+ * 涵盖 prompt / skill / extension / theme 四种 plugin 的 list / read / write
+ * / create / delete / reveal 操作. 设置 → 插件页面唯一入口.
+ */
+export type PluginApi = {
+  list: IpcInvokeMap["listPlugins"];
+  read: IpcInvokeMap["readPlugin"];
+  write: IpcInvokeMap["writePlugin"];
+  create: IpcInvokeMap["createPlugin"];
+  delete: IpcInvokeMap["deletePlugin"];
+  reveal: IpcInvokeMap["revealPlugin"];
+};
+
+/**
+ * Pi Package install / uninstall facade (issue #2 flat-API 收尾).
+ *
+ * 涵盖 `pi install` / `pi uninstall` 周边 4 个 channel. Godot Pi 单独一个
+ * 方法以便 UI 给"安装 godot-pi 配套包"打独立按钮.
+ */
+export type PackageApi = {
+  list: IpcInvokeMap["listInstalledPackages"];
+  install: IpcInvokeMap["installPackage"];
+  uninstall: IpcInvokeMap["uninstallPackage"];
+  installGodotPi: IpcInvokeMap["installGodotPiPackage"];
+};
+
+/**
+ * Usage / cost summary facade (issue #2 flat-API 收尾).
+ *
+ * 2 个 channel, 设置 → 用量页面的数据源.
+ */
+export type UsageApi = {
+  getSummary: IpcInvokeMap["getUsageSummary"];
+  clearSummary: IpcInvokeMap["clearUsageSummary"];
+};
+
+/**
  * Authoritative invoke-channel signatures: every key is one `ipcRenderer.invoke`
  * channel (key name == channel name, enforced at compile time against
  * IPC_CHANNELS). Preload forwarding and main-process handlers are both typed
@@ -370,50 +447,6 @@ export type IpcInvokeMap = {
 };
 
 /**
- * Flat channel methods removed from `window.xAgent` — their functionality
- * lives on the workspace / turn / plan / session / prefs facades.
- *
- * **2026-08-31 缩到 10 条** (issue #60 主题 D C-304): 原 36 条 deny-list
- * 把几乎所有可 facade 化的 channel 都锁到 facade-only, 渲染端没有从
- * flat 调它们的需要. 现在只保留"渲染端真只在 facade 调 + flat 暴露也
- * 无意义 (原子性 / lifecycle 不应该裸用)"的 10 个:
- *
- *   - workspace lifecycle  : openProject, newSession, getStatus
- *   - turn / composer     : prompt, abort
- *   - plan / goal mode    : setSessionMode, getSessionMode
- *   - session runtime     : setModel, getSessionUsage, compactSession
- *   - prefs utility       : getPrefsRecoveryNotice, getSecretCodecStatus
- *
- * 其他 26+ 个 channel 之前在这列表, 现在回到 flat (`XAgentApiFlat`) —
- * 类型上多出方法、运行时 preload 的 `pickInvokeApi` 不过滤; 渲染端
- * 现存调用全部走 facade (调 src/ 扫了 0 个裸调), 不影响.
- *
- * 加新 facade 通道: 如果概念上属于上面 5 个 facade 之一 + 不希望被裸用,
- * 加到这列表; 否则默认 flat 暴露, 渲染端自己决定怎么调.
- */
-export const DELETED_FLAT_KEYS = [
-  // workspace lifecycle
-  "openProject",
-  "newSession",
-  "getStatus",
-  // turn / composer
-  "prompt",
-  "abort",
-  // plan / goal mode
-  "setSessionMode",
-  "getSessionMode",
-  // session runtime
-  "setModel",
-  "getSessionUsage",
-  "compactSession",
-  // prefs utility
-  "getPrefsRecoveryNotice",
-  "getSecretCodecStatus",
-] as const;
-
-export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
-
-/**
  * 协议层 IPC 通道产出契约 (issue #65 主题 H, 2026-08-31).
  *
  * 表达 "成功 resolve 为 IpcInvokeMap[K] 的返回类型, 失败 throw 被 catch 时
@@ -421,8 +454,8 @@ export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
  *
  * ```ts
  * try {
- *   const result = await window.xAgent.prompt(payload);
- *   // result: Awaited<ReturnType<typeof window.xAgent.prompt>>
+ *   const result = await window.xAgent.turn.prompt(payload);
+ *   // result: Awaited<ReturnType<typeof window.xAgent.turn.prompt>>
  * } catch (e) {
  *   if (isSenderUntrustedError(e)) {
  *     // 渲染端拒绝, sender 不可信
@@ -443,16 +476,6 @@ export type IpcInvokeResult<K extends keyof IpcInvokeMap> =
   | Awaited<ReturnType<IpcInvokeMap[K]>>
   | SenderUntrustedError;
 
-/** Every invoke channel keyed by channel name — the generated preload surface. */
-export type FlatInvokeApi = { [K in IpcChannelKey]: IpcInvokeMap[K] };
-
-/** Flat IPC surface exposed directly on `window.xAgent` (legacy; prefer facades). */
-export type XAgentApiFlat = Omit<FlatInvokeApi, DeletedFlatKey> & {
-  notifyAppReady: () => Promise<{ ok: boolean }>;
-  onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
-  onUpdateStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
-};
-
 /** Compile-time gate: IpcInvokeMap keys must exactly cover IPC_CHANNELS keys. */
 declare const _assertInvokeMapCoverage: Exclude<
   IpcChannelKey,
@@ -463,15 +486,28 @@ declare const _assertInvokeMapCoverage: Exclude<
     : never
   : never;
 
-/** Compile-time gate: DELETED_FLAT_KEYS entries must be real channel keys. */
-declare const _assertDeletedKeysValid: Exclude<
-  DeletedFlatKey,
-  IpcChannelKey
-> extends never
-  ? true
-  : never;
+/**
+ * `window.xAgent` 全表面 (issue #2 flat-API 收尾, 2026-09-08).
+ *
+ * 之前 XAgentApi 通过 `extends XAgentApiFlat` 继承所有 IPC 通道, 让
+ * renderer 可以 `window.xAgent.prompt(...)` 裸调. 现在 flat surface 已删
+ * (renderer 必须走 facade, 例如 `window.xAgent.turn.prompt(...)`), 这个
+ * interface 只列:
+ *
+ *  - 14 个 facade (workspace/turn/plan/session/prefs/appReport/logo/godot/
+ *    updates/files/provider/plugin/package/usage)
+ *  - 2 个 top-level 事件 / 启动: `onEvent` (agent push) + `notifyAppReady`
+ *    (renderer boot 完成信号, splash 关闭)
+ */
+export type UpdatesApi = {
+  getStatus: IpcInvokeMap["getUpdateStatus"];
+  check: IpcInvokeMap["checkForUpdates"];
+  download: IpcInvokeMap["downloadUpdate"];
+  install: IpcInvokeMap["installUpdate"];
+  onStatus: (handler: (status: AppUpdateStatus) => void) => () => void;
+};
 
-export interface XAgentApi extends XAgentApiFlat {
+export interface XAgentApi {
   workspace: WorkspaceApi;
   turn: TurnApi;
   plan: PlanApi;
@@ -481,13 +517,16 @@ export interface XAgentApi extends XAgentApiFlat {
   godot: GodotApi;
   updates: UpdatesApi;
   logo: LogoApi;
+  files: FilesApi;
+  provider: ProviderApi;
+  plugin: PluginApi;
+  package: PackageApi;
+  usage: UsageApi;
+  /** Subscribe to main-process `agentEvent` pushes. */
+  onEvent: (handler: (event: UiAgentEvent) => void) => () => void;
+  /**
+   * Signal main process that renderer boot finished — closes splash and
+   * shows the main window. 不属于任何 facade (一次性的 boot 信号).
+   */
+  notifyAppReady: () => Promise<{ ok: boolean }>;
 }
-
-/** Update UX facade. */
-export type UpdatesApi = {
-  getStatus: IpcInvokeMap["getUpdateStatus"];
-  check: IpcInvokeMap["checkForUpdates"];
-  download: IpcInvokeMap["downloadUpdate"];
-  install: IpcInvokeMap["installUpdate"];
-  onStatus: XAgentApiFlat["onUpdateStatus"];
-};

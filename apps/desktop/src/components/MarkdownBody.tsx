@@ -30,7 +30,7 @@ function onMarkdownLinkClick(e: MouseEvent<HTMLAnchorElement>, href?: string) {
   if (!isHttpUrl(href)) return;
   e.preventDefault();
   e.stopPropagation();
-  void window.xAgent.openExternalUrl(href);
+  void window.xAgent.files.openExternal(href);
 }
 
 const components: Components = {

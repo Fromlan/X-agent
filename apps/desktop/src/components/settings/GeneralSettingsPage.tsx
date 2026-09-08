@@ -103,7 +103,7 @@ export function GeneralSettingsPage({
   useAutoClearNotice(authHint, () => setAuthHint(null));
 
   const openGitDownloadPage = async () => {
-    const result = await window.xAgent.openExternalUrl(
+    const result = await window.xAgent.files.openExternal(
       GIT_FOR_WINDOWS_DOWNLOAD_URL,
     );
     setGeneralMsg(
@@ -114,7 +114,7 @@ export function GeneralSettingsPage({
   };
 
   const openNodeDownloadPage = async () => {
-    const result = await window.xAgent.openExternalUrl(NODE_JS_DOWNLOAD_URL);
+    const result = await window.xAgent.files.openExternal(NODE_JS_DOWNLOAD_URL);
     setGeneralMsg(
       result.ok
         ? "已打开 Node.js 下载页。安装 22+ 并确保 npm 在 PATH 后，再安装 Pi CLI。"
@@ -219,7 +219,7 @@ export function GeneralSettingsPage({
                             thinkingLevel: level,
                           });
                           const applied =
-                            await window.xAgent.setThinkingLevel(level);
+                            await window.xAgent.session.setThinkingLevel(level);
                           if (applied.ok) {
                             // Session path may clamp (e.g. DeepSeek V4 medium→high):
                             // use the host's effective level directly instead of a
@@ -303,7 +303,7 @@ export function GeneralSettingsPage({
                       type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={async () => {
-                        const status = await window.xAgent.checkBash();
+                        const status = await window.xAgent.prefs.checkBash();
                         setBash(status);
                         onBashChanged?.(status);
                         setGeneralMsg(status.message);
@@ -316,7 +316,7 @@ export function GeneralSettingsPage({
                       className="btn btn-secondary btn-sm"
                       disabled={!bash?.suggestedShellPath}
                       onClick={async () => {
-                        const status = await window.xAgent.applyBashShellPath(
+                        const status = await window.xAgent.prefs.applyBashShellPath(
                           bash?.suggestedShellPath ?? undefined,
                         );
                         setBash(status);
@@ -330,9 +330,9 @@ export function GeneralSettingsPage({
                       type="button"
                       className="btn btn-ghost btn-sm"
                       onClick={async () => {
-                        const picked = await window.xAgent.pickBashShell();
+                        const picked = await window.xAgent.prefs.pickBashShell();
                         if (picked.canceled || !picked.path) return;
-                        const status = await window.xAgent.applyBashShellPath(
+                        const status = await window.xAgent.prefs.applyBashShellPath(
                           picked.path,
                         );
                         setBash(status);
@@ -470,7 +470,7 @@ export function GeneralSettingsPage({
                         onClick={async () => {
                           setPiInstallBusy(true);
                           try {
-                            const status = await window.xAgent.installPiCli();
+                            const status = await window.xAgent.prefs.installPiCli();
                             setPiCli(status);
                             onPiCliChanged?.(status);
                             setGeneralMsg(status.message);
@@ -490,7 +490,7 @@ export function GeneralSettingsPage({
                         setPiLoginBusy(true);
                         setAuthHint(null);
                         try {
-                          const result = await window.xAgent.openPiLogin();
+                          const result = await window.xAgent.provider.login();
                           setAuthHint(
                             result.hint ??
                               (result.ok
@@ -590,7 +590,7 @@ export function GeneralSettingsPage({
                             updateStatus?.releasesUrl ??
                             "https://github.com/Fromlan/X-agent/releases";
                           const result =
-                            await window.xAgent.openExternalUrl(url);
+                            await window.xAgent.files.openExternal(url);
                           if (!result.ok) {
                             setGeneralMsg(
                               result.error ?? "无法打开 GitHub Releases",
@@ -606,7 +606,7 @@ export function GeneralSettingsPage({
                       className="btn btn-ghost btn-sm"
                       onClick={() => {
                         void (async () => {
-                          const result = await window.xAgent.openExternalUrl(
+                          const result = await window.xAgent.files.openExternal(
                             "https://qm.qq.com/q/lY3yUwyF0I",
                           );
                           if (!result.ok) {
