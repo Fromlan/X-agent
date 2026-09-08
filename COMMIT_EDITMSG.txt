@@ -1,0 +1,28 @@
+refactor(renderer): 主题 F-2 抽 useGoalMode / createGoalModeDispatcher (C-202)
+
+把散在 App.tsx 多处的 goal 状态机收到一个 hook + 工厂:
+
+- src/hooks/useGoalMode.ts:
+  - parseGoalCommand(text) 纯函数 —— 8 case 解析 /goal 命令 (show /
+    clear / pause / resume / continue / set condition / null)
+  - MODE_CYCLE 常量 —— 4 个 mode 循环顺序
+  - createGoalModeDispatcher(deps) 纯工厂 —— 封装所有 IPC + state
+    更新, 不依赖 React, 便于单测
+  - useGoalMode(opts) React hook —— useMemo 包装 dispatcher
+
+- 把原 App.tsx 散落的逻辑合一:
+  - send 内的 /goal 命令解析 (5 个分支)
+  - send 内的 goal 模式 catch-all (整条消息作 condition)
+  - onClearGoal / onPauseGoal / onResumeGoal
+  - onSessionModeChange 的 goal 相关分支
+  - onCycleSessionMode + MODE_CYCLE 常量
+
+- 加 27 个 vitest 用例 (issue #61 acceptance 要求可独立 vitest):
+  - 9 个 parseGoalCommand case
+  - 1 个 MODE_CYCLE 契约
+  - 17 个 dispatcher 行为契约 (handleGoalCommand / clear / pause /
+    resume / changeSessionMode / cycle + 失败路径)
+
+行为完全保留: 与原 App.tsx 业务逻辑等价, 外部契约不变。
+
+Closes #61

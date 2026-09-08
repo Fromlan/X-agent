@@ -14,14 +14,11 @@ import type {
 } from "@shared/ipc";
 import type { SessionType } from "@shared/session-type";
 import type { ChatItem } from "../stores/chat-store";
-import { applyAgentEvent } from "../stores/chat-store";
-import {
-  clearSessionUsage,
-  setCompacting,
-  setSessionUsage,
-} from "../stores/session-usage-store";
 import { dbgLog } from "@shared/debug-log";
-import { translateError } from "@shared/error-i18n";
+import { applyApiPhaseEvent } from "./event-router/api-phase";
+import { applySessionMetaEvent } from "./event-router/session-meta";
+import { applyTranscriptEvent } from "./event-router/transcript";
+import { applyUsageEvent } from "./event-router/usage";
 
 /** What UI shows in the "API status" line beneath the chat input. */
 export type ApiPhase = "thinking" | "receiving" | "retrying";
@@ -60,7 +57,9 @@ type EventRouterDeps = {
 
 /**
  * Demux main-process UiAgentEvent into App state.
- * Transcript items go through chat-store; status/usage/title are side channels.
+ *
+ * 实现 (issue #61 主题 F C-207): 主体只剩一行 `for` 循环 (调 4 个
+ * 子模块), 每个子模块自带单测覆盖, 主体不再塞具体业务逻辑。
  */
 export function useAgentEventRouter(deps: EventRouterDeps): void {
   const {
@@ -93,123 +92,38 @@ export function useAgentEventRouter(deps: EventRouterDeps): void {
       if (event.type !== "text_delta" && event.type !== "thinking_delta") {
         dbgLog("chat", "onEvent", event.type);
       }
-      // --- API-phase tracking ---------------------------------------------
-      // "thinking"  = assistant_start fired, no token yet (slow upstream)
-      // "receiving" = at least one delta has arrived
-      // "retrying"  = session status flipped to retrying
-      // null        = no turn in flight (idle / error)
-      if (event.type === "assistant_start") {
-        push({ phase: "thinking", startedAt: Date.now() });
-      } else if (event.type === "text_delta" || event.type === "thinking_delta") {
-        push({ phase: "receiving", startedAt: 0 });
-      } else if (event.type === "agent_end") {
-        push(null);
-      } else if (event.type === "status") {
-        if (event.status === "retrying") {
-          push({ phase: "retrying", startedAt: Date.now() });
-        } else if (event.status === "idle" || event.status === "error") {
-          push(null);
-        }
-        // streaming: keep current phase (Pi will fire assistant_start soon)
-      }
-      if (event.type === "status") {
-        setStatus(event.status);
-        if (event.error) setError(translateError(event.error));
-        else if (event.status === "idle" || event.status === "streaming") {
-          setError(null);
-        }
+
+      // API phase 跟踪 —— 改 ref-captured callback, 其它都不动
+      applyApiPhaseEvent(event, push);
+
+      // session-meta 协调 (status / session_info / session_title /
+      // session_mode / goal_update / agent_end 副作用)
+      if (applySessionMetaEvent(event, {
+        setStatus,
+        setError,
+        setCwd,
+        setSessionId,
+        sessionIdRef,
+        setSessionType,
+        setPrefs,
+        setAvailableThinkingLevels,
+        setQueuedSteering,
+        setSessionMode,
+        setPlanPath,
+        setGoal,
+        refreshSessions,
+        usageFetchGen,
+      })) {
         return;
       }
-      if (event.type === "session_info") {
-        // DEBUG(thinking-switch #30): 渲染端确认收到 session_info 时的 thinkingLevel
-        dbgLog("renderer", "session_info received", {
-          thinkingLevel: event.thinkingLevel,
-          availableThinkingLevels: event.availableThinkingLevels,
-          model: event.model,
-          sessionId: event.sessionId,
-        });
-        const nextId = event.sessionId || null;
-        const prevId = sessionIdRef.current;
-        setCwd(event.cwd || null);
-        setSessionId(nextId);
-        sessionIdRef.current = nextId;
-        // 同步会话类型, 用于 body[data-session-type] 切色.
-        // 旧事件 (没有 sessionType 字段) 走 DEFAULT_SESSION_TYPE fallback.
-        if (event.sessionType) {
-          setSessionType(event.sessionType);
-        }
-        if (!nextId || prevId !== nextId) {
-          usageFetchGen.current += 1;
-          clearSessionUsage();
-          // D11: 会话切换后清除上一会话残留的排队 steer（主进程不会对
-          // 新会话补发 queue_update([])，banner 会显示过期内容）。
-          setQueuedSteering([]);
-        }
-        // Sync the model-supported thinking levels (used by the Composer
-        // SelectMenu to avoid offering levels Pi would silently clamp — #30).
-        // closeWorkspace emits []; treat that as "no session → fall back to all".
-        setAvailableThinkingLevels(
-          event.availableThinkingLevels.length > 0
-            ? event.availableThinkingLevels
-            : null,
-        );
-        setPrefs((prev) =>
-          prev
-            ? {
-                ...prev,
-                provider: event.model?.provider ?? prev.provider,
-                model: event.model?.id ?? prev.model,
-                thinkingLevel: event.thinkingLevel,
-                lastSessionPath: event.sessionPath ?? prev.lastSessionPath,
-              }
-            : prev,
-        );
+
+      // usage / compaction / queue 跟踪 —— 落到 session-usage-store
+      if (applyUsageEvent(event, { setQueuedSteering })) {
         return;
       }
-      if (event.type === "session_title") {
-        void refreshSessions();
-        return;
-      }
-      if (event.type === "session_mode") {
-        setSessionMode(event.mode);
-        setPlanPath(event.planPath);
-        return;
-      }
-      if (event.type === "goal_update") {
-        setGoal(event.goal);
-        return;
-      }
-      if (event.type === "agent_end" && !event.willRetry) {
-        void refreshSessions();
-      }
-      if (event.type === "usage_update") {
-        setSessionUsage(event.usage);
-        return;
-      }
-      if (event.type === "compaction_start") {
-        setCompacting(true);
-        return;
-      }
-      if (event.type === "compaction_end") {
-        setCompacting(false);
-        return;
-      }
-      if (event.type === "queue_update") {
-        setQueuedSteering(event.steering);
-        return;
-      }
-      if (event.type === "history_replace") {
-        // Do not clear queuedSteering here — queue_update owns that snapshot.
-        setEditingEntryId((id) => {
-          if (!id) return null;
-          const stillThere = event.items.some(
-            (it) =>
-              it.kind === "user" && (it.entryId === id || it.id === id),
-          );
-          return stillThere ? id : null;
-        });
-      }
-      setItems((prev) => applyAgentEvent(prev, event));
+
+      // transcript 应用 (chat-store reducer + history_replace editingEntryId 清理)
+      applyTranscriptEvent(event, { setItems, setEditingEntryId });
     });
   }, [
     onApiStatus,

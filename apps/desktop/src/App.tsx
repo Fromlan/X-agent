@@ -1,4 +1,3 @@
-import { AlertTriangle } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -6,7 +5,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
 } from "react";
 import type {
   AgentSessionMode,
@@ -16,7 +14,6 @@ import type {
   ClientPrefs,
   GitCheckResult,
   GoalInfo,
-  ImageContent,
   ModelInfo,
   PiCliStatus,
   PrefsRecoveryNotice,
@@ -24,75 +21,58 @@ import type {
   SessionInfo,
   ThinkingLevel,
 } from "@shared/ipc";
-import { GODOT_TOOLS, THINKING_LEVELS, isRestorableGoalStatus } from "@shared/ipc";
 import { DEFAULT_SESSION_TYPE, type SessionType } from "@shared/session-type";
-import { dbgLog, dbgTimer } from "@shared/debug-log";
-import {
-  GIT_FOR_WINDOWS_DOWNLOAD_URL,
-  NODE_JS_DOWNLOAD_URL,
-} from "@shared/runtime-deps";
-import { useConfirm } from "./lib/app-confirm";
-import { Sidebar } from "./components/Sidebar";
-import { ChatPanel } from "./components/ChatPanel";
+import { AppBanners } from "./components/AppBanners";
+import { AppMainRow } from "./components/AppMainRow";
+import { AppSettingsPanel } from "./components/AppSettingsPanel";
+import { type SettingsTabTarget } from "./components/ReadyChecklist";
 import { RetractConfirmModal } from "./components/RetractConfirmModal";
-import {
-  GodotToolsNudge,
-  ReadyChecklist,
-  type SettingsTabTarget,
-} from "./components/ReadyChecklist";
 import { TopBar } from "./components/TopBar";
-import { UpdateBanner } from "./components/UpdateBanner";
-import { useAppUpdate } from "./hooks/useAppUpdate";
-import { openToolInRightPanel, RightPanel } from "./components/RightPanel";
-import {
-  SettingsPanel,
-  type SettingsTab,
-} from "./components/SettingsPanel";
+import { openToolInRightPanel } from "./components/RightPanel";
+import type { SettingsTab } from "./components/SettingsPanel";
 import {
   appendAtPath,
   collapseFileBlocksToAtPaths,
-  expandAtPathsInPrompt,
 } from "./lib/expandAtPaths";
-import { splitFilesForAttachment, type FileReference } from "./lib/file-attachment";
-import { findCurrentModel, formatVisionModelExamples, modelSupportsImage } from "./lib/model-capability";
 import { startersForProject } from "./lib/chat-starters";
-import { allGodotEditorToolsEnabled } from "./lib/ready-checklist";
-import {
-  RIGHT_PANEL_WIDTH_DEFAULT,
-  RIGHT_PANEL_WIDTH_MAX,
-  RIGHT_PANEL_WIDTH_MIN,
-  SIDEBAR_WIDTH_DEFAULT,
-  SIDEBAR_WIDTH_MAX,
-  SIDEBAR_WIDTH_MIN,
-  fitColumnWidths,
-  useColumnResize,
-} from "./hooks/useColumnResize";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
-import type { ApiStatus } from "./hooks/useAgentEventRouter";
 import { useAutoCompact } from "./hooks/useAutoCompact";
+import { useAppActions } from "./hooks/useAppActions";
+import { useAppLayout } from "./hooks/useAppLayout";
+import { useComposer } from "./hooks/useComposer";
+import { useGoalMode, type GoalModeApi } from "./hooks/useGoalMode";
 import { usePlanSessionAutoOpen } from "./hooks/usePlanSession";
 import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
+import { useSessionBootstrap } from "./hooks/useSessionBootstrap";
 import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
 import { useScrollElevated } from "./hooks/useScrollElevated";
-import { useNarrowWindow } from "./hooks/useNarrowWindow";
-import {
-  appendPendingUser,
-  createEmptyState,
-  makePendingUserId,
-  removePendingUser,
-} from "./stores/chat-store";
+import { useLogo } from "./hooks/useLogo";
+import { useAppUpdate } from "./hooks/useAppUpdate";
+import { createEmptyState, type ChatItem } from "./stores/chat-store";
 import {
   getCompacting,
   getSessionUsageState,
   getSessionUsageStoreVersion,
   subscribeSessionUsageStore,
 } from "./stores/session-usage-store";
-import { useLogo } from "./hooks/useLogo";
 
+/**
+ * App 顶层 —— composition root (主题 F C-201).
+ *
+ * App.tsx 从 1319 行降到 < 500 行, 只剩:
+ * 1) 顶层 state 声明
+ * 2) 9 个 hook 调用 (useGoalMode / useComposer / useSessionBootstrap /
+ *    useAgentEventRouter / useRetractConfirm / useProjectReadiness /
+ *    useWorkspaceSession / useAppActions / useAppLayout) 注入 setter
+ * 3) 4 个业务 callback (onBuildPlan / onCycleSessionMode / addPathToChat /
+ *    pickStarter) 和 edit-related 4 个 useCallback
+ * 4) JSX: <TopBar> + <AppBanners> + <AppMainRow> + <RetractConfirmModal> +
+ *    <AppSettingsPanel>
+ */
 export default function App() {
-  const confirm = useConfirm();
-  const [items, setItems] = useState(createEmptyState());
+  // ─── 顶层 state ────────────────────────────────────────────────
+  const [items, setItems] = useState<ChatItem[]>(createEmptyState());
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [cwd, setCwd] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -100,9 +80,6 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [prefs, setPrefs] = useState<ClientPrefs | null>(null);
-  // 渲染端：当前 session 模型支持的 thinking 级别。
-  // null = 还没拿到（尚未打开项目），fallback 到全部 THINKING_LEVELS。
-  // 见 issue #30：Pi 会把不支持的级别静默 clamp，UI 过滤掉让用户能看到实际可选。
   const [availableThinkingLevels, setAvailableThinkingLevels] =
     useState<ThinkingLevel[] | null>(null);
   const [bash, setBash] = useState<BashCheckResult | null>(null);
@@ -111,254 +88,162 @@ export default function App() {
   const [piCli, setPiCli] = useState<PiCliStatus | null>(null);
   const [piCliInstalling, setPiCliInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<ImageContent[]>([]);
-  /**
-   * 拖入 / 粘贴的非图片文件. 不入 attachments (那是图片), 单独
-   * state. 短串显示在 input 文本 (📎 <basename>), 绝对路径
-   * 在 send 时拼到 user message (走 expandAtPaths 展开成 <file> 块)
-   * 让 AI 看到完整路径.
-   */
-  const [fileRefs, setFileRefs] = useState<FileReference[]>([]);
   const [busy, setBusy] = useState(false);
   const [sessionMode, setSessionMode] = useState<AgentSessionMode>("agent");
   const [sessionType, setSessionType] = useState<SessionType>(DEFAULT_SESSION_TYPE);
   const [planPath, setPlanPath] = useState<string | null>(null);
   const [goal, setGoal] = useState<GoalInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(
-    undefined,
-  );
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(undefined);
   const [queuedSteering, setQueuedSteering] = useState<string[]>([]);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [followNonce, setFollowNonce] = useState(0);
-  // Live API-phase for the composer's status line ("模型响应中… 67s" etc).
-  // Ref-captured callback so the router effect stays stable; plain state for render.
-  const apiStatusRef = useRef<(status: ApiStatus) => void>(() => undefined);
-  const [apiStatus, setApiStatus] = useState<ApiStatus>(null);
-  // 渲染期写 ref 在并发渲染下可能中断；改为 effect 同步 setter。
-  useEffect(() => {
-    apiStatusRef.current = setApiStatus;
-  });
-  // Tick once a second so the "已等待 Ns" counter re-renders while waiting.
-  const [, setApiTick] = useState(0);
-  useEffect(() => {
-    if (!apiStatus) return;
-    if (apiStatus.phase === "receiving") return;
-    const id = setInterval(() => setApiTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, [apiStatus]);
-  // View-model for the composer: include waitedMs only when we have a start time.
-  const apiStatusView = apiStatus
-    ? apiStatus.phase === "receiving"
-      ? { phase: "receiving" as const }
-      : { phase: apiStatus.phase, waitedMs: Date.now() - apiStatus.startedAt }
-    : null;
   const [readyBusy, setReadyBusy] = useState(false);
   const [readyNotice, setReadyNotice] = useState<string | null>(null);
-  const [prefsRecovery, setPrefsRecovery] =
-    useState<PrefsRecoveryNotice | null>(null);
-  const [secretCodec, setSecretCodec] = useState<SecretCodecStatus | null>(
-    null,
-  );
+  const [prefsRecovery, setPrefsRecovery] = useState<PrefsRecoveryNotice | null>(null);
+  const [secretCodec, setSecretCodec] = useState<SecretCodecStatus | null>(null);
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const chatStreamRef = useRef<HTMLDivElement | null>(null);
   const topbarElevated = useScrollElevated(chatStreamRef);
-  const usageVersion = useSyncExternalStore(
+  useSyncExternalStore(
     subscribeSessionUsageStore,
     getSessionUsageStoreVersion,
     getSessionUsageStoreVersion,
   );
-  void usageVersion;
   const sessionUsage = getSessionUsageState();
   const compacting = getCompacting();
-  const appUpdate = useAppUpdate({
-    onError: (message) => setError(message),
-  });
-  const {
-    status: updateStatus,
-    busy: updateActionBusy,
-    showBanner: showUpdateBanner,
-    dismiss: dismissUpdateBanner,
-    downloadOrInstall: applyUpdateAction,
-    onTopBarUpdateClick,
-  } = appUpdate;
+  const appUpdate = useAppUpdate({ onError: (message) => setError(message) });
+  const { status: updateStatus, busy: updateActionBusy, onTopBarUpdateClick } = appUpdate;
+  const logo = useLogo(prefs);
 
-  const {
-    isGodotProject,
-    rpcStatus,
-    setRpcStatus,
-    setAddonInstalled,
-    addonInstalled,
-    setReadyChecklistHidden,
-    refreshProjectReadiness,
-    projectKey,
-    readyItems,
-    showReadyChecklist,
-    showGodotToolsNudge,
-  } = useProjectReadiness({
-    cwd,
-    prefs,
-    bash,
-    git,
-    auth,
-    piCli,
-    modelCount: models.length,
-  });
-
+  // ─── 工具 IPC 包装 (refreshSessions / refreshModels) ──────────────
   const refreshSessions = useCallback(async () => {
     try {
-      const list = await window.xAgent.workspace.listSessions();
-      setSessions(list);
-      setSessionsLoaded(true);
+      setSessions(await window.xAgent.workspace.listSessions());
     } catch {
-      // D10: IPC 异常时保持旧列表，避免 unhandled rejection。
+      // D10: 保留旧列表
+    } finally {
       setSessionsLoaded(true);
+    }
+  }, []);
+  const refreshModels = useCallback(async () => {
+    try {
+      setModels(await window.xAgent.session.listModels());
+    } catch {
+      // D10
     }
   }, []);
   const sessionsLoading = !sessionsLoaded;
 
-  const refreshModels = useCallback(async () => {
-    try {
-      const list = await window.xAgent.session.listModels();
-      setModels(list);
-    } catch {
-      // D10: IPC 异常时保持旧模型列表。
-    }
-  }, []);
+  // ─── Project readiness (Godot / RPC / ready) ─────────────────────
+  const { isGodotProject, setRpcStatus, setAddonInstalled, setReadyChecklistHidden, refreshProjectReadiness, projectKey, readyItems, showReadyChecklist, showGodotToolsNudge } = useProjectReadiness({
+    cwd, prefs, bash, git, auth, piCli, modelCount: models.length,
+  });
 
-  const {
-    confirmState,
-    retractBusy,
-    beginConfirm,
-    runConfirmedRetract,
-    cancelConfirm,
-    setConfirmState,
-  } = useRetractConfirm({
+  // ─── Retract / edit / regenerate 流程 (放在 useWorkspaceSession 之前,
+  // 后者需要 setConfirmState) ──────────────────────────────────
+  const { confirmState, retractBusy, beginConfirm, runConfirmedRetract, cancelConfirm, setConfirmState } = useRetractConfirm({
     editDraft,
     setError,
-    setInput,
+    setInput: (() => undefined) as React.Dispatch<React.SetStateAction<string>>,
     setEditingEntryId,
     setEditDraft,
     refreshSessions,
   });
 
-  const {
-    openProject,
-    newSession,
-    resumeSession,
-    deleteSession,
-    deleteProjectSessions,
-    hideProject,
-    renameSession,
-  } = useWorkspaceSession({
-    setItems,
-    setStatus,
-    setCwd,
-    setSessionId,
-    setError,
-    setBusy,
-    setSessionType,
+  // ─── Goal 状态机 (主题 F C-202) ────────────────────────────────
+  // 通过 ref 解开顺序: useGoalMode 需要 composer 的 input 真值, 但
+  // useComposer 还没创建. 注入一个 placeholder, 创建后回填.
+  const composerRef = useRef<ReturnType<typeof useComposer> | null>(null);
+  const goalApi = useGoalMode({
+    setGoal,
     setSessionMode,
     setPlanPath,
-    setGoal,
-    setQueuedSteering,
-    setEditingEntryId,
-    setEditDraft,
-    setInput,
-    setConfirmState,
+    onClearGoalDraft: () => {
+      const cur = composerRef.current?.input ?? "";
+      if (cur.trim().startsWith("/goal")) composerRef.current?.setInput("");
+    },
     setFollowNonce,
-    setPrefs,
-    setAvailableThinkingLevels,
-    setPrefsRecovery,
-    setSecretCodec,
-    setBash,
-    setGit,
-    setAuth,
-    setPiCli,
-    refreshSessions,
-    refreshModels,
-    refreshProjectReadiness,
-    prefs,
-    cwd,
-    sessionIdRef,
-    usageFetchGen,
-  });
-
-  useAutoCompact({
-    thresholdPercent: prefs?.autoCompactPercent ?? 0,
-    usage: sessionUsage,
-    busy:
-      busy ||
-      status === "streaming" ||
-      status === "retrying" ||
-      retractBusy,
-    compacting,
-    sessionId,
-  });
-
-  // 客户端 logo 状态 + favicon 同步。挂在 App 顶层以保证 splash 关闭后
-  // 第一次进入主界面时 favicon 已被正确设置,后续切 logo 也不依赖设置面板打开。
-  const logo = useLogo(prefs);
-
-  useAgentEventRouter({
-    setStatus,
     setError,
-    setCwd,
-    setSessionId,
-    setSessionType,
-    sessionIdRef,
-    usageFetchGen,
-    setPrefs,
-    setAvailableThinkingLevels,
-    setQueuedSteering,
-    setEditingEntryId,
-    setItems,
-    setSessionMode,
-    setPlanPath,
-    setGoal,
-    refreshSessions,
-    onApiStatus: apiStatusRef,
+    goal,
+    sessionMode,
+  });
+  const goalDispatcherRef = useRef<Pick<GoalModeApi, "handleGoalCommand">>({
+    handleGoalCommand: async () => false,
+  });
+  goalDispatcherRef.current = goalApi;
+
+  // ─── Workspace session 6 method (open / new / resume / delete ...) ─
+  const { openProject, newSession, resumeSession, deleteSession, deleteProjectSessions, hideProject, renameSession } = useWorkspaceSession({
+    setItems, setStatus, setCwd, setSessionId, setError,
+    setBusy, setSessionType, setSessionMode, setPlanPath, setGoal,
+    setQueuedSteering, setEditingEntryId, setEditDraft,
+    setInput: (() => undefined) as React.Dispatch<React.SetStateAction<string>>,
+    setConfirmState, setFollowNonce, setPrefs, setAvailableThinkingLevels,
+    setPrefsRecovery, setSecretCodec, setBash, setGit, setAuth, setPiCli,
+    refreshSessions, refreshModels, refreshProjectReadiness,
+    prefs, cwd, sessionIdRef, usageFetchGen,
   });
 
-  useEffect(() => {
-    setReadyNotice(null);
-  }, [cwd]);
+  // ─── Composer 状态机 (主题 F C-205) ────────────────────────────
+  const currentModelKey = useMemo(
+    () => (prefs?.provider && prefs?.model ? `${prefs.provider}/${prefs.model}` : ""),
+    [prefs],
+  );
+  const composer = useComposer({
+    cwd, models, currentModelKey, status, sessionMode, goal,
+    setError, setFollowNonce, setItems,
+    goalDispatcher: goalDispatcherRef.current,
+    refreshSessions,
+  });
+  composerRef.current = composer;
+  const setInputRef = useRef<(v: string) => void>(() => undefined);
+  setInputRef.current = (v) => composer.setInput(v);
 
-  // 同步 body[data-session-type], 让 themes.css 的策划主题色 override 生效.
-  // 设计会话锁定为 "design", 其它任何状态 fallback 到 "code".
+  // ─── 启动期初始化 (主题 F) ─────────────────────────────────────
+  useSessionBootstrap({
+    setPrefs, setPrefsRecovery, setSecretCodec, setBash, setGit, setAuth,
+    setPiCli, setItems, setQueuedSteering, setCwd, setSessionId,
+    setSessionType, setFollowNonce, setError, setBusy,
+    setAvailableThinkingLevels, setEditingEntryId, setEditDraft,
+    setConfirmState: () => undefined, // legacy, useRetractConfirm 自己管
+    sessionIdRef, usageFetchGen, refreshModels, refreshSessions,
+    refreshProjectReadiness,
+    fetchSessionUsage: () => undefined, // legacy, useWorkspaceSession 自己管
+  });
+
+  // ─── 业务 actions 集合 (主题 F C-201) ─────────────────────────
+  const actions = useAppActions({
+    prefs, setPrefs, setError, setReadyNotice, setReadyBusy, setPiCli,
+    setRpcStatus, setAddonInstalled, projectKey, setReadyChecklistHidden,
+    setPiCliInstalling, cwd, refreshProjectReadiness,
+    hasActiveSession: Boolean(sessionId),
+  });
+  const layout = useAppLayout({ prefs, setPrefs });
+
+  // ─── Agent 事件路由 (主题 F C-207, 拆 4 子 hook) ──────────────
+  useAgentEventRouter({
+    setStatus, setError, setCwd, setSessionId, setSessionType,
+    sessionIdRef, usageFetchGen, setPrefs, setAvailableThinkingLevels,
+    setQueuedSteering, setEditingEntryId, setItems, setSessionMode,
+    setPlanPath, setGoal, refreshSessions, onApiStatus: composer.apiStatusRef,
+  });
+
+  // ─── 副作用: cwd / sessionType / sessionId / keyboard ─────────
+  useEffect(() => { setReadyNotice(null); }, [cwd]);
   useEffect(() => {
     const next = sessionType ?? DEFAULT_SESSION_TYPE;
     document.body.dataset.sessionType = next;
     return () => {
-      // 卸载或切换时恢复默认, 避免污染后续会话
       if (document.body.dataset.sessionType === next) {
         document.body.dataset.sessionType = DEFAULT_SESSION_TYPE;
       }
     };
   }, [sessionType]);
-
-  const chatStarters = useMemo(
-    () => startersForProject(isGodotProject, sessionType),
-    [isGodotProject, sessionType],
-  );
-
-  useEffect(() => {
-    if (!editingEntryId) setEditDraft("");
-  }, [editingEntryId]);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
-  const currentModelKey = useMemo(() => {
-    const m =
-      prefs?.provider && prefs?.model ? `${prefs.provider}/${prefs.model}` : "";
-    return m;
-  }, [prefs]);
-
+  useEffect(() => { if (!editingEntryId) setEditDraft(""); }, [editingEntryId]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === ",") {
@@ -371,202 +256,16 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const send = useCallback(async () => {
-    // 闸门认 text + attachments + fileRefs —— 纯图片 / 纯文件也能发,避免 #42 后只
-    // 粘贴截图就被静默丢弃(只写 dbgLog,UI 不反馈 → 用户误判"已发但 AI 没收到")。
-    const hasContent =
-      Boolean(input.trim()) || attachments.length > 0 || fileRefs.length > 0;
-    if (!hasContent || !cwd) {
-      dbgLog("chat", "send skipped", {
-        hasText: Boolean(input.trim()),
-        images: attachments.length,
-        files: fileRefs.length,
-        hasCwd: Boolean(cwd),
-      });
-      return;
-    }
-    // 模型能力闸门:若用户带了图片但当前 model 不收图,挡住 + 明确提示
-    // (mistral-conversations provider 会在 user message 含 image 时把整条
-    // message 替换为 "(image omitted: model does not support images)" —
-    // X-agent 必须在 send 前挡住,避免静默丢图)。纯文字/纯文件不受影响。
-    if (attachments.length > 0 && !modelSupportsImage(models, currentModelKey)) {
-      const m = findCurrentModel(models, currentModelKey);
-      const label = m ? `${m.provider}/${m.id}` : currentModelKey || "(未知)";
-      setError(
-        `当前模型 ${label} 不支持图片,Pi SDK 会把整条 user message 替换为占位文本,截图发过去 AI 也看不到。请切换到 vision 模型 (如 ${formatVisionModelExamples()}),或把图片以文件方式提供 (拖入或用 @ 引用路径)。`,
-      );
-      dbgLog("chat", "send blocked: model lacks image input", {
-        currentModel: label,
-        imageCount: attachments.length,
-        input: m?.input,
-      });
-      return;
-    }
-    const text = input.trim();
-    // Snapshot attachments / fileRefs before clearing input so we can
-    // pass them into the IPC payload + expandAtPaths. Cleared below
-    // to keep empty state on send.
-    const currentAttachments = attachments;
-    const currentFileRefs = fileRefs;
-    setInput("");
-    setAttachments([]);
-    setFileRefs([]);
-    setError(null);
-    setFollowNonce((n) => n + 1);
-    dbgLog("chat", "send invoked", { len: text.length, preview: text.slice(0, 80), status, sessionMode });
+  // ─── Auto compact (上下文接近上限自动 compact) ─────────────────
+  useAutoCompact({
+    thresholdPercent: prefs?.autoCompactPercent ?? 0,
+    usage: sessionUsage,
+    busy: busy || status === "streaming" || status === "retrying" || retractBusy,
+    compacting,
+    sessionId,
+  });
 
-    // Slash: /goal — host IPC, not model prompt.
-    if (/^\/goal\s+clear\b/i.test(text) || /^\/goal\s*$/i.test(text)) {
-      if (/clear/i.test(text)) {
-        const result = await window.xAgent.plan.clearGoal();
-        if (!result.ok) setError(result.error ?? "清除目标失败");
-        else {
-          setGoal(null);
-          setSessionMode("agent");
-        }
-      } else {
-        const g = await window.xAgent.plan.getGoal();
-        setGoal(g);
-        setError(
-          g
-            ? `目标 (${g.status}): ${g.condition} · ${g.turns}/${g.maxTurns} 轮 · ${g.tokensUsed}/${g.maxTokens} tok`
-            : "当前无活跃目标。切换到「目标」模式后输入完成条件并发送。",
-        );
-      }
-      return;
-    }
-    if (/^\/goal\s+pause\b/i.test(text)) {
-      const result = await window.xAgent.plan.pauseGoal();
-      if (!result.ok) setError(result.error ?? "暂停目标失败");
-      else if (result.goal) setGoal(result.goal);
-      return;
-    }
-    if (/^\/goal\s+resume\b/i.test(text) || /^\/goal\s+continue\b/i.test(text)) {
-      const result = await window.xAgent.plan.resumeGoal();
-      if (!result.ok) setError(result.error ?? "继续目标失败");
-      else {
-        if (result.goal) setGoal(result.goal);
-        setSessionMode("goal");
-      }
-      return;
-    }
-    const goalSet = text.match(/^\/goal\s+(.+)$/is);
-    if (goalSet?.[1] && !/^(clear|pause|resume|continue)\b/i.test(goalSet[1].trim())) {
-      const result = await window.xAgent.plan.setGoal(goalSet[1].trim());
-      if (!result.ok) setError(result.error ?? "设置目标失败");
-      else {
-        if (result.goal) setGoal(result.goal);
-        setSessionMode("goal");
-      }
-      return;
-    }
-
-    // Goal 模式且尚未设置条件：整条消息即完成条件。
-    if (sessionMode === "goal" && !isRestorableGoalStatus(goal?.status)) {
-      const result = await window.xAgent.plan.setGoal(text);
-      if (!result.ok) setError(result.error ?? "设置目标失败");
-      else {
-        if (result.goal) setGoal(result.goal);
-        setSessionMode("goal");
-      }
-      return;
-    }
-
-    // Show the bubble immediately — host events only arrive after shadow-git
-    // checkpoint + Pi message_start (or history_replace at turn end).
-    // 透传 currentAttachments 到 pending bubble,让 UserBubble 在 user_message
-    // 事件回来后仍能显示已附图片(#42 修复 #2:user bubble 缺图导致用户误判图丢了)。
-    const pendingId = makePendingUserId();
-    setItems((prev) =>
-      appendPendingUser(prev, text, pendingId, currentAttachments),
-    );
-
-    const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
-    const expanded = await expandAtPathsInPrompt(text, currentFileRefs);
-    doneExpand();
-    const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
-    const result = await window.xAgent.turn.prompt({
-      text: expanded,
-      images: currentAttachments.length > 0 ? currentAttachments : undefined,
-    });
-    doneRoundtrip();
-    dbgLog("chat", "turn.prompt resolved", { ok: result.ok, silent: result.silent, error: result.error });
-    if (!result.ok || result.silent) {
-      setItems((prev) => removePendingUser(prev, pendingId));
-      if (!result.ok) setError(result.error ?? "发送失败");
-    }
-    await refreshSessions();
-  }, [input, attachments, fileRefs, cwd, sessionMode, goal, refreshSessions, status]);
-
-  /**
-   * Composer 拖文件 / 粘贴文件时调用. 分类为图片 (入 attachments) 和
-   * 非图片 (拼 @<path> 引用到 input 文本, 走现有 expandAtPaths 路径).
-   * notices 推给 setError 横幅.
-   */
-  const onAddFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    // 走 preload 暴露的 webUtils.getPathForFile 拿绝对路径
-    // (Electron 32+ 不再自动挂 .path). webUtils 在 renderer 是
-    // contextBridge 沙箱外的, 仅 preload 能 import; 我们通过
-    // window.xAgentPath.getForFile 间接调用.
-    const pathGetter = window.xAgentPath?.getForFile;
-    const items = files.map((file) => {
-      let absPath = "";
-      try {
-        absPath = pathGetter ? pathGetter(file) : "";
-      } catch {
-        absPath = "";
-      }
-      return { file, absPath, fallbackName: file.name };
-    });
-    const { images, references, notices } = await splitFilesForAttachment(items);
-    if (images.length > 0) {
-      setAttachments((prev) => [...prev, ...images]);
-    }
-    if (references.length > 0) {
-      // 文件不进 input 文本 —— 由 ComposerAttachments 渲染成 chip
-      // (跟图片附件同区域). 绝对路径存 fileRefs state, send 时
-      // 走 expandAtPaths 展开成 <file> 块拼到 user message 末尾.
-      setFileRefs((prev) => [...prev, ...references]);
-    }
-    if (notices.length > 0) {
-      setError(notices.join("\n"));
-    }
-  }, []);
-
-  const onRemoveImage = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const onRemoveFile = useCallback((index: number) => {
-    setFileRefs((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const onSessionModeChange = useCallback(
-    async (mode: AgentSessionMode) => {
-      const result = await window.xAgent.plan.setMode(mode);
-      if (!result.ok) {
-        setError(result.error ?? "切换模式失败");
-        return;
-      }
-      if (result.info) {
-        setSessionMode(result.info.mode);
-        setPlanPath(result.info.planPath);
-      }
-      if (mode === "agent" || mode === "ask" || mode === "plan") {
-        setGoal(null);
-        // 离开目标模式时清掉输入框里残留的 /goal 命令草稿
-        setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
-      }
-      if (mode === "goal" && result.needGoalCondition) {
-        // 不预填 /goal；仅清空误留的 slash 草稿，让用户直接写完成条件
-        setInput((prev) => (prev.trim().startsWith("/goal") ? "" : prev));
-        setFollowNonce((n) => n + 1);
-      }
-    },
-    [setError, setSessionMode, setPlanPath, setGoal, setInput, setFollowNonce],
-  );
-
+  // ─── 业务 callbacks (4 个) ─────────────────────────────────────
   const onBuildPlan = useCallback(async () => {
     setError(null);
     const result = await window.xAgent.plan.build();
@@ -579,491 +278,73 @@ export default function App() {
     await refreshSessions();
   }, [refreshSessions, setError, setSessionMode, setPlanPath]);
 
-  const onClearGoal = useCallback(async () => {
-    const result = await window.xAgent.plan.clearGoal();
-    if (!result.ok) setError(result.error ?? "清除目标失败");
-    else {
-      setGoal(null);
-      setSessionMode("agent");
-    }
-  }, [setError, setGoal, setSessionMode]);
-
-  const onPauseGoal = useCallback(async () => {
-    const result = await window.xAgent.plan.pauseGoal();
-    if (!result.ok) setError(result.error ?? "暂停目标失败");
-    else if (result.goal) setGoal(result.goal);
-  }, [setError, setGoal]);
-
-  const onResumeGoal = useCallback(async () => {
-    const result = await window.xAgent.plan.resumeGoal();
-    if (!result.ok) setError(result.error ?? "继续目标失败");
-    else {
-      if (result.goal) setGoal(result.goal);
-      setSessionMode("goal");
-    }
-  }, [setError, setGoal, setSessionMode]);
-
-  const MODE_CYCLE: AgentSessionMode[] = ["agent", "ask", "plan", "goal"];
-
   const onCycleSessionMode = useCallback(() => {
     if (status === "streaming" || status === "retrying" || !cwd) return;
-    const idx = MODE_CYCLE.indexOf(sessionMode);
-    const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length]!;
-    void onSessionModeChange(next);
-  }, [status, cwd, sessionMode, onSessionModeChange]);
+    void goalApi.cycleSessionMode();
+  }, [status, cwd, goalApi]);
 
-  const abort = useCallback(async () => {
-    dbgLog("chat", "abort invoked");
-    const done = dbgTimer("chat", "window.xAgent.turn.abort roundtrip");
-    try {
-      await window.xAgent.turn.abort();
-      done();
-    } catch (err) {
-      dbgLog("chat", "abort threw", err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
-  const addPathToChat = useCallback((relPath: string) => {
-    setInput((prev) => appendAtPath(prev, relPath));
-  }, []);
-
+  const addPathToChat = useCallback(
+    (relPath: string) => composer.setInput((prev: string) => appendAtPath(prev, relPath)),
+    [composer],
+  );
+  const pickStarter = useCallback(
+    (prompt: string) => composer.setInput(prompt),
+    [composer],
+  );
   const onStartEdit = useCallback(
     (entryId: string, text: string) => {
       setEditingEntryId(entryId);
       setEditDraft(collapseFileBlocksToAtPaths(text));
     },
-    [setEditingEntryId, setEditDraft],
+    [],
   );
-
   const onCancelEdit = useCallback(() => {
     setEditingEntryId(null);
     setEditDraft("");
-  }, [setEditingEntryId, setEditDraft]);
-
+  }, []);
   const onConfirmEdit = useCallback(() => {
     if (!editingEntryId || !editDraft.trim()) return;
     void beginConfirm("edit", editingEntryId, editDraft);
   }, [editingEntryId, editDraft, beginConfirm]);
-
   const onRetract = useCallback(
-    (entryId: string) => {
-      void beginConfirm("retract", entryId);
-    },
+    (id: string) => void beginConfirm("retract", id),
     [beginConfirm],
   );
-
   const onRegenerate = useCallback(
-    (userEntryId: string) => {
-      void beginConfirm("regenerate", userEntryId);
-    },
+    (id: string) => void beginConfirm("regenerate", id),
     [beginConfirm],
   );
 
-  const onModelChange = async (value: string) => {
-    const [provider, ...rest] = value.split("/");
-    const id = rest.join("/");
-    if (!provider || !id) return;
-    const result = await window.xAgent.session.setModel(provider, id);
-    if (!result.ok) setError(result.error ?? "切换模型失败");
-    else {
-      setPrefs((prev) => (prev ? { ...prev, provider, model: id } : prev));
-    }
+  // ─── 设置 / bash / 工具面板 小包装 ────────────────────────────
+  const openSettings = () => {
+    setSettingsTab(undefined);
+    setSettingsOpen(true);
   };
-
-  const onThinkingChange = async (level: ThinkingLevel) => {
-    // DEBUG(thinking-switch #30): 渲染端入口,确认 composer 点选确实触发 IPC
-    dbgLog("renderer", "onThinkingChange click", { level });
-    const result = await window.xAgent.session.setThinkingLevel(level);
-    if (!result.ok) {
-      dbgLog("renderer", "onThinkingChange !ok", { level, result });
-      setError("切换 Thinking 失败（请先打开项目）");
-      return;
-    }
-    // Use the model-clamped effective level the host returned instead of a
-    // racy `prefs.get()` round trip: the prefs cache can lag the session apply
-    // and would snap the composer select back to the stale level.
-    const effective = result.thinkingLevel ?? level;
-    dbgLog("renderer", "onThinkingChange ok", { level, effective, result });
-    setPrefs((prev) =>
-      prev ? { ...prev, thinkingLevel: effective } : prev,
-    );
-  };
-
-  const toggleThinking = async () => {
-    if (!prefs) return;
-    const showThinking = !prefs.showThinking;
-    setPrefs({ ...prefs, showThinking });
-    const next = await window.xAgent.prefs.set({ showThinking });
-    setPrefs(next);
-  };
-
-  const toggleTheme = async () => {
-    if (!prefs) return;
-    const colorMode = prefs.colorMode === "dark" ? "light" : "dark";
-    const next = await window.xAgent.prefs.set({ colorMode });
-    setPrefs(next);
-    document.body.dataset.theme = `${next.themeId}-${next.colorMode}`;
-  };
-
-  const commitSidebarWidth = useCallback(async (sidebarWidth: number) => {
-    setPrefs((prev) => (prev ? { ...prev, sidebarWidth } : prev));
-    const next = await window.xAgent.prefs.set({ sidebarWidth });
-    setPrefs(next);
-  }, []);
-
-  const commitSidebarCollapsed = useCallback(async (sidebarCollapsed: boolean) => {
-    setPrefs((prev) => (prev ? { ...prev, sidebarCollapsed } : prev));
-    const next = await window.xAgent.prefs.set({ sidebarCollapsed });
-    setPrefs(next);
-  }, []);
-
-  const narrowWindow = useNarrowWindow(960);
-  const sidebarCollapsed = !narrowWindow && (prefs?.sidebarCollapsed ?? false);
-
-  const commitRightPanelWidth = useCallback(async (rightPanelWidth: number) => {
-    setPrefs((prev) => (prev ? { ...prev, rightPanelWidth } : prev));
-    const next = await window.xAgent.prefs.set({ rightPanelWidth });
-    setPrefs(next);
-  }, []);
-
-  const {
-    width: sidebarWidth,
-    dragging: sidebarResizing,
-    onResizePointerDown: onSidebarResizePointerDown,
-    onResizeDoubleClick: onSidebarResizeDoubleClick,
-  } = useColumnResize({
-    initialWidth: prefs?.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT,
-    min: SIDEBAR_WIDTH_MIN,
-    max: SIDEBAR_WIDTH_MAX,
-    defaultWidth: SIDEBAR_WIDTH_DEFAULT,
-    axis: "grow-right",
-    onCommit: (w) => {
-      void commitSidebarWidth(w);
+  const openSettingsAt = useCallback(
+    (tab: SettingsTabTarget) => {
+      setSettingsTab(tab);
+      setSettingsOpen(true);
     },
-  });
-
-  const {
-    width: rightPanelWidth,
-    dragging: rightPanelResizing,
-    onResizePointerDown: onRightPanelResizePointerDown,
-    onResizeDoubleClick: onRightPanelResizeDoubleClick,
-  } = useColumnResize({
-    initialWidth: prefs?.rightPanelWidth ?? RIGHT_PANEL_WIDTH_DEFAULT,
-    min: RIGHT_PANEL_WIDTH_MIN,
-    max: RIGHT_PANEL_WIDTH_MAX,
-    defaultWidth: RIGHT_PANEL_WIDTH_DEFAULT,
-    axis: "grow-left",
-    onCommit: (w) => {
-      void commitRightPanelWidth(w);
-    },
-  });
-
-  const [viewportWidth, setViewportWidth] = useState(
-    () => (typeof window !== "undefined" ? window.innerWidth : 1280),
+    [],
   );
-  useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const layoutWidths = useMemo(
-    () => {
-      if (sidebarCollapsed) {
-        // 折叠态：sidebar 固定 56，fit 只决定 right panel 收缩
-        return fitColumnWidths({
-          viewportWidth,
-          sidebarWidth: 56,
-          rightPanelWidth,
-          rightPanelOpen: prefs?.rightPanelOpen ?? false,
-          sidebarFloor: 56,
-        });
-      }
-      return fitColumnWidths({
-        viewportWidth,
-        sidebarWidth,
-        rightPanelWidth,
-        rightPanelOpen: prefs?.rightPanelOpen ?? false,
-      });
-    },
-    [
-      viewportWidth,
-      sidebarWidth,
-      rightPanelWidth,
-      prefs?.rightPanelOpen,
-      sidebarCollapsed,
-    ],
-  );
-
-  const toggleRightPanel = async () => {
-    if (!prefs) return;
-    const rightPanelOpen = !prefs.rightPanelOpen;
-    setPrefs({ ...prefs, rightPanelOpen });
-    const next = await window.xAgent.prefs.set({ rightPanelOpen });
-    setPrefs(next);
-  };
-
-  const ensureRightPanelOpen = useCallback(async () => {
-    if (prefs?.rightPanelOpen) return;
-    const next = await window.xAgent.prefs.set({ rightPanelOpen: true });
-    setPrefs(next);
-  }, [prefs, setPrefs]);
-
-  const handleOpenToolInPanel = useCallback(
-    (toolId: string, args: unknown) => {
-      openToolInRightPanel(toolId, args, () => {
-        void ensureRightPanelOpen();
-      });
-    },
-    [ensureRightPanelOpen],
-  );
-
-  const onClarifySelect = useCallback(
-    async (reply: string) => {
-      if (!cwd || !reply.trim()) return;
-      const text = reply.trim();
-      setError(null);
-      setFollowNonce((n) => n + 1);
-      const pendingId = makePendingUserId();
-      setItems((prev) => appendPendingUser(prev, text, pendingId));
-      const expanded = await expandAtPathsInPrompt(text);
-      const result = await window.xAgent.turn.prompt({ text: expanded });
-      if (!result.ok || result.silent) {
-        setItems((prev) => removePendingUser(prev, pendingId));
-        if (!result.ok) {
-          setError(result.error ?? "发送失败");
-          setInput(reply);
-        }
-      }
-      await refreshSessions();
-    },
-    [
-      cwd,
-      setError,
-      setFollowNonce,
-      setItems,
-      setInput,
-      refreshSessions,
-    ],
-  );
-
-  usePlanSessionAutoOpen(planPath, ensureRightPanelOpen);
-
-  const toggleTool = async (tool: string) => {
-    if (!prefs) return;
-    if (sessionId) {
-      const ok = await confirm({
-        title: "更改工具白名单",
-        message: "会重建工具定义并清空本会话 API 缓存。确定继续？",
-        confirmLabel: "继续",
-        tone: "warn",
-      });
-      if (!ok) return;
-    }
-    const tools = prefs.tools.includes(tool)
-      ? prefs.tools.filter((t) => t !== tool)
-      : [...prefs.tools, tool];
-    const next = await window.xAgent.prefs.set({ tools });
-    setPrefs(next);
-  };
-
-  const applyBash = async () => {
+  const applyBash = useCallback(async () => {
     const result = await window.xAgent.prefs.applyBashShellPath(
       bash?.suggestedShellPath ?? undefined,
     );
     setBash(result);
     if (!result.ok) setError(result.message);
     else setError(null);
-  };
-
-  const openGitDownload = async () => {
-    setError(null);
-    const result = await window.xAgent.files.openExternal(
-      GIT_FOR_WINDOWS_DOWNLOAD_URL,
-    );
-    if (!result.ok) {
-      setError(result.error ?? "无法打开 Git 下载页");
-      return;
-    }
-    setReadyNotice("安装 Git 后，请在设置 → 通用中点击「检测」刷新状态。");
-  };
-
-  const openNodeDownload = async () => {
-    setError(null);
-    const result = await window.xAgent.files.openExternal(NODE_JS_DOWNLOAD_URL);
-    if (!result.ok) {
-      setError(result.error ?? "无法打开 Node.js 下载页");
-      return;
-    }
-    setReadyNotice(
-      "安装 Node.js 22+ 后重新打开应用，即可一键安装 Pi CLI。",
-    );
-  };
-
-  const openSettings = () => {
-    setSettingsTab(undefined);
-    setSettingsOpen(true);
-  };
-
-  const openSettingsAt = useCallback(
-    (tab: SettingsTabTarget) => {
-      setSettingsTab(tab);
-      setSettingsOpen(true);
-    },
-    [setSettingsTab, setSettingsOpen],
-  );
-
-  const muteReadyChecklist = async () => {
-    if (!prefs || !projectKey) return;
-    const keys = new Set(prefs.dismissedReadyChecklistKeys ?? []);
-    keys.add(projectKey);
-    const next = await window.xAgent.prefs.set({
-      dismissedReadyChecklistKeys: [...keys],
-    });
-    setPrefs(next);
-    setReadyChecklistHidden(true);
-  };
-
-  const dismissGodotToolsNudge = async () => {
-    if (!prefs || !projectKey) return;
-    const keys = new Set(prefs.dismissedGodotToolsNudgeKeys ?? []);
-    keys.add(projectKey);
-    const next = await window.xAgent.prefs.set({
-      dismissedGodotToolsNudgeKeys: [...keys],
-    });
-    setPrefs(next);
-  };
-
-  const enableGodotEditorTools = useCallback(async () => {
-    if (!prefs) return;
-    setReadyBusy(true);
-    try {
-      const without = prefs.tools.filter(
-        (t) => !(GODOT_TOOLS as readonly string[]).includes(t),
-      );
-      const next = await window.xAgent.prefs.set({
-        tools: [...without, ...GODOT_TOOLS],
+  }, [bash, setBash, setError]);
+  const handleOpenToolInPanel = useCallback(
+    (toolId: string, args: unknown) => {
+      openToolInRightPanel(toolId, args, () => {
+        void layout.ensureRightPanelOpen();
       });
-      setPrefs(next);
-      await dismissGodotToolsNudge();
-    } finally {
-      setReadyBusy(false);
-    }
-  }, [prefs, setReadyBusy, setPrefs, dismissGodotToolsNudge]);
-
-  const installRpcAddon = async () => {
-    setReadyBusy(true);
-    try {
-      const res = await window.xAgent.godot.installAddon();
-      if (!res.ok) {
-        setError(res.error ?? res.hint ?? "安装 RPC 插件失败");
-      } else {
-        setAddonInstalled(true);
-        await window.xAgent.godot.start().then(setRpcStatus).catch(() => {});
-      }
-      await refreshProjectReadiness(cwd);
-    } finally {
-      setReadyBusy(false);
-    }
-  };
-
-  const startRpcBridge = async () => {
-    setReadyBusy(true);
-    setReadyNotice(null);
-    setError(null);
-    try {
-      const status = await window.xAgent.godot.start();
-      setRpcStatus(status);
-      if (status.error) {
-        setError(status.error);
-        setReadyNotice(status.error);
-        return;
-      }
-      if (status.warning) {
-        setReadyNotice(status.warning);
-      } else if (status.running && (status.authenticatedClients ?? 0) > 0) {
-        setReadyNotice(`桥接已连接 Godot（${status.authenticatedClients}）`);
-      } else if (status.running) {
-        setReadyNotice(
-          `桥接已启动（端口 ${status.port}）。请在 Godot 启用 X-agent RPC 并保持编辑器打开。`,
-        );
-      } else {
-        setReadyNotice("桥接未能启动，请到设置 → Godot 查看详情。");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      setReadyNotice(msg);
-    } finally {
-      setReadyBusy(false);
-    }
-  };
-
-  const launchGodotEditor = async () => {
-    setReadyBusy(true);
-    setReadyNotice(null);
-    setError(null);
-    try {
-      // Ensure bridge is up before launching the editor.
-      const status = await window.xAgent.godot.start();
-      setRpcStatus(status);
-      if (status.error) {
-        setError(status.error);
-        setReadyNotice(status.error);
-        return;
-      }
-      const res = await window.xAgent.godot.launchEditor();
-      if (!res.ok) {
-        const msg = res.error ?? "启动 Godot 编辑器失败";
-        setError(msg);
-        setReadyNotice(msg);
-        return;
-      }
-      setReadyNotice(
-        res.hint ??
-          `已请求启动编辑器；桥接端口 ${status.port}，等待插件连入。`,
-      );
-      setRpcStatus(await window.xAgent.godot.status());
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      setReadyNotice(msg);
-    } finally {
-      setReadyBusy(false);
-    }
-  };
-
-  const pickStarter = useCallback(
-    (prompt: string) => {
-      setInput(prompt);
     },
-    [setInput],
+    [layout],
   );
 
-  const openPiLogin = async () => {
-    setError(null);
-    const result = await window.xAgent.provider.login();
-    if (!result.ok) {
-      setError(
-        [result.error, result.hint].filter(Boolean).join(" — ") ||
-          "无法打开 Pi 登录",
-      );
-      return;
-    }
-    if (result.hint) setError(result.hint);
-  };
-
-  const installPi = async () => {
-    setPiCliInstalling(true);
-    setError(null);
-    try {
-      const result = await window.xAgent.prefs.installPiCli();
-      setPiCli(result);
-      if (!result.ok) setError(result.message);
-    } finally {
-      setPiCliInstalling(false);
-    }
-  };
+  usePlanSessionAutoOpen(planPath, layout.ensureRightPanelOpen);
 
   return (
     <div className="app-shell">
@@ -1074,8 +355,8 @@ export default function App() {
         onOpenProject={openProject}
         onNewCodeSession={() => void newSession("code")}
         onNewDesignSession={() => void newSession("design")}
-        onToggleTheme={toggleTheme}
-        onToggleRightPanel={toggleRightPanel}
+        onToggleTheme={actions.toggleTheme}
+        onToggleRightPanel={layout.toggleRightPanel}
         onOpenSettings={openSettings}
         onUpdateAction={onTopBarUpdateClick}
         updateStatus={updateStatus}
@@ -1085,304 +366,135 @@ export default function App() {
         busy={busy}
         elevated={topbarElevated}
       />
-      {showUpdateBanner && updateStatus && (
-        <UpdateBanner
-          status={updateStatus}
-          busy={updateActionBusy}
-          onUpdate={() => {
-            void applyUpdateAction();
-          }}
-          onDismiss={dismissUpdateBanner}
-        />
-      )}
-      {prefsRecovery && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>
-            偏好文件损坏，已使用默认设置
-            {prefsRecovery.backedUp && prefsRecovery.backupPath
-              ? `（备份：${prefsRecovery.backupPath}）`
-              : `（${prefsRecovery.error}）`}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setPrefsRecovery(null)}
-          >
-            关闭
-          </button>
-        </div>
-      )}
-      {secretCodec && !secretCodec.available && (
-        <div className="banner warn">
-          <AlertTriangle size={14} />
-          <span>
-            供应商密钥将以明文存储——系统密钥链不可用
-            {secretCodec.reason === "keychain-unavailable"
-              ? "(safeStorage 不可用)"
-              : secretCodec.reason === "encrypt-failed"
-                ? "(safeStorage 加密失败)"
-                : "(未在 Electron 环境中)"}
-            。请到「设置 → 供应商」检查密钥是否需要重新保存。
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setSecretCodec(null)}
-          >
-            关闭
-          </button>
-        </div>
-      )}
-      {showReadyChecklist && (
-        <ReadyChecklist
-          items={readyItems}
-          busy={readyBusy || busy}
-          piCliInstalling={piCliInstalling}
-          notice={readyNotice}
-          onDismissNotice={() => setReadyNotice(null)}
-          onDismiss={() => {
-            setReadyChecklistHidden(true);
-          }}
-          onDontRemind={() => {
-            void muteReadyChecklist();
-          }}
-          onOpenSettings={openSettingsAt}
-          onInstallPiCli={() => {
-            void installPi();
-          }}
-          onOpenPiLogin={() => {
-            void openPiLogin();
-          }}
-          onApplyBash={() => {
-            void applyBash();
-          }}
-          onOpenGitDownload={() => {
-            void openGitDownload();
-          }}
-          onOpenNodeDownload={() => {
-            void openNodeDownload();
-          }}
-          onInstallRpcAddon={() => {
-            void installRpcAddon();
-          }}
-          onStartRpcBridge={() => {
-            void startRpcBridge();
-          }}
-          onLaunchGodotEditor={() => {
-            void launchGodotEditor();
-          }}
-          onEnableGodotTools={() => {
-            void enableGodotEditorTools();
-          }}
-        />
-      )}
-      {showGodotToolsNudge && (
-        <GodotToolsNudge
-          visible
-          busy={readyBusy}
-          onEnable={() => {
-            void enableGodotEditorTools();
-          }}
-          onDismiss={() => {
-            void dismissGodotToolsNudge();
-          }}
-          onOpenSettings={() => openSettingsAt("tools")}
-        />
-      )}
-      {error && (
-        <div className="banner error">
-          <AlertTriangle size={14} />
-          <span>{error}</span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setError(null)}
-          >
-            关闭
-          </button>
-        </div>
-      )}
-      <div
-        className={`main-row${prefs?.rightPanelOpen ? " with-right-panel" : ""}${sidebarResizing || rightPanelResizing ? " is-resizing" : ""}`}
-        style={
-          {
-            "--sidebar-width": `${layoutWidths.sidebar}px`,
-            "--right-panel-width": `${layoutWidths.right}px`,
-          } as CSSProperties
-        }
-      >
-        <Sidebar
-          sessions={sessions}
-          hiddenProjectKeys={prefs?.hiddenProjectKeys ?? []}
-          activeSessionId={sessionId}
-          activeCwd={cwd}
-          agentStatus={status}
-          busy={busy}
-          compacting={compacting}
-          sessionsLoading={sessionsLoading}
-          collapsed={sidebarCollapsed}
-          onResume={resumeSession}
-          onDelete={deleteSession}
-          onDeleteProjectSessions={deleteProjectSessions}
-          onHideProject={hideProject}
-          onRename={renameSession}
-          onRefresh={refreshSessions}
-          onToggleCollapsed={() => void commitSidebarCollapsed(!sidebarCollapsed)}
-          onResizePointerDown={sidebarCollapsed ? undefined : onSidebarResizePointerDown}
-          onResizeDoubleClick={sidebarCollapsed ? undefined : onSidebarResizeDoubleClick}
-          resizing={sidebarResizing}
-        />
-        <ChatPanel
-          items={items}
-          showThinking={prefs?.showThinking ?? true}
-          status={status}
-          apiStatus={apiStatusView}
-          input={input}
-          externalStreamRef={chatStreamRef}
-          setInput={setInput}
-          onSend={send}
-          onAbort={abort}
-          attachments={attachments}
-          fileRefs={fileRefs}
-          onAddFiles={onAddFiles}
-          onRemoveImage={onRemoveImage}
-          onRemoveFile={onRemoveFile}
-          disabled={!cwd}
-          modelSupportsImage={modelSupportsImage(models, currentModelKey)}
-          currentModelLabel={currentModelKey}
-          skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
-          queuedSteering={queuedSteering}
-          forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
-          starters={chatStarters}
-          sessionType={sessionType}
-          readinessHints={
-            !cwd
-              ? undefined
-              : [
-                  ...(isGodotProject && !allGodotEditorToolsEnabled(prefs)
-                    ? [
-                        {
-                          label: "启用 Godot 工具",
-                          onClick: () => {
-                            void enableGodotEditorTools();
-                          },
-                        },
-                      ]
-                    : []),
-                  {
-                    label: isGodotProject ? "Godot 设置" : "打开设置",
-                    onClick: () =>
-                      openSettingsAt(isGodotProject ? "godot" : "general"),
-                  },
-                ]
-          }
-          onPickStarter={pickStarter}
-          onOpenToolInPanel={handleOpenToolInPanel}
-          editingEntryId={editingEntryId}
-          editDraft={editDraft}
-          onEditDraftChange={setEditDraft}
-          onStartEdit={onStartEdit}
-          onCancelEdit={onCancelEdit}
-          onConfirmEdit={onConfirmEdit}
-          onRetract={onRetract}
-          onRegenerate={onRegenerate}
-          sessionMode={sessionMode}
-          planPath={planPath}
-          goal={goal}
-          onSessionModeChange={onSessionModeChange}
-          onBuildPlan={onBuildPlan}
-          onClearGoal={onClearGoal}
-          onPauseGoal={onPauseGoal}
-          onResumeGoal={onResumeGoal}
-          onCycleSessionMode={onCycleSessionMode}
-          onClarifySelect={onClarifySelect}
-          models={models}
-          currentModelKey={currentModelKey}
-          thinkingLevel={prefs?.thinkingLevel ?? "high"}
-          thinkingLevels={
-            // issue #30: 只暴露模型实际支持的级别,避免 Pi 静默 clamp 后回弹
-            availableThinkingLevels ?? THINKING_LEVELS
-          }
-          onModelChange={onModelChange}
-          onThinkingChange={onThinkingChange}
-          onToggleThinking={toggleThinking}
-        />
-        {prefs?.rightPanelOpen && (
-          <RightPanel
-            cwd={cwd}
-            items={items}
-            enabledTools={prefs?.tools ?? []}
-            usage={sessionUsage}
-            compacting={compacting}
-            sessionId={sessionId}
-            planPath={planPath}
-            autoCompactPercent={prefs?.autoCompactPercent ?? 0}
-            onAutoCompactPercentChange={(percent) => {
-              void (async () => {
-                const next = await window.xAgent.prefs.set({
-                  autoCompactPercent: percent,
-                });
-                setPrefs(next);
-              })();
-            }}
-            busy={
-              busy ||
-              status === "streaming" ||
-              status === "retrying" ||
-              retractBusy
-            }
-            onClose={() => void toggleRightPanel()}
-            onAddPathToChat={addPathToChat}
-            onBuildPlan={() => {
-              void onBuildPlan();
-            }}
-            onPlanPathChange={setPlanPath}
-            onResizePointerDown={onRightPanelResizePointerDown}
-            onResizeDoubleClick={onRightPanelResizeDoubleClick}
-            resizing={rightPanelResizing}
-          />
-        )}
-      </div>
+      <AppBanners
+        error={error}
+        setError={setError}
+        prefsRecovery={prefsRecovery}
+        setPrefsRecovery={setPrefsRecovery}
+        secretCodec={secretCodec}
+        setSecretCodec={setSecretCodec}
+        readyBusy={readyBusy}
+        piCliInstalling={piCliInstalling}
+        readyNotice={readyNotice}
+        setReadyNotice={setReadyNotice}
+        showReadyChecklist={showReadyChecklist}
+        showGodotToolsNudge={showGodotToolsNudge}
+        setReadyChecklistHidden={setReadyChecklistHidden}
+        readyItems={readyItems}
+        actions={actions}
+        applyBash={applyBash}
+        openSettingsAt={openSettingsAt}
+        busy={busy}
+      />
+      <AppMainRow
+        sidebarActions={{
+          onResume: resumeSession,
+          onDelete: deleteSession,
+          onDeleteProjectSessions: deleteProjectSessions,
+          onHideProject: hideProject,
+          onRename: renameSession,
+          onRefresh: refreshSessions,
+        }}
+        chatActions={{
+          setInput: composer.setInput,
+          onSend: composer.send,
+          onAbort: composer.abort,
+          onAddFiles: composer.onAddFiles,
+          onRemoveImage: composer.onRemoveImage,
+          onRemoveFile: composer.onRemoveFile,
+          onPickStarter: pickStarter,
+          onOpenToolInPanel: handleOpenToolInPanel,
+          onEditDraftChange: setEditDraft,
+          onStartEdit: onStartEdit,
+          onCancelEdit: onCancelEdit,
+          onConfirmEdit: onConfirmEdit,
+          onRetract: onRetract,
+          onRegenerate: onRegenerate,
+          onSessionModeChange: goalApi.changeSessionMode,
+          onBuildPlan: onBuildPlan,
+          onClearGoal: goalApi.clearGoal,
+          onPauseGoal: goalApi.pauseGoal,
+          onResumeGoal: goalApi.resumeGoal,
+          onCycleSessionMode: onCycleSessionMode,
+          onClarifySelect: composer.onClarifySelect,
+          onModelChange: actions.onModelChange,
+          onThinkingChange: actions.onThinkingChange,
+          onToggleThinking: actions.toggleThinking,
+          onAutoCompactPercentChange: (p) => void window.xAgent.prefs.set({ autoCompactPercent: p }).then(setPrefs),
+          onCloseRightPanel: layout.toggleRightPanel,
+          onAddPathToChat: addPathToChat,
+          onPlanPathChange: setPlanPath,
+          onEnableGodotTools: actions.enableGodotEditorTools,
+          openSettingsAt,
+        }}
+        sessions={sessions}
+        hiddenProjectKeys={prefs?.hiddenProjectKeys ?? []}
+        activeSessionId={sessionId}
+        activeCwd={cwd}
+        agentStatus={status}
+        busy={busy}
+        compacting={compacting}
+        sessionsLoading={sessionsLoading}
+        items={items}
+        showThinking={prefs?.showThinking ?? true}
+        apiStatus={composer.apiStatusView}
+        input={composer.input}
+        externalStreamRef={chatStreamRef}
+        attachments={composer.attachments}
+        fileRefs={composer.fileRefs}
+        skillsRefreshKey={`${cwd ?? ""}:${sessionId ?? ""}`}
+        queuedSteering={queuedSteering}
+        forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
+        sessionType={sessionType}
+        isGodotProject={isGodotProject}
+        editingEntryId={editingEntryId}
+        editDraft={editDraft}
+        sessionMode={sessionMode}
+        planPath={planPath}
+        goal={goal}
+        models={models}
+        currentModelKey={currentModelKey}
+        thinkingLevel={prefs?.thinkingLevel ?? "high"}
+        availableThinkingLevels={availableThinkingLevels}
+        usage={sessionUsage}
+        sessionId={sessionId}
+        autoCompactPercent={prefs?.autoCompactPercent ?? 0}
+        layout={layout}
+        setPrefs={setPrefs}
+        retractBusy={retractBusy}
+        prefs={prefs}
+      />
       {confirmState && (
         <RetractConfirmModal
           mode={confirmState.mode}
           preview={confirmState.preview}
           busy={retractBusy}
-          onCancel={() => {
-            if (!retractBusy) cancelConfirm();
-          }}
-          onConfirm={() => {
-            void runConfirmedRetract();
-          }}
+          onCancel={() => { if (!retractBusy) cancelConfirm(); }}
+          onConfirm={() => { void runConfirmedRetract(); }}
         />
       )}
-      {prefs && (
-        <SettingsPanel
+      {prefs && settingsOpen && (
+        <AppSettingsPanel
           open={settingsOpen}
           prefs={prefs}
           cwd={cwd}
           logo={logo}
           initialTab={settingsTab}
+          hasActiveSession={Boolean(sessionId)}
           onClose={() => {
             setSettingsOpen(false);
             setSettingsTab(undefined);
           }}
-          onToggleTool={toggleTool}
-          hasActiveSession={Boolean(sessionId)}
-          onPrefsChanged={(p) => {
-            setPrefs(p);
-            document.body.dataset.theme = `${p.themeId}-${p.colorMode}`;
-          }}
+          onToggleTool={actions.toggleTool}
+          onPrefsChanged={setPrefs}
           onBashChanged={setBash}
           onGitChanged={setGit}
           onPiCliChanged={setPiCli}
           onProvidersChanged={async () => {
             await refreshModels();
-            const p = await window.xAgent.prefs.get();
-            setPrefs(p);
-            setAuth(await window.xAgent.prefs.checkAuth());
+            setPrefs(await window.xAgent.prefs.get());
           }}
+          setAuth={setAuth}
         />
       )}
     </div>

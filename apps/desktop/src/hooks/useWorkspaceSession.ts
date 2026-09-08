@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useEffect,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -24,10 +23,9 @@ import { DEFAULT_SESSION_TYPE } from "@shared/session-type";
 import type { RetractConfirmMode } from "../components/RetractConfirmModal";
 import { normalizeProjectKey } from "../lib/group-sessions";
 import { createEmptyState, type ChatItem } from "../stores/chat-store";
-import {
-  clearSessionUsage,
-  setSessionUsage,
-} from "../stores/session-usage-store";
+import { setSessionUsage } from "../stores/session-usage-store";
+import { syncFromHost as syncFromHostImpl } from "./session-bootstrap-sync";
+import { withBusyLifecycle } from "./withBusyLifecycle";
 
 type RetractConfirmState = {
   mode: RetractConfirmMode;
@@ -35,28 +33,6 @@ type RetractConfirmState = {
   preview: RetractPreview;
   editText?: string;
 } | null;
-
-/**
- * 6 个 workspace 方法 (openProject / newSession / resumeSession /
- * deleteSession / deleteProjectSessions / closeWorkspace) 共享的
- * busy 生命周期 (issue #61 主题 F C-203, 2026-08-31):
- *   setBusy(true) → setError(null) → fn() → finally setBusy(false)
- *
- * 把 3 行 boilerplate 合一, 6 个方法各自只剩业务逻辑 (IPC call + 状态更新).
- */
-async function withBusyLifecycle(
-  setBusy: Dispatch<SetStateAction<boolean>>,
-  setError: Dispatch<SetStateAction<string | null>>,
-  fn: () => Promise<void>,
-): Promise<void> {
-  setBusy(true);
-  setError(null);
-  try {
-    await fn();
-  } finally {
-    setBusy(false);
-  }
-}
 
 export type UseWorkspaceSessionOpts = {
   setItems: Dispatch<SetStateAction<ChatItem[]>>;
@@ -137,44 +113,27 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       });
   }, [usageFetchGen]);
 
+  /**
+   * 同步 host 端 workspace 状态到 renderer. 抽出到独立 module
+   * (session-bootstrap-sync.ts), 与 useSessionBootstrap 共享。
+   */
   const syncFromHost = useCallback(async () => {
-    const s = await window.xAgent.workspace.getStatus();
-    setStatus(s.status);
-    setCwd(s.cwd);
-    setSessionId(s.sessionId);
-    if (!s.hasSession) {
-      setItems(createEmptyState());
-      setSessionId(null);
-      sessionIdRef.current = null;
-      setQueuedSteering([]);
-      setEditingEntryId(null);
-      setEditDraft("");
-      setConfirmState(null);
-      usageFetchGen.current += 1;
-      clearSessionUsage();
-    } else {
-      fetchSessionUsage();
-    }
-    if (s.error) setError(s.error);
-    else if (s.status === "idle") setError(null);
-    if (s.model) {
-      setPrefs((prev) =>
-        prev
-          ? {
-              ...prev,
-              provider: s.model?.provider ?? prev.provider,
-              model: s.model?.id ?? prev.model,
-              thinkingLevel: s.thinkingLevel as ThinkingLevel,
-            }
-          : prev,
-      );
-    }
-    // Sync the model-supported thinking levels (issue #30).
-    setAvailableThinkingLevels(
-      s.availableThinkingLevels && s.availableThinkingLevels.length > 0
-        ? s.availableThinkingLevels
-        : null,
-    );
+    return syncFromHostImpl({
+      setStatus,
+      setCwd,
+      setSessionId,
+      sessionIdRef,
+      setItems,
+      setQueuedSteering,
+      setEditingEntryId,
+      setEditDraft,
+      setConfirmState: setConfirmState as (s: unknown) => void,
+      setError,
+      setPrefs,
+      setAvailableThinkingLevels,
+      usageFetchGen,
+      fetchSessionUsage,
+    });
   }, [
     fetchSessionUsage,
     sessionIdRef,
@@ -438,84 +397,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     },
     [refreshSessions, setError],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [p, recovery, codec] = await Promise.all([
-          window.xAgent.prefs.get(),
-          window.xAgent.prefs.getRecoveryNotice(),
-          window.xAgent.prefs.getSecretCodecStatus(),
-        ]);
-        if (cancelled) return;
-        setPrefs(p);
-        if (recovery) setPrefsRecovery(recovery);
-        if (codec) setSecretCodec(codec);
-        document.body.dataset.theme = `${p.themeId}-${p.colorMode}`;
-        setBash(await window.xAgent.prefs.checkBash());
-        setGit(await window.xAgent.prefs.checkGit());
-        setAuth(await window.xAgent.prefs.checkAuth());
-        setPiCli(await window.xAgent.prefs.checkPiCli());
-        if (cancelled) return;
-        await refreshModels();
-        if (cancelled) return;
-        await refreshSessions();
-        if (cancelled) return;
-
-        // Always start on a fresh empty chat for the last project — do not
-        // resume lastSessionPath (sidebar still lists history for manual open).
-        if (p.lastProjectPath) {
-          setItems(createEmptyState());
-          setQueuedSteering([]);
-          const result = await window.xAgent.workspace.open(
-            p.lastProjectPath,
-            "new",
-          );
-          if (cancelled) return;
-          if (result.ok) {
-            setCwd(result.cwd);
-            setSessionId(result.sessionId);
-            setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
-            setFollowNonce((n) => n + 1);
-            if (result.warning) setError(result.warning);
-            await refreshProjectReadiness(result.cwd);
-          } else if (result.error && result.error !== "已取消") {
-            setError(result.error);
-            await syncFromHost();
-          }
-        }
-        await refreshSessions();
-      } finally {
-        if (!cancelled) {
-          void window.xAgent.notifyAppReady();
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    refreshModels,
-    refreshProjectReadiness,
-    refreshSessions,
-    setAuth,
-    setBash,
-    setCwd,
-    setError,
-    setFollowNonce,
-    setGit,
-    setItems,
-    setPiCli,
-    setPrefs,
-    setPrefsRecovery,
-    setSecretCodec,
-    setQueuedSteering,
-    setSessionId,
-    setSessionType,
-    syncFromHost,
-  ]);
 
   return {
     openProject,
