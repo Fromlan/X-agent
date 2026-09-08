@@ -70,7 +70,8 @@ import {
 } from "./truncation-recovery";
 import { emitEvent as emitEventImpl } from "./event-emit";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
-import { wrapPromptSlashAsBlock } from "./prompt-slash-wrap";
+import { runSessionPrompt, type SessionPromptHost } from "./session-prompt";
+import { runSessionAbort, type SessionAbortHost } from "./session-abort";
 import { listSessionSkills, listSessionSlashItems } from "./session-skills-list";
 import {
   SessionModeController,
@@ -667,130 +668,51 @@ export class SessionHost {
     );
   }
 
+  /**
+   * session.prompt orchestration. Logic lives in `./session-prompt.ts`
+   * (issue #3 主题 E 提取). This method is now a 1-line delegator that
+   * injects the host's bundle / status / shadow-checkpoint / truncation
+   * retry surface through `SessionPromptHost`.
+   */
   async prompt(payload: PromptPayload): Promise<PromptResult> {
-    const bundle = this.bundle;
-    if (!bundle) {
-      dbgLog("session", "prompt rejected: no bundle");
-      return { ok: false, error: "尚未打开项目" };
-    }
-    const text = (payload?.text ?? "").trim();
-    const images = payload?.images;
-    if (!text && (!images || images.length === 0)) {
-      dbgLog("session", "prompt rejected: empty text and no images");
-      return { ok: false, error: "消息不能为空" };
-    }
-    // User-typed prompt → reset truncation retry counter. Recovery prompts
-    // (system-injected via notifyTruncation) carry the marker; everything
-    // else (including extension commands) is treated as user input.
-    if (!text.startsWith(TRUNCATION_RECOVERY_MARKER)) {
-      this.consecutiveTruncationRetries = 0;
-    }
-
-    dbgLog("session", "prompt start", {
-      len: text.length,
-      preview: text.slice(0, 80),
-      imageCount: images?.length ?? 0,
-      isStreaming: bundle.session.isStreaming,
-    });
-    const doneShadow = dbgTimer("session", "preparePromptCheckpoint");
-    const donePi = dbgTimer("session", "session.prompt");
-    const doneAll = dbgTimer("session", "total prompt");
-
-    try {
-      const { session } = bundle;
-      const slashName = text.startsWith("/")
-        ? (text.match(/^\/([^\s]+)/)?.[1] ?? "")
-        : "";
-      const isExtensionCommand =
-        Boolean(slashName) &&
-        !slashName.startsWith("skill:") &&
-        Boolean(session.extensionRunner.getCommand(slashName));
-
-      // Wrap prompt templates as `<prompt>` so the UI can chip them
-      // (Pi already wraps `/skill:name` as `<skill>`).
-      let sendText = text;
-      if (!isExtensionCommand) {
-        const wrapped = wrapPromptSlashAsBlock(text, [
-          ...session.promptTemplates,
-        ]);
-        if (wrapped) sendText = wrapped;
-      }
-
-      if (session.isStreaming) {
-        dbgLog("session", "prompt: steer into active stream");
-        await session.prompt(sendText, { streamingBehavior: "steer", images });
-        donePi();
-      } else {
-        dbgLog("session", "prompt: prepare shadow checkpoint…");
-        // 进入 prepare→prompt 过渡窗口：期间拒绝撤回（见 RetractOrchestrator）。
-        // 标志在 prepare 结束后立即释放（此后同步进入 session.prompt，
-        // streaming 为 true，撤回走 abort 路径）。
-        this.promptPreparing = true;
-        try {
-          await this.shadowCheckpoints.preparePromptCheckpoint();
-        } finally {
-          this.promptPreparing = false;
-        }
-        doneShadow();
-        if (this.bundle !== bundle) {
-          dbgLog("session", "prompt aborted: bundle switched during shadow");
-          return { ok: false, error: "会话已切换" };
-        }
-        await session.prompt(sendText, { images });
-        donePi();
-      }
-      if (this.bundle !== bundle) {
-        dbgLog("session", "prompt aborted: bundle switched after pi");
-        return { ok: false, error: "会话已切换" };
-      }
-      doneAll();
-      return isExtensionCommand ? { ok: true, silent: true } : { ok: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      dbgLog("session", "prompt threw", message);
-      if (this.bundle === bundle) {
-        this.setStatus("error", message);
-      }
-      return { ok: false, error: message };
-    }
+    return runSessionPrompt(this.promptHost(), payload);
   }
 
+  /** Internal helper: build the SessionPromptHost closure for `prompt()`. */
+  private promptHost(): SessionPromptHost {
+    return {
+      getBundle: () => this.bundle,
+      setStatus: (status, error) => this.setStatus(status, error),
+      isPreparing: () => this.promptPreparing,
+      setPreparing: (v) => {
+        this.promptPreparing = v;
+      },
+      prepareShadowCheckpoint: () =>
+        this.shadowCheckpoints.preparePromptCheckpoint(),
+      resetTruncationRetries: () => {
+        this.consecutiveTruncationRetries = 0;
+      },
+    };
+  }
+
+  /**
+   * session.abort orchestration. Logic lives in `./session-abort.ts`
+   * (issue #3 主题 E 提取). This method is now a 1-line delegator that
+   * injects the host's bundle / status / notice surface through
+   * `SessionAbortHost`.
+   */
   async abort(): Promise<{ ok: boolean; cancelled?: boolean }> {
-    const bundle = this.bundle;
-    if (!bundle) {
-      dbgLog("session", "abort: no bundle");
-      return { ok: false };
-    }
-    dbgLog("session", "abort start", { isStreaming: bundle.session.isStreaming });
-    const done = dbgTimer("session", "session.abort");
-    let abortError: string | null = null;
-    try {
-      await bundle.session.abort();
-      done();
-    } catch (err) {
-      abortError = err instanceof Error ? err.message : String(err);
-      dbgWarn("session", "abort threw", abortError);
-    }
-    if (this.bundle !== bundle) {
-      dbgLog("session", "abort: bundle switched");
-      return { ok: true };
-    }
-    // 1.3 防御：abort 抛错时仍可能 isStreaming=true，盲目 setStatus("idle")
-    // 会让 UI 以为已停止，造成新一轮 prompt 与未结束 stream 交错。
-    // 重新检查：若仍 streaming，记录可见状态并写入 error。
-    if (abortError) {
-      if (bundle.session.isStreaming) {
-        this.setStatus("error", `取消失败：${abortError}`);
-        this.emitReplaceableNotice(
-          "session",
-          `取消失败：${abortError}。请稍后重试或重启会话。`,
-          "error",
-        );
-        return { ok: false, cancelled: false };
-      }
-    }
-    this.setStatus("idle");
-    return { ok: true, cancelled: true };
+    return runSessionAbort(this.abortHost());
+  }
+
+  /** Internal helper: build the SessionAbortHost closure for `abort()`. */
+  private abortHost(): SessionAbortHost {
+    return {
+      getBundle: () => this.bundle,
+      setStatus: (status, error) => this.setStatus(status, error),
+      emitReplaceableNotice: (replaceKey, text, level) =>
+        this.emitReplaceableNotice(replaceKey, text, level),
+    };
   }
 
   async previewRetract(entryId: string): Promise<RetractPreview> {
