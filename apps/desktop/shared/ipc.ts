@@ -1078,11 +1078,35 @@ export type ProviderApiKind =
   | "anthropic-messages"
   | "google-generative-ai";
 
+/**
+ * 模型接受的输入类型。与 Pi SDK `Model.input` 对齐。
+ *
+ * - "text"  : 文字输入
+ * - "image" : 图片输入
+ *
+ * 缺省 = `undefined` (= 未表态) —— 不要在保存路径里强行塞 ["text"] 把它
+ * 变成"已表态"；让 Pi SDK `applyModelsJson` 走 `override.input ?? model.input`
+ * 自然 fall-through 到 builtin input。
+ */
+export type ModelInput = "text" | "image";
+
 export interface ProviderModelEntry {
   id: string;
   name?: string;
   /** Context window in tokens; written to Pi models.json as contextWindow. */
   contextWindow?: number;
+  /**
+   * 模型接受的输入类型。透传到 Pi `models.json` 的 `input` 字段。
+   *
+   * 缺省 = 未表态（与 `ModelInfo.input` undefined 对齐）—— Pi SDK
+   * `applyModelsJson` 用 `override.input ?? model.input` 兜底到 builtin；
+   * X-agent UI 端 `modelSupportsImage` 在 undefined 时保守返回 false。
+   *
+   * 至少包含 "text" 的模型才会被允许发起普通对话；带 "image" 才允许在
+   * user message 中附图（否则 `mistral-conversations` adapter 等会把整条
+   * message 替换为 `(image omitted: model does not support images)`）。
+   */
+  input?: ModelInput[];
 }
 
 export interface ProviderProfile {
@@ -1162,6 +1186,13 @@ export interface FetchedProviderModel {
   ownedBy?: string;
   /** From API context_length / context_window / max_model_len when present. */
   contextWindow?: number;
+  /**
+   * 留位：未来第三方 `/v1/models` 端点若返回 input modality 后端会填。
+   * 当前 OpenAI 兼容标准不返回（v1-models 只给 `id` / `owned_by` / 各类
+   * 厂商自定义的 context 字段），所以 `fetchProviderModels` 不会填这个字段；
+   * UI 端 fetch 合并路径走默认 `["text"]`。
+   */
+  input?: ModelInput[];
 }
 
 export interface FetchProviderModelsResult {

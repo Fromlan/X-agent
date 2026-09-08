@@ -106,6 +106,43 @@ describe("validateUpsert", () => {
       validateUpsert(makeInput({ models: [{ id: "" }] })),
     ).toMatch(/模型 id/);
   });
+
+  it("input 缺省 (undefined) 视为未表态, 校验通过", () => {
+    expect(
+      validateUpsert(makeInput({ models: [{ id: "m-1" }] })),
+    ).toBeNull();
+  });
+
+  it("input 数组给出但为空 -> 拒绝, 提示至少 1 个输入类型", () => {
+    expect(
+      validateUpsert(
+        makeInput({ models: [{ id: "m-1", input: [] as never }] }),
+      ),
+    ).toMatch(/至少需要勾选一个输入类型/);
+  });
+
+  it("input 数组给出但仅含非法值 -> 拒绝", () => {
+    expect(
+      validateUpsert(
+        makeInput({
+          models: [{ id: "m-1", input: ["audio" as never] }],
+        }),
+      ),
+    ).toMatch(/非法值/);
+  });
+
+  it("input 合法 [text] / [text, image] 通过", () => {
+    expect(
+      validateUpsert(
+        makeInput({ models: [{ id: "m-1", input: ["text"] }] }),
+      ),
+    ).toBeNull();
+    expect(
+      validateUpsert(
+        makeInput({ models: [{ id: "m-1", input: ["text", "image"] }] }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("validateUpsertAsync", () => {
@@ -184,6 +221,45 @@ describe("upsertProviderProfile", () => {
     );
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/档案不存在/);
+  });
+
+  it("input 字段 round-trip: 写入 [text, image] 后读回一致", async () => {
+    const created = await upsertProviderProfile(
+      makeInput({ models: [{ id: "gpt-4o", input: ["text", "image"] }] }),
+      paths,
+    );
+    expect(created.ok).toBe(true);
+    const got = await getProviderProfile(created.profile!.id, paths);
+    expect(got?.models[0]?.input).toEqual(["text", "image"]);
+  });
+
+  it("input 字段 round-trip: 编辑把 image 取消, 落 [text]", async () => {
+    const created = await upsertProviderProfile(
+      makeInput({ models: [{ id: "gpt-4o", input: ["text", "image"] }] }),
+      paths,
+    );
+    const updated = await upsertProviderProfile(
+      makeInput({
+        id: created.profile!.id,
+        models: [{ id: "gpt-4o", input: ["text"] }],
+      }),
+      paths,
+    );
+    expect(updated.ok).toBe(true);
+    const got = await getProviderProfile(created.profile!.id, paths);
+    expect(got?.models[0]?.input).toEqual(["text"]);
+  });
+
+  it("input 字段缺省时不写, 加载得到 undefined", async () => {
+    const created = await upsertProviderProfile(
+      makeInput({ models: [{ id: "gpt-4o" }] }),
+      paths,
+    );
+    expect(created.ok).toBe(true);
+    const got = await getProviderProfile(created.profile!.id, paths);
+    // form 状态没给 input -> 后端不主动注入 -> 落盘 entry 不带 input
+    // (老档案 / 未表态 行为)。
+    expect(got?.models[0]?.input).toBeUndefined();
   });
 });
 

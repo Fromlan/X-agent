@@ -12,6 +12,14 @@ export interface FetchedModel {
   id: string;
   ownedBy?: string;
   contextWindow?: number;
+  /**
+   * 留位: 未来第三方 `/v1/models` 端点若返回 input modality (openai / anthropic /
+   * google 各家 `supported_modalities` / `input_modalities` 等), 后端在这里读
+   * 并填到 `FetchedProviderModel.input`。当前 OpenAI 兼容 `/v1/models` 标准
+   * 不返回 (只给 `id` / `owned_by` / 各类厂商自定义的 context 字段), 所以
+   * `parseModelsJson` 暂不读 input 字段 —— UI 端 fetch 合并路径走默认 `["text"]`。
+   */
+  input?: ("text" | "image")[];
 }
 
 const KNOWN_COMPAT_SUFFIXES = [

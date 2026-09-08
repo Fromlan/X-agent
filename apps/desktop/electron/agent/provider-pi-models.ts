@@ -136,6 +136,15 @@ export function modelEntryForPiModelsJson(
   if (enriched.contextWindow != null) {
     entry.contextWindow = enriched.contextWindow;
   }
+  // input 字段与 Pi SDK `Model.input` 对齐: applyModelsJson 在
+  // provider-composer.js:30 走 `override.input ?? model.input` 兜底。
+  // X-agent 透传用户勾选的状态; undefined 时不写, 让 Pi SDK 走 builtin
+  // (mistral-conversations 等 adapter 不会把 user message 含 image 替换为
+  // `(image omitted: model does not support images)` 占位文本)。
+  // 升级 Pi SDK 时回归测试: Pi 升级可能引入严格 schema 校验。
+  if (enriched.input != null && enriched.input.length > 0) {
+    entry.input = enriched.input;
+  }
   const extras = deepseekProxyModelExtras(enriched.id);
   if (extras) {
     // Custom ids (e.g. deepseek-v4-pro[1M]) do not inherit built-in reasoning;
