@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 import { DELETED_FLAT_KEYS } from "../shared/ipc";
 import type {
   AppUpdateStatus,
@@ -13,6 +13,7 @@ import type {
 } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 import { dbgLog, dbgTimer } from "../shared/debug-log";
+import { mountXAgentPath } from "./preload-path-helper";
 
 /**
  * Builds the invoke surface for every channel from the single source of truth
@@ -195,12 +196,8 @@ contextBridge.exposeInMainWorld("xAgent", exposed);
 // 拿绝对路径, 用于 @<path> 引用 / cwd-sandbox resolve. Expose it via
 // contextBridge so the sandboxed renderer can call it without importing
 // 'electron' directly.
-contextBridge.exposeInMainWorld("xAgentPath", {
-  getForFile: (file: File): string => {
-    try {
-      return webUtils.getPathForFile(file);
-    } catch {
-      return "";
-    }
-  },
-});
+//
+// 实现抽到 ./preload-path-helper.ts (issue #60 主题 D C-304, 2026-08-31):
+// preload.ts 只剩 1 个 global (xAgent) + 1 行 mount 调用. 测试可以 mock
+// helper 不必走真实 contextBridge.
+mountXAgentPath();

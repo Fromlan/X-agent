@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC invoke channel signatures + 9 facade types (workspace/turn/plan/
  * session/prefs/appReport/logo/godot/updates). Single source for
  * preload ↔ main IPC contracts.
@@ -358,48 +358,45 @@ export type IpcInvokeMap = {
 };
 
 /**
- * Flat channel methods removed from `window.xAgent` — their functionality lives
- * on the workspace / turn / plan / session / prefs facades. Removing an entry
- * here is safe only if the renderer has no direct callers left (facades are
- * typed against IpcInvokeMap, not XAgentApiFlat).
+ * Flat channel methods removed from `window.xAgent` — their functionality
+ * lives on the workspace / turn / plan / session / prefs facades.
+ *
+ * **2026-08-31 缩到 10 条** (issue #60 主题 D C-304): 原 36 条 deny-list
+ * 把几乎所有可 facade 化的 channel 都锁到 facade-only, 渲染端没有从
+ * flat 调它们的需要. 现在只保留"渲染端真只在 facade 调 + flat 暴露也
+ * 无意义 (原子性 / lifecycle 不应该裸用)"的 10 个:
+ *
+ *   - workspace lifecycle  : openProject, newSession, getStatus
+ *   - turn / composer     : prompt, abort
+ *   - plan / goal mode    : setSessionMode, getSessionMode
+ *   - session runtime     : setModel, getSessionUsage, compactSession
+ *   - prefs utility       : getPrefsRecoveryNotice, getSecretCodecStatus
+ *
+ * 其他 26+ 个 channel 之前在这列表, 现在回到 flat (`XAgentApiFlat`) —
+ * 类型上多出方法、运行时 preload 的 `pickInvokeApi` 不过滤; 渲染端
+ * 现存调用全部走 facade (调 src/ 扫了 0 个裸调), 不影响.
+ *
+ * 加新 facade 通道: 如果概念上属于上面 5 个 facade 之一 + 不希望被裸用,
+ * 加到这列表; 否则默认 flat 暴露, 渲染端自己决定怎么调.
  */
 export const DELETED_FLAT_KEYS = [
+  // workspace lifecycle
   "openProject",
+  "newSession",
+  "getStatus",
+  // turn / composer
   "prompt",
   "abort",
-  "getStatus",
-  "newSession",
-  "setModel",
+  // plan / goal mode
   "setSessionMode",
   "getSessionMode",
-  "buildPlan",
-  "getPlanContent",
-  "savePlanContent",
-  "savePlanToWorkspace",
-  "clearPlan",
-  "setGoal",
-  "pauseGoal",
-  "resumeGoal",
-  "clearGoal",
-  "getGoal",
-  "listModels",
-  "listSessions",
-  "resumeSession",
-  "deleteSession",
-  "deleteProjectSessions",
-  "closeWorkspace",
-  "renameSession",
-  "previewRetract",
-  "retractToUserMessage",
-  "editAndResend",
-  "regenerateFromUser",
+  // session runtime
+  "setModel",
   "getSessionUsage",
+  "compactSession",
+  // prefs utility
   "getPrefsRecoveryNotice",
   "getSecretCodecStatus",
-  "compactSession",
-  "getToolDetail",
-  "reloadResources",
-  "listSessionSlashItems",
 ] as const;
 
 export type DeletedFlatKey = (typeof DELETED_FLAT_KEYS)[number];
