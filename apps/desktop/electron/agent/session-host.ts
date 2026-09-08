@@ -41,19 +41,37 @@ import { IPC_EVENTS } from "../../shared/ipc-channels";
 import type { SessionType } from "../../shared/session-type";
 import { getAgentDirPath, getCachedPrefs, patchPrefs } from "./prefs";
 import {
-  dedupeModelInfosForUi,
-  filterModelsByCatalogEnabled,
   repairDeepSeekModelsJson,
   repairMiniMaxModelsJson,
 } from "./provider-store";
+import { maybeAutoTitleSession } from "./auto-title";
+import { setModel as setModelImpl, setThinkingLevel as setThinkingLevelImpl } from "./session-config";
+import { applyTools as applyToolsImpl } from "./apply-tools";
 import {
-  branchEntriesToHistory,
-  extractMessageText,
-} from "../../shared/transcript";
-import { ensureSessionTitle } from "./session-title";
+  compactSession as compactSessionImpl,
+  reloadResources as reloadResourcesImpl,
+  autoMaintainIfNeeded as autoMaintainIfNeededImpl,
+} from "./session-maintenance";
+import { getStatus as getStatusImpl, listModels as listModelsImpl } from "./session-info";
+import {
+  buildUsageSnapshot as buildUsageSnapshotImpl,
+  historyFromBundle as historyFromBundleImpl,
+  historyFingerprint as historyFingerprintImpl,
+  emitHistoryReplace as emitHistoryReplaceImpl,
+  emitUsageUpdate as emitUsageUpdateImpl,
+  captureCompactionBaseline as captureCompactionBaselineImpl,
+  recordCompactionDelta as recordCompactionDeltaImpl,
+  pruneToolDetailsToBranch as pruneToolDetailsToBranchImpl,
+} from "./history-emit";
+import {
+  TRUNCATION_RECOVERY_MARKER,
+  buildTruncationRecoveryHint,
+  notifyTruncation as notifyTruncationImpl,
+} from "./truncation-recovery";
+import { emitEvent as emitEventImpl } from "./event-emit";
 import type { GodotRpcBridge } from "./godot-rpc-bridge";
 import { wrapPromptSlashAsBlock } from "./prompt-slash-wrap";
-import { buildSessionSlashItems } from "./session-slash-items";
+import { listSessionSkills, listSessionSlashItems } from "./session-skills-list";
 import {
   SessionModeController,
   isReadonlySessionMode,
@@ -63,24 +81,17 @@ import {
 } from "./retract-orchestrator";
 import { TurnFileTracker } from "./turn-file-tracker";
 import { ShadowCheckpointTracker } from "./shadow-checkpoints";
-import { applyXAgentSkillsFilter } from "./filter-session-skills";
 import { autoMaintain } from "./auto-maintain";
-import { listPlugins } from "./plugin-host";
 import { reloadAuthStorageCache } from "./model-runtime-auth";
-import {
-  emptyUsageSnapshot,
-  modelFromSession,
-  type ToolDetailRecord,
-} from "./session-host-helpers";
+import { type ToolDetailRecord } from "./session-host-helpers";
 import {
   SessionLifecycle,
   type SessionBundle,
 } from "./session-lifecycle";
 import type {
-  CwdOps,
+  CwdLock,
   EventBus,
   ResourceState,
-  RuntimeState,
   SessionLifecycleHost,
   SessionModeHost,
   RetractOrchestratorHost,
@@ -89,38 +100,16 @@ import {
   bridgeSessionEvents,
   type SessionEventBridgeDeps,
 } from "./session-event-bridge";
-import {
-  buildUsageSnapshot as buildUsageSnapshotFor,
-  captureCompactionBaseline as captureCompactionBaselineFor,
-  recordCompactionDelta as recordCompactionDeltaFor,
-  type CompactionStatsBaseline,
-} from "./session-usage";
+import { type CompactionStatsBaseline } from "./session-usage";
 
 export type { ToolDetailRecord } from "./session-host-helpers";
 
-
-/**
- * Marker prefix for the system-injected recovery prompt. Used by `prompt()` to
- * tell the recovery-prompt path apart from user-typed prompts, so that
- * `consecutiveTruncationRetries` only resets when the user types something
- * (not when the host re-prompts itself).
- */
-export const TRUNCATION_RECOVERY_MARKER = "[system-recovery]";
-
-/**
- * Build the one-shot recovery hint injected when an assistant turn was
- * truncated by `max_tokens` with no text / no tool call. English, ~80 words,
- * intentionally short so it doesn't itself risk hitting the same cap.
- */
-export function buildTruncationRecoveryHint(): string {
-  return [
-    TRUNCATION_RECOVERY_MARKER,
-    "Your previous turn was truncated at max_tokens (output budget exhausted by thinking).",
-    "To recover, do not do deep reasoning this turn — emit exactly one tool call now",
-    "(read / grep / edit / run / godot_run_main_scene) to checkpoint progress, then",
-    "read its result, then continue. Save longer thinking for the next turn.",
-  ].join(" ");
-}
+// re-export truncation recovery constants (history entry for external callers).
+// 主实现在 ./truncation-recovery.ts, 这里保留 re-export 避免外部 import 路径变更.
+export {
+  TRUNCATION_RECOVERY_MARKER,
+  buildTruncationRecoveryHint,
+} from "./truncation-recovery";
 
 
 export class SessionHost {
@@ -183,62 +172,32 @@ export class SessionHost {
   ) {
     this.getWindow = getWindow;
     this.godotRpc = godotRpc;
-    this.sessionMode = new SessionModeController(() => this.asSessionModeHost());
-    this.retractOrchestrator = new RetractOrchestrator(() =>
-      this.asRetractOrchestratorHost(),
-    );
-    this.lifecycle = new SessionLifecycle(() => this.asSessionLifecycleHost());
-  }
-
-  // ============ 4 个窄 host-bag 暴露 (issue #59 主题 A) ============
-  // 替代 asLifecycleAccess / asModeHost / asRetractHost 3 个大 host-bag.
-  // SessionLifecycle 拿到 4 件全量; Mode / Retract 只 Pick 自己要的.
-
-  /** Full host for SessionLifecycle (open/resume/dispose 全生命周期). */
-  private asSessionLifecycleHost(): SessionLifecycleHost {
-    return {
+    // issue #59 主题 A: 3 个子编排器拿到的 host 直接 spread 3 个窄 helper
+    // (ResourceState / EventBus / CwdLock) — 没有 asXxxHost 适配器方法.
+    // 子编排器类型在 host-interfaces.ts 用 Pick<,字段> 显式选择, 看不到
+    // 整张 host, typecheck 拦截 drift.
+    this.sessionMode = new SessionModeController(() => ({
       ...this.asResourceState(),
       ...this.asEventBus(),
-      ...this.asCwdOps(),
-      ...this.asRuntimeState(),
-    };
+      ...this.asCwdLock(),
+    }));
+    this.retractOrchestrator = new RetractOrchestrator(() => ({
+      ...this.asResourceState(),
+      ...this.asEventBus(),
+      ...this.asCwdLock(),
+    }));
+    this.lifecycle = new SessionLifecycle(() => ({
+      ...this.asResourceState(),
+      ...this.asEventBus(),
+      ...this.asCwdLock(),
+    }));
   }
 
-  /** Narrow host for SessionModeController (mode 互锁路径). */
-  private asSessionModeHost(): SessionModeHost {
-    return {
-      getBundle: () => this.bundle,
-      getResourceLoader: () => this.getResourceLoader(),
-      getBaseAppendPrompt: () => this.getBaseAppendPrompt(),
-      getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
-      getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
-      emit: (event) => this.emit(event),
-      emitReplaceableNotice: (replaceKey, text, level) =>
-        this.emitReplaceableNotice(replaceKey, text, level),
-      ensureRuntime: () => this.ensureRuntime(),
-      prompt: (payload) =>
-        this.prompt(typeof payload === "string" ? { text: payload } : payload),
-    };
-  }
-
-  /** Narrow host for RetractOrchestrator (撤回 pipeline). */
-  private asRetractOrchestratorHost(): RetractOrchestratorHost {
-    return {
-      getBundle: () => this.bundle,
-      fileTracker: this.fileTracker,
-      shadowCheckpoints: this.shadowCheckpoints,
-      setStatus: (status, error) => this.setStatus(status, error),
-      emitHistoryReplace: () => this.emitHistoryReplace(),
-      emitUsageUpdate: () => this.emitUsageUpdate(),
-      pruneToolDetailsToBranch: () => this.pruneToolDetailsToBranch(),
-      prompt: (payload) =>
-        this.prompt(typeof payload === "string" ? { text: payload } : payload),
-      promptPreparing: this.promptPreparing,
-      isPromptPreparing: () => this.promptPreparing,
-      onRetractSuccess: (abandonedUserEntryIds) =>
-        this.sessionMode.rollbackGoalAfterRetract(abandonedUserEntryIds),
-    };
-  }
+  // ============ 3 个窄 host-bag 暴露 (issue #59 主题 A) ============
+  // 替代 asLifecycleAccess / asModeHost / asRetractHost 3 个大 host-bag.
+  // 3 个子编排器 (Lifecycle / Mode / Retract) 的 host 各自用 Pick<,字段> 显式
+  // 选自己需要的几个方法, SessionHost 在构造时 spread 这 3 个 helper 拼出.
+  // 没有 asXxxHost 适配器方法 — C-102 收口.
 
   private asResourceState(): ResourceState {
     return {
@@ -265,8 +224,14 @@ export class SessionHost {
     };
   }
 
-  private asCwdOps(): CwdOps {
+  /**
+   * CwdLock: cwd 变更时的所有可变状态 + 操作 (合并自原 CwdOps + RuntimeState).
+   * 字段全部 readonly 函数 / 对象引用, 不暴露 raw setter, 防止子编排器绕过
+   * host 之间的同步路径. 子编排器通过 Pick<CwdLock, 字段名> 选择自己需要的.
+   */
+  private asCwdLock(): CwdLock {
     return {
+      // 原 CwdOps 部分
       pruneToolDetailsToBranch: () => this.pruneToolDetailsToBranch(),
       ensureRuntime: () => this.ensureRuntime(),
       bridgeEvents: (session) => this.bridgeEvents(session),
@@ -274,13 +239,9 @@ export class SessionHost {
         this.prompt(typeof payload === "string" ? { text: payload } : payload),
       promptPreparing: this.promptPreparing,
       isPromptPreparing: () => this.promptPreparing,
-    };
-  }
-
-  private asRuntimeState(): RuntimeState {
-    return {
+      // 原 RuntimeState 部分
       runReplaceExclusive: (fn) => this.runReplaceExclusive(fn),
-      historyFingerprint: (items) => this.historyFingerprint(items),
+      historyFingerprint: (items) => historyFingerprintImpl(items),
       toolDetails: this.toolDetails,
       setBundle: (bundle) => {
         this.bundle = bundle;
@@ -314,103 +275,55 @@ export class SessionHost {
   }
 
   getHistorySnapshot(): HistoryItem[] {
-    return this.historyFromBundle();
-  }
-
-  private historyFromBundle(): HistoryItem[] {
-    if (!this.bundle) return [];
-    try {
-      const branch = this.bundle.session.sessionManager.getBranch();
-      return branchEntriesToHistory(branch);
-    } catch {
-      return [];
-    }
+    return historyFromBundleImpl(this.historyEmitDeps());
   }
 
   private lastHistoryFingerprint: string | null = null;
 
-  private historyFingerprint(items: HistoryItem[]): string {
-    return items
-      .map((item) => {
-        switch (item.kind) {
-          case "user":
-            return `u:${item.id}:${item.entryId ?? ""}:${item.text.length}`;
-          case "assistant":
-            return `a:${item.id}:${item.entryId ?? ""}:${item.userEntryId ?? ""}:${item.text.length}:${item.thinking.length}:${item.done ? 1 : 0}`;
-          case "tool": {
-            const resultLen =
-              typeof item.result === "string"
-                ? item.result.length
-                : item.result == null
-                  ? 0
-                  : 1;
-            return `t:${item.id}:${item.toolName}:${resultLen}:${item.done ? 1 : 0}`;
-          }
-          case "system":
-            return `s:${item.id}:${item.text.length}`;
-          default:
-            return `?:${(item as { id?: string }).id ?? ""}`;
-        }
-      })
-      .join("|");
-  }
-
   private emitHistoryReplace(): void {
-    const items = this.historyFromBundle();
-    const fingerprint = this.historyFingerprint(items);
-    if (fingerprint === this.lastHistoryFingerprint) return;
-    this.lastHistoryFingerprint = fingerprint;
-    this.emit({ type: "history_replace", items });
+    emitHistoryReplaceImpl(this.historyEmitDeps());
   }
 
   private buildUsageSnapshot(): SessionUsageSnapshot | null {
-    if (!this.bundle) return null;
-    return buildUsageSnapshotFor(this.bundle.session, this.lastTurnUsage);
+    return buildUsageSnapshotImpl(this.historyEmitDeps());
   }
 
   private emitUsageUpdate(): void {
-    if (!this.bundle) return;
-    const usage = this.buildUsageSnapshot() ?? emptyUsageSnapshot();
-    this.emit({ type: "usage_update", usage });
+    emitUsageUpdateImpl(this.historyEmitDeps());
   }
 
   private captureCompactionBaseline(): void {
-    this.compactionStatsBaseline = this.bundle
-      ? captureCompactionBaselineFor(this.bundle.session)
-      : null;
+    captureCompactionBaselineImpl(this.historyEmitDeps());
   }
 
   private recordCompactionDelta(): void {
-    const baseline = this.compactionStatsBaseline;
-    this.compactionStatsBaseline = null;
-    if (!baseline || !this.bundle) return;
-    recordCompactionDeltaFor(this.bundle.session, baseline);
+    recordCompactionDeltaImpl(this.historyEmitDeps());
   }
 
   private pruneToolDetailsToBranch(): void {
-    if (!this.bundle) {
-      this.toolDetails.clear();
-      return;
-    }
-    const keep = new Set<string>();
-    try {
-      for (const entry of this.bundle.session.sessionManager.getBranch()) {
-        if (entry.type !== "message") continue;
-        const msg = entry.message as {
-          role?: string;
-          content?: Array<{ type?: string; id?: string }>;
-        };
-        if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
-        for (const part of msg.content) {
-          if (part.type === "toolCall" && part.id) keep.add(part.id);
-        }
-      }
-    } catch {
-      return;
-    }
-    for (const id of this.toolDetails.keys()) {
-      if (!keep.has(id)) this.toolDetails.delete(id);
-    }
+    pruneToolDetailsToBranchImpl(this.historyEmitDeps());
+  }
+
+  /** 内部 helper: 拼装 history/usage/compaction emit 需要的 deps. */
+  private historyEmitDeps() {
+    return {
+      getBundle: () => this.bundle,
+      getLastTurnUsage: () => this.lastTurnUsage,
+      getLastHistoryFingerprint: () => this.lastHistoryFingerprint,
+      setLastHistoryFingerprint: (fp: string | null) => {
+        this.lastHistoryFingerprint = fp;
+      },
+      toolDetails: this.toolDetails,
+      getCompactionStatsBaseline: () => this.compactionStatsBaseline,
+      setCompactionStatsBaseline: (b: unknown) => {
+        this.compactionStatsBaseline = b as CompactionStatsBaseline | null;
+      },
+      getCompactionRecording: () => this.compactionRecording,
+      setCompactionRecording: (v: boolean) => {
+        this.compactionRecording = v;
+      },
+      emit: (event: UiAgentEvent) => this.emit(event),
+    };
   }
 
   private runReplaceExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -423,45 +336,20 @@ export class SessionHost {
   }
 
   private emit(event: UiAgentEvent): void {
-    // Sample noisy delta events so we can still tell "no stream at all" from
-    // "stream is happening but the log was filtered" — every 100th delta
-    // gets a line, others are skipped.
-    if (event.type === "text_delta") {
-      this.textDeltaCount += 1;
-      if (this.textDeltaCount === 1 || this.textDeltaCount % 100 === 0) {
-        dbgLog("emit", "-> text_delta", { n: this.textDeltaCount, len: event.delta.length });
-      }
-    } else if (event.type === "thinking_delta") {
-      this.thinkingDeltaCount += 1;
-      if (this.thinkingDeltaCount === 1 || this.thinkingDeltaCount % 100 === 0) {
-        dbgLog("emit", "-> thinking_delta", { n: this.thinkingDeltaCount, len: event.delta.length });
-      }
-    } else {
-      // Reset stream counters when a non-delta event arrives — different turns
-      // shouldn't share the counter.
-      if (event.type === "assistant_end" || event.type === "agent_end") {
-        this.textDeltaCount = 0;
-        this.thinkingDeltaCount = 0;
-      }
-      // DEBUG(thinking-switch #30): 详细 payload for 排查 thinking 切换失联。
-      // 只在 3 个关键事件上多打一条 — session_info / session_mode / notice
-      // 任何 status 错误，避免淹没常规流。
-      if (
-        event.type === "session_info" ||
-        event.type === "session_mode" ||
-        event.type === "notice"
-      ) {
-        dbgLog("emit", "->", event.type, event);
-      } else {
-        dbgLog("emit", "->", event.type);
-      }
-    }
-    const win = this.getWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC_EVENTS.agentEvent, event);
-    } else {
-      dbgLog("emit", "drop (window gone)", event.type);
-    }
+    emitEventImpl(
+      {
+        getWindow: () => this.getWindow(),
+        getTextDeltaCount: () => this.textDeltaCount,
+        setTextDeltaCount: (n) => {
+          this.textDeltaCount = n;
+        },
+        getThinkingDeltaCount: () => this.thinkingDeltaCount,
+        setThinkingDeltaCount: (n) => {
+          this.thinkingDeltaCount = n;
+        },
+      },
+      event,
+    );
   }
 
   /** SessionModeHost — bundle + loader access for Plan/Goal controller. */
@@ -524,7 +412,13 @@ export class SessionHost {
   }
 
   private bridgeEvents(session: AgentSession): () => void {
-    const deps: SessionEventBridgeDeps = {
+    return bridgeSessionEvents(session, this.buildEventBridgeDeps());
+  }
+
+  /** 组装 SessionEventBridgeDeps (Pi 事件桥接所需的所有 host 闭包).
+   *  拆出来让 bridgeEvents 自身变成 1 行 delegator, host 主类更聚焦. */
+  private buildEventBridgeDeps(): SessionEventBridgeDeps {
+    return {
       emit: (event) => this.emit(event),
       setStatus: (status, error) => this.setStatus(status, error),
       setLastErrorSilently: (error) => {
@@ -563,7 +457,6 @@ export class SessionHost {
         void this.notifyTruncation(detail);
       },
     };
-    return bridgeSessionEvents(session, deps);
   }
 
   private currentUserEntryId(): string | undefined {
@@ -595,90 +488,19 @@ export class SessionHost {
 
   /**
    * After the first completed round, ensure the open session has a title once.
+   * Logic lives in `./auto-title.ts` (extracted in issue #59 主题 A to slim
+   * the host facade); this method is just a bridge to the helper.
    */
   private async maybeAutoTitleSession(): Promise<void> {
-    const bundle = this.bundle;
-    if (!bundle || this.autoTitleInFlight) return;
-
-    const messages = bundle.session.messages as readonly unknown[];
-    let userText = "";
-    let assistantText = "";
-    for (const msg of messages) {
-      const role = (msg as { role?: string }).role;
-      if (!userText && role === "user") {
-        userText = extractMessageText(msg);
-      } else if (userText && !assistantText && role === "assistant") {
-        assistantText = extractMessageText(msg);
-        break;
-      }
-    }
-
-    this.autoTitleInFlight = true;
-    try {
-      const decided = await ensureSessionTitle({
-        currentName: bundle.session.sessionManager.getSessionName(),
-        userText,
-        assistantText,
-        complete: async (prompt) => {
-          const model = bundle.session.model;
-          if (!model) return null;
-          const runtime = await this.ensureRuntime();
-          if (this.bundle !== bundle) return null;
-          if (bundle.session.sessionManager.getSessionName()) return null;
-          const result = await runtime.completeSimple(
-            model,
-            {
-              messages: [
-                {
-                  role: "user",
-                  content: prompt,
-                  timestamp: Date.now(),
-                },
-              ],
-              tools: [],
-            },
-            { maxTokens: 64, temperature: 0.2 },
-          );
-          if (this.bundle !== bundle) return null;
-          if (bundle.session.sessionManager.getSessionName()) return null;
-          if (result.stopReason === "error" || result.stopReason === "aborted") {
-            return null;
-          }
-          return result.content
-            .filter(
-              (p): p is { type: "text"; text: string } =>
-                !!p &&
-                typeof p === "object" &&
-                (p as { type?: string }).type === "text" &&
-                typeof (p as { text?: unknown }).text === "string",
-            )
-            .map((p) => p.text)
-            .join("")
-            .trim();
-        },
-        isStale: () =>
-          this.bundle !== bundle ||
-          Boolean(bundle.session.sessionManager.getSessionName()),
-      });
-
-      if (!decided || decided.action !== "set") return;
-      if (this.bundle !== bundle) return;
-      if (bundle.session.sessionManager.getSessionName()) return;
-
-      try {
-        bundle.session.setSessionName(decided.title);
-        this.emit({
-          type: "session_title",
-          sessionId: bundle.session.sessionId,
-          name: decided.title,
-          sessionPath: bundle.sessionPath,
-        });
-      } catch {
-        // Non-fatal: listSessions still falls back to firstMessage.
-      }
-    } finally {
-      this.autoTitleInFlight = false;
-    }
+    return maybeAutoTitleSession({
+      getBundle: () => this.bundle,
+      ensureRuntime: () => this.ensureRuntime(),
+      emit: (event) => this.emit(event),
+      isInFlight: () => this.autoTitleInFlight,
+      setInFlight: (v) => {
+        this.autoTitleInFlight = v;
+      },
+    });
   }
 
   private async ensureRuntime(): Promise<ModelRuntime> {
@@ -828,54 +650,21 @@ export class SessionHost {
   /**
    * Called by the event-bridge when the assistant message was truncated by
    * `max_tokens` with no text / no tool call (thinking used all output budget).
-   * Injects a one-shot recovery prompt up to `MAX_TRUNCATION_RETRIES` times
-   * per consecutive truncation streak. On cap, surfaces an error status
-   * asking the user to lower thinking level or switch model — repeated
-   * auto-retry cannot shrink the input context that's the real culprit.
-   *
-   * Recovery prompt is dispatched via `queueMicrotask` so it lands after
-   * the current turn's `turn_end` event, otherwise Pi's `isStreaming` would
-   * still be true and `session.prompt` would steer instead of starting a
-   * fresh turn.
+   * 逻辑在 `./truncation-recovery.ts` (issue #59 主题 A 提取).
    */
-  async notifyTruncation(detail: { messageId: string; outputTokens: number }): Promise<void> {
-    if (!this.bundle) {
-      dbgLog("session", "notifyTruncation skipped: no bundle");
-      return;
-    }
-    if (this.consecutiveTruncationRetries >= SessionHost.MAX_TRUNCATION_RETRIES) {
-      dbgLog("session", "notifyTruncation capped", {
-        attempts: this.consecutiveTruncationRetries,
-        messageId: detail.messageId,
-      });
-      this.setStatus(
-        "error",
-        `已自动重试 ${SessionHost.MAX_TRUNCATION_RETRIES} 次仍被 max_tokens 截断。请把设置里的 thinking 改为 off 或换 M2.7。`,
-      );
-      return;
-    }
-    this.consecutiveTruncationRetries += 1;
-    dbgLog("session", "notifyTruncation: scheduling retry", {
-      attempt: this.consecutiveTruncationRetries,
-      messageId: detail.messageId,
-      outputTokens: detail.outputTokens,
-    });
-    this.setStatus("retrying", "上一轮被 max_tokens 截断,正在自动重试…");
-    // Defer until after turn_end so the new turn starts cleanly.
-    queueMicrotask(() => {
-      const bundle = this.bundle;
-      if (!bundle) {
-        dbgLog("session", "notifyTruncation deferred call: bundle gone");
-        return;
-      }
-      void this.prompt({ text: buildTruncationRecoveryHint() }).catch((err) => {
-        dbgWarn(
-          "session",
-          "notifyTruncation prompt failed",
-          err instanceof Error ? err.message : String(err),
-        );
-      });
-    });
+  notifyTruncation(detail: { messageId: string; outputTokens: number }): Promise<void> {
+    return notifyTruncationImpl(
+      {
+        getBundle: () => this.bundle,
+        getRetries: () => this.consecutiveTruncationRetries,
+        setRetries: (v) => {
+          this.consecutiveTruncationRetries = v;
+        },
+        setStatus: (status, error) => this.setStatus(status, error),
+        prompt: (payload) => this.prompt(payload),
+      },
+      detail,
+    );
   }
 
   async prompt(payload: PromptPayload): Promise<PromptResult> {
@@ -1033,273 +822,102 @@ export class SessionHost {
   /**
    * 切换会话模型。校验通过并真正下发给 session 后再写 prefs，
    * 避免 prefs 已更新但 session 切换失败导致的"看起来生效实际无效"。
+   * 逻辑在 `./session-config.ts` (issue #59 主题 A 提取).
    */
-  async setModel(
+  setModel(
     provider: string,
     id: string,
   ): Promise<{ ok: boolean; error?: string }> {
-    if (!this.bundle) return { ok: false, error: "尚未打开项目" };
-    // DEBUG(thinking-switch #30): 跟踪 setModel 调用链,排查周期 session_info
-    dbgLog("setModel", "in", { provider, id });
-    try {
-      const runtime = await this.ensureRuntime();
-      const model = runtime.getModel(provider, id);
-      if (!model) {
-        const error = `未找到模型 ${provider}/${id}`;
-        dbgLog("setModel", "model-not-found", { provider, id });
-        this.emitReplaceableNotice("model", error, "error");
-        return { ok: false, error };
-      }
-      // 先下发到 session，再持久化 prefs；任一步失败都不污染 prefs。
-      await this.bundle.session.setModel(model);
-      void patchPrefs({ provider, model: id });
-      this.emit({
-        type: "session_info",
-        sessionId: this.bundle.session.sessionId,
-        cwd: this.bundle.cwd,
-        model: modelFromSession(this.bundle.session),
-        thinkingLevel: this.bundle.session.thinkingLevel as ThinkingLevel,
-        availableThinkingLevels: this.bundle.session.getAvailableThinkingLevels(),
-        sessionPath: this.bundle.sessionPath,
-      });
-      this.emitUsageUpdate();
-      this.emitReplaceableNotice(
-        "model",
-        `已切换模型：${provider}/${id}`,
-      );
-      return { ok: true };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      this.emitReplaceableNotice(
-        "model",
-        `切换模型失败：${error}`,
-        "error",
-      );
-      return { ok: false, error };
-    }
+    return setModelImpl(this.sessionConfigDeps(), provider, id);
   }
 
-  async setThinkingLevel(
+  setThinkingLevel(
     level: ThinkingLevel,
   ): Promise<{ ok: boolean; thinkingLevel?: ThinkingLevel }> {
-    if (!this.bundle) {
-      dbgLog("setThinkingLevel", "no-bundle", { level });
-      return { ok: false };
-    }
-    // DEBUG(thinking-switch #30): 跟踪 thinking 切换入参,排查"调了但 UI 没动"
-    const currentBefore = this.bundle.session.thinkingLevel;
-    dbgLog("setThinkingLevel", "in", {
-      requested: level,
-      currentBefore,
-      available: this.bundle.session.getAvailableThinkingLevels(),
-    });
-    this.bundle.session.setThinkingLevel(level);
-    // Persist the model-clamped effective level so prefs / TopBar / Settings stay
-    // aligned (e.g. DeepSeek V4 maps medium→high; unsupported → nearest).
-    const effective = this.bundle.session.thinkingLevel as ThinkingLevel;
-    dbgLog("setThinkingLevel", "after-set", {
-      requested: level,
-      effective,
-      changedVsBefore: effective !== currentBefore,
-      // 标记 Pi 是否把目标级别钳制了(available levels 不含) — 切换被静默回弹的根因
-      clamped: effective !== level,
-    });
-    // Await the persist: renderer follows this IPC with `prefs.get()`, and a
-    // fire-and-forget write can leave a stale cache that clobbers the effective
-    // level it just received via session_info (composer snap-back bug).
-    await patchPrefs({ thinkingLevel: effective });
-    this.emit({
-      type: "session_info",
-      sessionId: this.bundle.session.sessionId,
-      cwd: this.bundle.cwd,
-      model: modelFromSession(this.bundle.session),
-      thinkingLevel: effective,
-      availableThinkingLevels: this.bundle.session.getAvailableThinkingLevels(),
-      sessionPath: this.bundle.sessionPath,
-    });
-    return { ok: true, thinkingLevel: effective };
+    return setThinkingLevelImpl(this.sessionConfigDeps(), level);
+  }
+
+  /** 内部 helper: 拼装 setModel / setThinkingLevel 需要的 deps. */
+  private sessionConfigDeps() {
+    return {
+      getBundle: () => this.bundle,
+      ensureRuntime: () => this.ensureRuntime(),
+      emit: (event: UiAgentEvent) => this.emit(event),
+      emitReplaceableNotice: (
+        replaceKey: "model",
+        text: string,
+        level?: "info" | "warn" | "error",
+      ) => this.emitReplaceableNotice(replaceKey, text, level),
+      emitUsageUpdate: () => this.emitUsageUpdate(),
+    };
   }
 
   /**
    * 应用工具白名单。先尝试热切换；只有缺失的工具在可用清单内时才重建会话，
    * 且重建前后都会 emit notice，避免用户感到"会话无声闪烁"。
+   * 逻辑在 `./apply-tools.ts` (issue #59 主题 A 提取).
    */
-  async applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
-    void patchPrefs({ tools });
-    if (!this.bundle) return { ok: true };
-
-    // Ask/Plan: update prefs + savedTools snapshot, keep ephemeral read-only tools.
-    if (isReadonlySessionMode(this.sessionMode.getMode())) {
-      return this.sessionMode.applyReadonlyModeTools(tools);
+  applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
+    const bundle = this.bundle;
+    if (!bundle) {
+      void patchPrefs({ tools });
+      return Promise.resolve({ ok: true });
     }
-
-    try {
-      this.bundle.session.setActiveToolsByName(tools);
-      this.emitReplaceableNotice(
-        "tools",
-        "已更新工具白名单（系统提示已重建）。本会话前缀缓存将从下一轮重新积累。",
-        "warn",
-      );
-      const active = new Set(this.bundle.session.getActiveToolNames());
-      const missing = tools.filter((name) => !active.has(name));
-      if (missing.length === 0) return { ok: true };
-
-      // 不在可切换清单内的名字重建也注册不上：告警即可，不要反复重建会话。
-      const registrable = new Set<string>(
-        ALL_TOGGLEABLE_TOOLS as readonly string[],
-      );
-      const rebuildable = missing.filter((name) => registrable.has(name));
-      if (rebuildable.length === 0) {
-        this.emitReplaceableNotice(
-          "tools",
-          `以下工具不在可用清单中，已忽略：${missing.join(", ")}`,
-          "warn",
-        );
-        return { ok: true };
-      }
-
-      // Session was created before the full registry allowlist fix (or with a
-      // narrower tools list). Recreate so newly enabled tools can register.
-      const sessionPath = this.bundle.sessionPath;
-      const cwd = this.bundle.cwd;
-      this.emitReplaceableNotice(
-        "tools",
-        `正在重建会话以启用工具：${rebuildable.join(", ")}（历史保留）`,
-      );
-      const result = sessionPath
-        ? await this.resumeSession(sessionPath)
-        : await this.openProject(cwd);
-      if (!result.ok) {
-        const error =
-          result.error ??
-          `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`;
-        this.emitReplaceableNotice("tools", error, "error");
-        return { ok: false, error };
-      }
-      return { ok: true };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      this.emitReplaceableNotice(
-        "tools",
-        `应用工具失败：${error}`,
-        "error",
-      );
-      return { ok: false, error };
-    }
+    return applyToolsImpl(
+      {
+        getBundle: () => bundle,
+        isReadonlyMode: () => isReadonlySessionMode(this.sessionMode.getMode()),
+        applyReadonlyModeTools: (t) =>
+          this.sessionMode.applyReadonlyModeTools(t),
+        rebuildSession: () =>
+          bundle.sessionPath
+            ? this.resumeSession(bundle.sessionPath)
+            : this.openProject(bundle.cwd),
+        emitReplaceableNotice: (replaceKey, text, level) =>
+          this.emitReplaceableNotice(replaceKey, text, level),
+      },
+      tools,
+    );
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const runtime = await this.ensureRuntime();
-    const available = await runtime.getAvailable();
-    const prefs = getCachedPrefs();
-    const mapped = available.map((m) => ({
-      provider: m.provider,
-      id: m.id,
-      name: (m as { name?: string }).name ?? m.id,
-      baseUrl: (m as { baseUrl?: string }).baseUrl,
-      // 透传 Pi SDK `Model.input` (["text"] / ["text", "image"]) ——
-      // 供 renderer 在 send 前判断当前 model 是否支持 image。
-      // 缺省 = undefined,renderer 侧保守按"不收图"对待。
-      input: (m as { input?: ("text" | "image")[] }).input,
-    }));
-    // Catalog enabled flag is authoritative for TopBar — not only models.json.
-    const visible = await filterModelsByCatalogEnabled(mapped);
-    return dedupeModelInfosForUi(visible, prefs.provider);
+    return listModelsImpl(this.sessionInfoDeps());
   }
 
+  /** 逻辑在 `./session-info.ts` (issue #59 主题 A 提取). */
   getStatus(): HostStatus {
+    return getStatusImpl(this.sessionInfoDeps());
+  }
+
+  /** 内部 helper: 拼装 getStatus / listModels 需要的 deps. */
+  private sessionInfoDeps() {
     return {
-      status: this.status,
-      cwd: this.bundle?.cwd ?? null,
-      sessionId: this.bundle?.session.sessionId ?? null,
-      sessionPath: this.bundle?.sessionPath ?? null,
-      model: this.bundle ? modelFromSession(this.bundle.session) : null,
-      thinkingLevel:
-        (this.bundle?.session.thinkingLevel as ThinkingLevel) ??
-        getCachedPrefs().thinkingLevel,
-      availableThinkingLevels: this.bundle
-        ? this.bundle.session.getAvailableThinkingLevels()
-        : undefined,
-      error: this.lastError,
-      hasSession: Boolean(this.bundle),
+      getStatus: () => this.status,
+      getBundle: () => this.bundle,
+      getLastError: () => this.lastError,
+      ensureRuntime: () => this.ensureRuntime(),
     };
   }
 
   /**
    * Skills available for the active session cwd after X-agent filters
    * (home ~/.agents excluded + godot-* only when project.godot exists +
-   * prefs.disabledSkills).
+   * prefs.disabledSkills). 逻辑在 `./session-skills-list.ts` (主题 A 提取).
    */
   listSessionSkills(): SessionSkillInfo[] {
-    const cwd = this.bundle?.cwd;
-    if (!cwd) return [];
-    const skillItems = listPlugins(cwd).filter((p) => p.kind === "skill");
-    const filtered = applyXAgentSkillsFilter(
-      skillItems.map((p) => ({
-        name: p.name,
-        description: p.description ?? "",
-        filePath: join(p.path, "SKILL.md"),
-      })),
-      cwd,
-      getCachedPrefs().disabledSkills,
-    );
-    const byName = new Map<string, SessionSkillInfo>();
-    for (const s of filtered) {
-      if (!s.name || byName.has(s.name)) continue;
-      byName.set(s.name, {
-        name: s.name,
-        description: s.description ?? "",
-      });
-    }
-    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return listSessionSkills(this.bundle?.cwd ?? null);
   }
 
   /**
    * Composer `/` menu: extension commands + prompt templates + filtered skills.
-   * Prefer Pi runtime lists; fall back to plugin-host prompt scan when needed.
+   * 逻辑在 `./session-skills-list.ts` (主题 A 提取).
    */
   listSessionSlashItems(): SessionSlashItem[] {
-    const cwd = this.bundle?.cwd;
-    if (!cwd) return [];
-
-    const skills = this.listSessionSkills();
-
-    type PromptSeed = {
-      name: string;
-      description: string;
-      argumentHint?: string;
-    };
-    let prompts: PromptSeed[] = (
-      this.resourceLoader?.getPrompts().prompts ?? []
-    ).map((p) => ({
-      name: p.name,
-      description: p.description ?? "",
-      argumentHint: p.argumentHint,
-    }));
-    if (prompts.length === 0 && this.bundle?.session) {
-      prompts = this.bundle.session.promptTemplates.map((p) => ({
-        name: p.name,
-        description: p.description ?? "",
-        argumentHint: p.argumentHint,
-      }));
-    }
-    if (prompts.length === 0) {
-      prompts = listPlugins(cwd)
-        .filter((p) => p.kind === "prompt")
-        .map((p) => ({
-          name: p.name,
-          description: p.description ?? "",
-        }));
-    }
-
-    const commands = (
-      this.bundle?.session.extensionRunner.getRegisteredCommands() ?? []
-    ).map((c) => ({
-      name: (c.invocationName || c.name).trim(),
-      description: c.description ?? "",
-    }));
-
-    return buildSessionSlashItems({ skills, prompts, commands });
+    return listSessionSlashItems({
+      cwd: this.bundle?.cwd ?? null,
+      session: this.bundle?.session ?? null,
+      resourceLoader: this.resourceLoader,
+    });
   }
 
   getSessionUsage(): SessionUsageSnapshot | null {
@@ -1309,37 +927,7 @@ export class SessionHost {
   async compactSession(
     customInstructions?: string,
   ): Promise<CompactSessionResult> {
-    return this.runReplaceExclusive(async () => {
-      if (!this.bundle) {
-        return { ok: false, error: "尚未打开项目" };
-      }
-      if (this.status === "streaming" || this.status === "retrying") {
-        return { ok: false, error: "请等待当前回合结束后再压缩" };
-      }
-      const session = this.bundle.session;
-      if (session.isCompacting) {
-        return { ok: false, error: "正在压缩中" };
-      }
-      const sessionId = session.sessionId;
-      try {
-        const result = await session.compact(
-          customInstructions?.trim() || undefined,
-        );
-        if (this.bundle?.session.sessionId === sessionId) {
-          this.emitUsageUpdate();
-        }
-        return {
-          ok: true,
-          tokensBefore: result.tokensBefore,
-          estimatedTokensAfter: result.estimatedTokensAfter,
-        };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    });
+    return compactSessionImpl(this.maintenanceDeps(), customInstructions);
   }
 
   async reloadResources(): Promise<{
@@ -1347,30 +935,7 @@ export class SessionHost {
     reloaded: boolean;
     error?: string;
   }> {
-    if (!this.bundle) {
-      return { ok: true, reloaded: false };
-    }
-    try {
-      await this.bundle.session.reload();
-      // Pi's reload may refresh the tool registry / loader append; re-apply mode
-      // system append + active tools so Plan/Goal instructions stay attached.
-      if (this.resourceLoader) {
-        await this.resourceLoader.reload();
-      }
-      this.sessionMode.refreshAfterResourceReload();
-      this.emitReplaceableNotice(
-        "resources",
-        "已重载 prompts / skills / extensions",
-      );
-      this.emitUsageUpdate();
-      return { ok: true, reloaded: true };
-    } catch (err) {
-      return {
-        ok: false,
-        reloaded: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
+    return reloadResourcesImpl(this.maintenanceDeps());
   }
 
   /**
@@ -1378,38 +943,29 @@ export class SessionHost {
    * `session-event-bridge` on `turn_end` and on every Nth `tool_execution_end`.
    * Skips silently if there is no active bundle or the session is mid-stream.
    * Never throws; failures are logged via `dbgWarn`.
+   * 逻辑在 `./session-maintenance.ts` (issue #59 主题 A 提取).
    */
-  async autoMaintainIfNeeded(): Promise<void> {
-    const bundle = this.bundle;
-    if (!bundle) return;
-    if (this.status === "streaming" || this.status === "retrying") return;
-    if (bundle.session.isCompacting) return;
-    const prefs = getCachedPrefs();
-    const report = await autoMaintain(bundle.session, prefs, {
-      log: (line) => dbgWarn("auto-maintain", line),
-    });
-    if (report.outcome === "compacted" || report.outcome === "snipped-and-compacted") {
-      this.emitReplaceableNotice(
-        "auto-maintain",
-        `已自动压缩上下文（释放约 ${report.compactFreedTokens ?? "?"} tokens）`,
-        "info",
-      );
-    } else if (report.outcome === "snip-cleared") {
-      this.emitReplaceableNotice(
-        "auto-maintain",
-        `已裁剪 ${report.snip.snippedCount} 个过大的工具结果，压缩暂不需要`,
-        "info",
-      );
-    } else if (report.outcome === "compact-failed") {
-      this.emitReplaceableNotice(
-        "auto-maintain",
-        `自动压缩失败：${report.detail ?? "未知原因"}`,
-        "warn",
-      );
-    }
-    if (report.outcome !== "below-threshold" && report.outcome !== "disabled" && report.outcome !== "debounced") {
-      this.emitUsageUpdate();
-    }
+  autoMaintainIfNeeded(): Promise<void> {
+    return autoMaintainIfNeededImpl(this.maintenanceDeps());
   }
 
+  /** 内部 helper: 拼装 compactSession / reloadResources / autoMaintainIfNeeded
+   *  需要的 deps. */
+  private maintenanceDeps() {
+    return {
+      getBundle: () => this.bundle,
+      getStatus: () => this.status,
+      runReplaceExclusive: <T>(fn: () => Promise<T>) =>
+        this.runReplaceExclusive(fn),
+      getResourceLoader: () => this.resourceLoader,
+      refreshAfterResourceReload: () =>
+        this.sessionMode.refreshAfterResourceReload(),
+      emitUsageUpdate: () => this.emitUsageUpdate(),
+      emitReplaceableNotice: (
+        replaceKey: NoticeReplaceKey,
+        text: string,
+        level?: "info" | "warn" | "error",
+      ) => this.emitReplaceableNotice(replaceKey, text, level),
+    };
+  }
 }
