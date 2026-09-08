@@ -11,6 +11,7 @@ import { SelectMenu } from "../SelectMenu";
 import { useAutoClearNotice } from "../SettingsNotice";
 import {
   type FetchedProviderModel,
+  type ModelInput,
   type ProviderApiKind,
   type ProviderModelEntry,
   type ProviderPreset,
@@ -65,9 +66,33 @@ const emptyForm = (): ProviderUpsertInput => ({
   api: "openai-completions",
   baseUrl: "",
   apiKey: "",
-  models: [{ id: "", name: "" }],
+  models: [{ id: "", name: "", input: ["text"] }],
   notes: "",
 });
+
+/** 工具: 把"行级 input 字段"规整成数组,缺省视为 ["text"]。 */
+function normalizeRowInput(input: unknown): ModelInput[] {
+  if (!Array.isArray(input)) return ["text"];
+  const filtered = input.filter(
+    (v): v is ModelInput => v === "text" || v === "image",
+  );
+  return filtered.length > 0 ? filtered : ["text"];
+}
+
+/** 切换一个 input 类型。返回 null 表示拒绝(因取消到空)。 */
+function toggleRowInput(
+  current: ModelInput[] | undefined,
+  kind: ModelInput,
+): ModelInput[] | null {
+  const base = normalizeRowInput(current);
+  const has = base.includes(kind);
+  if (has) {
+    if (base.length === 1) return null; // 至少 1 个,不允许取消到空
+    return base.filter((x) => x !== kind);
+  }
+  // 不去重 —— ["text","text"] 也合法, Pi SDK / renderer 都按 includes 判断。
+  return [...base, kind];
+}
 
 type Props = {
   open: boolean;
@@ -174,7 +199,12 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       api: preset.api,
       baseUrl: preset.baseUrl,
       apiKey: "",
-      models: preset.models.length ? preset.models : [{ id: "", name: "" }],
+      models: preset.models.length
+        ? preset.models.map((m) => ({
+            ...m,
+            input: normalizeRowInput(m.input),
+          }))
+        : [{ id: "", name: "", input: ["text"] }],
       notes: preset.notes,
     });
     setEditing(true);
@@ -196,7 +226,13 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       api: profile.api,
       baseUrl: profile.baseUrl,
       apiKey: profile.apiKey,
-      models: profile.models.length ? profile.models : [{ id: "", name: "" }],
+      // form state 保留档案的原始 input (undefined / 实际值)。
+      // 表格渲染时用 normalizeRowInput 兜底显示 ["text"],但不动 form state
+      // —— saveProfile 只透传 form state, undefined 时不写 input 字段,
+      // 保留"未表态 = 不写"语义。
+      models: profile.models.length
+        ? profile.models
+        : [{ id: "", name: "", input: ["text"] }],
       notes: profile.notes,
     });
     setEditing(true);
@@ -232,8 +268,28 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   const addModelRow = () => {
     setForm((prev) => ({
       ...prev,
-      models: [...prev.models, { id: "", name: "" }],
+      models: [...prev.models, { id: "", name: "", input: ["text"] }],
     }));
+  };
+
+  /**
+   * 切换一个 row 的 input 类型。返回 false 表示拒绝(因取消到空)——
+   * UI 应当给一个轻量反馈(此处仅静默, 后端 validateUpsert 也会拒绝)。
+   */
+  const toggleInputKind = (index: number, kind: ModelInput) => {
+    setForm((prev) => {
+      const models = prev.models.slice();
+      const row = models[index];
+      if (!row) return prev;
+      const next = toggleRowInput(row.input, kind);
+      if (next == null) {
+        // 不允许空: 短暂报错提示。沿用 error 文案风格, 不抢 banner 槽。
+        setError("至少需要勾选一个输入类型（text / image）");
+        return prev;
+      }
+      models[index] = { ...row, input: next };
+      return { ...prev, models };
+    });
   };
 
   const removeModelRow = (index: number) => {
@@ -295,6 +351,9 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       return {
         id: m.id,
         name: m.id,
+        // OpenAI 兼容 /v1/models 不返回 input 字段; 缺省按 ["text"] 兜底。
+        // 用户在 chip 切换时再显式表态是否支持 image。
+        input: ["text"],
         ...(contextWindow != null ? { contextWindow } : {}),
       };
     });
@@ -356,10 +415,15 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               id,
               explicit,
             });
+            // input 透传 form state: undefined 不写,["text"] / ["text","image"]
+            // 透传。后端 validateUpsert 会校验"若给出则至少 1 个有效值"。
             return {
               id,
               ...(name ? { name } : {}),
               ...(contextWindow != null ? { contextWindow } : {}),
+              ...(m.input !== undefined && m.input.length > 0
+                ? { input: m.input }
+                : {}),
             };
           })
           .filter((m): m is ProviderModelEntry => !!m),
@@ -777,85 +841,121 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               </div>
             </div>
             <p className="modal-hint">
-              写入 models.json 的 contextWindow；留空默认 128k。
+              写入 models.json 的 contextWindow；留空默认 128k。输入 chip 决定
+              是否支持 image —— 未勾 image 时 composer 会挡住截图附件。
             </p>
             <div className="models-table-wrap">
               <table className="models-table">
                 <thead>
                   <tr>
-                    <th style={{ width: "34%" }}>模型 ID</th>
-                    <th style={{ width: "28%" }}>显示名</th>
-                    <th style={{ width: "22%" }}>上下文</th>
-                    <th style={{ width: "16%" }}>操作</th>
+                    <th style={{ width: "30%" }}>模型 ID</th>
+                    <th style={{ width: "24%" }}>显示名</th>
+                    <th style={{ width: "20%" }}>上下文</th>
+                    <th style={{ width: "14%" }}>输入</th>
+                    <th style={{ width: "12%" }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {form.models.map((row, index) => (
-                    <tr key={`model-row-${index}`}>
-                      <td>
-                        <input
-                          value={row.id}
-                          onChange={(e) =>
-                            updateModelRow(index, { id: e.target.value })
-                          }
-                          onBlur={() => autofillContextForRow(index)}
-                          placeholder="model-id"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          value={row.name ?? ""}
-                          onChange={(e) =>
-                            updateModelRow(index, {
-                              name: e.target.value,
-                            })
-                          }
-                          placeholder="可选显示名"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          className="tabular"
-                          inputMode="numeric"
-                          value={
-                            row.contextWindow != null
-                              ? String(row.contextWindow)
-                              : ""
-                          }
-                          onChange={(e) => {
-                            const digits = e.target.value.replace(
-                              /[^\d]/g,
-                              "",
-                            );
-                            if (!digits) {
-                              updateModelRow(index, {
-                                contextWindow: undefined,
-                              });
-                              return;
+                  {form.models.map((row, index) => {
+                    const rowInput = normalizeRowInput(row.input);
+                    return (
+                      <tr key={`model-row-${index}`}>
+                        <td>
+                          <input
+                            value={row.id}
+                            onChange={(e) =>
+                              updateModelRow(index, { id: e.target.value })
                             }
-                            const n = normalizePositiveInt(digits);
-                            if (n != null) {
+                            onBlur={() => autofillContextForRow(index)}
+                            placeholder="model-id"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={row.name ?? ""}
+                            onChange={(e) =>
                               updateModelRow(index, {
-                                contextWindow: n,
-                              });
+                                name: e.target.value,
+                              })
                             }
-                          }}
-                          placeholder="自动 / 128k"
-                          title="上下文窗口（tokens）"
-                        />
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => removeModelRow(index)}
-                          title="删除"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            placeholder="可选显示名"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="tabular"
+                            inputMode="numeric"
+                            value={
+                              row.contextWindow != null
+                                ? String(row.contextWindow)
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(
+                                /[^\d]/g,
+                                "",
+                              );
+                              if (!digits) {
+                                updateModelRow(index, {
+                                  contextWindow: undefined,
+                                });
+                                return;
+                              }
+                              const n = normalizePositiveInt(digits);
+                              if (n != null) {
+                                updateModelRow(index, {
+                                  contextWindow: n,
+                                });
+                              }
+                            }}
+                            placeholder="自动 / 128k"
+                            title="上下文窗口（tokens）"
+                          />
+                        </td>
+                        <td>
+                          <div className="input-chip-row">
+                            {(["text", "image"] as ModelInput[]).map((kind) => {
+                              const on = rowInput.includes(kind);
+                              return (
+                                <button
+                                  key={kind}
+                                  type="button"
+                                  className={
+                                    on
+                                      ? "input-chip input-chip--on"
+                                      : "input-chip"
+                                  }
+                                  aria-pressed={on}
+                                  title={
+                                    kind === "image"
+                                      ? on
+                                        ? "该模型支持图片输入"
+                                        : "点击开启 image 输入能力（vision 模型）"
+                                      : on
+                                        ? "该模型支持文字输入"
+                                        : "点击关闭 text（不允许空）"
+                                  }
+                                  onClick={() => toggleInputKind(index, kind)}
+                                >
+                                  {kind}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => removeModelRow(index)}
+                            title="删除"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

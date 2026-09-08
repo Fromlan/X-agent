@@ -243,8 +243,12 @@ function rawProviderPresets(): ProviderPreset[] {
       api: "openai-completions",
       baseUrl: "https://openrouter.ai/api/v1",
       models: [
-        { id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
-        { id: "openai/gpt-4o", name: "GPT-4o" },
+        {
+          id: "anthropic/claude-sonnet-4.5",
+          name: "Claude Sonnet 4.5",
+          input: ["text", "image"],
+        },
+        { id: "openai/gpt-4o", name: "GPT-4o", input: ["text", "image"] },
       ],
       notes: "OpenRouter 聚合路由",
       category: "aggregator",
@@ -283,7 +287,13 @@ function rawProviderPresets(): ProviderPreset[] {
       providerId: "aihubmix",
       api: "anthropic-messages",
       baseUrl: "https://aihubmix.com",
-      models: [{ id: "claude-sonnet-4-5", name: "Claude Sonnet" }],
+      models: [
+        {
+          id: "claude-sonnet-4-5",
+          name: "Claude Sonnet",
+          input: ["text", "image"],
+        },
+      ],
       notes: "AiHubMix 聚合",
       category: "aggregator",
       websiteUrl: "https://aihubmix.com",
@@ -294,7 +304,13 @@ function rawProviderPresets(): ProviderPreset[] {
       providerId: "dmxapi",
       api: "anthropic-messages",
       baseUrl: "https://www.dmxapi.cn",
-      models: [{ id: "claude-sonnet-4-5", name: "Claude Sonnet" }],
+      models: [
+        {
+          id: "claude-sonnet-4-5",
+          name: "Claude Sonnet",
+          input: ["text", "image"],
+        },
+      ],
       notes: "DMXAPI 中转",
       category: "aggregator",
       websiteUrl: "https://www.dmxapi.cn",
@@ -338,7 +354,13 @@ function rawProviderPresets(): ProviderPreset[] {
       providerId: "packycode",
       api: "anthropic-messages",
       baseUrl: "https://www.packyapi.ai",
-      models: [{ id: "claude-sonnet-4-5", name: "Claude Sonnet" }],
+      models: [
+        {
+          id: "claude-sonnet-4-5",
+          name: "Claude Sonnet",
+          input: ["text", "image"],
+        },
+      ],
       notes: "PackyCode 中转",
       category: "aggregator",
       websiteUrl: "https://www.packyapi.ai",
@@ -352,8 +374,8 @@ function rawProviderPresets(): ProviderPreset[] {
       api: "openai-completions",
       baseUrl: "https://api.openai.com/v1",
       models: [
-        { id: "gpt-4o", name: "GPT-4o" },
-        { id: "gpt-4.1", name: "GPT-4.1" },
+        { id: "gpt-4o", name: "GPT-4o", input: ["text", "image"] },
+        { id: "gpt-4.1", name: "GPT-4.1", input: ["text", "image"] },
       ],
       notes: "OpenAI 官方",
       category: "official",
@@ -366,8 +388,16 @@ function rawProviderPresets(): ProviderPreset[] {
       api: "anthropic-messages",
       baseUrl: "https://api.anthropic.com",
       models: [
-        { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-        { id: "claude-opus-4-5", name: "Claude Opus 4.5" },
+        {
+          id: "claude-sonnet-4-5",
+          name: "Claude Sonnet 4.5",
+          input: ["text", "image"],
+        },
+        {
+          id: "claude-opus-4-5",
+          name: "Claude Opus 4.5",
+          input: ["text", "image"],
+        },
       ],
       notes: "Anthropic 官方",
       category: "official",
@@ -380,8 +410,16 @@ function rawProviderPresets(): ProviderPreset[] {
       api: "google-generative-ai",
       baseUrl: "https://generativelanguage.googleapis.com",
       models: [
-        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+        {
+          id: "gemini-2.5-pro",
+          name: "Gemini 2.5 Pro",
+          input: ["text", "image"],
+        },
+        {
+          id: "gemini-2.5-flash",
+          name: "Gemini 2.5 Flash",
+          input: ["text", "image"],
+        },
       ],
       notes: "Google Generative AI",
       category: "official",
@@ -393,7 +431,7 @@ function rawProviderPresets(): ProviderPreset[] {
       providerId: "openai-compatible",
       api: "openai-completions",
       baseUrl: "https://api.openai.com/v1",
-      models: [{ id: "gpt-4o", name: "GPT-4o" }],
+      models: [{ id: "gpt-4o", name: "GPT-4o", input: ["text", "image"] }],
       notes: "通用 OpenAI Chat Completions 兼容网关",
       category: "compatible",
     },
@@ -403,7 +441,13 @@ function rawProviderPresets(): ProviderPreset[] {
       providerId: "anthropic",
       api: "anthropic-messages",
       baseUrl: "https://api.anthropic.com",
-      models: [{ id: "claude-sonnet-4-5", name: "Claude Sonnet" }],
+      models: [
+        {
+          id: "claude-sonnet-4-5",
+          name: "Claude Sonnet",
+          input: ["text", "image"],
+        },
+      ],
       notes: "Anthropic Messages / 兼容中转",
       category: "compatible",
     },

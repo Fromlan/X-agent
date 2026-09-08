@@ -224,10 +224,19 @@ function parseModelsField(raw: unknown): ProviderModelEntry[] {
         const contextWindow = normalizePositiveInt(
           obj.contextWindow ?? obj.context_window,
         );
+        // Pi models.json / cc-switch schema 暂未统一用 `input` 字段;
+        // 读到了透传, 读不到留 undefined (走默认未表态)。
+        const inputRaw = obj.input;
+        const input = Array.isArray(inputRaw)
+          ? inputRaw.filter(
+              (v): v is "text" | "image" => v === "text" || v === "image",
+            )
+          : undefined;
         return enrichModelEntry({
           id,
           ...(name ? { name } : {}),
           ...(contextWindow != null ? { contextWindow } : {}),
+          ...(input != null && input.length > 0 ? { input } : {}),
         });
       }
       return null;

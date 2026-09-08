@@ -241,6 +241,10 @@ export function maskApiKey(key: string): string {
   return `${trimmed.slice(0, 4)}…${trimmed.slice(-4)}`;
 }
 
+function isModelInput(value: unknown): value is "text" | "image" {
+  return value === "text" || value === "image";
+}
+
 export function validateUpsert(input: ProviderUpsertInput): string | null {
   if (!input.name.trim()) return "名称不能为空";
   if (!/^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/i.test(input.providerId.trim())) {
@@ -257,6 +261,18 @@ export function validateUpsert(input: ProviderUpsertInput): string | null {
   if (!input.apiKey.trim()) return "API Key 不能为空";
   if (!input.models.length || !input.models.some((m) => m.id.trim())) {
     return "至少需要一个模型 id";
+  }
+  // input 数组若给出, 至少 1 个有效元素; 缺省 (undefined) = 未表态, 落
+  // Pi models.json 时让 applyModelsJson 走 `?? model.input` 兜底到 builtin。
+  for (const m of input.models) {
+    if (!m.id.trim()) continue;
+    if (m.input === undefined) continue;
+    if (!Array.isArray(m.input) || m.input.length === 0) {
+      return "模型「" + m.id + "」至少需要勾选一个输入类型（text / image）";
+    }
+    if (!m.input.every(isModelInput)) {
+      return "模型「" + m.id + "」的 input 含非法值，仅允许 text / image";
+    }
   }
   return null;
 }
@@ -498,10 +514,16 @@ export async function upsertProviderProfile(
       if (!id) return null;
       const name = m.name?.trim();
       const explicit = normalizePositiveInt(m.contextWindow);
+      // input 字段是用户态 —— UI 默认 ["text"],用户主动开 image;
+      // 这里透传不注入 (与 contextWindow 不同, contextWindow 是按 id 查表补足)。
+      // `undefined` = 未表态,落 Pi models.json 时让 applyModelsJson 走
+      // `override.input ?? model.input` 兜底到 builtin。
+      const inputArr = Array.isArray(m.input) ? m.input.filter(isModelInput) : undefined;
       return enrichModelEntry({
         id,
         ...(name ? { name } : {}),
         ...(explicit != null ? { contextWindow: explicit } : {}),
+        ...(inputArr != null ? { input: inputArr } : {}),
       });
     })
     .filter((m): m is ProviderModelEntry => !!m);

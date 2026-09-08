@@ -193,6 +193,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 | Plan / Ask bash 被拒 | `session-mode/bash-readonly.ts`；按换行切段；拒 `$()` / 反引号 / `{}`；`godot` / `dotnet` 不视为只读 |
 | 撤回后文件没还原 | `shadow-checkpoints.ts` 是否生效；无 Git 时 `turn-file-tracker.ts`；检查时序绑定 |
 | 供应商密钥报错 | `provider-store` 同步；DeepSeek 代理看 `deepseekProxyModelExtras`；safeStorage probe 横幅 |
+| 模型不支持图片（warning chip 出现） | 用户在「设置 → 供应商 → 编辑」给该模型行勾上 `image` chip；落 `x-agent-providers.json` + 透传 Pi `models.json` 的 `input` 字段后 `modelSupportsImage` 放行。OpenAI 兼容 `/v1/models` 不返回该字段，需手动勾。 |
 | 流式卡顿 / 无法浏览历史 | 见 0.3.11 CHANGELOG；`MarkdownBody` 流式降级 `<pre>`；`IntersectionObserver` pinned 才 follow |
 | Godot 桥未连接 | 端口 `8765–8774`；插件 `editor_ready` token；`x-agent-godot-rpc.json` |
 | CI build 失败 | 仅 Windows；`npm run typecheck` + `npm test` 在 `apps/desktop` 内 |

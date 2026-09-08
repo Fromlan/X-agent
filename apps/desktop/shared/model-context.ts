@@ -200,9 +200,9 @@ export function resolveModelContextWindow(input: {
 }
 
 /** Attach resolved contextWindow when missing (presets / activate / upsert). */
-export function enrichModelEntry<T extends { id: string; name?: string; contextWindow?: number }>(
-  model: T,
-): T & { contextWindow?: number } {
+export function enrichModelEntry<
+  T extends { id: string; name?: string; contextWindow?: number; input?: ("text" | "image")[] },
+>(model: T): T & { contextWindow?: number } {
   const contextWindow = resolveModelContextWindow({
     id: model.id,
     explicit: model.contextWindow,
