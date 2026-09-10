@@ -40,13 +40,17 @@ describe("shouldBlockReadonlyModeToolCall (Ask/Plan hard gate)", () => {
     });
 
     it("ask + tool in allowlist → not blocked", () => {
+      // cwd must be a real existing directory; otherwise resolveInsideCwd
+      // fails at existsSync(cwd) and blocks before reaching the allowedTools
+      // check. CI windows-latest has no Git Bash /tmp mapping; use mkdtempSync.
+      const cwd = mkdtempSync(join(tmpdir(), "x-agent-pmg-mode-"));
       expect(
         shouldBlockReadonlyModeToolCall(
           "ask",
           "read",
           ["read"],
           { path: "src/index.ts" },
-          "/tmp",
+          cwd,
         ).block,
       ).toBe(false);
     });
