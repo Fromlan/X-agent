@@ -18,3 +18,7 @@ apps/desktop/**/playwright-report
 apps/desktop/coverage
 # Local repro pages and build reports
 .scratch/
+
+# Stale agent worktree checkouts (not registered git worktrees, drift cruft)
+.worktrees/
+

@@ -15,6 +15,11 @@
  *
  * Use `dbgLog()` for ordinary traces, `dbgWarn()` for recoverable anomalies,
  * and `dbgTimer()` to measure how long an awaited step took.
+ *
+ * Defense in depth (2026-09-09): every logged string passes through
+ * `redactString()` so accidental dbgLog(secret) cannot leak API keys, the
+ * `encryptedKey` ciphertext, the Godot RPC handshake token, or anything
+ * resembling a 64+ char base64 / hex blob.
  */
 const PREFIX = "[x-agent]";
 
@@ -27,7 +32,7 @@ function parseFlag(raw: string | null | undefined): boolean | undefined {
   return undefined;
 }
 
-/** Read main-process env flag. Guarded so renderer / SSR can't blow up. */
+/** Read main-process env flag. Guarded so renderer / SSR cannot blow up. */
 function readEnvFlag(): boolean | undefined {
   try {
     const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } })
@@ -60,13 +65,67 @@ export function isDebugEnabled(): boolean {
   return true;
 }
 
-/** ISO timestamp — shared format so main and renderer lines line up. */
+/** ISO timestamp - shared format so main and renderer lines line up. */
 function ts(): string {
   return new Date().toISOString();
 }
 
+/**
+ * Recognised secret prefixes / shapes. Matches are coarse on purpose
+ * (over-redaction beats leak). `long_blob` covers any 64+ char alphanumeric
+ * run with base64 / hex / arbitrary salt / token chars, so we never have to
+ * disambiguate base64 vs hex vs IV (the 7-catch-all pattern defeats both).
+ */
+const REDACT_RULES: Array<{ name: string; pattern: RegExp }> = [
+  { name: "anthropic_key", pattern: /sk-ant-[A-Za-z0-9_-]+/g },
+  { name: "openai_key", pattern: /sk-[A-Za-z0-9]{20,}/g },
+  { name: "github_pat", pattern: /ghp_[A-Za-z0-9]{20,}/g },
+  { name: "github_app", pattern: /(ghs_|gho_)[A-Za-z0-9]{20,}/g },
+  { name: "google_api", pattern: /AIza[A-Za-z0-9_-]{30,}/g },
+  { name: "long_blob", pattern: /[A-Za-z0-9+/_-]{64,}/g },
+];
+
+/** Replace any recognised secret with `[REDACTED:<rule>]`. */
+export function redactString(s: string): string {
+  let out = s;
+  for (const rule of REDACT_RULES) {
+    out = out.replace(rule.pattern, `[REDACTED:${rule.name}]`);
+  }
+  return out;
+}
+
+/**
+ * Redact a single argument. Shallow on purpose: existing call sites pass
+ * either strings or small plain objects, so a recursive walk would do more
+ * harm (cycles / perf) than good. Errors get their `message` rewritten but
+ * keep their original `name` and `stack`.
+ */
+function redactArg(arg: unknown): unknown {
+  if (typeof arg === "string") return redactString(arg);
+  if (arg instanceof Error) {
+    return {
+      name: arg.name,
+      message: redactString(arg.message),
+      stack: arg.stack,
+    };
+  }
+  if (arg && typeof arg === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(arg)) {
+      out[k] = typeof v === "string" ? redactString(v) : v;
+    }
+    return out;
+  }
+  return arg;
+}
+
+/** Redact a full args tuple. Returns a new array. */
+function redactArgs(args: unknown[]): unknown[] {
+  return args.map(redactArg);
+}
+
 function fmt(ns: string, args: unknown[]): unknown[] {
-  return [`${PREFIX}[${ns}] ${ts()}`, ...args];
+  return [`${PREFIX}[${ns}] ${ts()}`, ...redactArgs(args)];
 }
 
 /** Emit a trace-level debug entry. No-op when debug logging is disabled. */
@@ -95,3 +154,4 @@ export function dbgTimer(ns: string, label: string): () => void {
     console.log(`${PREFIX}[${ns}] ${ts()} ${label} +${Date.now() - start}ms`);
   };
 }
+
