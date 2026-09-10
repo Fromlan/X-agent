@@ -3983,6 +3983,21 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   border-color: var(--border-strong, var(--border-primary));
 }
 
+/* 未表态态 (m.input === undefined):dashed border + 弱化色,
+   与显式 ON (实心) / 显式 OFF (空心) 视觉区分,避免用户误判默认。
+   saveProfile 落 Pi 时由 guessDefaultInput 启发式兜底,vision 模型不会被静默锁成 ["text"]。 */
+.input-chip--unset {
+  border-style: dashed;
+  border-color: var(--border-secondary, var(--border-primary));
+  color: var(--text-tertiary, var(--text-secondary));
+  background: transparent;
+}
+
+.input-chip--unset:hover:not(:disabled) {
+  background: var(--bg-list-hover);
+  color: var(--text-primary);
+}
+
 .input-chip--on:hover:not(:disabled) {
   background: var(--bg-list-hover);
 }
