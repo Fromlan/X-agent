@@ -9,3 +9,10 @@ release
 
 # TypeScript build info cache
 *.tsbuildinfo
+
+# TypeScript declaration emit artifacts (composite mode without outDir)
+**/*.d.ts
+
+# TypeScript JavaScript emit artifacts (composite mode without outDir)
+**/*.js.map
+**/*.js

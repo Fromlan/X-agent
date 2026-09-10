@@ -8,6 +8,8 @@ import {
   type IpcChannelKey,
   type SenderUntrustedError,
 } from "../../shared/ipc";
+import { inspectError } from "../../shared/error-i18n";
+import { dbgWarn } from "../../shared/debug-log";
 
 /**
  * Typed `ipcMain.handle` registrar: the handler signature is derived from
@@ -19,21 +21,47 @@ import {
  * renderer URL / file: protocol) may invoke channels.
  *
  * **Sender-trust 契约 (issue #65 主题 H, 2026-08-31)**:
- *   - 不可信 sender 抛 `SenderUntrustedError`, IPC 协议让该 throw 透传到
- *     renderer 端 `await` 的 reject 路径, 渲染端 catch 块拿到
- *     `SenderUntrustedError` 对象, 可用 `isSenderUntrustedError` typeguard
- *     区分业务错误.
- *   - 这个 throw 不会进 IpcInvokeMap[K] 的 resolve union, 因为 TS Promise
- *     resolve 路径不携带 throw 类型. 协议层契约用派生类型 `IpcInvokeResult<K>`
- *     表达 (详见 ./../../shared/ipc-invoke-map.ts).
- *   - `SenderUntrustedError` 字段 `ok: false` 让 `Result | SenderUntrustedError`
- *     union 在 `if (!result.ok)` narrowing 时仍然 work.
+ *  - 不可信 sender 抛 `SenderUntrustedError`, IPC 协议让该 throw 透传到
+ *    renderer 端 `await` 的 reject 路径, 渲染端 catch 块拿到
+ *    `SenderUntrustedError` 对象, 可用 `isSenderUntrustedError` typeguard
+ *    区分业务错误.
+ *  - 这个 throw 不会进 IpcInvokeMap[K] 的 resolve union, 因为 TS Promise
+ *    resolve 路径不携带 throw 类型. 协议层契约用派生类型 `IpcInvokeResult<K>`
+ *    表达 (详见 ./../../shared/ipc-invoke-map.ts).
+ *  - `SenderUntrustedError` 字段 `ok: false` 让 `Result | SenderUntrustedError`
+ *    union 在 `if (!result.ok)` narrowing 时仍然 work.
+ *
+ * **Handler-throw 翻译 (阶段 3, 2026-09-09)**:
+ *  - 业务错误继续走 `Result` (返回 `{ ok: false, error }`, session-host 等
+ *    已经在 main 里产出中文 message).
+ *  - handler 自身 `throw` 的非 sender-untrusted 错误会被 `inspectError` 翻译
+ *    成中文 + `patternId`, 然后以 `TranslatedIpcError` 形态抛回 renderer. 这样
+ *    renderer catch 块既能拿到用户面中文, 也能用 `isTranslatedIpcError` 区分.
  */
 export type IpcHandler<K extends IpcChannelKey> = IpcInvokeMap[K] extends (
   ...args: infer Args
 ) => Promise<infer Result>
   ? (event: IpcMainInvokeEvent, ...args: Args) => Promise<Result> | Result
   : never;
+
+/**
+ * Marker the renderer can use to tell a translated handler error apart from
+ * `SenderUntrustedError` and from raw upstream `Error.message` strings.
+ */
+export type TranslatedIpcError = {
+  __translatedError: true;
+  patternId: string | null;
+  message: string;
+};
+
+/** Typeguard matching the marker above. */
+export function isTranslatedIpcError(err: unknown): err is TranslatedIpcError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { __translatedError?: unknown }).__translatedError === true
+  );
+}
 
 let trustedWindowProvider: (() => BrowserWindow | null) | null = null;
 let trustedRendererOrigin: string | null = null;
@@ -94,13 +122,20 @@ export function makeSenderUntrustedError(channel: string): SenderUntrustedError 
   };
 }
 
-/** Register one invoke handler with its signature anchored to IpcInvokeMap. */
+/**
+ * Register one invoke handler with its signature anchored to IpcInvokeMap.
+ *
+ *  - Sender-trust check runs first; untrusted senders throw `SenderUntrustedError`.
+ *  - Any other throw from the handler is funneled through `inspectError` and
+ *    re-thrown as a `TranslatedIpcError` so the renderer receives a Chinese
+ *    user-facing message + a stable `patternId`.
+ */
 export function handle<K extends IpcChannelKey>(
   ipcMain: IpcMain,
   channel: K,
   handler: IpcHandler<K>,
 ): void {
-  ipcMain.handle(channel, (event, ...args) => {
+  ipcMain.handle(channel, async (event, ...args) => {
     if (!isTrustedIpcSender(event as IpcMainInvokeEvent)) {
       console.warn(`[ipc] 拒绝来自不受信任来源的调用：${channel}`);
       // 抛契约化异常 (issue #65 主题 H, 2026-08-31). 之前 throw new Error(...)
@@ -110,6 +145,19 @@ export function handle<K extends IpcChannelKey>(
       // 仍 work (IpcInvokeResult[K] = Result | SenderUntrustedError).
       throw makeSenderUntrustedError(channel);
     }
-    return handler(event, ...args);
+    try {
+      return await handler(event, ...args);
+    } catch (err) {
+      // SenderUntrustedError is a plain object thrown above, never reaches here.
+      // Translate upstream / network / model errors so the renderer receives
+      // a Chinese summary + a stable patternId (see shared/error-i18n.ts).
+      const inspected = inspectError(err);
+      dbgWarn("ipc", `${channel} handler threw`, err);
+      throw {
+        __translatedError: true,
+        patternId: inspected.patternId,
+        message: inspected.message,
+      } satisfies TranslatedIpcError;
+    }
   });
 }
