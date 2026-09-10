@@ -24,6 +24,8 @@ import {
   resolveModelContextWindow,
 } from "@shared/model-context";
 import { useConfirm } from "@/lib/app-confirm";
+import { guessDefaultInput } from "@/lib/model-capability";
+
 
 type PresetCategory = NonNullable<ProviderPreset["category"]> | "all";
 
@@ -66,7 +68,9 @@ const emptyForm = (): ProviderUpsertInput => ({
   api: "openai-completions",
   baseUrl: "",
   apiKey: "",
-  models: [{ id: "", name: "", input: ["text"] }],
+  // 默认未表态 (input 不写),落 Pi 时由 saveProfile 启发式兜底 —
+  // 避免 Pi SDK 0.83+ `modelFromJson` 用 `?? ["text"]` 静默覆盖 bundled vision
+  models: [{ id: "", name: "" }],
   notes: "",
 });
 
@@ -199,12 +203,13 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       api: preset.api,
       baseUrl: preset.baseUrl,
       apiKey: "",
+      // preset 自带 input 时规整显示;为空 / 缺省时不注入 "text"。
       models: preset.models.length
         ? preset.models.map((m) => ({
             ...m,
             input: normalizeRowInput(m.input),
           }))
-        : [{ id: "", name: "", input: ["text"] }],
+        : [{ id: "", name: "" }],
       notes: preset.notes,
     });
     setEditing(true);
@@ -230,9 +235,10 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       // 表格渲染时用 normalizeRowInput 兜底显示 ["text"],但不动 form state
       // —— saveProfile 只透传 form state, undefined 时不写 input 字段,
       // 保留"未表态 = 不写"语义。
+      // form state 保留档案的原始 input (undefined / 实际值),不为空行注入 "text"。
       models: profile.models.length
         ? profile.models
-        : [{ id: "", name: "", input: ["text"] }],
+        : [{ id: "", name: "" }],
       notes: profile.notes,
     });
     setEditing(true);
@@ -268,7 +274,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   const addModelRow = () => {
     setForm((prev) => ({
       ...prev,
-      models: [...prev.models, { id: "", name: "", input: ["text"] }],
+      // 默认未表态 — 用户在 chip 显式勾选 / 取消后才写入 input 字段
+    models: [...prev.models, { id: "", name: "" }],
     }));
   };
 
@@ -351,9 +358,9 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       return {
         id: m.id,
         name: m.id,
-        // OpenAI 兼容 /v1/models 不返回 input 字段; 缺省按 ["text"] 兜底。
-        // 用户在 chip 切换时再显式表态是否支持 image。
-        input: ["text"],
+        // OpenAI 兼容 /v1/models 不返回 input 字段。fetch 阶段不写 input (未表态),
+        // saveProfile 落 Pi 时由 guessDefaultInput 启发式兜底,vision 模型不会被
+        // 静默锁成 ["text"]。
         ...(contextWindow != null ? { contextWindow } : {}),
       };
     });
@@ -415,15 +422,20 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               id,
               explicit,
             });
-            // input 透传 form state: undefined 不写,["text"] / ["text","image"]
-            // 透传。后端 validateUpsert 会校验"若给出则至少 1 个有效值"。
+            // input 字段语义:
+            //   - 用户在 chip 显式表态 (m.input 已定义) → 透传,落 Pi 覆盖 builtin
+            //   - 未表态 (m.input === undefined) → guessDefaultInput 启发式兜底,
+            //     保 vision 模型不被 Pi SDK 0.83+ `modelFromJson` 静默锁成 ["text"]
+            // 后端 validateUpsert 校验"若给出则至少 1 个有效值",通过。
+            const userInput =
+              m.input !== undefined && m.input.length > 0 ? m.input : undefined;
+            // 启发式兜底:未表态时按 model id 推断,保 vision 模型不被静默锁成 ["text"]
+            const inputArr = userInput ?? guessDefaultInput(id);
             return {
               id,
               ...(name ? { name } : {}),
               ...(contextWindow != null ? { contextWindow } : {}),
-              ...(m.input !== undefined && m.input.length > 0
-                ? { input: m.input }
-                : {}),
+              ...(inputArr != null ? { input: inputArr } : {}),
             };
           })
           .filter((m): m is ProviderModelEntry => !!m),
@@ -858,6 +870,10 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                 <tbody>
                   {form.models.map((row, index) => {
                     const rowInput = normalizeRowInput(row.input);
+                    // 三态:未表态 (m.input === undefined,渲染 dashed)、
+                    // 显式 ON/OFF (m.input 已定义)。未表态视觉上要明显,
+                    // 防止用户以为 image chip 默认 OFF 而点击去"开启"(实际是关闭)。
+                    const isUnset = row.input === undefined;
                     return (
                       <tr key={`model-row-${index}`}>
                         <td>
@@ -916,25 +932,33 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                           <div className="input-chip-row">
                             {(["text", "image"] as ModelInput[]).map((kind) => {
                               const on = rowInput.includes(kind);
+                              // 未表态 + 该 kind 不在数组 → dashed 态;
+                              // 显式 ON → 实心;显式 OFF → 空心 (默认)。
+                              const chipClass = on
+                                ? "input-chip input-chip--on"
+                                : isUnset
+                                  ? "input-chip input-chip--unset"
+                                  : "input-chip";
+                              const titleText =
+                                kind === "image"
+                                  ? on
+                                    ? isUnset
+                                      ? "未表态但 vision 模型 (内置/历史配置) 推断开启 — 点击会显式关闭 image"
+                                      : "已开启 image — 点击关闭"
+                                    : isUnset
+                                      ? "未表态 — 点击开启 image (vision 模型) 或保持未表态"
+                                      : "已关闭 image — 点击开启"
+                                  : on
+                                    ? "已开启 text — 点击关闭 (不允许空)"
+                                    : "未开启 text";
                               return (
                                 <button
                                   key={kind}
                                   type="button"
-                                  className={
-                                    on
-                                      ? "input-chip input-chip--on"
-                                      : "input-chip"
-                                  }
+                                  className={chipClass}
                                   aria-pressed={on}
-                                  title={
-                                    kind === "image"
-                                      ? on
-                                        ? "该模型支持图片输入"
-                                        : "点击开启 image 输入能力（vision 模型）"
-                                      : on
-                                        ? "该模型支持文字输入"
-                                        : "点击关闭 text（不允许空）"
-                                  }
+                                  data-unset={isUnset ? "true" : undefined}
+                                  title={titleText}
                                   onClick={() => toggleInputKind(index, kind)}
                                 >
                                   {kind}

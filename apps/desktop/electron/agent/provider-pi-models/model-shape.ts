@@ -136,12 +136,17 @@ export function modelEntryForPiModelsJson(
   if (enriched.contextWindow != null) {
     entry.contextWindow = enriched.contextWindow;
   }
-  // input 字段与 Pi SDK `Model.input` 对齐: applyModelsJson 在
-  // provider-composer.js:30 走 `override.input ?? model.input` 兜底。
-  // X-agent 透传用户勾选的状态; undefined 时不写, 让 Pi SDK 走 builtin
-  // (mistral-conversations 等 adapter 不会把 user message 含 image 替换为
-  // `(image omitted: model does not support images)` 占位文本)。
-  // 升级 Pi SDK 时回归测试: Pi 升级可能引入严格 schema 校验。
+  // input 字段与 Pi SDK `Model.input` 对齐。注: Pi SDK 0.83+ `modelFromJson`
+  // (provider-composer.js:62) 走 `definition.input ?? ["text"]` —— **不读 bundled 兜底**。
+  // 只有 `applyModelOverride` (line 30, 仅用于 modelOverrides) 才走
+  // `override.input ?? model.input` 兜底。X-agent 走的是 `applyModelsJson` →
+  // `modelFromJson` 路径,所以 bundled vision 模型的 ["text","image"] 不会被自动继承:
+  // - undefined → Pi SDK 用 ["text"] 兜底,vision 能力静默丢失
+  // - ["text"]   → 显式覆盖,bundled 失效
+  // - ["text","image"] → 显式保 vision (X-agent 端由 saveProfile 启发式兜底)
+  // X-agent 必须在保存时主动填好 input (UI 走 guessDefaultInput),
+  // 不依赖 Pi SDK 的 bundled fallback。
+  // 升级 Pi SDK 时回归: Pi 升级可能引入严格 schema 校验。
   if (enriched.input != null && enriched.input.length > 0) {
     entry.input = enriched.input;
   }

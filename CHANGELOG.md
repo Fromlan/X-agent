@@ -26,6 +26,14 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 实现细节（路径解析规则、sidecar 格式、工具白名单、vitest 覆盖）都进 PR 描述与 commit，CHANGELOG 只承担"用户能看到什么"。
 
+## Unreleased
+
+## 0.7.0
+
+### 修复
+
+- **供应商「图片输入」配置静默失效**：编辑 / 新增供应商档案时，模型行的 image chip 默认改为「未表态」（dashed border 视觉），保存时按已知 vision 模型家族（gpt-4o / 4.1 / 5 / o1 / o3 / o4-mini / claude / gemini-1.5+ / mistral-small|medium|pixtral / MiniMax-M3 / qwen-vl / 含 vision 或 vl 关键字）由 `guessDefaultInput` 启发式兜底，避免 Pi SDK 0.83+ `modelFromJson` 用 `?? ["text"]` 覆盖 bundled vision。已配置 `["text","image"]` 的旧档案不受影响。
+
 ## 0.6.2
 
 ### 改进
