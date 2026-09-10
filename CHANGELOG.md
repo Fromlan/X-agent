@@ -28,7 +28,7 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 ## Unreleased
 
-## 0.7.0
+## 0.6.3
 
 ### 修复
 
