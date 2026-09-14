@@ -37,7 +37,7 @@
 
 - **Electron** ^43 + **electron-vite** ^6.0.0-beta.1 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
 - **React** 19 + **TypeScript** ^7.0 + **Vite** ^8.2.2；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
-- **@earendil-works/pi-coding-agent** ^0.84.3（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
+- **@earendil-works/pi-coding-agent** ^0.85.1（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
 - **Node.js 22+**（开发时需要；运行时 Electron 自带）
 - Windows + Godot 4.x 为当前发布平台；macOS / Linux 不在 CI 矩阵内
