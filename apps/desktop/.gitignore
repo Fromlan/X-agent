@@ -11,8 +11,22 @@ release
 *.tsbuildinfo
 
 # TypeScript declaration emit artifacts (composite mode without outDir)
-**/*.d.ts
+# 治本路径是配 tsconfig outDir + declarationDir (TODO R2-B), 把 emit
+# 收到独立目录再 ignore. 临时的 per-directory pattern 用来防止
+# `**/*.d.ts` 误杀手写 ambient declarations (`vite-env.d.ts`,
+# `electron/agent/skills.d.ts` 等).
+electron/**/*.d.ts
+src/**/*.d.ts
+shared/**/*.d.ts
+
+# Always-tracked hand-written ambient declarations (must stay tracked)
+!electron/agent/skills.d.ts
+!src/vite-env.d.ts
 
 # TypeScript JavaScript emit artifacts (composite mode without outDir)
-**/*.js.map
-**/*.js
+electron/**/*.js.map
+electron/**/*.js
+src/**/*.js.map
+src/**/*.js
+shared/**/*.js.map
+shared/**/*.js

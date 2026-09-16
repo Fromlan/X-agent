@@ -189,3 +189,55 @@ export function inspectError(raw: unknown): { message: string; patternId: string
   }
   return { message: translateError(raw), patternId: null };
 }
+
+/**
+ * Error subtype thrown across IPC when a main-process handler throws something
+ * `inspectError` could translate into Chinese.
+ *
+ * Round 1 fix for OCR review finding #2 (issue #97 follow-up, 2026-09-09):
+ * subclassing `Error` lets the renderer fall through the universal
+ * `err instanceof Error ? err.message : String(err)` catch-block pattern to the
+ * translated message — without this, the literal `[object Object]` would leak
+ * because `TranslatedIpcError` was previously a plain object.
+ *
+ * Serialization across Electron IPC (structured clone) preserves `name`,
+ * `message`, `stack`, and **enumerable own properties** (`__translatedError`,
+ * `patternId`). `instanceof` does NOT survive cross-process — the renderer must
+ * rely on `isTranslatedIpcError` (marker check) instead. The class is still
+ * `instanceof Error` on both sides for `err.message` access.
+ *
+ * @see register-ipc-translated.test.ts for the contract.
+ */
+export class TranslatedIpcError extends Error {
+  readonly __translatedError = true;
+  readonly patternId: string | null;
+
+  constructor(message: string, patternId: string | null) {
+    super(message);
+    this.name = "TranslatedIpcError";
+    this.patternId = patternId;
+    // Restore the prototype chain so `instanceof TranslatedIpcError` works in
+    // the main process (跨 IPC 后原型链断, renderer 端只能靠 typeguard
+    // 看 __translatedError marker).
+    Object.setPrototypeOf(this, TranslatedIpcError.prototype);
+  }
+}
+
+/** Typeguard matching the marker above. Works across the IPC boundary.
+ *
+ * V8's structured clone (and Electron IPC by extension) does NOT preserve
+ * custom enumerable own properties on Error subclasses — only `name`,
+ * `message`, `stack`, and `cause` survive. So `__translatedError` and
+ * `patternId` are lost in transit. We fall back to `err.name === "TranslatedIpcError"`
+ * which IS preserved by the Error serialization path, so the renderer can
+ * still detect translated errors without `instanceof` (which also doesn't
+ * survive cross-process — the prototype chain is rebuilt as a plain object).
+ */
+export function isTranslatedIpcError(err: unknown): err is TranslatedIpcError {
+  if (typeof err !== "object" || err === null) return false;
+  const obj = err as { name?: unknown; __translatedError?: unknown };
+  return (
+    obj.__translatedError === true ||
+    obj.name === "TranslatedIpcError"
+  );
+}
