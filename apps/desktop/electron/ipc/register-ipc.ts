@@ -8,7 +8,11 @@ import {
   type IpcChannelKey,
   type SenderUntrustedError,
 } from "../../shared/ipc";
-import { inspectError } from "../../shared/error-i18n";
+import {
+  inspectError,
+  TranslatedIpcError,
+  isTranslatedIpcError,
+} from "../../shared/error-i18n";
 import { dbgWarn } from "../../shared/debug-log";
 
 /**
@@ -47,21 +51,11 @@ export type IpcHandler<K extends IpcChannelKey> = IpcInvokeMap[K] extends (
 /**
  * Marker the renderer can use to tell a translated handler error apart from
  * `SenderUntrustedError` and from raw upstream `Error.message` strings.
+ *
+ * The class is now defined in `../../shared/error-i18n` and re-exported here
+ * for back-compat with the original `from "./register-ipc"` import path.
  */
-export type TranslatedIpcError = {
-  __translatedError: true;
-  patternId: string | null;
-  message: string;
-};
-
-/** Typeguard matching the marker above. */
-export function isTranslatedIpcError(err: unknown): err is TranslatedIpcError {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { __translatedError?: unknown }).__translatedError === true
-  );
-}
+export { TranslatedIpcError, isTranslatedIpcError };
 
 let trustedWindowProvider: (() => BrowserWindow | null) | null = null;
 let trustedRendererOrigin: string | null = null;
@@ -151,13 +145,14 @@ export function handle<K extends IpcChannelKey>(
       // SenderUntrustedError is a plain object thrown above, never reaches here.
       // Translate upstream / network / model errors so the renderer receives
       // a Chinese summary + a stable patternId (see shared/error-i18n.ts).
+      // Throw an Error subclass (not a plain object) so the renderer's universal
+      // `err instanceof Error ? err.message : String(err)` catch blocks land on
+      // the translated message — before this fix, the literal `[object Object]`
+      // was the user-facing output because `TranslatedIpcError` was a plain
+      // object thrown through IPC.
       const inspected = inspectError(err);
       dbgWarn("ipc", `${channel} handler threw`, err);
-      throw {
-        __translatedError: true,
-        patternId: inspected.patternId,
-        message: inspected.message,
-      } satisfies TranslatedIpcError;
+      throw new TranslatedIpcError(inspected.message, inspected.patternId);
     }
   });
 }
