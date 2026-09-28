@@ -22,6 +22,7 @@ function rawProviderPresets(): ProviderPreset[] {
       baseUrl: "https://api.deepseek.com",
       models: [
         { id: "deepseek-chat", name: "DeepSeek Chat" },
+        { id: "deepseek-flash", name: "DeepSeek Flash" },
         { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
         { id: "deepseek-reasoner", name: "DeepSeek Reasoner" },
       ],

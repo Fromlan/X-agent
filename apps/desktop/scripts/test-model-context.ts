@@ -22,6 +22,11 @@ assert(
   lookupKnownContextWindow("deepseek-ai/DeepSeek-V4-Pro") === 1_000_000,
   "v4 pro prefixed",
 );
+assert(lookupKnownContextWindow("deepseek-flash") === 1_000_000, "flash 1M");
+assert(
+  lookupKnownContextWindow("deepseek-ai/DeepSeek-Flash") === 1_000_000,
+  "flash prefixed",
+);
 assert(lookupKnownContextWindow("deepseek-chat") === 128_000, "chat 128k");
 assert(lookupKnownContextWindow("deepseek-reasoner") === 128_000, "reasoner 128k");
 assert(
@@ -90,6 +95,8 @@ assert(lookupKnownContextWindow("mimosa-bot") === undefined, "no mimo false posi
 
 const enriched = enrichModelEntry({ id: "deepseek-v4-flash", name: "Flash" });
 assert(enriched.contextWindow === 1_000_000, "enrich fills");
+const enrichedFlash = enrichModelEntry({ id: "deepseek-flash" });
+assert(enrichedFlash.contextWindow === 1_000_000, "enrich flash fills 1M");
 const kept = enrichModelEntry({
   id: "deepseek-v4-flash",
   contextWindow: 42_000,

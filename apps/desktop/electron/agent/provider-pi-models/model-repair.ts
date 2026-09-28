@@ -29,6 +29,7 @@ import {
   looksLikeMiniMaxModelId,
   minimaxModelExtras,
 } from "./model-shape";
+import { resolveModelContextWindow } from "../../../shared/model-context";
 
 const API_KINDS: ProviderApiKind[] = [
   "openai-completions",
@@ -85,13 +86,41 @@ export async function repairDeepSeekModelsJson(
         next.reasoning = true;
         changed = true;
       }
+      // contextWindow: 老 entry 缺该字段时从 lookup 兜底注入。DeepSeek V4 / flash
+      // 都是 1M,chat / reasoner 仍是 128k;explicit 值优先于 lookup。
       if (
-        extras.thinkingLevelMap &&
-        (next.thinkingLevelMap == null ||
-          typeof next.thinkingLevelMap !== "object")
+        typeof next.contextWindow !== "number" ||
+        !Number.isFinite(next.contextWindow) ||
+        next.contextWindow <= 0
       ) {
-        next.thinkingLevelMap = extras.thinkingLevelMap;
-        changed = true;
+        const resolved = resolveModelContextWindow({ id });
+        if (resolved != null) {
+          next.contextWindow = resolved;
+          changed = true;
+        }
+      }
+      // thinkingLevelMap: value-level compare against the canonical shape.
+      // 老 entry 可能写了带 high/max 强度档的旧 map（与 DeepSeek 当前语义不符），
+      // key 存在但 value 不全等也会被刷成 canonical 形态。
+      if (extras.thinkingLevelMap) {
+        const canonical = extras.thinkingLevelMap;
+        const existing = next.thinkingLevelMap;
+        const canonicalKeys = Object.keys(canonical);
+        const existingKeys =
+          existing != null && typeof existing === "object"
+            ? Object.keys(existing)
+            : [];
+        const mapMatches =
+          existing != null &&
+          typeof existing === "object" &&
+          canonicalKeys.every(
+            (k) => (existing as Record<string, unknown>)[k] === canonical[k],
+          ) &&
+          existingKeys.every((k) => k in canonical);
+        if (!mapMatches) {
+          next.thinkingLevelMap = canonical;
+          changed = true;
+        }
       }
       const needsCompat =
         api !== "openai-completions" ||

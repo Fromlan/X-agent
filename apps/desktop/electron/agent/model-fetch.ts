@@ -12,14 +12,22 @@ export interface FetchedModel {
   id: string;
   ownedBy?: string;
   contextWindow?: number;
-  /**
-   * 留位: 未来第三方 `/v1/models` 端点若返回 input modality (openai / anthropic /
-   * google 各家 `supported_modalities` / `input_modalities` 等), 后端在这里读
-   * 并填到 `FetchedProviderModel.input`。当前 OpenAI 兼容 `/v1/models` 标准
-   * 不返回 (只给 `id` / `owned_by` / 各类厂商自定义的 context 字段), 所以
-   * `parseModelsJson` 暂不读 input 字段 —— UI 端 fetch 合并路径走默认 `["text"]`。
-   */
+  /** DeepSeek `max_output_tokens` → 透传到 ProviderModelEntry.maxOutputTokens → Pi maxTokens */
+  maxOutputTokens?: number;
+  /** DeepSeek `input_modalities: ["text","image"]` 等 */
   input?: ("text" | "image")[];
+  /** DeepSeek `output_modalities`,保留供扩展。 */
+  output?: ("text" | "image")[];
+  /** DeepSeek `effort.supported_levels` / `default_level` */
+  effort?: { supportedLevels?: string[]; defaultLevel?: string };
+  /** DeepSeek `api_capabilities` 透传。 */
+  apiCapabilities?: Record<string, unknown>;
+  /**
+   * 已翻译为 Pi `thinkingLevelMap` 形态。DeepSeek thinking 只有开/关二态,
+   * 所以全部非 off UI 档位都路由到 effort.supportedLevels[0] 作为「开」的占位值;
+   * 如果供应商支持多档 effort,后续可以按 user-level -> api-level 1:1 翻译。
+   */
+  thinkingLevelMap?: Record<string, string | null>;
 }
 
 const KNOWN_COMPAT_SUFFIXES = [
@@ -96,6 +104,10 @@ export function buildModelsUrlCandidates(
       candidates.push(`${trimmed}/v1/models`);
     }
   } else {
+    // /models 优先 (DeepSeek 官方 api.deepseek.com/models 返回扩展 schema
+    // 含 effort/input_modalities/api_capabilities); /v1/models 作为 OpenAI
+    // 标准兼容兜底。baseUrl 是裸 host 或非版本路径都按这个顺序。
+    candidates.push(`${trimmed}/models`);
     candidates.push(`${trimmed}/v1/models`);
   }
 
@@ -103,8 +115,8 @@ export function buildModelsUrlCandidates(
   if (stripped) {
     const root = stripped.replace(/\/+$/, "");
     if (root.includes("://")) {
-      candidates.push(`${root}/v1/models`);
       candidates.push(`${root}/models`);
+      candidates.push(`${root}/v1/models`);
     }
   }
 
@@ -113,6 +125,98 @@ export function buildModelsUrlCandidates(
     if (!unique.includes(url)) unique.push(url);
   }
   return unique;
+}
+
+/**
+ * 翻译 `effort.supported_levels` 为 Pi `thinkingLevelMap` 形态。
+ *
+ * Pi SDK 期望 `{userLevel: apiLevel}` (例: `{medium: "medium", high: "high"}`)。
+ * 供应商 (如 DeepSeek) 给的 `effort.supported_levels` 是该供应商真实接受的
+ * effort 字符串列表。对仅二态 (开/关) 的供应商, 全部非 off UI 档位都映射到
+ * 首个 supported level 作为「开」的占位值; 多档供应商 1:1 对齐到 supported level。
+ *
+ * user-level -> api-level 单调近似:
+ *   off       -> off
+ *   minimal   -> supported[0] || null
+ *   low       -> 包含 "low" 用 "low",否则 supported[0]
+ *   medium    -> 包含 "medium" 用 "medium",否则居中档
+ *   high      -> 包含 "high" 用 "high",否则 supported 末档
+ *   max       -> supported 末档
+ */
+export function effortToThinkingLevelMap(
+  supportedLevels: readonly string[],
+): Record<string, string | null> {
+  const levels = supportedLevels.filter((l) => typeof l === "string");
+  if (levels.length === 0) {
+    return {
+      off: "off",
+      minimal: null,
+      low: null,
+      medium: null,
+      high: null,
+      max: null,
+    };
+  }
+  const find = (name: string): string | null =>
+    levels.includes(name) ? name : null;
+  const first = levels[0];
+  const last = levels[levels.length - 1];
+  return {
+    off: "off",
+    minimal: find("low") ?? first,
+    low: find("low") ?? first,
+    medium: find("medium") ?? find("low") ?? first,
+    high: find("high") ?? last,
+    max: last,
+  };
+}
+
+/** Read `max_output_tokens` from a /v1/models data[] entry (DeepSeek 等). */
+function parseMaxOutputTokens(raw: unknown): number | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  for (const key of ["max_output_tokens", "max_tokens", "maxOutputTokens"]) {
+    const v = obj[key];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+      return Math.round(v);
+    }
+  }
+  return undefined;
+}
+
+/** Read `input_modalities` / `output_modalities` from a /v1/models data[] entry. */
+function parseModalities(
+  raw: unknown,
+  key: string,
+): ("text" | "image")[] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const arr = obj[key];
+  if (!Array.isArray(arr)) return undefined;
+  const out: ("text" | "image")[] = [];
+  for (const v of arr) {
+    if (v === "text" || v === "image") out.push(v);
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Read `effort` block from a /v1/models data[] entry (DeepSeek 等). */
+function parseEffort(raw: unknown):
+  | { supportedLevels?: string[]; defaultLevel?: string }
+  | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const eff = obj.effort;
+  if (!eff || typeof eff !== "object") return undefined;
+  const e = eff as Record<string, unknown>;
+  const supported = e.supported_levels;
+  const def = e.default_level;
+  return {
+    ...(Array.isArray(supported)
+      ? { supportedLevels: supported.filter((x) => typeof x === "string") }
+      : {}),
+    ...(typeof def === "string" ? { defaultLevel: def } : {}),
+  };
 }
 
 /** Exported for unit tests. */
@@ -131,10 +235,30 @@ export function parseModelsJson(json: unknown): FetchedModel[] {
       id: id.trim(),
       fromApi,
     });
+    const maxOutputTokens = parseMaxOutputTokens(entry);
+    const input = parseModalities(entry, "input_modalities");
+    const output = parseModalities(entry, "output_modalities");
+    const effort = parseEffort(entry);
+    const apiCapabilities =
+      entry && typeof entry === "object"
+        ? (entry as Record<string, unknown>).api_capabilities
+        : undefined;
+    const thinkingLevelMap =
+      effort?.supportedLevels && effort.supportedLevels.length > 0
+        ? effortToThinkingLevelMap(effort.supportedLevels)
+        : undefined;
     models.push({
       id: id.trim(),
       ...(typeof ownedBy === "string" ? { ownedBy } : {}),
       ...(contextWindow != null ? { contextWindow } : {}),
+      ...(maxOutputTokens != null ? { maxOutputTokens } : {}),
+      ...(input ? { input } : {}),
+      ...(output ? { output } : {}),
+      ...(effort ? { effort } : {}),
+      ...(apiCapabilities && typeof apiCapabilities === "object"
+        ? { apiCapabilities: apiCapabilities as Record<string, unknown> }
+        : {}),
+      ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     });
   }
   models.sort((a, b) => a.id.localeCompare(b.id));

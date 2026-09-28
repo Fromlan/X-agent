@@ -539,10 +539,22 @@ try {
     deepseekProxyModelExtras("deepseek-v4-pro[1M]")?.reasoning === true,
     "v4 custom id gets reasoning",
   );
+  // DeepSeek 官方 thinking 只支持 enabled / disabled 二态;所有非 off 档位
+  // 都映射到 "high" 作为「开」的占位值。
   assert(
     deepseekProxyModelExtras("deepseek-v4-pro[1M]")?.thinkingLevelMap
-      ?.medium === null,
-    "v4 custom id hides medium",
+      ?.medium === "high",
+    "deepseek v4 medium maps to high (off-only form)",
+  );
+  assert(
+    deepseekProxyModelExtras("deepseek-v4-pro[1M]")?.thinkingLevelMap
+      ?.off === "off",
+    "deepseek v4 off maps to off",
+  );
+  assert(
+    deepseekProxyModelExtras("deepseek-flash")?.thinkingLevelMap
+      ?.max === "high",
+    "deepseek flash max maps to high",
   );
 
   const proxyRoot = mkdtempSync(join(tmpdir(), "alpha-providers-proxy-ds-"));
@@ -658,9 +670,15 @@ try {
   const officialEntry = officialModels.providers["deepseek"]?.models?.[0];
   assert(officialEntry?.compat == null, "official deepseek skips written compat");
   assert(officialEntry?.reasoning === true, "official deepseek writes reasoning");
+  // DeepSeek 官方 thinking 只支持 enabled / disabled 二态;off-only map 把
+  // 所有非 off 档位都映射到 "high" 作为「开」的占位值。
   assert(
-    officialEntry?.thinkingLevelMap?.medium === null,
-    "official v4 writes thinkingLevelMap",
+    officialEntry?.thinkingLevelMap?.medium === "high",
+    "official v4 writes off-only thinkingLevelMap (medium → high)",
+  );
+  assert(
+    officialEntry?.thinkingLevelMap?.off === "off",
+    "official v4 thinkingLevelMap off stays off",
   );
 
   // repairDeepSeekModelsJson upgrades legacy entries missing reasoning
@@ -704,9 +722,14 @@ try {
   };
   const repairedEntry = repaired.providers.deepseek?.models?.[0];
   assert(repairedEntry?.reasoning === true, "repair sets reasoning");
+  // repair 把老 high/max map 刷成 off-only 形态。
   assert(
-    repairedEntry?.thinkingLevelMap?.medium === null,
-    "repair sets v4 map",
+    repairedEntry?.thinkingLevelMap?.medium === "high",
+    "repair sets off-only thinkingLevelMap (medium → high)",
+  );
+  assert(
+    repairedEntry?.thinkingLevelMap?.off === "off",
+    "repair preserves off",
   );
   rmSync(legacyRoot, { recursive: true, force: true });
 

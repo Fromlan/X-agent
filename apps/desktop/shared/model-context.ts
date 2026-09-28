@@ -65,8 +65,14 @@ export function lookupKnownContextWindow(id: string): number | undefined {
   const n = normalizeModelId(id);
   if (!n) return undefined;
 
-  // DeepSeek V4 family — 1M native context
-  if (n.includes("deepseek-v4") || n.includes("deepseek_v4")) {
+  // DeepSeek V4 family 与 flash — 1M native context (同步 DeepSeek 当前 lineup)。
+  // flash 与 V4 共享 1M 上下文;chat / reasoner / V3 / R1 仍走 128k 分支。
+  if (
+    n.includes("deepseek-v4") ||
+    n.includes("deepseek_v4") ||
+    n.includes("deepseek-flash") ||
+    n.includes("deepseek_flash")
+  ) {
     return 1_000_000;
   }
 

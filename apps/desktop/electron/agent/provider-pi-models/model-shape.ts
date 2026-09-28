@@ -89,32 +89,28 @@ export function minimaxModelExtras(modelId: string): {
   };
 }
 
-/** Model entry fields written into Pi models.json for DeepSeek-family models. */
+/** Model entry fields written into Pi models.json for DeepSeek-family models.
+ *  DeepSeek 官方 thinking 字段只支持 enabled / disabled 二态,无强度差异;
+ *  所有非 off 档位映射到 "high" 作为「开」的占位值,UI 端 5 个非 off 档位等价。 */
 export function deepseekProxyModelExtras(modelId: string): {
   reasoning: true;
-  thinkingLevelMap?: Record<string, string | null>;
+  thinkingLevelMap: Record<string, string | null>;
   compat: {
     thinkingFormat: "deepseek";
     requiresReasoningContentOnAssistantMessages: true;
   };
 } | null {
   if (!looksLikeDeepSeekModelId(modelId)) return null;
-  const id = modelId.trim().toLowerCase();
-  // Match Pi built-in DeepSeek V4 maps (medium/low/minimal unsupported).
-  const isV4 = id.includes("deepseek-v4") || id.includes("deepseek_v4");
   return {
     reasoning: true,
-    ...(isV4
-      ? {
-          thinkingLevelMap: {
-            minimal: null,
-            low: null,
-            medium: null,
-            high: "high",
-            max: "max",
-          },
-        }
-      : {}),
+    thinkingLevelMap: {
+      off: "off",
+      minimal: "high",
+      low: "high",
+      medium: "high",
+      high: "high",
+      max: "high",
+    },
     compat: {
       thinkingFormat: "deepseek",
       requiresReasoningContentOnAssistantMessages: true,
@@ -150,12 +146,27 @@ export function modelEntryForPiModelsJson(
   if (enriched.input != null && enriched.input.length > 0) {
     entry.input = enriched.input;
   }
+  // Pi SDK 字段名 camelCase: model-fetch 端把 `max_output_tokens` 转写为
+  // ProviderModelEntry.maxOutputTokens, 这里落盘到 `maxTokens`。
+  if (
+    (enriched as { maxOutputTokens?: number }).maxOutputTokens != null &&
+    (enriched as { maxOutputTokens?: number }).maxOutputTokens! > 0
+  ) {
+    entry.maxTokens = (enriched as { maxOutputTokens?: number }).maxOutputTokens;
+  }
+  // Fetch 得到的 thinkingLevelMap 优先于 deepseekProxyModelExtras 的兜底值。
+  // 历史 hardcoded 档案或没 fetch 的 model 仍走 extras 兜底。
+  const fetchedThinkingLevelMap = (
+    enriched as { thinkingLevelMap?: Record<string, string | null> }
+  ).thinkingLevelMap;
   const extras = deepseekProxyModelExtras(enriched.id);
   if (extras) {
     // Custom ids (e.g. deepseek-v4-pro[1M]) do not inherit built-in reasoning;
     // without it Pi clamps every thinking level to off.
     entry.reasoning = extras.reasoning;
-    if (extras.thinkingLevelMap) {
+    if (fetchedThinkingLevelMap) {
+      entry.thinkingLevelMap = fetchedThinkingLevelMap;
+    } else if (extras.thinkingLevelMap) {
       entry.thinkingLevelMap = extras.thinkingLevelMap;
     }
     // Pi auto-detects thinkingFormat on official deepseek.com openai-completions.
@@ -166,6 +177,8 @@ export function modelEntryForPiModelsJson(
     ) {
       entry.compat = extras.compat;
     }
+  } else if (fetchedThinkingLevelMap) {
+    entry.thinkingLevelMap = fetchedThinkingLevelMap;
   }
   // MiniMax (anthropic-messages only): inject forceAdaptiveThinking compat so
   // Pi sends thinking: {type:"adaptive"} / {type:"disabled"} instead of the
