@@ -75,6 +75,50 @@ describe("modelEntryForPiModelsJson — input 透传", () => {
     // deepseek.com baseUrl + openai-completions 时, Pi SDK 会自动识别 DeepSeek,
     // X-agent 不写 compat (避免覆盖 builtin), 但 reasoning 仍写。
     expect(out.reasoning).toBe(true);
+    // DeepSeek 官方 thinking 只支持 enabled/disabled,所有非 off 档位都映射到 high。
+    expect(out.thinkingLevelMap).toEqual({
+      off: "off",
+      minimal: "high",
+      low: "high",
+      medium: "high",
+      high: "high",
+      max: "high",
+    });
+  });
+
+  it("DeepSeek flash: 1M 上下文 + 全部非 off 档位映射到 high", () => {
+    const out = modelEntryForPiModelsJson(
+      baseEntry({ id: "deepseek-flash", input: ["text", "image"] }),
+      "openai-completions",
+      "deepseek",
+      "https://api.deepseek.com",
+    );
+    expect(out.id).toBe("deepseek-flash");
+    expect(out.input).toEqual(["text", "image"]);
+    expect(out.reasoning).toBe(true);
+    expect(out.thinkingLevelMap).toEqual({
+      off: "off",
+      minimal: "high",
+      low: "high",
+      medium: "high",
+      high: "high",
+      max: "high",
+    });
+  });
+
+  it("DeepSeek flash 走第三方代理: compat 也注入", () => {
+    const out = modelEntryForPiModelsJson(
+      baseEntry({ id: "deepseek-flash", input: ["text"] }),
+      "openai-completions",
+      "siliconflow",
+      "https://api.siliconflow.cn/v1",
+    );
+    expect(out.input).toEqual(["text"]);
+    expect(out.reasoning).toBe(true);
+    expect(out.compat).toEqual({
+      thinkingFormat: "deepseek",
+      requiresReasoningContentOnAssistantMessages: true,
+    });
   });
 
   it("MiniMax 路径: input 透传且不被 reasoning/compat 覆盖", () => {
@@ -101,5 +145,63 @@ describe("modelEntryForPiModelsJson — input 透传", () => {
     // enrichModelEntry 在 lookupKnownContextWindow 也没命中时, 不写 contextWindow。
     expect("contextWindow" in out).toBe(false);
     expect(out.input).toEqual(["text", "image"]);
+  });
+
+  it("DeepSeek maxOutputTokens -> Pi maxTokens 透传", () => {
+    const out = modelEntryForPiModelsJson(
+      baseEntry({ id: "deepseek-flash", maxOutputTokens: 8192 }),
+      "openai-completions",
+      "deepseek",
+      "https://api.deepseek.com",
+    );
+    expect(out.maxTokens).toBe(8192);
+  });
+
+  it("DeepSeek entry 自带 thinkingLevelMap 时, 不被 extras 兜底覆盖", () => {
+    const fetchedMap = {
+      off: "off",
+      minimal: "low",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      max: "high",
+    };
+    const out = modelEntryForPiModelsJson(
+      baseEntry({
+        id: "deepseek-flash",
+        contextWindow: 1000000,
+        thinkingLevelMap: fetchedMap,
+      }),
+      "openai-completions",
+      "deepseek",
+      "https://api.deepseek.com",
+    );
+    expect(out.thinkingLevelMap).toEqual(fetchedMap);
+    // 不是 extras 的 off-only 形态
+    expect(out.thinkingLevelMap).not.toEqual({
+      off: "off",
+      minimal: "high",
+      low: "high",
+      medium: "high",
+      high: "high",
+      max: "high",
+    });
+  });
+
+  it("DeepSeek entry 没有 thinkingLevelMap 时, 仍走 extras off-only 兜底", () => {
+    const out = modelEntryForPiModelsJson(
+      baseEntry({ id: "deepseek-flash" }),
+      "openai-completions",
+      "deepseek",
+      "https://api.deepseek.com",
+    );
+    expect(out.thinkingLevelMap).toEqual({
+      off: "off",
+      minimal: "high",
+      low: "high",
+      medium: "high",
+      high: "high",
+      max: "high",
+    });
   });
 });

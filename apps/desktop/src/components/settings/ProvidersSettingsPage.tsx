@@ -355,14 +355,22 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         id: m.id,
         fromApi: m.contextWindow,
       });
-      return {
+      const entry: ProviderModelEntry = {
         id: m.id,
         name: m.id,
-        // OpenAI 兼容 /v1/models 不返回 input 字段。fetch 阶段不写 input (未表态),
-        // saveProfile 落 Pi 时由 guessDefaultInput 启发式兜底,vision 模型不会被
-        // 静默锁成 ["text"]。
         ...(contextWindow != null ? { contextWindow } : {}),
+        // DeepSeek `/v1/models` 扩展 schema 返回 input_modalities /
+        // max_output_tokens / effort 等;fetch 阶段直接透传,saveProfile 时
+        // 落 Pi models.json 的 input / maxTokens / thinkingLevelMap。
+        ...(m.input && m.input.length > 0 ? { input: m.input } : {}),
+        ...(m.maxOutputTokens != null && m.maxOutputTokens > 0
+          ? { maxOutputTokens: m.maxOutputTokens }
+          : {}),
+        ...(m.thinkingLevelMap
+          ? { thinkingLevelMap: m.thinkingLevelMap }
+          : {}),
       };
+      return entry;
     });
     if (mode === "replace") {
       setForm((prev) => ({ ...prev, models: mapped }));

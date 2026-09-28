@@ -828,6 +828,18 @@ export interface ProviderModelEntry {
    * message 替换为 `(image omitted: model does not support images)`）。
    */
   input?: ModelInput[];
+  /**
+   * 单条响应的输出 token 上限。透传到 Pi `models.json` 的 `maxTokens` 字段
+   * （Pi SDK 字段名是 camelCase）。原 `/v1/models` 端点（如 DeepSeek）返回
+   * 的 `max_output_tokens` 由 model-fetch 转写为这个字段。
+   */
+  maxOutputTokens?: number;
+  /**
+   * 可选：thinkingLevelMap 的显式值；fetch 从 `/v1/models` 拿到 `effort`
+   * 字段后由 model-fetch 翻译为 Pi 形态 (user-level -> api-level)。
+   * 设置后 `deepseekProxyModelExtras` / `minimaxModelExtras` 不再覆盖。
+   */
+  thinkingLevelMap?: Record<string, string | null>;
 }
 
 export interface ProviderProfile {
@@ -908,12 +920,38 @@ export interface FetchedProviderModel {
   /** From API context_length / context_window / max_model_len when present. */
   contextWindow?: number;
   /**
-   * 留位：未来第三方 `/v1/models` 端点若返回 input modality 后端会填。
-   * 当前 OpenAI 兼容标准不返回（v1-models 只给 `id` / `owned_by` / 各类
-   * 厂商自定义的 context 字段），所以 `fetchProviderModels` 不会填这个字段；
-   * UI 端 fetch 合并路径走默认 `["text"]`。
+   * 单条响应输出 token 上限（DeepSeek `/v1/models` 返回的 `max_output_tokens`）。
+   * fetch 透传到 ProviderModelEntry.maxOutputTokens → Pi models.json maxTokens。
+   */
+  maxOutputTokens?: number;
+  /**
+   * 模型接受的输入 modality（DeepSeek 等扩展 `/v1/models` 返回
+   * `input_modalities: ["text","image"]`）。
    */
   input?: ModelInput[];
+  /** 输出 modality（一般不需要 X-agent 用,但保留供扩展）。 */
+  output?: ModelInput[];
+  /**
+   * Thinking effort 支持层级。DeepSeek `/v1/models` 返回
+   * `effort: { supported_levels: [...], default_level: "..." }`。
+   * model-fetch 端会把 supported_levels 翻译成 Pi 的 thinkingLevelMap
+   * （所有非 off 档位映射到首个 supported level 作为「开」的占位值）。
+   */
+  effort?: {
+    supportedLevels?: string[];
+    defaultLevel?: string;
+  };
+  /**
+   * 供应商返回的 API 能力元数据（DeepSeek `api_capabilities`，包含
+   * `anthropic_messages.system_prompt_update` 等）。model-fetch 端
+   * 透传给 sync 层，将来可据此自动选择 api=openai-completions / anthropic-messages。
+   */
+  apiCapabilities?: Record<string, unknown>;
+  /**
+   * 已翻译为 Pi `thinkingLevelMap` 形态的 `{userLevel: apiLevel}`。
+   * 给 ProviderModelEntry 直接使用，无需 UI 端再做映射。
+   */
+  thinkingLevelMap?: Record<string, string | null>;
 }
 
 export interface FetchProviderModelsResult {
