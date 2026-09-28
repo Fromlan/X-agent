@@ -28,6 +28,16 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 ## Unreleased
 
+## 0.6.4
+
+### 改进
+
+- **DeepSeek 模型元数据自动取真值**：供应商档案「拉取模型」走 `/v1/models`（含 `/models`）扩展 schema（`context_window` / `max_output_tokens` / `input_modalities` / `effort`），由 `effort.supported_levels` 自动翻译为 Pi `thinkingLevelMap` 写入 models.json；不再依赖仓库内 hardcoded 字段。DeepSeek thinking 二态（on/off）落地到所有 5 个非 off 档位的运行时映射，`deepseek-flash` 等历史遗漏 id 走启动期 repair 自动补齐 `contextWindow` / `compat`。
+
+### 修复
+
+- **OCR review Round 1 Critical — handler-throw 中文翻译激活**：`register-ipc.ts` handler 抛错路径改走 `TranslatedIpcError` 子类，renderer 侧 `error-i18n.ts` 翻译不再 dead code，IPC 错误提示恢复中文本地化。
+
 ## 0.6.3
 
 ### 修复
