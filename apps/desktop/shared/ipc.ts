@@ -47,6 +47,13 @@ export {
 
 // ----- protocol / facades / registries / types / prefs -----
 export type { IpcInvokeMap, IpcInvokeResult } from "./ipc/protocol";
+
+// ----- error-i18n: translated IPC error class + typeguard -----
+// Round 1 fix for OCR review finding #2: re-exports so renderer catch blocks
+// can import `isTranslatedIpcError` / `TranslatedIpcError` from the same
+// barrel as everything else (`@shared/ipc`), without reaching into
+// `error-i18n` directly.
+export { TranslatedIpcError, isTranslatedIpcError } from "./error-i18n";
 export type {
   WorkspaceApi,
   TurnApi,
