@@ -7,7 +7,8 @@
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
 
-const SPLASH_TIMEOUT_MS = 30_000;
+/** 1.4: 30s → 15s。Splash 失败 fallback 兜底太长会让用户以为 app 卡死。 */
+const SPLASH_TIMEOUT_MS = 15_000;
 // 淡出动画时长需与 splash.html 中 body.leaving 的 transition 时长保持一致。
 const SPLASH_FADE_OUT_MS = 320;
 
@@ -110,10 +111,28 @@ export function createSplash(getIcon: () => string | undefined): void {
   });
 }
 
-/** 调度 revealMain 在 SPLASH_TIMEOUT_MS 后兜底. */
-export function scheduleSplashRevealTimeout(reveal: () => void): void {
+/**
+ * 调度 revealMain 在 SPLASH_TIMEOUT_MS 后兜底。1.4 增 `signal`：被 abort
+ * 时 clearTimeout + 不再调度（防止 cancel 后又触发 reveal 覆盖已显示的
+ * 主窗口）。
+ */
+export function scheduleSplashRevealTimeout(
+  reveal: () => void,
+  signal?: AbortSignal,
+): void {
   if (splashTimer) clearTimeout(splashTimer);
+  if (signal?.aborted) {
+    return;
+  }
   splashTimer = setTimeout(reveal, SPLASH_TIMEOUT_MS);
+  if (signal) {
+    signal.addEventListener("abort", () => {
+      if (splashTimer) {
+        clearTimeout(splashTimer);
+        splashTimer = null;
+      }
+    }, { once: true });
+  }
 }
 
 /** 立即销毁 splash (用于 second-instance / activate 路径或 app quit). */

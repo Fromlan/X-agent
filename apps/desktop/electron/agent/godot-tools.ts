@@ -925,9 +925,9 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
         timeout_ms: Type.Optional(
           Type.Number({
             description:
-              "How long to wait (ms). Default 30000, max 60000. Set 0 to return immediately.",
+              "How long to wait (ms). Default 15000, max 30000. Set 0 to return immediately.",
             minimum: 0,
-            maximum: 60000,
+            maximum: 30000,
           }),
         ),
       }),

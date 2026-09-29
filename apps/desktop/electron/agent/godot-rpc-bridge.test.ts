@@ -382,6 +382,79 @@ describe("GodotRpcBridge", () => {
     await waitFor(() => bridge!.getStatus().clients === 0, "cleared");
   });
 
+  it("AbortSignal 已 abort 的请求立即 resolve aborted，不再等 timeout", async () => {
+    isolateEndpoint();
+    bridge = new GodotRpcBridge();
+    const port = nextPort();
+    await bridge.start(port);
+
+    const mock = await connectMockClient(port, () => {
+      // 不响应，让请求靠 timeout / abort 收尾。
+    });
+    await waitFor(() => bridge!.getStatus().clients === 1, "tcp");
+    await authenticate(bridge, mock.socket);
+
+    // 1) signal 在 send 之前已 abort → 同步返回 aborted。
+    const c1 = new AbortController();
+    c1.abort();
+    const r1 = await bridge.request(
+      { id: "pre-abort", method: "ping" },
+      2000,
+      { signal: c1.signal },
+    );
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) expect(r1.error).toBe("aborted");
+
+    // 2) 请求中途中途 abort → 立刻 resolve aborted，不再等 5s timeout。
+    const c2 = new AbortController();
+    const start = Date.now();
+    const promise = bridge.request(
+      { id: "mid-abort", method: "ping" },
+      5000,
+      { signal: c2.signal },
+    );
+    setTimeout(() => c2.abort(), 50);
+    const r2 = await promise;
+    const elapsed = Date.now() - start;
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.error).toBe("aborted");
+    // 不应等满 5s；50ms abort + 余量 < 500ms。
+    expect(elapsed).toBeLessThan(500);
+
+    // pending 应已被清理。
+    expect(bridge.listClients()).toHaveLength(1);
+    mock.close();
+    await waitFor(() => bridge!.getStatus().clients === 0, "cleared");
+  });
+
+  it("bridge.stop() 通过 bridgeAbortController 取消 pending，无需靠各自 timeout", async () => {
+    isolateEndpoint();
+    bridge = new GodotRpcBridge();
+    const port = nextPort();
+    await bridge.start(port);
+
+    const mock = await connectMockClient(port, () => {
+      // 不响应，依赖 stop() 主动 abort。
+    });
+    await waitFor(() => bridge!.getStatus().clients === 1, "tcp");
+    await authenticate(bridge, mock.socket);
+
+    const start = Date.now();
+    const promise = bridge.request(
+      { id: "stop-abort", method: "ping" },
+      10_000,
+    );
+    // 50ms 后 stop() → bridgeAbortController.abort()
+    setTimeout(() => void bridge!.stop(), 50);
+    const r = await promise;
+    const elapsed = Date.now() - start;
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/stopped|aborted/);
+    expect(elapsed).toBeLessThan(1000);
+
+    mock.close();
+  });
+
   it("setCurrentCwd 切换项目时，原本 active 的客户端不匹配会重置", async () => {
     isolateEndpoint();
     bridge = new GodotRpcBridge();

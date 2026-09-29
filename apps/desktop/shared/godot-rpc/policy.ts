@@ -39,10 +39,20 @@ function isPlayWaitMethod(method: string): boolean {
 export const GODOT_LIST_FILES_DEFAULT_LIMIT = 500;
 /** 1.3：list_project_files / wait_for_import_done 上限，防止 Tool 描述被巨大参数撑爆。 */
 export const GODOT_LIST_FILES_MAX_LIMIT = 5000;
-/** 1.3：wait_for_import_done / wait_for_break 默认等待时长（ms）。 */
-export const GODOT_WAIT_DEFAULT_TIMEOUT_MS = 30_000;
-/** 1.3：wait_for_import_done / wait_for_break 最长允许等待（ms）。 */
-export const GODOT_WAIT_MAX_TIMEOUT_MS = 60_000;
+/**
+ * 1.3：wait_for_import_done / wait_for_break 默认等待时长（ms）。
+ *
+ * 资源导入扫描在多数项目 5-10s 内完成；默认 15s 给大项目 + 冷启动一些
+ * 余量，长时间仍未完成 caller 应拆批。
+ */
+export const GODOT_WAIT_DEFAULT_TIMEOUT_MS = 15_000;
+
+/**
+ * 1.3：wait_for_import_done / wait_for_break 最长允许等待（ms）。
+ *
+ * 上限 30s：再长应拆批或后台跑，而不是占住 RPC 通道。
+ */
+export const GODOT_WAIT_MAX_TIMEOUT_MS = 30_000;
 
 /** 钳制 wait_for_import_done / wait_for_break 的 timeout_ms。 */
 export function clampGodotWaitMs(raw: unknown): number {
@@ -92,3 +102,4 @@ export function godotRpcTimeoutMs(call: GodotRpcCall): number {
   }
   return GODOT_RPC_BASE_TIMEOUT_MS;
 }
+

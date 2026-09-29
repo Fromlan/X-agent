@@ -467,7 +467,7 @@ describe("createGodotTools —— 1.3 只读内省 / UID / 类名 / 脚本反射
     expect(text).toContain("path=res://foo.gd");
   });
 
-  it("godot_wait_for_import_done 转发 paths/timeout_ms 并钳制 0-60000", async () => {
+  it("godot_wait_for_import_done 转发 paths/timeout_ms 并钳制 0-30000", async () => {
     ctx.setResult({ ok: true, remaining: [], elapsedMs: 100 });
     await byName.get("godot_wait_for_import_done")!({
       paths: ["res://a.png", "res://b.wav"],
@@ -481,12 +481,14 @@ describe("createGodotTools —— 1.3 只读内省 / UID / 类名 / 脚本反射
       paths: ["res://x.png"],
       timeout_ms: 999999,
     });
-    expect(ctx.captured[1].params.timeout_ms).toBe(60000);
+    // 1.4 上限收到 30s；超过即钳制。
+    expect(ctx.captured[1].params.timeout_ms).toBe(30000);
 
     await byName.get("godot_wait_for_import_done")!({
       paths: ["res://y.png"],
     });
-    expect(ctx.captured[2].params.timeout_ms).toBe(30000);
+    // 1.4 默认 15s（原 30s）。
+    expect(ctx.captured[2].params.timeout_ms).toBe(15000);
   });
 
   it("godot_wait_for_import_done paths 为空时直接报错", async () => {

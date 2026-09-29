@@ -74,14 +74,28 @@ export type GodotRpcMethodName = (typeof GODOT_RPC_METHOD_NAMES)[number];
 /** 桥与插件一致的回退端口上限（插件候选表 8765–8774）。 */
 export const GODOT_RPC_FALLBACK_PORT_END = 8774;
 
-/** Default collection window after play scene methods. */
-export const GODOT_RPC_DEFAULT_WAIT_MS = 3000;
+/**
+ * Default collection window after play scene methods.
+ *
+ * Play 后报错多在前 1-2s 出现，3s 给复杂场景一些余量。超过此窗口仍会
+ * 把「正在播放」状态返回给 caller，但 buffer 不再增长——长跑玩家继续用
+ * `godot_play_errors` 拉新错。
+ */
+export const GODOT_RPC_DEFAULT_WAIT_MS = 1500;
 
-/** Upper bound for `wait_ms` (plugin + tools clamp to this). */
-export const GODOT_RPC_MAX_WAIT_MS = 15000;
+/**
+ * Upper bound for `wait_ms` (plugin + tools clamp to this).
+ *
+ * DSH 默认 maxDelay 10000，call-level RPC 不应超过 call-级 timeout 太多。
+ */
+export const GODOT_RPC_MAX_WAIT_MS = 8000;
 
-/** Base RPC round-trip timeout (excluding play wait window). */
-export const GODOT_RPC_BASE_TIMEOUT_MS = 8000;
+/**
+ * Base RPC round-trip timeout (excluding play wait window).
+ *
+ * 同机 TCP JSON-lines：绝大多数 < 1s。给重资源方法乘 4 倍（见 policy.ts）。
+ */
+export const GODOT_RPC_BASE_TIMEOUT_MS = 4000;
 
 /**
  * 项目导出的最长等待时间。
@@ -93,14 +107,18 @@ export const GODOT_RPC_EXPORT_TIMEOUT_MS = 5 * 60_000;
  * C4: export 桥接超时在插件超时之外追加的余量。
  * 插件侧从「收到请求」起算 5 分钟并主动 kill 子进程 + 回响应；
  * 桥侧多等一个余量，保证永远先收到插件的最终结果（而非桥先 timeout 丢响应）。
+ *
+ * 从 15s 收到 10s：插件 5min 内必响应，桥再等 10s 已远超任何 hook 抖动。
  */
-export const GODOT_RPC_EXPORT_GRACE_MS = 15_000;
+export const GODOT_RPC_EXPORT_GRACE_MS = 10_000;
 
 /**
  * 桥接启动后的重连宽限期。
  * 期间就绪清单不提示「未连接」，留给已在运行的 Godot 插件完成重连。
+ *
+ * 从 8s 收到 5s：Godot 插件启动 + 握手一般在 2-3s 内完成；超过 5s 才提示未连接。
  */
-export const GODOT_RPC_GRACE_PERIOD_MS = 8000;
+export const GODOT_RPC_GRACE_PERIOD_MS = 5000;
 
 /** Connected Godot editor client (bridge-assigned id). */
 export interface GodotRpcClientInfo {
@@ -248,4 +266,12 @@ export interface GodotRpcBridgeStatus {
 export type GodotRpcRequestOptions = {
   /** Route to a specific editor client; defaults to activeClientId / first client. */
   clientId?: string | null;
+  /**
+   * 1.4 上游 cancellation signal。被 abort 时 request() 立刻 resolve
+   * `{ ok: false, error: "aborted" }`，不再等 timeoutMs。与桥接级
+   * `bridgeAbortController.signal` 融合（任一先 abort 即生效）。
+   */
+  signal?: AbortSignal;
 };
+
+
