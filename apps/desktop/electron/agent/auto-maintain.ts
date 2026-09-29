@@ -27,8 +27,8 @@ import {
   type SnipReport,
 } from "./snip-tool-result";
 
-/** Minimum gap between two auto-maintain runs (ms). */
-export const AUTO_MAINTAIN_DEBOUNCE_MS = 5_000;
+/** Minimum gap between two auto-maintain runs (ms). 1.4: 5s → 3s. */
+export const AUTO_MAINTAIN_DEBOUNCE_MS = 3_000;
 
 /** Snip alone is considered "cleared" when percent drops below this. */
 export const AUTO_MAINTAIN_CLEAR_FACTOR = 0.7;

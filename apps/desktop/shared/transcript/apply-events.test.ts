@@ -111,3 +111,73 @@ describe("user_message 事件合并保留 images", () => {
     expect(bubble.images).toBeUndefined();
   });
 });
+
+describe("auto_retry 事件 (1.4)", () => {
+  it("start 阶段入栈 retry-N 行；end (success=true) 移除该行", () => {
+    const startEvent: UiAgentEvent = {
+      type: "auto_retry",
+      phase: "start",
+      attempt: 2,
+      maxAttempts: 5,
+      delayMs: 2000,
+      message: "rate limit",
+    };
+    const afterStart = applyAgentEvent([], startEvent);
+    expect(afterStart).toHaveLength(1);
+    const start = afterStart[0]!;
+    expect(start.kind).toBe("system");
+    expect(start.id).toBe("retry-2");
+    expect(start.level).toBe("warn");
+    expect(start.text).toMatch(/自动重试 2\/5/);
+    expect(start.text).toMatch(/等待 2s/);
+
+    const endOk: UiAgentEvent = {
+      type: "auto_retry",
+      phase: "end",
+      attempt: 2,
+      success: true,
+    };
+    const afterEnd = applyAgentEvent(afterStart, endOk);
+    expect(afterEnd).toHaveLength(0);
+  });
+
+  it("end (success=false) 把 start 行替换为错误行", () => {
+    const startEvent: UiAgentEvent = {
+      type: "auto_retry",
+      phase: "start",
+      attempt: 1,
+      maxAttempts: 5,
+      message: "TRANSPORT",
+    };
+    const afterStart = applyAgentEvent([], startEvent);
+    expect(afterStart[0]?.level).toBe("warn");
+
+    const endFail: UiAgentEvent = {
+      type: "auto_retry",
+      phase: "end",
+      attempt: 1,
+      success: false,
+      message: "gave up after 5 retries",
+    };
+    const afterEnd = applyAgentEvent(afterStart, endFail);
+    expect(afterEnd).toHaveLength(1);
+    const fail = afterEnd[0]!;
+    expect(fail.id).toBe("retry-1");
+    expect(fail.level).toBe("error");
+    expect(fail.text).toMatch(/重试失败/);
+    expect(fail.text).toMatch(/gave up/);
+  });
+
+  it("start 入栈的 id 与 items 长度解耦（两次 start 不冲突）", () => {
+    const startEvent: UiAgentEvent = {
+      type: "auto_retry",
+      phase: "start",
+      attempt: 3,
+      maxAttempts: 5,
+      message: "x",
+    };
+    const out = applyAgentEvent([], startEvent);
+    expect(out[0]?.id).toBe("retry-3");
+    // 旧实现以 items.length 拼 id，1.4 改稳定 attempt id。
+  });
+});

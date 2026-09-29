@@ -170,6 +170,11 @@ export class GodotRpcBridge {
    */
   private currentCwd: string | null = null;
   private listeners = new Set<Listener>();
+  /**
+   * 1.4 桥接级 AbortController。stop() / abortAllPending() 调用 abort()，触发每个 pending
+   * 请求的 signal 监听器提前 resolve，不再等 timeout。
+   */
+  private readonly bridgeAbortController = new AbortController();
   private pending = new Map<
     string,
     {
@@ -179,6 +184,8 @@ export class GodotRpcBridge {
       clientId: string;
       /** 诊断：请求方法（超时日志定位用）。 */
       method: string;
+      /** 1.4 abort 监听器移除 cleanup；正常 settle 时调，避免 listener leak。 */
+      removeAbortListener?: () => void;
     }
   >();
   private buffers = new WeakMap<Socket, string>();
@@ -477,6 +484,10 @@ export class GodotRpcBridge {
   }
 
   async stop(): Promise<void> {
+    // 1.4 桥接级 abort，让所有 pending 请求的 signal 监听器立刻 reject，
+    // 不再等待各自 timeout。配合 for-loop 二次清理是为了让 caller 拿到的
+    // error 字段保持 "bridge stopped" 兼容旧契约。
+    this.bridgeAbortController.abort();
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
       // 优先 reject：避免 pending.resolve 二次返回（即便 Promise 静默忽略也避免污染）。
@@ -542,6 +553,7 @@ export class GodotRpcBridge {
         const pending = this.pending.get(response.id);
         if (pending) {
           clearTimeout(pending.timer);
+          pending.removeAbortListener?.();
           this.pending.delete(response.id);
           dbgLog("godot-rpc", "response matched", {
             id: response.id,
@@ -686,6 +698,21 @@ export class GodotRpcBridge {
         error: reason ?? "no Godot editor connected",
       };
     }
+    // 1.4 把上游 signal 与桥接级 bridgeAbortController 融合，谁先 abort 立刻
+    // resolve { ok: false, error: "aborted" }，不再等 timeoutMs。
+    const upstreamSignal = options?.signal;
+    const fusedSignal =
+      upstreamSignal === undefined
+        ? this.bridgeAbortController.signal
+        : AbortSignal.any([upstreamSignal, this.bridgeAbortController.signal]);
+    if (fusedSignal.aborted) {
+      dbgLog("godot-rpc", "request aborted before send", {
+        id: req.id,
+        method: req.method,
+        clientId: client.id,
+      });
+      return { id: req.id, ok: false, error: "aborted" };
+    }
     const payload = `${JSON.stringify(req)}\n`;
     client.socket.write(payload);
     dbgLog("godot-rpc", "request sent", {
@@ -695,7 +722,27 @@ export class GodotRpcBridge {
       bytes: payload.length,
     });
     return new Promise((resolve) => {
+      let settled = false;
+      const onAbort = (): void => {
+        if (settled) return;
+        settled = true;
+        const entry = this.pending.get(req.id);
+        if (entry) {
+          clearTimeout(entry.timer);
+          this.pending.delete(req.id);
+        }
+        dbgLog("godot-rpc", "request aborted", {
+          id: req.id,
+          method: req.method,
+          clientId: client.id,
+        });
+        resolve({ id: req.id, ok: false, error: "aborted" });
+      };
+      fusedSignal.addEventListener("abort", onAbort, { once: true });
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        fusedSignal.removeEventListener("abort", onAbort);
         this.pending.delete(req.id);
         dbgLog("godot-rpc", "request timed out", {
           id: req.id,
@@ -706,11 +753,16 @@ export class GodotRpcBridge {
         resolve({ id: req.id, ok: false, error: "timeout" });
       }, timeoutMs);
       this.pending.set(req.id, {
-        resolve: (res: GodotRpcResponse) =>
-          resolve(routedTo ? { ...res, routedTo } : res),
+        resolve: (res: GodotRpcResponse) => {
+          if (settled) return;
+          settled = true;
+          fusedSignal.removeEventListener("abort", onAbort);
+          resolve(routedTo ? { ...res, routedTo } : res);
+        },
         timer,
         clientId: client.id,
         method: req.method,
+        removeAbortListener: () => fusedSignal.removeEventListener("abort", onAbort),
       });
     });
   }

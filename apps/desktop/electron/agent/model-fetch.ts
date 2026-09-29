@@ -42,7 +42,13 @@ const KNOWN_COMPAT_SUFFIXES = [
   "/claude",
 ] as const;
 
-const FETCH_TIMEOUT_MS = 15_000;
+/**
+ * 单个候选端点的 fetch 超时。从 15s 收到 8s：4 个候选依次尝试时最长
+ * 总耗时上限 ~32s；早先 15s * 4 = 60s 体感过慢，多数 baseUrl 命中
+ * 首个候选即可。`AbortSignal.timeout` 单次 signal 让 fetch 在到点
+ * 时立刻 reject，不用 setTimeout 手动 cancel。
+ */
+const FETCH_TIMEOUT_MS = 8_000;
 const ERROR_BODY_MAX = 512;
 
 function endsWithVersionSegment(url: string): boolean {
@@ -298,8 +304,7 @@ export async function fetchProviderModels(input: {
 
   let lastErr = "无候选端点";
   for (const url of candidates) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
     try {
       const response = await fetch(url, {
         method: "GET",
@@ -308,9 +313,8 @@ export async function fetchProviderModels(input: {
           Accept: "application/json",
           "User-Agent": "X-agent/0.1",
         },
-        signal: controller.signal,
+        signal,
       });
-      clearTimeout(timer);
 
       if (response.ok) {
         const json = (await response.json()) as unknown;
@@ -336,7 +340,7 @@ export async function fetchProviderModels(input: {
         tried: candidates,
       };
     } catch (err) {
-      clearTimeout(timer);
+      // AbortSignal.timeout 触发时 err.name === "AbortError"，无需手动 clearTimeout。
       if (err instanceof Error && err.name === "AbortError") {
         return { ok: false, error: "请求超时", tried: candidates };
       }

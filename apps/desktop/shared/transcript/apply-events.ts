@@ -365,30 +365,42 @@ export function applyAgentEvent(
         },
       ];
     }
-    case "auto_retry":
+    case "auto_retry": {
+      // 1.4: 用稳定 id（attempt 而非 items.length）让 end 阶段可以
+      // 按 id 找到 start 行做替换/移除，避免「重试中」与「重试失败」
+      // 同时留在列表里干扰用户。
+      const retryId = `retry-${event.attempt}`;
       if (event.phase === "start") {
+        const baseText = `自动重试 ${event.attempt}/${event.maxAttempts ?? "?"}：${event.message ?? ""}`;
+        const text = typeof event.delayMs === "number"
+          ? `${baseText}（等待 ${Math.round(event.delayMs / 100) / 10}s）`
+          : baseText;
         return [
           ...items,
           {
             kind: "system",
-            id: `retry-${event.attempt}-${items.length}`,
-            text: `自动重试 ${event.attempt}/${event.maxAttempts ?? "?"}：${event.message ?? ""}`,
+            id: retryId,
+            text,
             level: "warn",
           },
         ];
       }
-      if (!event.success && event.message) {
-        return [
-          ...items,
-          {
-            kind: "system",
-            id: `retry-fail-${event.attempt}-${items.length}`,
-            text: `重试失败：${event.message}`,
-            level: "error",
-          },
-        ];
+      // end 阶段：按 retryId 找到 start 行做替换/移除。
+      if (event.success) {
+        return items.filter((it) => it.id !== retryId);
       }
-      return items;
+      // 失败：把 start 行替换为错误行。
+      return items.map((it) =>
+        it.id === retryId
+          ? {
+              kind: "system",
+              id: retryId,
+              text: `重试失败：${event.message ?? ""}`,
+              level: "error",
+            }
+          : it,
+      );
+    }
     default:
       return items;
   }

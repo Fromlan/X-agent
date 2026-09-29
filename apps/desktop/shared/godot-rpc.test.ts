@@ -32,19 +32,19 @@ describe("GODOT_RPC 常量", () => {
     expect(GODOT_RPC_DEFAULT_PORT).toBe(8765);
   });
 
-  it("默认等待 3000ms，上限 15000ms", () => {
-    expect(GODOT_RPC_DEFAULT_WAIT_MS).toBe(3000);
-    expect(GODOT_RPC_MAX_WAIT_MS).toBe(15000);
+  it("默认等待 1500ms，上限 8000ms", () => {
+    expect(GODOT_RPC_DEFAULT_WAIT_MS).toBe(1500);
+    expect(GODOT_RPC_MAX_WAIT_MS).toBe(8000);
   });
 
-  it("基础超时 8000ms，宽限期 8000ms", () => {
-    expect(GODOT_RPC_BASE_TIMEOUT_MS).toBe(8000);
-    expect(GODOT_RPC_GRACE_PERIOD_MS).toBe(8000);
+  it("基础超时 4000ms，宽限期 5000ms", () => {
+    expect(GODOT_RPC_BASE_TIMEOUT_MS).toBe(4000);
+    expect(GODOT_RPC_GRACE_PERIOD_MS).toBe(5000);
   });
 
   it("1.3 wait/list 默认值与上限", () => {
-    expect(GODOT_WAIT_DEFAULT_TIMEOUT_MS).toBe(30_000);
-    expect(GODOT_WAIT_MAX_TIMEOUT_MS).toBe(60_000);
+    expect(GODOT_WAIT_DEFAULT_TIMEOUT_MS).toBe(15_000);
+    expect(GODOT_WAIT_MAX_TIMEOUT_MS).toBe(30_000);
     expect(GODOT_LIST_FILES_DEFAULT_LIMIT).toBe(500);
     expect(GODOT_LIST_FILES_MAX_LIMIT).toBe(5000);
   });

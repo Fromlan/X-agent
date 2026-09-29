@@ -13,8 +13,8 @@ import {
   type GithubFeed,
 } from "./update-feed";
 
-/** Delay before first silent check after packaged app ready. */
-const STARTUP_CHECK_DELAY_MS = 8_000;
+/** Delay before first silent check after packaged app ready. 1.4: 8s → 3s. */
+const STARTUP_CHECK_DELAY_MS = 3_000;
 
 const { autoUpdater } = electronUpdater;
 
