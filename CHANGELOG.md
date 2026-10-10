@@ -26,16 +26,9 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 实现细节（路径解析规则、sidecar 格式、工具白名单、vitest 覆盖）都进 PR 描述与 commit，CHANGELOG 只承担"用户能看到什么"。
 
-## 0.6.5
-
-### 改进
-
-- **Godot 工具响应更快**：play 场景错误收集、wait_for_import_done、RPC round-trip、桥接启动 grace、export 桥接余量等超时统一下调；运行场景时报错多在前 1-2s 返回，长跑玩家继续走 `godot_play_errors` 拉新错。
-- **自动重试状态显示在聊天面板**：发起重试时插入「自动重试 N/M（等待 Xs）」行，恢复成功自动消失，失败转为「重试失败：xxx」错误行——Pi SDK 的 `auto_retry_start`/`auto_retry_end` 事件真正落到 UI，不再只是 status 通灯变化。
-- **取消请求不再等满超时**：godot-rpc bridge 接受上游 AbortSignal，桥接级 `bridgeAbortController` 让 `bridge.stop()` 与会话切换立刻 reject 所有 pending，不再各自等满 timeout；git / fetch / splash 等子进程也可由 AbortSignal 主动 kill。
-- **启动体感收紧**：splash 兜底 30s → 15s、自动检查更新延迟 8s → 3s、auto-maintain debounce 5s → 3s、供应商档案首次 fetch 单端点 15s → 8s 并改用 `AbortSignal.timeout` 单次 signal。
-
 ## Unreleased
+
+## 0.6.6
 
 ### 改进
 
@@ -58,6 +51,15 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 - 增加实际静态检查、业务回归、崩溃与缩放测试，以及真实 Godot 编辑器集成验证。
 - 发布前验证版本、tag、提交及变更记录一致，并要求完整检查通过后才打包上传。
+
+## 0.6.5
+
+### 改进
+
+- **Godot 工具响应更快**：play 场景错误收集、wait_for_import_done、RPC round-trip、桥接启动 grace、export 桥接余量等超时统一下调；运行场景时报错多在前 1-2s 返回，长跑玩家继续走 `godot_play_errors` 拉新错。
+- **自动重试状态显示在聊天面板**：发起重试时插入「自动重试 N/M（等待 Xs）」行，恢复成功自动消失，失败转为「重试失败：xxx」错误行——Pi SDK 的 `auto_retry_start`/`auto_retry_end` 事件真正落到 UI，不再只是 status 通灯变化。
+- **取消请求不再等满超时**：godot-rpc bridge 接受上游 AbortSignal，桥接级 `bridgeAbortController` 让 `bridge.stop()` 与会话切换立刻 reject 所有 pending，不再各自等满 timeout；git / fetch / splash 等子进程也可由 AbortSignal 主动 kill。
+- **启动体感收紧**：splash 兜底 30s → 15s、自动检查更新延迟 8s → 3s、auto-maintain debounce 5s → 3s、供应商档案首次 fetch 单端点 15s → 8s 并改用 `AbortSignal.timeout` 单次 signal。
 
 ## 0.6.4
 
