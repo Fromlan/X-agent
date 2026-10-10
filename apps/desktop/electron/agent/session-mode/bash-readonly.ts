@@ -4,6 +4,8 @@
  */
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
+import { lstatSync, readdirSync } from "node:fs";
+import { isPhysicallyInside } from "../lib/path-boundary";
 
 /** Commands that are generally safe for codebase research (no mutation). */
 const READONLY_COMMAND_HEADS = new Set([
@@ -224,6 +226,7 @@ function isInsideAnyRoot(abs: string, roots: readonly string[]): boolean {
   if (!roots || roots.length === 0) return false;
   for (const rootRaw of roots) {
     const root = normalize(resolve(rootRaw));
+    if (!isPhysicallyInside(root, abs)) continue;
     if (root === abs) return true;
     const prefix = root.endsWith(sep) ? root : root + sep;
     if (
@@ -248,6 +251,20 @@ function pathEscapesReadArea(
 ): boolean {
   const cleaned = expandTilde(unquote(pathToken));
   if (!cleaned) return false;
+  if (/[*?\[]/.test(cleaned)) {
+    const normalizedToken = cleaned.replace(/\\/g, "/");
+    const wildcard = normalizedToken.search(/[*?\[]/);
+    const slash = normalizedToken.lastIndexOf("/");
+    // Shell directory globs can traverse a junction we cannot resolve as one literal path.
+    if (wildcard < slash) return true;
+    const parent = resolve(cwd, slash < 0 ? "." : normalizedToken.slice(0, slash) || "/");
+    const roots = [cwd, ...(allowedRoots ?? [])];
+    if (!roots.some((r) => isPhysicallyInside(r, parent))) return true;
+    try {
+      // Conservatively inspect all possible final-component targets, including links not followed by readdir itself.
+      return readdirSync(parent).some((name) => !roots.some((r) => isPhysicallyInside(r, join(parent, name))));
+    } catch { return true; }
+  }
   const root = normalize(resolve(cwd));
   let abs: string;
   try {
@@ -277,7 +294,7 @@ function pathEscapesReadArea(
   } else if (abs !== root && !abs.startsWith(root + sep)) {
     return true;
   }
-  return false;
+  return !isPhysicallyInside(root, abs);
 }
 
 /**
@@ -311,7 +328,13 @@ export function bashCommandEscapesCwd(
         i += 1;
         continue;
       }
-      if (isPathLikeToken(tok) && pathEscapesReadArea(root, tok, allowedRoots)) {
+      let existingTarget = false;
+      if (i > 0 && !tok.startsWith("-")) {
+        try { lstatSync(resolve(root, unquote(tok))); existingTarget = true; }
+        catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT" && (err as NodeJS.ErrnoException).code !== "ENOTDIR") return true; }
+      }
+      const fileGlob = i > 0 && /[*?\[]/.test(tok) && ["ls", "dir", "cat", "head", "tail", "stat", "file", "wc", "du"].includes(tokens[0].toLowerCase());
+      if ((isPathLikeToken(tok) || existingTarget || fileGlob) && pathEscapesReadArea(root, tok, allowedRoots)) {
         return true;
       }
     }

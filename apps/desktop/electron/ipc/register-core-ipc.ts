@@ -7,7 +7,9 @@
  * - getStartupReport / getPrefsRecoveryNotice: 启动期失败摘要 + prefs
  *   损坏备份提示
  */
-import { dialog, type BrowserWindow, type IpcMain } from "electron";
+import { app, dialog, type BrowserWindow, type IpcMain } from "electron";
+import { diagnosticSnapshot, recordDiagnostic } from "../boot/diagnostics";
+import { writeJsonAtomic } from "../agent/lib/atomic-write";
 import type { SessionHost } from "../agent/session-host";
 import { openPiLogin } from "../agent/pi-cli";
 import type { PrefsRecoveryNotice } from "../agent/prefs";
@@ -26,10 +28,37 @@ export type CoreIpcDeps = {
   consumePrefsRecoveryNotice: () => PrefsRecoveryNotice | null;
   /** Consume & clear pending startup issues (queue semantics). */
   consumeStartupIssues: () => StartupIssue[];
+  getGodotClientCount: () => number;
 };
 
 export function registerCoreIpc(ipcMain: IpcMain, deps: CoreIpcDeps): void {
   const { sessionHost: host } = deps;
+  /** Produce privacy-minimized support metadata without including cwd or transcript text. */
+  const snapshot = () => diagnosticSnapshot(app.getVersion(), {
+    status: host.getStatus().status, mode: host.getSessionMode().mode,
+    sessionActive: !!host.getStatus().cwd, godotClients: deps.getGodotClientCount(),
+  });
+  let rendererRecovering = false;
+  handle(ipcMain, IPC_CHANNELS.reportRendererFailure, async () => {
+    recordDiagnostic("renderer-error", "unknown");
+    if (!rendererRecovering) {
+      rendererRecovering = true;
+      try { await (await import("../app-runtime")).stopTurnForRecovery(); }
+      catch { recordDiagnostic("main-rejection", "unknown"); }
+      void dialog.showMessageBox({ type: "error", title: "界面发生未处理异常", message: "已停止当前回合。请重新启动以恢复已保存的会话。诊断只保存错误类型，不包含异常正文。", buttons: ["重新启动", "退出"], defaultId: 0, cancelId: 1 }).then((choice) => {
+        if (choice.response === 0) app.relaunch();
+        app.quit();
+      }).catch(() => app.exit(1));
+    }
+    return { ok: true as const };
+  });
+  handle(ipcMain, IPC_CHANNELS.getDiagnosticSnapshot, async () => snapshot());
+  handle(ipcMain, IPC_CHANNELS.exportDiagnosticBundle, async () => {
+    const result = await dialog.showSaveDialog({ title: "导出本地诊断包", defaultPath: "x-agent-diagnostics.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    await writeJsonAtomic(result.filePath, snapshot());
+    return { ok: true, path: result.filePath };
+  });
 
   handle(
     ipcMain,

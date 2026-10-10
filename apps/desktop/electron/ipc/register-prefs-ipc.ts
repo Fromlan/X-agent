@@ -19,7 +19,7 @@ export type PrefsIpcDeps = {
   loadPrefs: () => ClientPrefs;
   patchPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
   getCachedPrefs: () => ClientPrefs;
-  applyTools: (tools: string[]) => Promise<unknown>;
+  applyTools: (tools: string[]) => Promise<{ ok: boolean; error?: string }>;
   reloadResources: () => Promise<unknown>;
   notifyLogoChange: (id: string, win: BrowserWindow | null) => void;
   getMainWindow: () => BrowserWindow | null;
@@ -48,7 +48,8 @@ export function registerPrefsIpc(ipcMain: IpcMain, deps: PrefsIpcDeps): void {
     const prevLogoId = logoTouched ? deps.getCachedPrefs().clientLogoId : null;
     if (typedPatch.tools) {
       const allowed = new Set<string>(ALL_TOGGLEABLE_TOOLS as readonly string[]);
-      await deps.applyTools(typedPatch.tools.filter((t) => allowed.has(t)));
+      const applied = await deps.applyTools(typedPatch.tools.filter((t) => allowed.has(t)));
+      if (!applied.ok) throw new Error(applied.error ?? "工具设置未能保存并应用");
       const { tools: _drop, ...rest } = typedPatch;
       if (Object.keys(rest).length === 0) return await deps.loadPrefs();
       const next = await deps.patchPrefs(rest);

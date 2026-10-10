@@ -575,7 +575,7 @@ export class ShadowGit {
     const paths = options?.paths?.map((p) => p.replace(/\\/g, "/"));
 
     try {
-      if (paths && paths.length > 0) {
+      if (paths !== undefined) {
         const ls = await gitShadow(this.gitDir, this.cwd, [
           "ls-tree",
           "-r",

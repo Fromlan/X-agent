@@ -22,7 +22,7 @@ For the maintenance cadence, see [`docs/maintenance.md`](docs/maintenance.md).
 - [ ] Follow [Conventional Commits](#commit-message-format)
 - [ ] Keep PRs small (1 Issue → 1 PR, ideally 1-3 days of work)
 - [ ] Fill in the [PR template](.github/PULL_REQUEST_TEMPLATE.md)
-- [ ] All CI jobs green: `desktop` / `unit-test` / `e2e` / `actionlint`
+- [ ] All CI jobs green: `desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`
 - [ ] Self-review before requesting review
 
 ## Code of Conduct
@@ -102,7 +102,8 @@ locally. To install them, run the setup in
 2. Fill in `.github/PULL_REQUEST_TEMPLATE.md`
 3. Reference the related Issue with `Fixes #123` or `Refs #123`
 4. Wait for CI: `desktop` (typecheck + lint + test + build), `unit-test`
-   (Vitest coverage gate), `e2e` (Playwright), `actionlint` (workflow YAML)
+   (Vitest coverage gate), `e2e` (Playwright business/UI flows), `godot-integration`
+   (real Godot 4.6.2), and `actionlint` (workflow YAML)
 5. The maintainer will self-review and merge
 
 If your PR changes user-facing behavior, also add an entry under `## Unreleased`
@@ -117,7 +118,7 @@ cd apps/desktop
 npm install
 npm run typecheck
 npm test           # offline assertion scripts (no auth needed)
-npm run test:unit  # Vitest with coverage gate
+npm run lint      # AST rules and release workflow gates
 npm run test:e2e   # Playwright (requires `npm run build` first)
 ```
 
@@ -150,7 +151,7 @@ See [`docs/maintenance.md`](docs/maintenance.md#release-cadence). The short vers
 2. `npm run release:prepare -- 0.6.0` (validates the changelog, bumps
    `apps/desktop/package.json` + lockfile)
 3. Commit, push, `git tag v0.6.0 && git push origin v0.6.0`
-4. `release.yml` builds the Windows installer and uploads to GitHub Releases
+4. `release.yml` validates tag/HEAD/package/changelog identity and runs typecheck, lint, offline tests, coverage, build, E2E and real Godot before packaging. A separate dependent job uploads to GitHub Releases; dispatch cannot rewrite the package version.
 
 ## Reviewer Policy
 

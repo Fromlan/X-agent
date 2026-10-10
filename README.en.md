@@ -204,6 +204,12 @@ A: No. Upgrades preserve everything under `~/.pi/agent/`. To roll back, install 
 
 ## From source
 
+Development requires Node.js 24+. Settings → General → Export diagnostics saves local JSON with versions, system/runtime state and bounded exception metadata. It excludes raw errors, credentials, full conversations and project source; nothing is uploaded automatically. Main-process failures stop execution and exit; renderer failures offer restart or exit.
+
+Goal token accounting includes evaluator usage. The budget stops continuation after a request completes and can be exceeded by a single request. Tool evidence improves evaluation but cannot replace deterministic acceptance. Retracting rolls back branch budget, not incurred fees.
+
+File boundaries check junction/symlink targets, with a remaining check/use race if another process replaces paths. Model-list probes reject redirects and validate connection addresses; this policy does not uniformly cover Pi SDK sessions, OAuth, compaction, extensions or WebSockets.
+
 Developer docs: [`docs/agent.md`](docs/agent.md) / [`CLAUDE.md`](CLAUDE.md)
 
 ```bash
@@ -215,7 +221,13 @@ npm run dev          # Electron dev
 npm test             # offline assertion chain
 npm run test:unit    # vitest
 npm run typecheck    # tsc (two tsconfigs)
+npm run lint         # AST rules and release workflow gates
+npm run test:coverage # coverage over the configured include scope
+npm run build
+npm run test:e2e      # real Electron business and UI flows
 ```
+
+For real Godot integration, set PowerShell `$env:GODOT_BIN` to the absolute path of a Godot 4.6.2 console executable, then run `npm run test:godot` in `apps/desktop`. Missing configuration fails explicitly. CI downloads and verifies the official artifact. The isolated temporary project tests addon loading, authenticated RPC, scene operations and script error line numbers. Coverage represents only the scope in `vitest.config.ts`.
 
 Release flow: see [`CLAUDE.md` §7](CLAUDE.md#7-发版流程).
 

@@ -145,6 +145,9 @@ const exposed: XAgentApi = {
   },
   appReport: {
     getStartupReport: api.getStartupReport,
+    getDiagnosticSnapshot: api.getDiagnosticSnapshot,
+    exportDiagnosticBundle: api.exportDiagnosticBundle,
+    reportRendererFailure: api.reportRendererFailure,
   },
   godot: {
     status: api.godotRpcStatus,

@@ -5,7 +5,11 @@
  * 造整个 SessionModeController). 锁住 applyGoalModeChange + computeGoalModeNotice
  * + clearGoalState + setGoal / pauseGoal / resumeGoal / clearGoal 边界.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setUsageStorePathForTests, getUsageSummary } from "../usage-store";
 import { GoalController, type GoalControllerDeps, type GoalTurnLedgerEntry } from "./goal-controller";
 import { setAgentDirOverrideForTests } from "../prefs";
 import type { AgentSessionMode, GoalInfo, GoalStatus, SessionModeInfo } from "../../../shared/ipc";
@@ -103,8 +107,84 @@ describe("GoalController — goal case (C-404)", () => {
   let setupDir: string;
 
   beforeEach(() => {
-    setupDir = `D:/UGit/.scratch/test-goal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setupDir = mkdtempSync(join(tmpdir(), "x-agent-goal-test-"));
     setAgentDirOverrideForTests(setupDir);
+    setUsageStorePathForTests(join(setupDir, "usage.json"));
+  });
+  afterEach(() => {
+    setAgentDirOverrideForTests(null); setUsageStorePathForTests(null);
+    rmSync(setupDir, { recursive: true, force: true });
+  });
+
+  /** Build an independently evaluated turn with paid usage and a real isolated ledger. */
+  function paidFixture(response = "NO\nneed more work", maxTokens = 10_000) {
+    const goal: GoalInfo = { condition: "tests pass", status: "pursuing", turns: 0, maxTurns: 5, tokensUsed: 0, maxTokens, startedAt: 0 };
+    const deps = makeMockDeps({ goal, agentMode: "goal" });
+    deps.sessionPath.mockReturnValue(null);
+    deps.hostObject.getActiveUserEntryId = () => "u1";
+    deps.hostObject.getLastTurnTokenTotal = () => 100;
+    const bundle = deps.hostObject.getBundle()!;
+    bundle.session.messages.push({ role: "toolResult", toolName: "bash", toolCallId: "call", isError: false, content: [{ type: "text", text: "exit 0: tests passed" }] } as never);
+    const result = { role: "assistant", stopReason: "stop", content: [{ type: "text", text: response }], usage: { input: 200, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 220, cost: { input: 0.01, output: 0.01, cacheRead: 0, cacheWrite: 0, total: 0.02 } } };
+    const complete = vi.fn(async () => result);
+    deps.hostObject.ensureRuntime = vi.fn(async () => ({ completeSimple: complete }) as never);
+    return { goal, deps, result, complete, controller: new GoalController(deps) };
+  }
+
+  it("counts evaluator usage and ignores duplicate settled notifications", async () => {
+    const f = paidFixture(); await f.controller.onAgentSettled();
+    expect(f.goal.tokensUsed).toBe(320); expect(f.goal.turns).toBe(1);
+    expect((await getUsageSummary()).totals.tokens.total).toBe(220);
+    await f.controller.onAgentSettled(); expect(f.complete).toHaveBeenCalledTimes(1);
+    f.controller.rollbackGoalAfterRetract(["u1"]);
+    expect(f.goal.tokensUsed).toBe(0);
+    expect((await getUsageSummary()).totals.cost).toBeCloseTo(0.02);
+  });
+
+  it("stops continuation when paid evaluation crosses the budget", async () => {
+    const f = paidFixture("NO\nmissing work", 300); await f.controller.onAgentSettled();
+    expect(f.goal.status).toBe("budget_limited"); expect(f.deps.hostObject.prompt).not.toHaveBeenCalled();
+  });
+
+  it("keeps the known charge and pauses if aggregate usage persistence fails", async () => {
+    const f = paidFixture(); const file = join(setupDir, "usage.json"); writeFileSync(file, "{corrupt");
+    await f.controller.onAgentSettled();
+    expect(f.goal.tokensUsed).toBe(320); expect(f.goal.status).toBe("paused");
+    expect(f.deps.hostObject.prompt).not.toHaveBeenCalled(); expect(readFileSync(file, "utf8")).toBe("{corrupt");
+  });
+
+  it("accounts returned usage even when evaluation fails", async () => {
+    const f = paidFixture(); f.result.stopReason = "error";
+    await f.controller.onAgentSettled(); expect(f.goal.status).toBe("paused");
+    expect(f.goal.tokensUsed).toBe(320); expect((await getUsageSummary()).totals.tokens.total).toBe(220);
+    f.result.stopReason = "stop"; f.goal.status = "pursuing";
+    await f.controller.onAgentSettled(); expect(f.goal.tokensUsed).toBe(540); // Previous agent turn is not charged again.
+  });
+
+  it("keeps paid usage but applies no completion after pause", async () => {
+    const f = paidFixture("YES\ndone");
+    let resolve!: (result: typeof f.result) => void;
+    f.complete.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    const settled = f.controller.onAgentSettled();
+    await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+    await f.controller.pauseGoal(); resolve(f.result); await settled;
+    expect(f.goal.status).toBe("paused"); expect(f.deps.hostObject.prompt).not.toHaveBeenCalled();
+    expect(f.goal.tokensUsed).toBe(320);
+    expect((await getUsageSummary()).totals.tokens.total).toBe(220);
+  });
+
+  it("restores real ledger IDs so resume and retract do not double-charge evaluated turns", async () => {
+    const f = paidFixture();
+    const sessionPath = join(setupDir, "fixture.jsonl"); f.deps.sessionPath.mockReturnValue(sessionPath);
+    await f.controller.onAgentSettled();
+    const deps = makeMockDeps(); deps.sessionPath.mockReturnValue(sessionPath);
+    deps.hostObject.getActiveUserEntryId = () => "u1";
+    deps.hostObject.ensureRuntime = f.deps.hostObject.ensureRuntime;
+    const restored = new GoalController(deps); restored.restoreGoalFromJournal();
+    expect(deps.ledger[0].userEntryId).toBe("u1");
+    expect(deps.getGoalState().tokensUsed).toBe(320);
+    await restored.onAgentSettled(); expect(f.complete).toHaveBeenCalledTimes(1);
+    restored.rollbackGoalAfterRetract(["u1"]); expect(deps.getGoalState().tokensUsed).toBe(0);
   });
 
   it("applyGoalModeChange: 无 bundle 时 setAgentMode + emitSessionMode (controller 检查 bundle 提前)", () => {

@@ -90,6 +90,7 @@ function providerStore(paths: ProviderPaths): Store<ProviderStoreFile> {
 /** 解码盘上 JSON:apiKey 从加密形态解回明文(与旧 loadStore 行为一致)。 */
 function decodeProviderStore(raw: unknown): ProviderStoreFile {
   const r = raw as Partial<ProviderStoreFile> | null;
+  if (!r || typeof r !== "object" || Array.isArray(r) || !Array.isArray(r.profiles) || r.version !== 1) throw new Error("供应商配置结构不合法，已保留原文件");
   const profiles = (Array.isArray(r?.profiles) ? r.profiles : []).map((p) =>
     normalizeProfile(p as Partial<ProviderProfile>),
   );

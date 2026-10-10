@@ -11,7 +11,8 @@
  *
  * 本文件只剩单实例锁 + app event handlers + 6 段 wiring, < 100 行.
  */
-import { app, BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu, dialog } from "electron";
+import { installProcessDiagnostics, recordDiagnostic } from "./boot/diagnostics";
 import { getCachedPrefs } from "./agent/prefs";
 import { appIcon, hasDebugArgument, enableDebugMode, setWindowsAumidIfNeeded } from "./main-debug";
 import { createRevealMain, createSplash, destroySplashImmediate } from "./main-splash";
@@ -24,6 +25,18 @@ import { bootApp, getRuntime } from "./boot/app-init";
 const ALLOW_MULTI_INSTANCE_ENV = "X_AGENT_ALLOW_MULTI";
 
 let mainWindow: BrowserWindow | null = null;
+installProcessDiagnostics(process, () => {
+  // Best-effort cancellation is bounded: never keep an unknown process state running while awaiting SDK cleanup.
+  void Promise.race([
+    getRuntime()?.stopTurnForRecovery().catch(() => {}) ?? Promise.resolve(),
+    new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+  ]).then(() => {
+    try {
+      if (app.isReady()) dialog.showErrorBox("X-agent 发生异常", "程序已停止以保护会话。请重新启动；可在设置中导出本地诊断包。诊断只保存错误类型，不保存对话或密钥。");
+    } finally { app.exit(1); }
+  });
+});
+app.on("child-process-gone", (_event, details) => recordDiagnostic("child-gone", details.reason));
 const revealMain = createRevealMain({ getMainWindow: () => mainWindow });
 
 function onMainWindowClosed(): void {

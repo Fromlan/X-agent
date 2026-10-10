@@ -88,6 +88,7 @@ export function registerIpcHandlers(deps: RegisterIpcDeps): void {
     revealMainWindow,
     consumePrefsRecoveryNotice: deps.consumePrefsRecoveryNotice,
     consumeStartupIssues: deps.consumeStartupIssues,
+    getGodotClientCount: () => godotRpc.getStatus().authenticatedClients ?? 0,
   });
   registerPrefsIpc(ipcMain, {
     loadPrefs: deps.loadPrefs,

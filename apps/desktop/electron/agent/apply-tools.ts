@@ -13,7 +13,8 @@ import {
 } from "../../shared/ipc";
 import type { SessionBundle } from "./session-lifecycle";
 import type { OpenProjectResult } from "../../shared/ipc";
-import { patchPrefs } from "./prefs";
+import { getCachedPrefs, patchPrefs } from "./prefs";
+import { withStoreLock } from "./lib/store-mutex";
 
 /** Snapshot deps for applyTools. The host captures these once and passes
  *  them into the helper; the helper never reads `this.*`. */
@@ -46,24 +47,32 @@ export async function applyTools(
   deps: ApplyToolsDeps,
   tools: string[],
 ): Promise<{ ok: boolean; error?: string }> {
-  void patchPrefs({ tools });
-  const bundle = deps.getBundle();
-  if (!bundle) return { ok: true };
+  return withStoreLock("session-tool-configuration", () => applyToolsExclusive(deps, tools));
+}
 
-  if (deps.isReadonlyMode()) {
-    return deps.applyReadonlyModeTools(tools);
-  }
+/** Serialize persistence and runtime updates; report failure and restore the previously committed tool state. */
+async function applyToolsExclusive(deps: ApplyToolsDeps, tools: string[]): Promise<{ ok: boolean; error?: string }> {
+  const previousTools = [...getCachedPrefs().tools];
+  const bundle = deps.getBundle();
+  const previousActive = bundle?.session.getActiveToolNames() ?? [];
+  let persisted = false;
 
   try {
+    await patchPrefs({ tools });
+    persisted = true;
+    if (!bundle) return { ok: true };
+    if (deps.isReadonlyMode()) {
+      const result = deps.applyReadonlyModeTools(tools);
+      if (!result.ok) throw new Error(result.error);
+      return { ok: true };
+    }
     bundle.session.setActiveToolsByName(tools);
-    deps.emitReplaceableNotice(
-      "tools",
-      "已更新工具白名单（系统提示已重建）。本会话前缀缓存将从下一轮重新积累。",
-      "warn",
-    );
     const active = new Set(bundle.session.getActiveToolNames());
     const missing = tools.filter((name) => !active.has(name));
-    if (missing.length === 0) return { ok: true };
+    if (missing.length === 0) {
+      deps.emitReplaceableNotice("tools", "已保存并更新工具白名单；下一轮将重新积累前缀缓存。", "warn");
+      return { ok: true };
+    }
 
     // 不在可切换清单内的名字重建也注册不上：告警即可，不要反复重建会话。
     const registrable = new Set<string>(
@@ -71,12 +80,7 @@ export async function applyTools(
     );
     const rebuildable = missing.filter((name) => registrable.has(name));
     if (rebuildable.length === 0) {
-      deps.emitReplaceableNotice(
-        "tools",
-        `以下工具不在可用清单中，已忽略：${missing.join(", ")}`,
-        "warn",
-      );
-      return { ok: true };
+      throw new Error(`以下工具不在可用清单中：${missing.join(", ")}`);
     }
 
     // Session was created before the full registry allowlist fix (or with a
@@ -90,12 +94,27 @@ export async function applyTools(
       const error =
         result.error ??
         `部分工具未能启用：${missing.join(", ")}。请重新打开项目。`;
-      deps.emitReplaceableNotice("tools", error, "error");
-      return { ok: false, error };
+      throw new Error(error);
     }
+    const after = new Set(deps.getBundle()?.session.getActiveToolNames() ?? []);
+    if (tools.some((name) => !after.has(name))) throw new Error("重建后工具集未完整启用");
     return { ok: true };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    let error = err instanceof Error ? err.message : String(err);
+    if (persisted) {
+      try {
+        await patchPrefs({ tools: previousTools });
+        if (deps.isReadonlyMode()) {
+          const restored = deps.applyReadonlyModeTools(previousTools);
+          if (!restored.ok) throw new Error(restored.error);
+        } else {
+          const current = deps.getBundle();
+          if (current) current.session.setActiveToolsByName(current === bundle ? previousActive : previousTools);
+        }
+      } catch (rollback) {
+        error += `；恢复旧状态失败，请重新打开会话：${rollback instanceof Error ? rollback.message : String(rollback)}`;
+      }
+    }
     deps.emitReplaceableNotice("tools", `应用工具失败：${error}`, "error");
     return { ok: false, error };
   }

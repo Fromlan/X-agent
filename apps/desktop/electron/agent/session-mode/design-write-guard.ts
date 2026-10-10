@@ -23,9 +23,10 @@
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { SessionType } from "../../../shared/session-type";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveInsideCwd } from "../cwd-sandbox";
+import { isPhysicallyInside } from "../lib/path-boundary";
 import { getReadablePluginRoots } from "../plugin-host";
 import {
   bashCommandEscapesCwd,
@@ -58,10 +59,7 @@ export function isInsideGameDesign(
   absOrRelPath: string,
 ): boolean {
   if (!cwd) return false;
-  const target = resolve(cwd, absOrRelPath).toLowerCase();
-  const gameDesignRoot = resolve(cwd, DESIGN_DIR_NAME).toLowerCase();
-  if (target === gameDesignRoot) return true;
-  return target.startsWith(gameDesignRoot + sep);
+  return isPhysicallyInside(resolve(cwd, DESIGN_DIR_NAME), resolve(cwd, absOrRelPath));
 }
 
 /** Resolve a Pi-style path the same way plan-mode-guard does. */

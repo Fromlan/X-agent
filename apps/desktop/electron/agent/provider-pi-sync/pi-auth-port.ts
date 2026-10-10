@@ -2,7 +2,7 @@
  * Pi auth.json 端口 (issue #68 主题 J C-105, 2026-08-31).
  *
  * 封装 Pi auth.json 的 read-modify-write:
- * - read: 默认空对象 (auth.json 不存在 / 损坏时降级)
+ * - read: initialize only missing files; reject corrupt/unreadable data without overwriting it
  * - write: 用 writeJsonAtomic 原子落盘 (tmp + rename)
  * - lock: 跨并发 syncProfileToPi / pruneProviderIdFromPi 不互踩丢 key
  *
@@ -10,7 +10,7 @@
  * readJsonFile / writeJsonAtomic / withStoreLock 三件套合一.
  * 测试可 mock 整个 port 不用碰文件.
  */
-import { readJsonAsync, writeJsonAtomic } from "../lib/atomic-write";
+import { readJsonStrict, requireJsonObject, writeJsonAtomic } from "../lib/atomic-write";
 import { withStoreLock } from "../lib/store-mutex";
 import type { ProviderPaths } from "../provider-persist";
 
@@ -22,11 +22,13 @@ function lockKey(path: ProviderPaths): string {
   return path.authPath;
 }
 
-/** 读 auth.json, 不存在 / 损坏时返回空对象. */
+/** Read auth.json strictly; preserve corrupt/unreadable files and unknown OAuth fields. */
 export async function readAuthFile(
   paths: ProviderPaths,
 ): Promise<PiAuthFile> {
-  return readJsonAsync<PiAuthFile>(paths.authPath, {} as PiAuthFile);
+  const auth = requireJsonObject(await readJsonStrict<unknown>(paths.authPath, {}));
+  for (const entry of Object.values(auth)) requireJsonObject(entry);
+  return auth as PiAuthFile;
 }
 
 /** 原子写 auth.json (锁外调用方应包 withAuthLock). */

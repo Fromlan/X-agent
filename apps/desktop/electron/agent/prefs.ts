@@ -5,11 +5,11 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
-  writeFileSync,
   existsSync,
   statSync,
 } from "node:fs";
 import { createStore, type Store } from "./lib/store";
+import { writeJsonAtomicSync } from "./lib/atomic-write";
 import {
   ClientPrefs,
   DEFAULT_PREFS,
@@ -42,11 +42,6 @@ const store: Store<ClientPrefs> = createStore<ClientPrefs>({
   filePath: () => prefsPath(),
   defaults: { ...DEFAULT_PREFS },
   decode: (raw) => normalizeLoadedPrefs(raw as RawPrefs),
-  onWriteError: (_err, value) => {
-    // Windows 偶发 EPERM(目标文件被后台进程持锁);fallback 到同步写以保证
-    // IPC handler 仍能完成。atomic write 已通过路径覆盖保护,我们接受这一退化。
-    writeFileSync(prefsPath(), JSON.stringify(value, null, 2), "utf8");
-  },
 });
 
 function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
@@ -199,7 +194,7 @@ export function loadPrefs(): ClientPrefs {
   try {
     if (!existsSync(path)) {
       const defaults = { ...DEFAULT_PREFS };
-      writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
+      writeJsonAtomicSync(path, defaults);
       store.prime(defaults);
       return defaults;
     }
@@ -247,7 +242,7 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
   const path = prefsPath();
   if (!existsSync(path)) {
     const defaults = { ...DEFAULT_PREFS };
-    writeFileSync(path, JSON.stringify(defaults, null, 2), "utf8");
+    writeJsonAtomicSync(path, defaults);
     store.prime(defaults);
     return { ok: true, prefs: defaults, recovered: null };
   }
@@ -261,7 +256,7 @@ export function loadPrefsWithRecovery(): PrefsLoadResult {
       recovered: null,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = err instanceof SyntaxError ? "偏好 JSON 损坏" : "偏好文件不可读取或结构不合法";
     let backedUp = false;
     let backupPath: string | undefined;
     try {

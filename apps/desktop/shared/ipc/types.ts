@@ -267,7 +267,7 @@ export interface GoalInfo {
   turns: number;
   /** Soft stop after this many turns (from prefs at setGoal time). */
   maxTurns: number;
-  /** Tokens consumed while pursuing (sum of turn totals). */
+  /** Branch-budget tokens consumed while pursuing, including independent evaluation requests. */
   tokensUsed: number;
   /** Soft stop after this many tokens (from prefs at setGoal time). */
   maxTokens: number;

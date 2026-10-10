@@ -109,6 +109,9 @@ export const IPC_CHANNELS = {
   getSecretCodecStatus: "getSecretCodecStatus",
   /** 启动期失败摘要（recover / bridge / package install），renderer 在 ReadyChecklist 读取。 */
   getStartupReport: "getStartupReport",
+  getDiagnosticSnapshot: "getDiagnosticSnapshot",
+  exportDiagnosticBundle: "exportDiagnosticBundle",
+  reportRendererFailure: "reportRendererFailure",
   /** Renderer signals first paint so splash can reveal the main window. */
   appReady: "appReady",
 

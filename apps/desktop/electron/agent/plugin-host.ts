@@ -10,10 +10,8 @@ import {
 import {
   basename,
   dirname,
-  isAbsolute,
   join,
   normalize,
-  relative,
   resolve,
 } from "node:path";
 import type {
@@ -31,6 +29,7 @@ import {
   resolvePackageRoot,
 } from "./package-manager";
 import { getAgentDirPath } from "./prefs";
+import { isPhysicallyInside } from "./lib/path-boundary";
 
 const NAME_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
@@ -70,16 +69,6 @@ function toPosixLower(p: string): string {
   return normalize(p).replace(/\\/g, "/").toLowerCase();
 }
 
-function isUnderRoot(target: string, root: string): boolean {
-  const absRoot = resolve(root);
-  const absTarget = resolve(target);
-  const rel = relative(absRoot, absTarget);
-  if (!rel || rel === ".") return true;
-  if (rel.startsWith("..") || isAbsolute(rel)) return false;
-  return toPosixLower(absTarget).startsWith(`${toPosixLower(absRoot)}/`) ||
-    toPosixLower(absTarget) === toPosixLower(absRoot);
-}
-
 /** Writable plugin roots (global / project). Package trees are read-only in UI. */
 export function getWritablePluginRoots(cwd?: string | null): string[] {
   const roots = [
@@ -112,7 +101,7 @@ export function isAllowedPluginPath(
   const abs = resolve(targetPath);
   const roots =
     mode === "write" ? getWritablePluginRoots(cwd) : getReadablePluginRoots(cwd);
-  return roots.some((root) => isUnderRoot(abs, root));
+  return roots.some((root) => isPhysicallyInside(root, abs));
 }
 
 function ensureDir(path: string): void {

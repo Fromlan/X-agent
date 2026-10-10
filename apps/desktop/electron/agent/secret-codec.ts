@@ -16,6 +16,7 @@ type SafeStorageLike = {
 let cachedStatus: SecretCodecStatus | null = null;
 
 function tryGetSafeStorage(): SafeStorageLike | null {
+  if (!process.versions.electron) return null;
   try {
     const require = createRequire(import.meta.url);
     const electron = require("electron") as { safeStorage?: SafeStorageLike };
@@ -36,6 +37,10 @@ function tryGetSafeStorage(): SafeStorageLike | null {
 /** 解析一次并缓存 safeStorage 状态,供 getSecretCodecStatus() 复用。 */
 export function probeSecretCodecStatus(): SecretCodecStatus {
   if (cachedStatus) return cachedStatus;
+  if (!process.versions.electron) {
+    cachedStatus = { available: false, reason: "no-electron" };
+    return cachedStatus;
+  }
   let reason: SecretCodecReason | undefined;
   try {
     const require = createRequire(import.meta.url);

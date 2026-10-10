@@ -6118,6 +6118,19 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 
 @media (max-width: 1100px) {
+  .main-row,
+  .main-row.with-right-panel {
+    position: relative;
+    grid-template-columns: min(var(--sidebar-width, 260px), 180px) minmax(0, 1fr);
+  }
+  .main-row.with-right-panel > .right-panel {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(360px, 85vw);
+    z-index: 15;
+    background: var(--bg-main);
+    border-left: 1px solid var(--border-primary);
+  }
   .topbar .btn-label {
     display: none;
   }

@@ -322,8 +322,9 @@ export class ShadowCheckpointTracker implements RestoreSource {
 
     if (this.enabled && this.shadow && sha) {
       const head = await this.shadow.revParse("HEAD");
-      const diff = await this.shadow.diffPathsIncludingWorktree(sha, head);
-      const paths = diff.ok ? diff.paths : segmentScan.mutationPaths;
+      const diff = head ? await this.shadow.diffPaths(sha, head) : { ok: false, paths: [] };
+      const paths = !segmentScan.hasBash && !segmentScan.hasGodot ? segmentScan.mutationPaths : diff.ok ? diff.paths : segmentScan.mutationPaths;
+      if (!diff.ok) warnings.push("检查点差异不可用，仅预览已记录的工具路径；不会扩大还原范围。");
       // 撤回预览 diff：pre→HEAD 的统一 diff（head 缺失时对 worktree）。
       // 与还原范围（target→HEAD diff 路径集）保持一致，让用户看清将被还原的内容。
       let diffText: string | undefined;
@@ -412,6 +413,7 @@ export class ShadowCheckpointTracker implements RestoreSource {
     sm: SessionManagerLike,
     targetUserEntryId: string,
     abandonedUserEntryIds: string[],
+    scan?: Pick<RestoreSegmentScan, "mutationPaths" | "hasBash" | "hasGodot">,
   ): Promise<{
     used: "shadow" | "none";
     report?: FileRestoreReport;
@@ -423,16 +425,18 @@ export class ShadowCheckpointTracker implements RestoreSource {
     }
     // 只还原「该回合内变化过的路径」（target→HEAD 的 diff 路径集），
     // 不再整库 reset --hard：用户回合期间未动过的文件（含回合后的手动编辑）
-    // 原样保留。diff 计算失败时回退全量还原（旧行为）。
-    let restorePaths: string[] | undefined;
+    // 原样保留。差异失败或为空时绝不扩大为全量还原。
+    let restorePaths: string[] = [];
     const head = await this.shadow.revParse("HEAD");
     if (head) {
       const diff = await this.shadow.diffPaths(sha, head);
-      if (diff.ok && diff.paths.length > 0) restorePaths = diff.paths;
+      if (!diff.ok) return { used: "none", report: { restored: [], deleted: [], skipped: [], warnings: ["检查点差异计算失败，未修改工作区"] } };
+      restorePaths = diff.paths;
     }
+    if (scan && !scan.hasBash && !scan.hasGodot) restorePaths = scan.mutationPaths;
     const result = await this.shadow.restore(
       sha,
-      restorePaths ? { paths: restorePaths } : undefined,
+      { paths: restorePaths },
     );
     if (!result.ok) {
       return {
@@ -460,6 +464,6 @@ export class ShadowCheckpointTracker implements RestoreSource {
     targetUserEntryId: string,
     scan: RestoreSegmentScan,
   ): Promise<RestoreAttempt> {
-    return this.restoreToUserTurn(sm, targetUserEntryId, scan.userEntryIds);
+    return this.restoreToUserTurn(sm, targetUserEntryId, scan.userEntryIds, scan);
   }
 }

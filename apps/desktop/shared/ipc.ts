@@ -46,6 +46,7 @@ export {
 } from "./mode-tools";
 
 // ----- protocol / facades / registries / types / prefs -----
+export type { DiagnosticEvent, DiagnosticKind, DiagnosticSnapshot } from "./diagnostics";
 export type { IpcInvokeMap, IpcInvokeResult } from "./ipc/protocol";
 
 // ----- error-i18n: translated IPC error class + typeguard -----

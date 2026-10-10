@@ -28,7 +28,7 @@ function makeDeps(overrides?: {
   loadPrefs?: () => typeof DEFAULT_PREFS;
   patchPrefs?: (patch: unknown) => Promise<typeof DEFAULT_PREFS>;
   getCachedPrefs?: () => typeof DEFAULT_PREFS;
-  applyTools?: (tools: string[]) => Promise<unknown>;
+  applyTools?: (tools: string[]) => Promise<{ ok: boolean; error?: string }>;
   reloadResources?: () => Promise<unknown>;
   notifyLogoChange?: (id: string, win: unknown) => void;
 }) {
@@ -36,7 +36,7 @@ function makeDeps(overrides?: {
     loadPrefs: overrides?.loadPrefs ?? (() => ({ ...DEFAULT_PREFS, clientLogoId: "default" })),
     patchPrefs: overrides?.patchPrefs ?? (async () => ({ ...DEFAULT_PREFS, clientLogoId: "default" })),
     getCachedPrefs: overrides?.getCachedPrefs ?? (() => ({ ...DEFAULT_PREFS, clientLogoId: "default" })),
-    applyTools: overrides?.applyTools ?? (async () => undefined),
+    applyTools: overrides?.applyTools ?? (async () => ({ ok: true })),
     reloadResources: overrides?.reloadResources ?? (async () => undefined),
     notifyLogoChange: overrides?.notifyLogoChange ?? (() => {}),
     getMainWindow: () => null,
@@ -97,8 +97,13 @@ describe("register-prefs-ipc / setPrefs schema 校验 (S4)", () => {
 });
 
 describe("register-prefs-ipc / setPrefs 工具白名单", () => {
+  it("propagates a failed tool update instead of returning prefs", async () => {
+    const deps = makeDeps({ applyTools: async () => ({ ok: false, error: "tool update failed" }) });
+    registerPrefsIpc(ipcMain as never, deps);
+    await expect(getHandler(IPC_CHANNELS.setPrefs)({}, { tools: ["read"] })).rejects.toThrow("tool update failed");
+  });
   it("tools 字段被白名单过滤后再 applyTools", async () => {
-    const applyTools = vi.fn(async () => undefined);
+    const applyTools = vi.fn(async () => ({ ok: true }));
     const patchSpy = vi.fn(async () => ({
       ...DEFAULT_PREFS,
       clientLogoId: "default",

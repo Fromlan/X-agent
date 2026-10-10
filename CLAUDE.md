@@ -8,7 +8,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 **当前能力**：Agent GUI 与会话隔离、对话撤回/编辑重发/重新生成（Shadow Git 检查点优先，无 Git 降级 write/edit 基线）、**Ask/调研 Mode**（只读问答，无 `write_plan`）、**Plan Mode**（只读研究 + `write_plan` + 右栏可编辑计划 / 保存到项目 + tool_call 硬闸 + 执行计划）与 **Goal Mode**（完成条件 + 独立评估续轮）、**策划会话类型**（`code` / `design` 会话级抽象：design 写只允许 `<cwd>/game-design/`，UI 切暖色）、右栏（上下文压缩 / 计划 / 工具 / 文件 / Godot）、供应商订阅、用量统计、设置内插件管理（Prompt / Skill / Extension / Theme / Packages）、工具白名单（内置 + Godot 编辑器）、Godot RPC、godot-docs-4-7 技能、应用内 Pi 登录引导与打包版自动更新。
 
-运行环境：Node.js 22+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
+运行环境：Node.js 24+。Windows 上 Pi `bash` 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。认证与模型复用 `~/.pi/agent/auth.json`、`models.json`（可通过设置 → 供应商写入）。
 
 **技能发现**：`DefaultResourceLoader` 经 `skillsOverride` 排除 `~/.agents/skills`；仅用 `~/.pi/agent/skills`、项目 `.pi/skills` 与已安装 Packages。
 
@@ -40,7 +40,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
   - `feature/<name>` 新功能(关联 issue 时 `feature/issue-123-xxx`)
   - `fix/<name>` 修复 · `docs/<name>` 文档 · `refactor/<name>` 重构 · `chore/<name>` 杂项 · `test/<name>` 测试
 - **路径**:从 `master` 拉 → 改完 → 提交 PR → CI 全绿 → review → squash merge 回 `master` → 删除远端分支
-- **分支保护**(推荐):`master` 设 required checks(`desktop` / `unit-test` / `e2e`)+ ≥1 review
+- **分支保护**(推荐):`master` 设 required checks(`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`)+ ≥1 review
 
 ### 4. 提交规范:Conventional Commits
 
@@ -63,10 +63,12 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 - **标题**:遵循 Conventional Commits(可与首个 commit 一致)
 - **描述**:关联 issue / 变更摘要 / 截图(UI 类)/ 测试要点 / 影响面 / 回滚方案
-- **CI 全绿**([`.github/workflows/ci.yml`](.github/workflows/ci.yml) 三 job):
+- **CI 全绿**([`.github/workflows/ci.yml`](.github/workflows/ci.yml) 五个 job):
   - `desktop`: typecheck + 离线 test + lint + build
   - `unit-test`: vitest + 覆盖率门槛(`lines: 60, functions: 55, branches: 50`)
-  - `e2e`: Playwright Electron 冒烟
+  - `e2e`: Playwright Electron 业务与界面回归
+  - `godot-integration`: 真实 Godot 4.6.2 addon / RPC / 场景 / 脚本检查
+  - `actionlint`: 工作流语法与表达式
 - **review**:≥1 approve(单人项目 self-approve;多人显式邀请)
 - **合并**:默认 squash merge(保持 `master` 历史清爽);合并后删除远端分支
 - **禁止**带 ✗ 合并
@@ -77,7 +79,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 
 ### 6. CI 自动化
 
-- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 监听 push / PR,三 job 并行
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 监听 push / PR；actionlint 通过后四个 Windows 检查 job 并行
 - `concurrency: cancel-in-progress: true`(同 ref 旧运行自动取消)
 - 失败必须修;依赖更新走 Dependabot(配置见 [`.github/dependabot.yml`](.github/dependabot.yml),细节见 §9),季度再 `npm outdated` 复核
 - [`.github/workflows/release.yml`](.github/workflows/release.yml) 仅在 tag push / workflow_dispatch 触发,见 §7
@@ -99,7 +101,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
   3. 通过 PR 合并到 `master`(与功能 PR 走同一条流程)
 - **发版**:
   1. `git tag vX.Y.Z && git push origin vX.Y.Z`(在 master HEAD)
-  2. `.github/workflows/release.yml` 自动 typecheck + lint + test + electron-builder + 上传 GitHub Release
+  2. `.github/workflows/release.yml` 先校验 tag、当前提交、包版本和非空 CHANGELOG 一致，再执行 typecheck、实际 lint、离线测试、覆盖率、构建、E2E、真实 Godot 与 CHANGELOG 抽取测试；全部成功后才打包，由独立 publish job 上传 GitHub Release
   3. GitHub Release 正文来自 CHANGELOG 章节(`scripts/extract-changelog.mjs` 抽取)
 - **冒烟**(可选):打 tag 前 `npm run release:dist`(本机 typecheck + test + 打 Windows exe;CI 仍会重建,本地 exe 不是发布源)
 - **签名**(可选):CI 或本地设 `CSC_LINK` + `CSC_KEY_PASSWORD`(或 `WIN_CSC_LINK`);未设置则产出未签名包
@@ -123,6 +125,15 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 - **每年**:审视定位 / 非目标是否仍成立;路线图方向是否调整
 
 ## 常用命令
+
+### 修复后的工程检查与运行边界
+
+- 在 `apps/desktop` 执行 `npm run lint`：Babel AST 拒绝 debugger、动态代码执行和 renderer 的 Node/Electron/Pi 导入；YAML 门禁检查发布依赖和失败策略。类型检查独立执行，覆盖率只代表 `vitest.config.ts` 的 include 范围。
+- `npm run test:godot` 需要 PowerShell `$env:GODOT_BIN` 指向真实 Godot 4.6.2 console 可执行文件；缺少环境明确失败。CI 通过 `scripts/setup-godot.ps1` 下载固定版本并核对 SHA-256，隔离工程验证 addon/RPC、场景和脚本行号。E2E 使用隔离 Pi/Chromium profile，包含工具写入→撤回→恢复、20 轮读取、设置失败、崩溃与 DPI。
+- 配置读仅 ENOENT 初始化；损坏、结构错误或权限失败保留原文件并阻止写入。prefs 不再降级直接覆盖；共享 auth/models/settings 保留未知字段。进程内锁不是 Pi CLI 的跨进程事务，auth/models 也不是多文件原子事务。
+- 工具设置串行等待保存和应用，并校验重建结果；失败恢复旧状态，恢复失败明确报告。Goal 评估包含可关联工具证据，评估 usage 入账；预算是续轮阈值，暂停保留费用，撤回只回滚分支预算。模型判定仍可能误判。
+- checkpoint flush 完成后才广播 idle；write/edit 按明确路径撤回，空路径不全量恢复。同一文件上的人工编辑、Bash/Godot 并发人工编辑仍有恢复限制。
+- 本地诊断仅保留最多 100 条枚举事件与允许的系统/状态字段，设置可导出 JSON，不收集原始错误、对话、源码、认证数据，不自动上传。主进程致命异常记录后限时停止回合并退出；renderer 异常停止续轮并提供恢复入口。
 
 锁文件在 `apps/desktop/package-lock.json`，安装在该目录执行：
 
@@ -212,7 +223,7 @@ Electron 三进程边界：
 ### 供应商
 
 - `provider-store.ts` → `~/.pi/agent/x-agent-providers.json`；档案保存到本地，**启用**才同步 Pi `auth.json` / `models.json` 并出现在顶栏；关闭则从 Pi 摘掉（无其它启用档案共用 providerId 时）
-- `model-fetch.ts`：探测 `/v1/models` 等；IPC `fetchProviderModels`。**SSRF 闸**：`baseUrl` 与模型探测仅允许公网 http(s)（回环 / 私网 / 链路本地 / 已知 DNS 重绑定域一律拒绝，域名再做 DNS 解析校验）；本地 LLM 需经公网代理中转
+- `model-fetch.ts`：探测 `/v1/models` 等；IPC `fetchProviderModels`。**SSRF 闸**：`baseUrl` 与模型探测仅允许公网 http(s)（回环 / 私网 / 链路本地 / 已知 DNS 重绑定域一律拒绝，域名再做 DNS 解析校验）；模型探测连接时绑定通过检查的 DNS 地址，拒绝全部重定向（需填写最终公网 URL），每候选 8 秒、响应上限 2 MiB。Pi SDK 会话、压缩、OAuth、扩展与 WebSocket 未统一经过该传输，不能承诺全链路 SSRF 防护；本地 LLM 需经公网代理中转
 - UI：设置 → 供应商（每张档案有启用开关）
 
 ### 插件与 Packages

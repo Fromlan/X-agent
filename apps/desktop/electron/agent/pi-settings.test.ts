@@ -61,20 +61,17 @@ describe("pi-settings (atomic read-modify-write of ~/.pi/agent/settings.json)", 
     expect(final.packageSources).toEqual(["npm:foo"]);
   });
 
-  it("corrupted JSON file → mutate recovers without throwing", () => {
+  it("corrupted JSON file → mutation fails and preserves the original", () => {
     writeFileSync(piSettingsPath(), "{not valid json", "utf8");
-    mutatePiSettingsSync((s) => {
-      s.shellPath = "/usr/bin/zsh";
-    });
-    expect(readPiSettingsSync()).toEqual({ shellPath: "/usr/bin/zsh" });
+    const original = readFileSync(piSettingsPath(), "utf8");
+    expect(() => mutatePiSettingsSync((s) => { s.shellPath = "/usr/bin/zsh"; })).toThrow(/损坏/);
+    expect(readFileSync(piSettingsPath(), "utf8")).toBe(original);
   });
 
-  it("non-object JSON root (array) → mutate replaces with fresh object", () => {
+  it("non-object JSON root (array) → mutation fails without replacement", () => {
     writeFileSync(piSettingsPath(), "[1,2,3]", "utf8");
-    mutatePiSettingsSync((s) => {
-      s.shellPath = "/bin/sh";
-    });
-    expect(readPiSettingsSync()).toEqual({ shellPath: "/bin/sh" });
+    expect(() => mutatePiSettingsSync((s) => { s.shellPath = "/bin/sh"; })).toThrow(/结构/);
+    expect(readFileSync(piSettingsPath(), "utf8")).toBe("[1,2,3]");
   });
 
   it("no .tmp sibling left behind after a successful mutate", () => {

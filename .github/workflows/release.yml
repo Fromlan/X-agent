@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
@@ -37,27 +37,27 @@ jobs:
 
       - name: Resolve version
         id: version
-        shell: bash
+        shell: pwsh
         working-directory: ${{ github.workspace }}
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            VERSION="${GITHUB_REF_NAME}"
-          fi
-          VERSION="${VERSION#v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Sync package.json version
-        shell: bash
-        run: npm pkg set "version=${{ steps.version.outputs.version }}"
+          $requested = if ($env:RELEASE_EVENT -eq 'workflow_dispatch') { $env:REQUESTED_VERSION } else { $env:GITHUB_REF_NAME }
+          $env:RELEASE_VERSION = $requested
+          node scripts/validate-release.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = $requested -creplace '^v', ''
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
 
       - name: Build release notes from CHANGELOG
         shell: bash
         working-directory: ${{ github.workspace }}
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          node scripts/extract-changelog.mjs "${{ steps.version.outputs.version }}" \
+          node scripts/extract-changelog.mjs "$RELEASE_VERSION" \
             --fail-empty \
             --out "$RUNNER_TEMP/release-notes.md"
           echo "---- release notes ----"
@@ -66,6 +66,14 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npm run test:e2e
+      - name: Install verified Godot 4.6.2
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: ./scripts/setup-godot.ps1
+      - run: npm run test:godot
       - name: Validate changelog extraction
         shell: bash
         working-directory: ${{ github.workspace }}
@@ -73,15 +81,41 @@ jobs:
       # Optional Windows code signing: set repository secrets CSC_LINK + CSC_KEY_PASSWORD
       # (or WIN_CSC_LINK). electron-builder signs automatically when present.
       - run: npm run dist
+      - name: Include verified notes
+        shell: pwsh
+        run: Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-notes.md') -Destination 'release/release-notes.md'
 
-      - name: Upload GitHub Release
-        uses: softprops/action-gh-release@v3
+      # Upload permission is granted only to a separate job after every check and build succeeds.
+      - uses: actions/upload-artifact@v6
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: X-agent ${{ steps.version.outputs.tag }}
-          body_path: ${{ runner.temp }}/release-notes.md
-          generate_release_notes: false
-          files: |
+          name: verified-release
+          path: |
             apps/desktop/release/X-agent-Setup-*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/*.yml
+            apps/desktop/release/release-notes.md
+          if-no-files-found: error
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+
+  publish:
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: verified-release
+          path: verified-release
+      - name: Upload GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          name: X-agent ${{ needs.release.outputs.tag }}
+          body_path: verified-release/release-notes.md
+          generate_release_notes: false
+          files: |
+            verified-release/X-agent-Setup-*.exe
+            verified-release/*.blockmap
+            verified-release/*.yml

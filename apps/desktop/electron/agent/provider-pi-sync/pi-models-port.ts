@@ -2,14 +2,14 @@
  * Pi models.json 端口 (issue #68 主题 J C-105, 2026-08-31).
  *
  * 封装 Pi models.json 的 read-modify-write:
- * - read: 默认空 providers (models.json 不存在 / 损坏时降级)
+ * - read: initialize only missing files; reject corrupt/unreadable data without overwriting it
  * - write: 用 writeJsonAtomic 原子落盘
  * - lock: 跨并发 syncProfileToPi / pruneProviderIdFromPi 不互踩
  * - models 嵌套结构: { providers: { providerId: { baseUrl, api, models[] } } }
  *
  * 与 pi-auth-port.ts 对称设计, 模式一致.
  */
-import { readJsonAsync, writeJsonAtomic } from "../lib/atomic-write";
+import { readJsonStrict, requireJsonObject, writeJsonAtomic } from "../lib/atomic-write";
 import { withStoreLock } from "../lib/store-mutex";
 import type { ProviderPaths } from "../provider-persist";
 
@@ -40,13 +40,19 @@ function lockKey(path: ProviderPaths): string {
   return path.modelsPath;
 }
 
-/** 读 models.json, 不存在 / 损坏时返回空 providers. */
+/** Read models.json strictly while retaining unrelated provider and future fields. */
 export async function readModelsFile(
   paths: ProviderPaths,
 ): Promise<PiModelsFile> {
-  return readJsonAsync<PiModelsFile>(paths.modelsPath, {
-    providers: {},
-  });
+  const models = requireJsonObject(await readJsonStrict<unknown>(paths.modelsPath, { providers: {} }));
+  if (models.providers !== undefined) {
+    const providers = requireJsonObject(models.providers);
+    for (const entry of Object.values(providers)) {
+      const provider = requireJsonObject(entry);
+      if (provider.models !== undefined && !Array.isArray(provider.models)) throw new Error("模型配置结构不合法，已保留原文件");
+    }
+  }
+  return models as PiModelsFile;
 }
 
 /** 原子写 models.json (锁外调用方应包 withModelsLock). */

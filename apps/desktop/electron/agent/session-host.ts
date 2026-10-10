@@ -782,12 +782,11 @@ export class SessionHost {
   applyTools(tools: string[]): Promise<{ ok: boolean; error?: string }> {
     const bundle = this.bundle;
     if (!bundle) {
-      void patchPrefs({ tools });
-      return Promise.resolve({ ok: true });
+      return patchPrefs({ tools }).then(() => ({ ok: true }), (err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : String(err) }));
     }
     return applyToolsImpl(
       {
-        getBundle: () => bundle,
+        getBundle: () => this.bundle,
         isReadonlyMode: () => isReadonlySessionMode(this.sessionMode.getMode()),
         applyReadonlyModeTools: (t) =>
           this.sessionMode.applyReadonlyModeTools(t),

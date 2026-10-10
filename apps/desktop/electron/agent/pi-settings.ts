@@ -15,6 +15,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { getAgentDirPath } from "./prefs";
+import { readJsonStrictSync, requireJsonObject } from "./lib/atomic-write";
 
 /** Absolute path of the shared Pi settings.json. */
 export function piSettingsPath(): string {
@@ -23,23 +24,14 @@ export function piSettingsPath(): string {
 
 /**
  * 同步完成 settings.json 的读-改-写：`fn` 修改传入对象后整体原子落盘。
- * 解析失败（缺失/损坏）时以空对象开始；写失败向上抛错。
+ * Only a missing file starts empty; corrupt/unreadable files and write failures propagate without replacing the original.
  */
 export function mutatePiSettingsSync(
   fn: (settings: Record<string, unknown>) => void,
 ): void {
   const path = piSettingsPath();
   mkdirSync(getAgentDirPath(), { recursive: true });
-  let settings: Record<string, unknown> = {};
-  try {
-    const raw = readFileSync(path, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      settings = parsed as Record<string, unknown>;
-    }
-  } catch {
-    settings = {};
-  }
+  const settings = requireJsonObject(readJsonStrictSync<unknown>(path, {}));
   fn(settings);
   const tmp = `${path}.${Date.now()}.${randomUUID()}.tmp`;
   writeFileSync(tmp, JSON.stringify(settings, null, 2), "utf8");

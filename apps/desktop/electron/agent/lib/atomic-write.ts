@@ -10,10 +10,13 @@ import {
   writeFile as writeFileAsync,
   readFile,
   access,
+  unlink,
 } from "node:fs/promises";
 import {
   renameSync,
   writeFileSync,
+  readFileSync,
+  unlinkSync,
   constants as fsConstants,
 } from "node:fs";
 
@@ -34,7 +37,7 @@ export async function writeJsonAtomic<T>(
   } catch (err) {
     // 清理 tmp —— 但不要吞掉原始错误。
     try {
-      await renameAsync(tmp, `${tmp}.failed-${Date.now()}`);
+      await unlink(tmp);
     } catch {
       /* tmp 已被 rename 消耗或不存在;忽略 */
     }
@@ -54,7 +57,7 @@ export function writeJsonAtomicSync<T>(filePath: string, data: T): void {
     renameSync(tmp, filePath);
   } catch (err) {
     try {
-      renameSync(tmp, `${tmp}.failed-${Date.now()}`);
+      unlinkSync(tmp);
     } catch {
       // ignore
     }
@@ -73,6 +76,36 @@ export async function readJsonAsync<T>(
   } catch {
     return fallback;
   }
+}
+
+/** Fail closed on unreadable or corrupt JSON; only ENOENT initializes defaults. Never include raw content in errors. */
+export async function readJsonStrict<T>(filePath: string, fallback: T): Promise<T> {
+  let raw: string;
+  try { raw = await readFile(filePath, "utf8"); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(fallback);
+    throw new Error(`配置不可读取，已保留原文件 (${(err as NodeJS.ErrnoException).code ?? "I/O"})`);
+  }
+  try { return JSON.parse(raw) as T; }
+  catch { throw new Error("配置 JSON 损坏，已保留原文件；请修复或备份后重试"); }
+}
+
+/** Synchronous strict reader for shared Pi settings; matches the async corruption policy. */
+export function readJsonStrictSync<T>(filePath: string, fallback: T): T {
+  let raw: string;
+  try { raw = readFileSync(filePath, "utf8"); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(fallback);
+    throw new Error(`配置不可读取，已保留原文件 (${(err as NodeJS.ErrnoException).code ?? "I/O"})`);
+  }
+  try { return JSON.parse(raw) as T; }
+  catch { throw new Error("配置 JSON 损坏，已保留原文件；请修复或备份后重试"); }
+}
+
+/** Validate an object without coercion or dropping unknown fields shared with Pi CLI. */
+export function requireJsonObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("配置结构不合法，已保留原文件");
+  return value as Record<string, unknown>;
 }
 
 /** 检查文件是否存在(异步)。 */

@@ -1,11 +1,10 @@
 import { access, mkdir, readFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { BashCheckResult } from "../../shared/ipc";
-import { mutatePiSettingsSync } from "./pi-settings";
+import { mutatePiSettingsSync, piSettingsPath } from "./pi-settings";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,7 +14,7 @@ const CANDIDATES = [
 ];
 
 function settingsPath(): string {
-  return join(homedir(), ".pi", "agent", "settings.json");
+  return piSettingsPath();
 }
 
 async function fileExists(path: string): Promise<boolean> {

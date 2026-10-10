@@ -300,6 +300,28 @@ describe.skipIf(!gitAvailable)("ShadowGit + ShadowCheckpointTracker（需要 git
     expect(existsSync(join(work, "sub", "b.txt"))).toBe(true);
   });
 
+  it("explicit write/edit restore excludes user files captured during asynchronous post snapshots", async () => {
+    const tracker = new ShadowCheckpointTracker();
+    await tracker.setCwd(work); await tracker.preparePromptCheckpoint(); tracker.bindPendingPre("u-explicit");
+    writeFileSync(join(work, "a.txt"), "agent changed");
+    writeFileSync(join(work, "concurrent-user.txt"), "user edit");
+    await tracker.capturePost("u-explicit");
+    const { sm } = makeSm();
+    const result = await tracker.restoreToUserTurn(sm, "u-explicit", ["u-explicit"], { mutationPaths: ["a.txt"], hasBash: false, hasGodot: false });
+    expect(result.used).toBe("shadow");
+    expect(readFileSync(join(work, "concurrent-user.txt"), "utf8")).toBe("user edit");
+  });
+
+  it("an empty changed-path set never falls back to a full reset", async () => {
+    const tracker = new ShadowCheckpointTracker();
+    await tracker.setCwd(work); await tracker.preparePromptCheckpoint(); tracker.bindPendingPre("u-empty");
+    await tracker.capturePost("u-empty");
+    writeFileSync(join(work, "after-empty.txt"), "keep");
+    const { sm } = makeSm();
+    await tracker.restoreToUserTurn(sm, "u-empty", ["u-empty"]);
+    expect(readFileSync(join(work, "after-empty.txt"), "utf8")).toBe("keep");
+  });
+
   it("recoverDisabledNestedGit 恢复被禁用的嵌套 .git", async () => {
     const nest = join(work, "vendor-lib");
     const disabledGit = join(nest, ".git.__xagent_shadow__");

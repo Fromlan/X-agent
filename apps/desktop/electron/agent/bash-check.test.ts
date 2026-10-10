@@ -5,7 +5,9 @@
  * - 不在常见可信目录时给出 warning（不阻断，便于用户自定义安装）
  * - 写入路径不存在 / 路径不存在 launcher 时返回 ok:false
  */
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+const io = vi.hoisted(() => ({ execute: vi.fn() }));
+vi.mock("node:child_process", async (original) => ({ ...await original<typeof import("node:child_process")>(), execFile: io.execute }));
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,18 +18,22 @@ import { readPiSettingsSync } from "./pi-settings";
 let agentHome = "";
 
 beforeEach(() => {
+  vi.stubEnv("PATH", "");
+  io.execute.mockReset();
+  io.execute.mockImplementation((_target, _args, _opts, callback) => callback(null, { stdout: "not bash", stderr: "" }));
   agentHome = mkdtempSync(join(tmpdir(), "xagent-bash-test-"));
   setAgentDirOverrideForTests(agentHome);
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   setAgentDirOverrideForTests(null);
   if (agentHome) rmSync(agentHome, { recursive: true, force: true });
 });
 
 /** 写一个简短的 bash 替身脚本（Windows .bat / POSIX shell）。 */
 function makeFakeBash(stdout: string, exitCode = 0): string {
-  const dir = mkdtempSync(join(tmpdir(), "xagent-bash-probe-"));
+  const dir = agentHome;
   const isWin = process.platform === "win32";
   const path = join(dir, isWin ? "bash.exe" : "bash");
   // Windows 下 .exe 必须是真实 PE 文件才能被 execFile 启动；改为 .bat 但
@@ -91,9 +97,8 @@ describe("applyBashShellPath", () => {
   it("成功路径写入 settings.json + 路径不在可信目录时返回 warning", async () => {
     // execFile 在 Windows 直接传 .bat 会被拒；改用 `findSuggestedBash`
     // 走真实 PATH。如果找不到，则跳过。
-    const suggested = (await import("./bash-check")).findSuggestedBash();
-    const real = await suggested;
-    if (!real) return; // 跳过：测试环境无 bash
+    const real = makeFakeBash("GNU bash, version 5.2");
+    io.execute.mockImplementation((_target, _args, _opts, callback) => callback(null, { stdout: "GNU bash, version 5.2", stderr: "" }));
     const r = await applyBashShellPath(real);
     expect(r.ok).toBe(true);
     if (r.ok) {

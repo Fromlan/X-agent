@@ -19,6 +19,7 @@ export type GoalJournalRecord = {
   sessionPath: string;
   goal: GoalInfo;
   updatedAt: number;
+  ledger?: { userEntryId: string | null; tokens: number; turnIncremented: boolean }[];
 };
 
 export function getGoalsDir(): string {
@@ -36,6 +37,7 @@ export function goalJournalPath(sessionPath: string): string {
 export function saveGoalJournal(
   sessionPath: string,
   goal: GoalInfo,
+  ledger?: GoalJournalRecord["ledger"],
 ): void {
   if (!sessionPath.trim()) return;
   const dir = getGoalsDir();
@@ -45,6 +47,7 @@ export function saveGoalJournal(
     sessionPath,
     goal,
     updatedAt: Date.now(),
+    ...(ledger ? { ledger } : {}),
   };
   // 1.3 防御：原子写（tmp + rename）避免 crash 半写导致 journal 损坏。
   try {
@@ -54,6 +57,16 @@ export function saveGoalJournal(
       `[goal-journal] 写入失败（${goalJournalPath(sessionPath)}）：${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+/** Restore only a structurally valid ledger; callers also compare its sums to the persisted budget. */
+export function loadGoalLedger(sessionPath: string): GoalJournalRecord["ledger"] | null {
+  try {
+    const record = JSON.parse(readFileSync(goalJournalPath(sessionPath), "utf8")) as GoalJournalRecord;
+    if (record.sessionPath !== sessionPath || record.version !== 1 || !Array.isArray(record.ledger)) return null;
+    if (record.ledger.some((e) => !e || (e.userEntryId !== null && typeof e.userEntryId !== "string") || !Number.isFinite(e.tokens) || e.tokens < 0 || typeof e.turnIncremented !== "boolean")) return null;
+    return record.ledger;
+  } catch { return null; }
 }
 
 export function loadGoalJournal(sessionPath: string): GoalInfo | null {

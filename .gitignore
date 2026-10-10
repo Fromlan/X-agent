@@ -2,6 +2,8 @@ node_modules
 dist
 out
 release*
+# Release gate tests are source files, not build artifacts.
+!apps/desktop/electron/release-*.test.ts
 .DS_Store
 *.log
 # docs/ 是公开文档目录（自 2026-08-24 整理起）
