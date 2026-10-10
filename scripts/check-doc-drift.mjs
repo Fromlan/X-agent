@@ -196,21 +196,23 @@ export const RULES = [
 
 // ─── 跑 ───────────────────────────────────────────────────────────────────────
 
-export function runChecks({ log = console.log } = {}) {
+/** Run every rule and fail closed when its authoritative source cannot be read. */
+export function runChecks({ log = console.log, rules = RULES } = {}) {
   let failed = 0;
   let passed = 0;
   const skips = [];
   const lines = [];
 
-  lines.push(`🔎 doc:drift ${RULES.length} rules\n`);
+  lines.push(`🔎 doc:drift ${rules.length} rules\n`);
 
-  for (const rule of RULES) {
+  for (const rule of rules) {
     let actual;
     try {
       actual = rule.fetch();
     } catch (e) {
+      failed++;
       skips.push({ id: rule.id, error: e.message });
-      lines.push(`⏭️  ${rule.id}  skipped: ${e.message}`);
+      lines.push(`❌ ${rule.id}  source check failed: ${e.message}`);
       continue;
     }
     let ruleFailed = 0;

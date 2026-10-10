@@ -11,8 +11,8 @@ release
 *.tsbuildinfo
 
 # TypeScript declaration emit artifacts (composite mode without outDir)
-# 治本路径是配 tsconfig outDir + declarationDir (TODO R2-B), 把 emit
-# 收到独立目录再 ignore. 临时的 per-directory pattern 用来防止
+# tsconfig now isolates emit under out/typescript; keep these patterns for
+# artifacts emitted by older configurations. Per-directory patterns prevent
 # `**/*.d.ts` 误杀手写 ambient declarations (`vite-env.d.ts`,
 # `electron/agent/skills.d.ts` 等).
 electron/**/*.d.ts
