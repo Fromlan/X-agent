@@ -16,6 +16,7 @@
  */
 import type { IpcChannelKey } from "./ipc-channels";
 import type { SessionType } from "./session-type";
+import type { DiagnosticSnapshot } from "./diagnostics";
 import type {
   AgentSessionMode,
   AppUpdateStatus,
@@ -179,6 +180,9 @@ export type PrefsApi = {
 /** Coarse startup-failure report (recover / bridge / package install). */
 export type AppReportApi = {
   getStartupReport: IpcInvokeMap["getStartupReport"];
+  getDiagnosticSnapshot: IpcInvokeMap["getDiagnosticSnapshot"];
+  exportDiagnosticBundle: IpcInvokeMap["exportDiagnosticBundle"];
+  reportRendererFailure: IpcInvokeMap["reportRendererFailure"];
 };
 
 /**
@@ -344,6 +348,9 @@ export type IpcInvokeMap = {
   getPrefsRecoveryNotice: () => Promise<PrefsRecoveryNotice | null>;
   /** Returns and clears the startup-issue queue (recover / bridge / package install). */
   getStartupReport: () => Promise<StartupIssue[]>;
+  getDiagnosticSnapshot: () => Promise<DiagnosticSnapshot>;
+  exportDiagnosticBundle: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
+  reportRendererFailure: () => Promise<{ ok: true }>;
   getSecretCodecStatus: () => Promise<SecretCodecStatus>;
   checkBash: () => Promise<BashCheckResult>;
   checkBashLiveness: () => Promise<BashLivenessResult>;

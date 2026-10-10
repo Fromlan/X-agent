@@ -7,6 +7,7 @@ import {
   resolveModelContextWindow,
 } from "../../shared/model-context";
 import { validateOutboundHttpUrl } from "./external-url";
+import { publicHttpGet } from "./public-http";
 
 export interface FetchedModel {
   id: string;
@@ -304,25 +305,20 @@ export async function fetchProviderModels(input: {
 
   let lastErr = "无候选端点";
   for (const url of candidates) {
-    const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
+      const response = await publicHttpGet(url, {
           Authorization: `Bearer ${input.apiKey.trim()}`,
           Accept: "application/json",
           "User-Agent": "X-agent/0.1",
-        },
-        signal,
-      });
+      }, FETCH_TIMEOUT_MS);
 
       if (response.ok) {
-        const json = (await response.json()) as unknown;
+        const json = JSON.parse(response.body) as unknown;
         const models = parseModelsJson(json);
         return { ok: true, models, tried: candidates };
       }
 
-      const body = truncateBody(await response.text().catch(() => ""));
+      const body = truncateBody(response.body);
       if (response.status === 404 || response.status === 405) {
         lastErr = `HTTP ${response.status}: ${body}`;
         continue;
@@ -341,7 +337,7 @@ export async function fetchProviderModels(input: {
       };
     } catch (err) {
       // AbortSignal.timeout 触发时 err.name === "AbortError"，无需手动 clearTimeout。
-      if (err instanceof Error && err.name === "AbortError") {
+      if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
         return { ok: false, error: "请求超时", tried: candidates };
       }
       lastErr = err instanceof Error ? err.message : String(err);

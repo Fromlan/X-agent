@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { isPhysicallyInside } from "./lib/path-boundary";
 import {
   isAbsolute,
   normalize,
@@ -15,6 +16,7 @@ export function resolveInsideCwd(
   if (!cwd || !existsSync(cwd)) {
     return { ok: false, error: "未打开项目" };
   }
+  if (typeof relPath !== "string" || relPath.includes("\0")) return { ok: false, error: "非法路径" };
   // Allow absolute paths that still resolve inside cwd (Pi tools may pass abs).
   if (relPath && (isAbsolute(relPath) || /^[A-Za-z]:[\\/]/.test(relPath))) {
     const root = normalize(resolve(cwd));
@@ -31,6 +33,7 @@ export function resolveInsideCwd(
       return { ok: false, error: "路径超出项目目录" };
     }
     const rel = abs === root ? "" : relToRoot.replace(/\\/g, "/");
+    if (!isPhysicallyInside(root, abs)) return { ok: false, error: "路径超出项目目录或链接目标不可访问" };
     return { ok: true, abs, rel };
   }
   const raw = (relPath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
@@ -50,5 +53,6 @@ export function resolveInsideCwd(
     return { ok: false, error: "路径超出项目目录" };
   }
   const rel = abs === root ? "" : relToRoot.replace(/\\/g, "/");
+  if (!isPhysicallyInside(root, abs)) return { ok: false, error: "路径超出项目目录或链接目标不可访问" };
   return { ok: true, abs, rel };
 }

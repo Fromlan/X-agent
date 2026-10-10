@@ -129,7 +129,7 @@ describe("lib/store", () => {
     expect(store.read().n).toBe(0);
   });
 
-  it("损坏 JSON 的 decode 抛错时回退 defaults,不炸写路径", async () => {
+  it("missing files use defaults without trying to decode a nonexistent value", async () => {
     const dir = tempDir();
     const store = createStore<Counter>({
       filePath: join(dir, "x.json"),

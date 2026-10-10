@@ -37,7 +37,7 @@ const usageStore: Store<UsageStoreFile> = createStore<UsageStoreFile>({
 function decodeUsageStore(raw: unknown): UsageStoreFile {
   const r = raw as Partial<UsageStoreFile> | null;
   if (!r || r.version !== 1 || typeof r.days !== "object" || !r.days) {
-    return { version: 1, days: {} };
+    throw new Error("用量配置结构不合法，已保留原文件");
   }
   return { version: 1, days: r.days };
 }

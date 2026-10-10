@@ -4,7 +4,9 @@
  * 从 main.ts 抽离 BrowserWindow 配置 + nav-guard / debug 快捷键 / 焦点 auth
  * 缓存失效, 让 main.ts 只剩 composition root + app lifecycle.
  */
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, screen, dialog } from "electron";
+import { recordDiagnostic } from "./diagnostics";
+import { fitWindow, windowGeometry } from "./window-geometry";
 import { join } from "node:path";
 import { invalidateAuthCache } from "../agent/auth-check";
 import {
@@ -22,8 +24,8 @@ import {
 } from "../main-splash";
 
 const BG = "#141414";
-const MIN_WIDTH = 1188;
-const MIN_HEIGHT = 800;
+const MIN_WIDTH = 900;
+const MIN_HEIGHT = 600;
 
 /**
  * 主窗口工厂. 同时安装 nav-guard / debug shortcuts / focus → auth cache
@@ -43,11 +45,9 @@ export function createMainWindow(opts: {
   if (existing && !existing.isDestroyed()) return null;
   const icon = appIcon();
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+  const geometry = windowGeometry(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea);
   const win = new BrowserWindow({
-    width: 1280,
-    height: 840,
-    minWidth: MIN_WIDTH,
-    minHeight: MIN_HEIGHT,
+    ...geometry,
     title: "X-agent",
     backgroundColor: BG,
     show: false,
@@ -65,7 +65,19 @@ export function createMainWindow(opts: {
 
   // Explicit hard floor — guards against Win11 Snap Layout / DPI bypass
   // of the constructor `minWidth/minHeight` hint.
-  win.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+  win.setMinimumSize(geometry.minWidth, geometry.minHeight);
+  /** Recompute DIP limits after monitor/DPI changes without repeatedly resizing a fitting window. */
+  const fitDisplay = () => {
+    if (win.isDestroyed() || win.isMinimized()) return;
+    const bounds = win.getBounds();
+    const area = screen.getDisplayMatching(bounds).workArea;
+    const limits = windowGeometry(area);
+    win.setMinimumSize(limits.minWidth, limits.minHeight);
+    const fitted = fitWindow(bounds, area);
+    if (Object.keys(fitted).some((key) => fitted[key as keyof typeof fitted] !== bounds[key as keyof typeof fitted])) win.setBounds(fitted);
+  };
+  screen.on("display-metrics-changed", fitDisplay);
+  win.on("moved", fitDisplay);
 
   installDebugShortcuts(win);
   // E1: 窗口获得焦点时 auth.json 可能已被外部 `pi /login` 改写,
@@ -73,6 +85,15 @@ export function createMainWindow(opts: {
   win.on("focus", () => invalidateAuthCache());
   installWindowOpenHandler(win);
   installWillNavigateHandler(win, rendererUrl);
+  win.webContents.on("render-process-gone", async (_event, details) => {
+    if (details.reason === "clean-exit") return;
+    recordDiagnostic("renderer-gone", details.reason);
+    try { await (await import("../app-runtime")).stopTurnForRecovery(); }
+    catch { recordDiagnostic("main-rejection", "unknown"); }
+    const choice = await dialog.showMessageBox({ type: "error", title: "界面进程已停止", message: "已停止当前回合。重新启动后可恢复已保存会话；本地诊断仅保存崩溃类型。", buttons: ["重新启动", "退出"], defaultId: 0, cancelId: 1 });
+    if (choice.response === 0) app.relaunch();
+    app.quit();
+  });
 
   if (rendererUrl) win.loadURL(rendererUrl);
   else win.loadFile(join(__dirname, "../renderer/index.html"));
@@ -80,6 +101,7 @@ export function createMainWindow(opts: {
   autoOpenDevTools(win);
 
   win.on("closed", () => {
+    screen.removeListener("display-metrics-changed", fitDisplay);
     // mainWindow 在 main.ts 维护; 这里只负责收尾 splash
     destroySplashImmediate();
     opts.onClosed?.();

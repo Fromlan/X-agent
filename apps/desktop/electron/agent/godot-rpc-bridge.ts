@@ -394,6 +394,9 @@ export class GodotRpcBridge {
         };
         const onListening = () => {
           server.off("error", onError);
+          // Port 0 is used by isolated integration tests; advertise the OS-assigned port, never the requested zero.
+          const address = server.address();
+          if (address && typeof address !== "string") this.port = address.port;
           resolve();
         };
         server.once("error", onError);

@@ -12,7 +12,7 @@
  */
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { readJsonAsync, writeJsonAtomic } from "./atomic-write";
+import { readJsonStrict, requireJsonObject, writeJsonAtomic } from "./atomic-write";
 import { withStoreLock } from "./store-mutex";
 
 export interface StoreOptions<T> {
@@ -88,10 +88,12 @@ export function createStore<T>(options: StoreOptions<T>): Store<T> {
     }
   };
 
-  /** 异步读盘:文件不存在 / 解析失败 → defaults。 */
+  /** Strict async read: only missing files initialize defaults; malformed/unreadable files remain intact. */
   const readFromDiskAsync = async (): Promise<T> => {
-    const raw = await readJsonAsync<unknown>(resolvePath(), null);
-    return raw === null ? structuredClone(options.defaults) : decodeValue(raw);
+    const raw = await readJsonStrict<unknown>(resolvePath(), undefined);
+    if (raw === undefined) return structuredClone(options.defaults);
+    if (options.defaults && typeof options.defaults === "object" && !Array.isArray(options.defaults)) requireJsonObject(raw);
+    return options.decode ? options.decode(raw) : raw as T;
   };
 
   const read = (): T => {
@@ -116,8 +118,10 @@ export function createStore<T>(options: StoreOptions<T>): Store<T> {
     const path = resolvePath();
     // 整个读-改-写循环在 per-path 锁内:并发 mutate 覆盖彼此的窗口被消除。
     return withStoreLock(path, async () => {
-      const prev = await readFromDiskAsync();
-      const next = fn(prev); // fn 抛错(如 StoreMutationAborted)时中止,不写盘不更新缓存。
+      const prev = await readJsonStrict<unknown>(path, undefined);
+      if (prev !== undefined && options.defaults && typeof options.defaults === "object" && !Array.isArray(options.defaults)) requireJsonObject(prev);
+      const decoded = prev === undefined ? structuredClone(options.defaults) : options.decode ? options.decode(prev) : prev as T;
+      const next = fn(decoded); // Corrupt existing data must never become defaults on a write path.
       ensureParentDir(path);
       try {
         await writeJsonAtomic(path, options.encode ? options.encode(next) : next);
@@ -137,6 +141,9 @@ export function createStore<T>(options: StoreOptions<T>): Store<T> {
   const write = async (value: T): Promise<T> => {
     const path = resolvePath();
     await withStoreLock(path, async () => {
+      const previous = await readJsonStrict<unknown>(path, undefined);
+      if (previous !== undefined && options.defaults && typeof options.defaults === "object" && !Array.isArray(options.defaults)) requireJsonObject(previous);
+      if (previous !== undefined && options.decode) options.decode(previous);
       ensureParentDir(path);
       try {
         await writeJsonAtomic(path, options.encode ? options.encode(value) : value);

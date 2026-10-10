@@ -146,3 +146,9 @@ export async function shutdownRuntime(): Promise<void> {
   await godotRpc?.stop();
   await sessionHost?.dispose();
 }
+
+/** Stop automatic continuation and active tools before offering recovery from a crashed renderer. */
+export async function stopTurnForRecovery(): Promise<void> {
+  if (sessionHost?.getGoal()) await sessionHost.pauseGoal();
+  await sessionHost?.abort();
+}

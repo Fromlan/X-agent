@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createConnection, type Socket } from "node:net";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -117,6 +117,14 @@ describe("GodotRpcBridge", () => {
     const noClient = await bridge.request({ id: "n1", method: "ping" }, 500);
     expect(noClient.ok).toBe(false);
     if (!noClient.ok) expect(noClient.error).toBe("no Godot editor connected");
+  });
+
+  it("port zero advertises the actual OS-assigned endpoint", async () => {
+    isolateEndpoint(); bridge = new GodotRpcBridge();
+    const status = await bridge.start(0);
+    expect(status.running).toBe(true); expect(status.port).toBeGreaterThan(0);
+    const endpoint = JSON.parse(readFileSync(godotRpcEndpointPath(), "utf8"));
+    expect(endpoint.port).toBe(status.port);
   });
 
   it("editor_ready 握手 + ping 请求响应 + 超时", async () => {

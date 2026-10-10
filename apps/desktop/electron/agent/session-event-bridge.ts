@@ -152,13 +152,21 @@ export function bridgeSessionEvents(
         );
         if (willRetry) {
           deps.setStatus("retrying");
+          deps.emit({ type: "agent_end", willRetry });
+          deps.emitUsageUpdate();
         } else {
-          deps.setStatus("idle");
-          void deps.maybeAutoTitleSession();
-          deps.onAgentSettled?.();
+          // A visible idle state must not precede the final checkpoint; otherwise later user files become turn changes.
+          void deps.turn.shadowCheckpoints.flush().then(() => {
+            if (deps.getSession() !== session) return;
+            deps.setStatus("idle");
+            deps.emit({ type: "agent_end", willRetry: false });
+            deps.emitUsageUpdate();
+            void deps.maybeAutoTitleSession();
+            deps.onAgentSettled?.();
+          }).catch(() => {
+            if (deps.getSession() === session) deps.setStatus("error", "回合检查点保存失败，请先检查工作区状态");
+          });
         }
-        deps.emit({ type: "agent_end", willRetry });
-        deps.emitUsageUpdate();
         break;
       }
       case "turn_start":

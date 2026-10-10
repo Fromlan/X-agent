@@ -86,3 +86,23 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  godot-integration:
+    runs-on: windows-latest
+    needs: actionlint
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - name: Install verified Godot 4.6.2
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: ./scripts/setup-godot.ps1
+      - run: npm run test:godot

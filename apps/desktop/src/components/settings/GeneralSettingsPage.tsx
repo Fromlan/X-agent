@@ -126,6 +126,16 @@ export function GeneralSettingsPage({
                 <div className="settings-page-head">
                   <h3>通用</h3>
                 </div>
+                <div className="settings-block">
+                  <h4>本地诊断</h4>
+                  <p className="settings-hint">导出版本、系统、运行状态与崩溃类型。不会包含对话、项目源码、路径或密钥，也不会自动上传。</p>
+                  <button className="btn btn-ghost btn-sm" onClick={async () => {
+                    try {
+                      const result = await window.xAgent.appReport.exportDiagnosticBundle();
+                      if (result.ok) setGeneralMsg("已导出本地诊断包");
+                    } catch { setGeneralMsg("诊断包导出失败，请检查保存位置权限"); }
+                  }}>导出诊断包</button>
+                </div>
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">外观</h4>
@@ -268,7 +278,7 @@ export function GeneralSettingsPage({
                       max={10000000}
                       step={10000}
                       value={prefs.goalMaxTokens}
-                      title="Goal 模式累计 token 上限（含缓存）；用尽后可提高再继续"
+                      title="Goal 自动续轮停止阈值（含缓存和评估请求）；请求结束后统计，单次请求可能超出，撤回会回滚分支预算但不会退还费用"
                       onChange={(e) => {
                         const n = Number(e.target.value);
                         void (async () => {

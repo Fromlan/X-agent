@@ -127,7 +127,7 @@ try {
 
     // —— 场景 F: providerId 拼写漂移(老版本给同 baseUrl 加了 "-2")的兜底 ——
   // catalog 档案 providerId = "ds-stale",但 Pi 端仍按旧 key "DeepSeek"
-  // 暴露模型。关掉 catalog 档案后,Pi 端应被 prune,且 TopBar 不再展示。
+  // 暴露模型。关掉 catalog 档案后，未知 Pi key 应保留；URL 相同不能证明归属。
   {
     const driftRoot = mkdtempSync(join(tmpdir(), "alpha-providers-drift-"));
     const driftPaths: ProviderPaths = {
@@ -185,7 +185,7 @@ try {
     );
     assert(drifted.ok && drifted.profile, "drifted create");
 
-    // 关掉 catalog 档案 → prune 应通过 baseUrl 兜底删除 Pi 端 "DeepSeek"。
+    // 关掉 catalog 档案：只清理 ds-stale，不能删除可能属于 Pi CLI 的 DeepSeek。
     const off = await setProviderProfileEnabled(
       drifted.profile!.id,
       false,
@@ -196,8 +196,8 @@ try {
       readFileSync(driftPaths.modelsPath, "utf8"),
     ) as { providers: Record<string, unknown> };
     assert(
-      !("DeepSeek" in modelsAfter.providers),
-      "Pi 'DeepSeek' pruned via baseUrl fallback",
+      "DeepSeek" in modelsAfter.providers,
+      "unowned Pi 'DeepSeek' is preserved despite sharing the same URL",
     );
 
     // 同时直接调用 prune 也应兼容(需先把档案 disable,否则 prune 早返回)。
@@ -221,8 +221,8 @@ try {
       readFileSync(driftPaths.modelsPath, "utf8"),
     ) as { providers: Record<string, unknown> };
     assert(
-      !("DeepSeek" in modelsPruned.providers),
-      "pruneProviderIdFromPi also prunes by baseUrl fallback",
+      "DeepSeek" in modelsPruned.providers,
+      "pruneProviderIdFromPi preserves unknown provider IDs",
     );
 
     // filterModelsByCatalogEnabled:即使 Pi 仍按旧 key 暴露模型(假设 prune 未跑),

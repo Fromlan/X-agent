@@ -37,11 +37,14 @@ import { getCachedPrefs } from "../prefs";
 import {
   buildGoalContinuePrompt,
   buildGoalEvalPrompt,
-  buildGoalTranscript,
+  buildGoalEvidence,
+  validateGoalDecision,
   parseGoalEvalResponse,
   selectEvaluatorModel,
 } from "./goal-evaluator";
-import { clearGoalJournal, loadGoalJournal, saveGoalJournal } from "./goal-journal";
+import { turnUsageFromMessage } from "../session-host-helpers";
+import { modelUsageKey, recordTurnUsage } from "../usage-store";
+import { clearGoalJournal, loadGoalJournal, loadGoalLedger, saveGoalJournal } from "./goal-journal";
 import { isReadonlySessionMode } from "./plan-tools";
 
 /** Per-turn ledger entry: tracks which user prompt / turn triggered the eval. */
@@ -376,7 +379,9 @@ export class GoalController {
     const stored = loadGoalJournal(path);
     if (!stored) return;
     this.owner.setGoalState(stored);
-    this.owner.setGoalTurnLedger(reconstructLedgerFromGoal(stored));
+    const ledger = loadGoalLedger(path);
+    const matchesBudget = ledger && ledger.reduce((sum, e) => sum + e.tokens, 0) === stored.tokensUsed && ledger.filter((e) => e.turnIncremented).length === stored.turns;
+    this.owner.setGoalTurnLedger(matchesBudget ? ledger : reconstructLedgerFromGoal(stored));
     this.owner.bumpGoalGeneration();
     this.owner.setContinueInFlight(false);
     if (isRestorableGoalStatus(stored.status)) {
@@ -395,19 +400,25 @@ export class GoalController {
     if (this.owner.getContinueInFlight()) return;
     if (bundle.session.isStreaming) return;
 
+    const userEntryId = this.owner.host().getActiveUserEntryId();
+    const previousEntry = userEntryId ? this.owner.getGoalTurnLedger().findLast((entry) => entry.userEntryId === userEntryId) : undefined;
+    if (previousEntry?.turnIncremented) return; // Duplicate settled notifications must not charge/evaluate one turn twice.
+
     this.owner.setContinueInFlight(true);
     const goalAtStart = goal;
     const generation = this.owner.getGoalGeneration();
     let continuePrompt: string | null = null;
     try {
       const turnTokens = Math.max(0, this.owner.host().getLastTurnTokenTotal());
-      const ledgerEntry: GoalTurnLedgerEntry = {
-        userEntryId: this.owner.host().getActiveUserEntryId(),
+      const ledgerEntry: GoalTurnLedgerEntry = previousEntry ?? {
+        userEntryId,
         tokens: turnTokens,
         turnIncremented: false,
       };
-      this.owner.getGoalTurnLedger().push(ledgerEntry);
-      goalAtStart.tokensUsed += turnTokens;
+      if (!previousEntry) {
+        this.owner.getGoalTurnLedger().push(ledgerEntry);
+        goalAtStart.tokensUsed += turnTokens;
+      }
       this.persistGoalJournal();
       this.owner.emitGoal();
       if (goalAtStart.tokensUsed >= goalAtStart.maxTokens) {
@@ -418,10 +429,10 @@ export class GoalController {
         return;
       }
 
-      const transcript = buildGoalTranscript(
+      const evidence = buildGoalEvidence(
         bundle.session.messages as readonly unknown[],
       );
-      const evalPrompt = buildGoalEvalPrompt(goalAtStart.condition, transcript);
+      const evalPrompt = buildGoalEvalPrompt(goalAtStart.condition, evidence.transcript);
       const sessionModel = bundle.session.model;
       if (!sessionModel) {
         this.pauseAfterEvalFailure(goalAtStart, "当前无可用模型");
@@ -429,11 +440,11 @@ export class GoalController {
       }
       const runtime = await this.owner.host().ensureRuntime();
       if (this.owner.getGoalGeneration() !== generation) {
-        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart, turnTokens);
+        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart);
         return;
       }
       if (this.owner.host().getBundle() !== bundle || this.owner.getGoalState() !== goalAtStart) {
-        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart, turnTokens);
+        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart);
         return;
       }
       if (this.owner.getGoalState()?.status !== "pursuing") return;
@@ -483,12 +494,24 @@ export class GoalController {
         },
         { maxTokens: 128, temperature: 0 },
       );
+      // Every returned request is paid usage even if cancellation prevents applying its decision.
+      const evalUsage = turnUsageFromMessage(result, true);
+      if (evalUsage) {
+        if (this.owner.getGoalState() === goalAtStart && this.owner.getGoalTurnLedger().includes(ledgerEntry)) {
+          ledgerEntry.tokens += evalUsage.tokens.total;
+          goalAtStart.tokensUsed += evalUsage.tokens.total;
+          this.persistGoalJournal();
+          this.owner.emitGoal();
+        }
+        // Preserve the known Goal charge even when the separate aggregate usage file cannot be written.
+        await recordTurnUsage(modelUsageKey(model.provider, model.id), evalUsage);
+      }
       if (this.owner.getGoalGeneration() !== generation) {
-        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart, turnTokens);
+        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart);
         return;
       }
       if (this.owner.host().getBundle() !== bundle || this.owner.getGoalState() !== goalAtStart) {
-        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart, turnTokens);
+        this.dropIncompleteLedgerEntry(ledgerEntry, goalAtStart);
         return;
       }
       if (this.owner.getGoalState()?.status !== "pursuing") return;
@@ -507,7 +530,7 @@ export class GoalController {
         .map((p) => p.text)
         .join("")
         .trim();
-      const parsed = parseGoalEvalResponse(raw);
+      const parsed = validateGoalDecision(goalAtStart.condition, evidence, parseGoalEvalResponse(raw));
       goalAtStart.turns += 1;
       ledgerEntry.turnIncremented = true;
       goalAtStart.lastReason = parsed.reason;
@@ -603,14 +626,18 @@ export class GoalController {
   private dropIncompleteLedgerEntry(
     ledgerEntry: GoalTurnLedgerEntry,
     goal: GoalInfo,
-    turnTokens: number,
   ): void {
     const ledger = this.owner.getGoalTurnLedger();
+    // Pause is not a refund: keep completed request charges for resume. Explicit retract owns budget rollback.
+    if (this.owner.getGoalState() === goal && goal.status === "paused") {
+      this.persistGoalJournal();
+      return;
+    }
     const last = ledger[ledger.length - 1];
     if (last !== ledgerEntry || ledgerEntry.turnIncremented) return;
     this.owner.setGoalTurnLedger(ledger.slice(0, -1));
     if (this.owner.getGoalState() === goal) {
-      goal.tokensUsed = Math.max(0, goal.tokensUsed - turnTokens);
+      goal.tokensUsed = Math.max(0, goal.tokensUsed - ledgerEntry.tokens);
     }
   }
 
@@ -620,7 +647,7 @@ export class GoalController {
     if (!path) return;
     const goal = this.owner.getGoalState();
     if (goal && isRestorableGoalStatus(goal.status)) {
-      saveGoalJournal(path, goal);
+      saveGoalJournal(path, goal, this.owner.getGoalTurnLedger());
     } else {
       clearGoalJournal(path);
     }

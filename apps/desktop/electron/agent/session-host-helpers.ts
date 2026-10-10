@@ -45,13 +45,13 @@ export function modelFromSession(session: AgentSession): ModelInfo | null {
   };
 }
 
-export function turnUsageFromMessage(message: unknown): TurnUsage | null {
+export function turnUsageFromMessage(message: unknown, includeFailed = false): TurnUsage | null {
   if (!message || typeof message !== "object") return null;
   const msg = message as {
     usage?: Record<string, unknown>;
     stopReason?: string;
   };
-  if (msg.stopReason === "aborted" || msg.stopReason === "error") {
+  if (!includeFailed && (msg.stopReason === "aborted" || msg.stopReason === "error")) {
     return null;
   }
   const usage = msg.usage;

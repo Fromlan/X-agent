@@ -24,6 +24,7 @@ const ADDON_REL = join("packages", "godot-editor-rpc", "addons", "x_agent_rpc");
 const requireElectron = createRequire(import.meta.url);
 
 function tryElectronPaths(): { resourcesPath?: string; appPath?: string } {
+  if (!process.versions.electron) return {};
   try {
     const electron = requireElectron("electron") as {
       app?: { getAppPath: () => string };
