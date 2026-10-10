@@ -17,6 +17,19 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { findLine, checkLine, checkText, RULES, runChecks } from './check-doc-drift.mjs';
 
+test('runChecks: source failures fail the check and preserve remaining diagnostics', () => {
+  const rules = [
+    { id: 'missing-source', fetch: () => { throw new Error('source unavailable'); }, docs: [] },
+    { id: 'valid-source', fetch: () => '1', docs: [{ file: 'fixture', check: () => ({ ok: true, line: 1 }) }] }
+  ];
+  const result = runChecks({ log: () => {}, rules });
+  assert.equal(result.failed, 1);
+  assert.equal(result.passed, 1);
+  assert.equal(result.skips[0].id, 'missing-source');
+  assert.ok(result.lines.some((line) => line.includes('source unavailable')));
+  assert.ok(!result.lines.some((line) => line.includes('0 drift')));
+});
+
 test('findLine: 命中返回 1-indexed 行号 + snippet', () => {
   const text = 'first\nsecond line\nthird';
   const r = findLine(text, /second/);
