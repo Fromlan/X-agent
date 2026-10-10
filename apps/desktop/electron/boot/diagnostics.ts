@@ -3,12 +3,19 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { release } from "node:os";
 import { EventEmitter } from "node:events";
-import type { DiagnosticEvent, DiagnosticKind, DiagnosticSnapshot } from "../../shared/diagnostics";
+import { RENDERER_FAILURE_REASONS, type RendererFailure, type DiagnosticEvent, type DiagnosticKind, type DiagnosticSnapshot } from "../../shared/diagnostics";
 import { getAgentDirPath } from "../agent/prefs";
 import { writeJsonAtomicSync } from "../agent/lib/atomic-write";
 
-const REASONS = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "ReferenceError", "unknown", "crashed", "killed", "oom", "abnormal-exit", "launch-failed", "integrity-failure", "clean-exit"]);
-const KINDS = new Set<DiagnosticKind>(["main-exception", "main-rejection", "renderer-gone", "renderer-error", "child-gone"]);
+const REASONS = new Set<string>([...RENDERER_FAILURE_REASONS, "crashed", "killed", "oom", "abnormal-exit", "launch-failed", "integrity-failure", "clean-exit"]);
+const KINDS = new Set<DiagnosticKind>(["main-exception", "main-rejection", "renderer-gone", "renderer-error", "renderer-rejection", "child-gone"]);
+
+/** Accept only enum metadata from IPC; missing/invalid reports retain fatal recovery behavior. */
+export function normalizeRendererFailure(value: unknown): RendererFailure {
+  const report = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const reason = RENDERER_FAILURE_REASONS.find((allowed) => allowed === report.reason) ?? "unknown";
+  return { kind: report.kind === "rejection" ? "rejection" : "error", reason };
+}
 
 /** Return the private metadata file without ever reading authentication or conversation files. */
 export function diagnosticPath(): string { return join(getAgentDirPath(), "x-agent", "diagnostics", "events.json"); }

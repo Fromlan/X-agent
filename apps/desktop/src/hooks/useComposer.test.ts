@@ -122,16 +122,17 @@ function installIpcMock() {
     prompt: vi.fn().mockResolvedValue({ ok: true, silent: false }),
     abort: vi.fn().mockResolvedValue({ ok: true }),
   };
+  const filesMock = { read: vi.fn().mockResolvedValue({ ok: false }) };
   (globalThis as unknown as {
     window: {
-      xAgent: { plan: PlanMock; turn: TurnMock };
+      xAgent: { plan: PlanMock; turn: TurnMock; files: typeof filesMock };
       xAgentPath?: { getForFile: (f: File) => string };
     };
   }).window = {
-    xAgent: { plan: planMock, turn: turnMock },
+    xAgent: { plan: planMock, turn: turnMock, files: filesMock },
     xAgentPath: { getForFile: (f: File) => (f as unknown as { path?: string }).path ?? "" },
   };
-  return { planMock, turnMock };
+  return { planMock, turnMock, filesMock };
 }
 
 function setupSetters() {
@@ -250,6 +251,42 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     expect(setters.setError).not.toHaveBeenCalledWith(expect.stringMatching(/失败/));
   });
 
+  it.each(["Connection error.", "Request was aborted."])("send: rejected IPC %s stays recoverable and restores the draft", async (message) => {
+    const { turnMock } = installIpcMock();
+    turnMock.prompt.mockRejectedValue(new Error(message));
+    const { d, setters } = makeDispatcher();
+    await expect(d.send()).resolves.toBe(false);
+    expect(setters.setItems).toHaveBeenCalledTimes(2);
+    expect(setters.setError).toHaveBeenLastCalledWith(message === "Connection error." ? "网络异常：与供应商的连接中断" : "操作已中止");
+    const restore = setters.setInput.mock.calls.at(-1)![0] as (draft: string) => string;
+    expect(restore("")).toBe("hello world");
+    expect(restore("new draft")).toBe("new draft");
+  });
+
+  it("send: a rejected goal command does not escape the composer", async () => {
+    const { d, setters } = makeDispatcher({ input: "/goal test" });
+    setters.goalDispatcher.handleGoalCommand.mockRejectedValue(new Error("Connection error."));
+    await expect(d.send()).resolves.toBe(false);
+    expect(setters.setItems).not.toHaveBeenCalled();
+    expect(setters.setError).toHaveBeenLastCalledWith("网络异常：与供应商的连接中断");
+  });
+
+  it("send: file expansion rejection removes the pending bubble without submitting a prompt", async () => {
+    const { turnMock, filesMock } = installIpcMock();
+    filesMock.read.mockRejectedValue(new Error("文件读取失败"));
+    const { d, setters } = makeDispatcher({ input: "read @missing.txt" });
+    await expect(d.send()).resolves.toBe(false);
+    expect(turnMock.prompt).not.toHaveBeenCalled();
+    expect(setters.setItems).toHaveBeenCalledTimes(2);
+  });
+
+  it("send: a failed sidebar refresh does not roll back a successful submission", async () => {
+    const { d, setters } = makeDispatcher();
+    setters.refreshSessions.mockRejectedValue(new Error("sidebar unavailable"));
+    await expect(d.send()).resolves.toBe(true);
+    expect(setters.setItems).toHaveBeenCalledTimes(1);
+  });
+
   it("send: 图片 + 不收图模型 → setError 报错 + 不发, 不调 setItems", async () => {
     const models: ModelInfo[] = [
       {
@@ -345,7 +382,20 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     const { d, setters } = makeDispatcher();
     await d.onClarifySelect("选 A");
     expect(setters.setError).toHaveBeenCalledWith("boom");
-    expect(setters.setInput).toHaveBeenCalledWith("选 A");
+    const restore = setters.setInput.mock.calls.at(-1)![0] as (draft: string) => string;
+    expect(restore("")).toBe("选 A");
+  });
+
+  it("onClarifySelect: rejected IPC restores the reply and remains retryable", async () => {
+    const { turnMock } = installIpcMock();
+    turnMock.prompt.mockRejectedValue(new Error("Request was aborted."));
+    const { d, setters } = makeDispatcher();
+    await expect(d.onClarifySelect("选 A")).resolves.toBeUndefined();
+    expect(setters.setItems).toHaveBeenCalledTimes(2);
+    expect(setters.setError).toHaveBeenLastCalledWith("操作已中止");
+    const restore = setters.setInput.mock.calls.at(-1)![0] as (draft: string) => string;
+    expect(restore("")).toBe("选 A");
+    expect(restore("new draft")).toBe("new draft");
   });
 
   it("canSend: 有内容 + cwd → true", () => {

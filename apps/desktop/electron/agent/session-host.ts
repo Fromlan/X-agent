@@ -555,6 +555,13 @@ export class SessionHost {
     this.emit({ type: "notice", text, level, replaceKey });
   }
 
+  /** Surface recoverable renderer request failures without aborting tools or quitting the app. */
+  reportRequestFailure(reason: "network" | "aborted"): void {
+    this.emitReplaceableNotice("session", reason === "network"
+      ? "网络请求失败，请检查网络或代理后重试。"
+      : "请求已中止，可重试。", "warn");
+  }
+
   getSessionMode(): SessionModeInfo {
     return this.sessionMode.getInfo();
   }
