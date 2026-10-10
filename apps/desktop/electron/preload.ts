@@ -147,6 +147,7 @@ const exposed: XAgentApi = {
     getStartupReport: api.getStartupReport,
     getDiagnosticSnapshot: api.getDiagnosticSnapshot,
     exportDiagnosticBundle: api.exportDiagnosticBundle,
+    // The generated forwarder passes only RendererFailure enum metadata; raw exceptions stay in renderer.
     reportRendererFailure: api.reportRendererFailure,
   },
   godot: {

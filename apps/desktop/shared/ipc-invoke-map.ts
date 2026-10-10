@@ -16,7 +16,7 @@
  */
 import type { IpcChannelKey } from "./ipc-channels";
 import type { SessionType } from "./session-type";
-import type { DiagnosticSnapshot } from "./diagnostics";
+import type { DiagnosticSnapshot, RendererFailure } from "./diagnostics";
 import type {
   AgentSessionMode,
   AppUpdateStatus,
@@ -350,7 +350,7 @@ export type IpcInvokeMap = {
   getStartupReport: () => Promise<StartupIssue[]>;
   getDiagnosticSnapshot: () => Promise<DiagnosticSnapshot>;
   exportDiagnosticBundle: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
-  reportRendererFailure: () => Promise<{ ok: true }>;
+  reportRendererFailure: (failure?: RendererFailure) => Promise<{ ok: true }>;
   getSecretCodecStatus: () => Promise<SecretCodecStatus>;
   checkBash: () => Promise<BashCheckResult>;
   checkBashLiveness: () => Promise<BashLivenessResult>;

@@ -89,22 +89,22 @@ const PATTERNS: ErrorPattern[] = [
   // Network.
   {
     id: "network_timeout",
-    match: /(timed?[_ ]?out|etimedout|read[_ ]?timeout|connect[_ ]?timeout)/i,
+    match: /(timed?[_ ]?out|etimedout|read[_ ]?timeout|connect[_ ]?timeout|网络超时)/i,
     message: "网络超时：连接供应商失败，检查网络或代理设置",
   },
   {
     id: "network_dns",
-    match: /(enotfound|eai_again|getaddrinfo|dns[_ ]?lookup)/i,
+    match: /(enotfound|eai_again|getaddrinfo|dns[_ ]?lookup|DNS 解析失败)/i,
     message: "DNS 解析失败：无法连接到供应商域名",
   },
   {
     id: "network_refused",
-    match: /(econnrefused|connection[_ ]?refused|connection[_ ]?reset|econnreset)/i,
+    match: /(econnrefused|connection[_ ]?refused|connection[_ ]?reset|econnreset|网络连接被拒绝或重置)/i,
     message: "网络连接被拒绝或重置",
   },
   {
     id: "network_other",
-    match: /(network|fetch|socket|ENETUNREACH|EHOSTUNREACH)/i,
+    match: /(network|fetch|socket|connection[_ ]?error|APIConnectionError|ENETUNREACH|EHOSTUNREACH|网络异常)/i,
     message: "网络异常：与供应商的连接中断",
   },
 
@@ -124,7 +124,7 @@ const PATTERNS: ErrorPattern[] = [
   // Local / abort.
   {
     id: "aborted",
-    match: /\baborted?\b|cancelled|canceled|user[_ ]?abort/i,
+    match: /\baborted?\b|cancelled|canceled|user[_ ]?abort|操作已中止/i,
     message: "操作已中止",
   },
 ];

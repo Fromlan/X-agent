@@ -57,16 +57,15 @@ test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
       "data-session-type",
       "design",
     );
+    await expect(designBtn).toBeEnabled();
 
     // 策划会话视觉: chat-panel 应用策划 accent 描边 (inset box-shadow)
-    const chatPanelBox = await main.locator(".chat-panel").evaluate(
-      (el) => window.getComputedStyle(el).boxShadow,
-    );
+    const chatPanel = main.locator(".chat-panel");
     // Chromium 把 "inset 3px 0 0 0 rgb(...)" 序列化为
-    // "rgb(...) 3px 0px 0px 0px inset" (inset 在末尾). 匹配关键词对即可.
-    expect(chatPanelBox).toMatch(/3px/);
-    expect(chatPanelBox).toMatch(/inset/);
-    expect(chatPanelBox).toMatch(/rgb/);
+    // "rgb(...) 3px 0px 0px 0px inset" (inset 在末尾). 等待实际样式而非瞬时快照.
+    await expect(chatPanel).toHaveCSS("box-shadow", /3px/);
+    await expect(chatPanel).toHaveCSS("box-shadow", /inset/);
+    await expect(chatPanel).toHaveCSS("box-shadow", /rgb/);
 
     // 切回新代码会话
     await codeBtn.click();
@@ -74,12 +73,10 @@ test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
       "data-session-type",
       "code",
     );
+    await expect(codeBtn).toBeEnabled();
 
-    // 切回 code 后 chat-panel 的 inset 描边应消失
-    const chatPanelBoxCode = await main.locator(".chat-panel").evaluate(
-      (el) => window.getComputedStyle(el).boxShadow,
-    );
-    expect(chatPanelBoxCode).not.toMatch(/inset/);
+    // Wait through session-info/effect updates before asserting the final code-session style.
+    await expect(chatPanel).not.toHaveCSS("box-shadow", /inset/);
   } finally {
     await main.evaluate(() => window.xAgent.workspace.close()).catch(() => {});
     await app.close();
