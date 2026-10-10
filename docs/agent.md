@@ -39,7 +39,7 @@
 - **React** 19 + **TypeScript** ^7.0 + **Vite** ^8.2.2；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
 - **@earendil-works/pi-coding-agent** ^0.99.2（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
-- **Node.js 22+**（开发时需要；运行时 Electron 自带）
+- **Node.js 24+**（开发时需要；运行时 Electron 自带）
 - Windows + Godot 4.x 为当前发布平台；macOS / Linux 不在 CI 矩阵内
 
 ## 四、常用命令
@@ -118,13 +118,13 @@ prefs / usage / provider / auth / godot-rpc **必须原子写**（`lib/atomic-wr
 - **Agent** — 默认工具白名单（bash/write/edit 等）
 - **Ask（调研）** — 只读 + read-only bash；硬闸关 `write` / `edit` / `write_plan`；bash 仅放行只读命令且路径须落在项目 cwd 内（**不写回设置**）
 - **Plan** — Ask 集 + `write_plan`；todo 勾选 / `<clarify>` 多题点选后"发送所选" / Shift+Tab 循环模式
-- **Goal** — 完成条件 + 独立评估；轮次 + token 双预算（`goalMaxTurns` / `goalMaxTokens`）、暂停/继续、评估失败自动暂停
+- **Goal** — 完成条件 + 独立评估；轮次 + token 双预算（`goalMaxTurns` / `goalMaxTokens`）、暂停/继续、评估失败自动暂停。评估输入包含关联工具调用/结果/错误；可执行目标无有效证据或有未解决工具失败时拒绝完成。评估 usage 纳入账本与总用量；token 是请求结束后停止续轮的软阈值，暂停不退款，撤回回滚分支预算但不撤销实际费用
 
 工具名常量见 `shared/mode-tools.ts`、模式提示见 `shared/mode-prompt.ts`、撤回前的确认与风险提示在 `RetractConfirmModal.tsx`。
 
 ### 6.4 CWD 沙箱
 
-`electron/agent/cwd-sandbox.ts` 解析项目内相对路径，**拒绝逃出 cwd**。`plan-tools` 与 `bash-readonly` 也走同一沙箱（Windows 大小写归一化）。Agent 模式下 Pi `bash` 仍可能访问更广路径——这是已知边界，不要无脑承诺安全。
+`electron/agent/cwd-sandbox.ts` 同时检查路径段和真实目标，拒绝 junction/symlink 指向授权根之外；新文件检查最近存在父目录，项目根本身为 junction 时以其真实目标为边界。检查与使用之间仍可能发生路径替换，不是句柄级原子沙箱。`plan-tools` 与 `bash-readonly` 也走同一沙箱（Windows 大小写归一化）。Agent 模式下 Pi `bash` 仍可能访问更广路径——这是已知边界，不要无脑承诺安全。
 
 ### 6.5 安全
 
@@ -219,7 +219,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - 函数级注释 / 关键决策注释保留；新模块头部补一句"做什么 + 为什么"
 - 中文用户面文案以 `README.md` / 设置页为准；注释 / 标识符英文为主
 - **不要**在 `docs/` 下写**个人**草稿（个人草稿走 `.scratch/notes/`，已 gitignored）；`docs/` 是公开目录，CI 可见
-- 提交前：`npm run desktop:typecheck` + `npm test`（在 `apps/desktop` 内）；然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR，CI 三 job（`desktop` / `unit-test` / `e2e`）全绿后合并
+- 提交前：`npm run desktop:typecheck` + `npm test`（在 `apps/desktop` 内）；然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR，CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿后合并
 
 ---
 

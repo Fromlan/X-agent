@@ -205,6 +205,12 @@ A: 不会。升级保留 `~/.pi/agent/` 下所有内容。如需回滚到旧版�
 
 ## 从源码开发
 
+开发需要 Node.js 24+。设置 → 通用 → 导出诊断包可保存本地 JSON，包含版本、系统、运行状态和最近的枚举异常事件；不包含异常正文、密钥、认证文件、完整对话或项目源码，不自动上传。主进程异常会停止运行并退出；渲染器异常提供重启或退出入口。
+
+目标模式的 token 预算包含独立评估开销，是请求结束后停止续轮的阈值，单次请求仍可能超额。评估结合工具结果，仍不能替代人工或确定性验收。撤回回滚分支预算，但实际费用不会退回。
+
+项目文件访问检查 junction/symlink 的真实目标；检查后由其他进程替换路径仍存在竞态。模型列表探测拒绝重定向并检查实际连接地址；此保护不统一覆盖 Pi SDK 的会话、OAuth、压缩、扩展及 WebSocket 请求。
+
 开发者文档：[`docs/agent.md`](docs/agent.md) / [`CLAUDE.md`](CLAUDE.md)
 
 ```bash
@@ -216,7 +222,13 @@ npm run dev          # Electron 开发
 npm test             # 离线断言链
 npm run test:unit    # vitest
 npm run typecheck    # tsc 两个 tsconfig
+npm run lint         # AST 静态规则 + 发布门禁检查
+npm run test:coverage # 配置范围内的覆盖率门槛
+npm run build
+npm run test:e2e      # 实际 Electron 业务与界面回归
 ```
+
+真实 Godot 集成在 PowerShell 中设置 `$env:GODOT_BIN` 为 Godot 4.6.2 console 可执行文件的绝对路径，再在 `apps/desktop` 执行 `npm run test:godot`。缺少该环境时命令失败；CI 自动安装并校验官方文件摘要。测试使用隔离临时工程，覆盖插件加载、鉴权 RPC、场景操作和脚本错误行号。覆盖率仅代表 `vitest.config.ts` 的统计范围。
 
 发版流程：见 [`CLAUDE.md` §7](CLAUDE.md#7-发版流程)。
 

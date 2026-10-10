@@ -18,7 +18,7 @@
 cd apps/desktop
 npm install
 npm run typecheck        # tsc 两个 tsconfig：tsconfig.node.json + tsconfig.web.json
-npm run lint             # typecheck + echo lint-ok（CI 也会跑）
+npm run lint             # Babel AST 静态规则 + 发布工作流门禁检查
 npm test                 # 离线断言链：60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联（无需认证，见下）
 npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
 npm run test:coverage    # vitest --coverage（CI 必跑）
@@ -28,7 +28,7 @@ npm run debug            # 同上但置 X_AGENT_DEBUG=1
 npm run dist             # electron-builder --win（仅 NSIS 安装包；不产便携版）
 ```
 
-根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。本仓库采用 [GitHub Flow](CLAUDE.md#3-分支策略-github-flow)：改动走 feature 分支 + PR 合并；发版时 maintainer 在 main 上打 tag 触发 `release.yml`。**Agent 不直接 push `main`、不主动打 tag、不提交 `apps/desktop/release/`**（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
+根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。本仓库采用 [GitHub Flow](CLAUDE.md#3-分支策略-github-flow)：改动走 feature 分支 + PR 合并；发版时 maintainer 在 master 上打 tag 触发 `release.yml`。**Agent 不直接 push `master`、不主动打 tag、不提交 `apps/desktop/release/`**（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
 
 真实模型冒烟：`npm run desktop:smoke`（需本机 Pi 认证，`~/.pi/agent/auth.json`），不是 CI 检查。
 
@@ -83,7 +83,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 ## 环境与其他坑
 
-- 仅 Windows 在开发/CI 矩阵（Node 22+，CI 为 windows-latest）。
+- 仅 Windows 在开发/CI 矩阵（Node 24+，CI 为 windows-latest）。
 - Pi `bash` 在 Windows 需要 Git for Windows，或配置 `~/.pi/agent/settings.json` 的 `shellPath`。
 - `docs/` 是**公开文档目录**，已在 git 跟踪、CI 可见（`.gitignore:7-8` 注释明示）；个人草稿 / ADR / 调研沉淀请走 `.scratch/notes/`（已 gitignored，**不入** git）。
 - 仓库目前没有 `opencode.json`。
@@ -97,6 +97,10 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 ## 提交前自检
 
+- 真实 Godot：在 PowerShell 设置 `$env:GODOT_BIN` 为 Godot 4.6.2 console 可执行文件绝对路径，在 `apps/desktop` 跑 `npm run test:godot`；缺少环境失败，不静默跳过。CI 固定同版本并校验官方 SHA-256。
+- 链接边界共用 `lib/path-boundary.ts`，新文件解析最近存在父目录；仍有校验后替换竞态。模型探测使用 `public-http.ts` 连接时 DNS 检查且拒绝重定向，Pi SDK 的其他传输不统一受此约束。
+- 配置只有 ENOENT 可初始化，损坏/权限/结构失败保留原文件；工具设置等保存和应用成功后才返回。Goal 评估费用入账，预算为续轮阈值；checkpoint flush 后才发布 idle，空恢复路径不全量 reset。
+
 - 在 `apps/desktop` 内：`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`（CI 会再跑一遍 + E2E）。
-- 然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR：CI 三 job（`desktop` / `unit-test` / `e2e`）全绿、≥1 approve 后 squash merge 回 `main`。
-- 不要提交：`docs/`、`.scratch/`、`apps/desktop/release/`、`out/`、`node_modules.broken-*/`。
+- 然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR：CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿、≥1 approve 后 squash merge 回 `master`。
+- 不要提交：未经任务要求的个人文档、`.scratch/`、`apps/desktop/release/`、`out/`、`node_modules.broken-*/`。
