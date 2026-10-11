@@ -28,6 +28,10 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 ## Unreleased
 
+### 修复
+
+- 修复 Google Gemini 供应商拉取模型时的认证失败，正确读取模型列表、上下文与输出上限；认证或权限失败时显示供应商的具体原因。
+
 ## 0.6.6
 
 ### 改进

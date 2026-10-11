@@ -53,6 +53,7 @@ vi.mock("electron", () => mockApi());
 
 // import 放在 vi.mock 之后, 让 vitest 抬高 mock 优先.
 import { isSenderUntrustedError } from "../shared/ipc";
+import type { FetchProviderModelsInput } from "../shared/ipc";
 import { makeSenderUntrustedError } from "./ipc/register-ipc";
 import { IPC_CHANNELS } from "../shared/ipc-channels";
 
@@ -65,6 +66,7 @@ interface ExposedXAgent {
   workspace: { open: (...args: unknown[]) => Promise<unknown> };
   turn: { prompt: (...args: unknown[]) => Promise<unknown> };
   session: { setModel: (...args: unknown[]) => Promise<unknown> };
+  provider: { fetchModels: (input: FetchProviderModelsInput) => Promise<unknown> };
   onEvent: (handler: (event: unknown) => void) => () => void;
   notifyAppReady: () => Promise<unknown>;
 }
@@ -115,6 +117,17 @@ describe("preload forwarder (issue #65 主题 H sender-trust 透传)", () => {
     const result = await exposed.workspace.open("/proj", "code" as never);
     expect(result).toBe(businessResult);
     expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.openProject, "/proj", "code");
+  });
+
+  it("provider.fetchModels forwards the selected API protocol to the main process", async () => {
+    const input: FetchProviderModelsInput = {
+      baseUrl: "https://generativelanguage.googleapis.com",
+      apiKey: "placeholder",
+      api: "google-generative-ai",
+    };
+    invoke.mockResolvedValueOnce({ ok: true, models: [] });
+    await exposed.provider.fetchModels(input);
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.fetchProviderModels, input);
   });
 
   it("业务错误 reject 也透传 (不被 forwarder 吞掉)", async () => {
