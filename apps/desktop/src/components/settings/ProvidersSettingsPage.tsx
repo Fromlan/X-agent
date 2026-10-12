@@ -317,6 +317,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       const result = await window.xAgent.provider.fetchModels({
         baseUrl: form.baseUrl,
         apiKey: form.apiKey,
+        api: form.api,
       });
       if (!result.ok) {
         setError(result.error ?? "拉取模型失败");

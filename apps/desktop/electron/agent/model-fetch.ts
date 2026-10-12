@@ -1,5 +1,5 @@
 /**
- * Fetch OpenAI-compatible model lists (cc-switch style candidate URL probing).
+ * Fetch provider model lists using native Gemini discovery or OpenAI-compatible probing.
  */
 
 import {
@@ -8,6 +8,7 @@ import {
 } from "../../shared/model-context";
 import { validateOutboundHttpUrl } from "./external-url";
 import { publicHttpGet } from "./public-http";
+import type { FetchProviderModelsInput, ProviderApiKind } from "../../shared/ipc";
 
 export interface FetchedModel {
   id: string;
@@ -51,6 +52,7 @@ const KNOWN_COMPAT_SUFFIXES = [
  */
 const FETCH_TIMEOUT_MS = 8_000;
 const ERROR_BODY_MAX = 512;
+const GOOGLE_MAX_PAGES = 10;
 
 function endsWithVersionSegment(url: string): boolean {
   const last = url.split("/").pop() ?? "";
@@ -70,6 +72,32 @@ function stripCompatSuffix(baseUrl: string): string | null {
 function truncateBody(body: string): string {
   if (body.length <= ERROR_BODY_MAX) return body;
   return `${body.slice(0, ERROR_BODY_MAX)}…`;
+}
+
+/** Preserve actionable provider errors while removing any echoed API key before truncation. */
+function providerErrorBody(body: string, apiKey: string): string {
+  let detail = body;
+  try {
+    const json = JSON.parse(body) as { error?: { message?: unknown } } | null;
+    if (typeof json?.error?.message === "string") detail = json.error.message;
+  } catch {
+    // Non-JSON error pages are still useful, subject to the same redaction and bound.
+  }
+  for (const secret of new Set([apiKey, encodeURIComponent(apiKey)])) {
+    detail = detail.split(secret).join("[已隐藏]");
+  }
+  return truncateBody(detail);
+}
+
+/** Keep explicit Gemini API versions and proxy prefixes; bare hosts use v1beta. */
+function buildGoogleModelsUrl(baseUrl: string): string {
+  const target = new URL(baseUrl.trim());
+  const path = target.pathname.replace(/\/+$/, "");
+  target.pathname = /\/v\d+(?:alpha|beta)?$/.test(path)
+    ? `${path}/models`
+    : `${path}/v1beta/models`;
+  target.searchParams.set("pageSize", "1000");
+  return target.href;
 }
 
 /** Build candidate /models endpoints (exported for unit tests). */
@@ -226,9 +254,27 @@ function parseEffort(raw: unknown):
   };
 }
 
-/** Exported for unit tests. */
-export function parseModelsJson(json: unknown): FetchedModel[] {
+/** Normalize Gemini models[] or OpenAI data[] into provider model entries. */
+export function parseModelsJson(json: unknown, api?: ProviderApiKind): FetchedModel[] {
   if (!json || typeof json !== "object") return [];
+  if (api === "google-generative-ai") {
+    const entries = (json as { models?: unknown }).models;
+    if (!Array.isArray(entries)) return [];
+    const data: Record<string, unknown>[] = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const model = entry as Record<string, unknown>;
+      if (typeof model.name !== "string" ||
+          !Array.isArray(model.supportedGenerationMethods) ||
+          !model.supportedGenerationMethods.includes("generateContent")) continue;
+      data.push({
+        id: model.name.trim().replace(/^models\//, ""),
+        context_window: model.inputTokenLimit,
+        max_output_tokens: model.outputTokenLimit,
+      });
+    }
+    return parseModelsJson({ data });
+  }
   const data = (json as { data?: unknown }).data;
   if (!Array.isArray(data)) return [];
   const models: FetchedModel[] = [];
@@ -272,10 +318,10 @@ export function parseModelsJson(json: unknown): FetchedModel[] {
   return models;
 }
 
-export async function fetchProviderModels(input: {
-  baseUrl: string;
-  apiKey: string;
-}): Promise<{ ok: boolean; models?: FetchedModel[]; error?: string; tried?: string[] }> {
+/** Discover models with provider-specific auth while retaining the public-network gate. */
+export async function fetchProviderModels(input: FetchProviderModelsInput): Promise<{
+  ok: boolean; models?: FetchedModel[]; error?: string; tried?: string[];
+}> {
   if (!input.apiKey.trim()) {
     return { ok: false, error: "请先填写 API Key" };
   }
@@ -284,7 +330,7 @@ export async function fetchProviderModels(input: {
   }
 
   // SSRF gate: only public http(s) endpoints are reachable from the main
-  // process (the request carries the user's API Key as Bearer token).
+  // process (the request carries the user's API Key in an auth header).
   const checked = await validateOutboundHttpUrl(input.baseUrl);
   if (!checked.ok) {
     return {
@@ -294,8 +340,11 @@ export async function fetchProviderModels(input: {
   }
 
   let candidates: string[];
+  const isGoogle = input.api === "google-generative-ai";
   try {
-    candidates = buildModelsUrlCandidates(input.baseUrl);
+    candidates = isGoogle
+      ? [buildGoogleModelsUrl(input.baseUrl)]
+      : buildModelsUrlCandidates(input.baseUrl);
   } catch (err) {
     return {
       ok: false,
@@ -303,30 +352,52 @@ export async function fetchProviderModels(input: {
     };
   }
 
+  const apiKey = input.apiKey.trim();
+  const headers: Record<string, string> = {
+    ...(isGoogle ? { "x-goog-api-key": apiKey } : { Authorization: `Bearer ${apiKey}` }),
+    Accept: "application/json",
+    "User-Agent": "X-agent/0.1",
+  };
+  const googleModels = new Map<string, FetchedModel>();
+  const pageTokens = new Set<string>();
   let lastErr = "无候选端点";
   for (const url of candidates) {
     try {
-      const response = await publicHttpGet(url, {
-          Authorization: `Bearer ${input.apiKey.trim()}`,
-          Accept: "application/json",
-          "User-Agent": "X-agent/0.1",
-      }, FETCH_TIMEOUT_MS);
+      const response = await publicHttpGet(url, headers, FETCH_TIMEOUT_MS);
 
       if (response.ok) {
         const json = JSON.parse(response.body) as unknown;
-        const models = parseModelsJson(json);
+        let models = parseModelsJson(json, input.api);
+        if (isGoogle) {
+          for (const model of models) googleModels.set(model.id, model);
+          const nextPageToken = (json as { nextPageToken?: unknown } | null)?.nextPageToken;
+          if (typeof nextPageToken === "string" && nextPageToken) {
+            if (pageTokens.has(nextPageToken) || candidates.length >= GOOGLE_MAX_PAGES) {
+              return { ok: false, error: "模型列表分页异常或超出上限", tried: candidates };
+            }
+            pageTokens.add(nextPageToken);
+            const next = new URL(candidates[0]);
+            next.searchParams.set("pageToken", nextPageToken);
+            candidates.push(next.href);
+            continue;
+          }
+          models = [...googleModels.values()].sort((a, b) => a.id.localeCompare(b.id));
+        }
         return { ok: true, models, tried: candidates };
       }
 
-      const body = truncateBody(response.body);
+      const body = providerErrorBody(response.body, apiKey);
       if (response.status === 404 || response.status === 405) {
         lastErr = `HTTP ${response.status}: ${body}`;
         continue;
       }
       if (response.status === 401 || response.status === 403) {
+        const hint = response.status === 401
+          ? "认证失败（HTTP 401），请检查 API Key"
+          : "访问被拒绝（HTTP 403），请检查 API Key、API 权限或地区限制";
         return {
           ok: false,
-          error: `认证失败（HTTP ${response.status}），请检查 API Key`,
+          error: body ? `${hint}：${body}` : hint,
           tried: candidates,
         };
       }

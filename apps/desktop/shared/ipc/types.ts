@@ -954,6 +954,13 @@ export interface FetchedProviderModel {
   thinkingLevelMap?: Record<string, string | null>;
 }
 
+/** Select the provider's discovery protocol; omitted api keeps legacy OpenAI probing. */
+export interface FetchProviderModelsInput {
+  baseUrl: string;
+  apiKey: string;
+  api?: ProviderApiKind;
+}
+
 export interface FetchProviderModelsResult {
   ok: boolean;
   models?: FetchedProviderModel[];
