@@ -80,6 +80,9 @@ check("Error: connect ETIMEDOUT 1.2.3.4:443", "network_timeout", "网络超时")
 check("getaddrinfo ENOTFOUND api.openai.com", "network_dns", "DNS");
 check("connect ECONNREFUSED 127.0.0.1:8080", "network_refused", "网络连接");
 check("read ECONNRESET", "network_refused", "网络连接");
+check("Connection error.", "network_other", "网络异常");
+check(new Error("Connection error."), "network_other", "网络异常");
+check("Error invoking remote method 'prompt': Error: 网络异常：与供应商的连接中断", "network_other", "网络异常");
 
 // --- 5. Model / context ---------------------------------------------------
 check(
@@ -93,6 +96,8 @@ check("Error: 404 model_not_found: gpt-99", "model_not_found", "模型不存在"
 // --- 6. Abort -------------------------------------------------------------
 check("Request aborted by user", "aborted", "中止");
 check("Operation cancelled", "aborted", "中止");
+check("Request was aborted.", "aborted", "中止");
+check("Error invoking remote method 'prompt': Error: 操作已中止", "aborted", "中止");
 
 // --- 7. Unknown inputs are prefixed but never thrown ----------------------
 const unknownRaw = "Some vendor-specific nonsense we don't recognise yet";

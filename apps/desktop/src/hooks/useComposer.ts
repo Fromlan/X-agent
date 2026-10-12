@@ -25,6 +25,7 @@ import { splitFilesForAttachment } from "../lib/file-attachment";
 import { findCurrentModel, formatVisionModelExamples, modelSupportsImage } from "../lib/model-capability";
 import { expandAtPathsInPrompt } from "../lib/expandAtPaths";
 import { dbgLog, dbgTimer } from "@shared/debug-log";
+import { inspectError } from "@shared/error-i18n";
 import {
   appendPendingUser,
   makePendingUserId,
@@ -139,6 +140,19 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     return hasSendableContent(input, attachments, fileRefs);
   };
 
+  /** Translate upstream failures while preserving already localized IPC messages. */
+  const showRequestError = (error: unknown): void => {
+    const raw = error instanceof Error ? error.message : String(error);
+    const inspected = inspectError(raw);
+    setError(inspected.patternId ? inspected.message : raw || "发送失败");
+  };
+
+  /** Sidebar refresh is ancillary; failure must not undo an accepted prompt. */
+  const refreshAfterSend = async (): Promise<void> => {
+    try { await refreshSessions(); }
+    catch { setError("会话列表刷新失败，请稍后重试"); }
+  };
+
   /**
    * 主 send. 与原 App.tsx `send` 等价:
    * 1) hasContent / cwd 闸门
@@ -178,6 +192,12 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     // to keep empty state on send.
     const currentAttachments = attachments;
     const currentFileRefs = fileRefs;
+    /** Restore a failed submission without overwriting a draft entered during the request. */
+    const restoreDraft = (): void => {
+      setInput((draft) => draft || input);
+      setAttachments((draft) => draft.length > 0 ? draft : currentAttachments);
+      setFileRefs((draft) => draft.length > 0 ? draft : currentFileRefs);
+    };
     setInput("");
     setAttachments([]);
     setFileRefs([]);
@@ -190,40 +210,53 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
       sessionMode,
     });
 
-    // Slash: /goal — 走 goal dispatcher
-    if (await goalDispatcher.handleGoalCommand(text)) {
-      // 注意: 走 /goal 路径不消耗 input(只清 goal / sessionMode), 但
-      // App 原 send 已经在上面 setInput("") 清空, 这里不需再清
-      return true;
-    }
+    let pendingId: string | undefined;
+    try {
+      // Slash: /goal — 走 goal dispatcher
+      if (await goalDispatcher.handleGoalCommand(text)) {
+        // 注意: 走 /goal 路径不消耗 input(只清 goal / sessionMode), 但
+        // App 原 send 已经在上面 setInput("") 清空, 这里不需再清
+        return true;
+      }
 
-    // Show the bubble immediately — host events only arrive after
-    // shadow-git checkpoint + Pi message_start (or history_replace at
-    // turn end). 透传 currentAttachments 到 pending bubble, 让
-    // UserBubble 在 user_message 事件回来后仍能显示已附图片
-    // (#42 修复 #2: user bubble 缺图导致用户误判图丢了)。
-    const pendingId = makePendingUserId();
-    setItems((prev) => appendPendingUser(prev, text, pendingId, currentAttachments));
+      // Show the bubble immediately — host events only arrive after
+      // shadow-git checkpoint + Pi message_start (or history_replace at
+      // turn end). 透传 currentAttachments 到 pending bubble, 让
+      // UserBubble 在 user_message 事件回来后仍能显示已附图片
+      // (#42 修复 #2: user bubble 缺图导致用户误判图丢了)。
+      const id = makePendingUserId();
+      pendingId = id;
+      setItems((prev) => appendPendingUser(prev, text, id, currentAttachments));
 
-    const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
-    const expanded = await expandAtPathsInPrompt(text, currentFileRefs);
-    doneExpand();
-    const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
-    const result = await window.xAgent.turn.prompt({
-      text: expanded,
-      images: currentAttachments.length > 0 ? currentAttachments : undefined,
-    });
-    doneRoundtrip();
-    dbgLog("chat", "turn.prompt resolved", {
-      ok: result.ok,
-      silent: result.silent,
-      error: result.error,
-    });
-    if (!result.ok || result.silent) {
-      setItems((prev) => removePendingUser(prev, pendingId));
-      if (!result.ok) setError(result.error ?? "发送失败");
+      const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
+      const expanded = await expandAtPathsInPrompt(text, currentFileRefs);
+      doneExpand();
+      const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
+      const result = await window.xAgent.turn.prompt({
+        text: expanded,
+        images: currentAttachments.length > 0 ? currentAttachments : undefined,
+      });
+      doneRoundtrip();
+      dbgLog("chat", "turn.prompt resolved", {
+        ok: result.ok,
+        silent: result.silent,
+        error: result.error,
+      });
+      if (!result.ok || result.silent) {
+        setItems((prev) => removePendingUser(prev, id));
+        if (!result.ok) {
+          showRequestError(result.error ?? "发送失败");
+          restoreDraft();
+        }
+      }
+    } catch (err) {
+      const failedId = pendingId;
+      if (failedId) setItems((prev) => removePendingUser(prev, failedId));
+      restoreDraft();
+      showRequestError(err);
+      return false;
     }
-    await refreshSessions();
+    await refreshAfterSend();
     return true;
   };
 
@@ -284,16 +317,23 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     setFollowNonce((n) => n + 1);
     const pendingId = makePendingUserId();
     setItems((prev) => appendPendingUser(prev, text, pendingId));
-    const expanded = await expandAtPathsInPrompt(text);
-    const result = await window.xAgent.turn.prompt({ text: expanded });
-    if (!result.ok || result.silent) {
-      setItems((prev) => removePendingUser(prev, pendingId));
-      if (!result.ok) {
-        setError(result.error ?? "发送失败");
-        setInput(reply);
+    try {
+      const expanded = await expandAtPathsInPrompt(text);
+      const result = await window.xAgent.turn.prompt({ text: expanded });
+      if (!result.ok || result.silent) {
+        setItems((prev) => removePendingUser(prev, pendingId));
+        if (!result.ok) {
+          showRequestError(result.error ?? "发送失败");
+          setInput((draft) => draft || reply);
+        }
       }
+    } catch (err) {
+      setItems((prev) => removePendingUser(prev, pendingId));
+      setInput((draft) => draft || reply);
+      showRequestError(err);
+      return;
     }
-    await refreshSessions();
+    await refreshAfterSend();
   };
 
   return {
