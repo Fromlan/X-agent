@@ -34,7 +34,7 @@ async function captureLayoutFailure(app: ElectronApplication, main: Page): Promi
   await main.screenshot({ path: test.info().outputPath("layout-failure.png") }).catch(() => {});
 }
 
-test("native ResizeObserver delivery warnings do not request fatal recovery", async () => {
+test("replayed browser layout notifications do not request fatal recovery", async () => {
   const { app, main } = await launchApp();
   try {
     await waitForMainWindow(app, main);
@@ -46,47 +46,19 @@ test("native ResizeObserver delivery warnings do not request fatal recovery", as
         return new Promise(() => {});
       };
     });
-    const warning = await main.evaluate(() => new Promise<{ message: string; hasError: boolean }>((resolve, reject) => {
-      const element = document.createElement("div");
-      element.style.cssText = "position:fixed;left:0;top:0;width:100px;height:10px";
-      const child = document.createElement("div");
-      const grandchild = document.createElement("div");
-      child.style.cssText = grandchild.style.cssText = "width:100px;height:10px";
-      element.appendChild(child); child.appendChild(grandchild);
-      const targets = [element, child, grandchild];
-      document.body.appendChild(element);
-      let deliveries = 0;
-      let frames = 0;
-      const entryCounts: number[] = [];
-      let animation = 0;
-      /** Keep requesting rendering steps while the CI desktop may have no pending paints. */
-      const nextFrame = () => { frames++; animation = requestAnimationFrame(nextFrame); };
-      animation = requestAnimationFrame(nextFrame);
-      const observer = new ResizeObserver((entries) => {
-        deliveries++;
-        if (entryCounts.length < 10) entryCounts.push(entries.length);
-        // Like WPT resize-observer/eventloop.html, resize several depths synchronously to leave ancestors undelivered.
-        targets.forEach((target) => { target.style.width = `${100 + deliveries * 40}px`; });
-      });
-      /** Capture the browser-generated ErrorEvent, then remove the one-frame feedback loop. */
-      const onError = (event: ErrorEvent) => {
-        if (!event.message.startsWith("ResizeObserver loop")) return;
-        clearTimeout(timeout);
-        cancelAnimationFrame(animation);
-        observer.disconnect(); element.remove(); window.removeEventListener("error", onError);
-        const result = { message: event.message, hasError: event.error != null };
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve(result)));
-      };
-      const timeout = setTimeout(() => {
-        cancelAnimationFrame(animation);
-        const state = { deliveries, frames, entryCounts, visibility: document.visibilityState, width: element.offsetWidth, userAgent: navigator.userAgent };
-        observer.disconnect(); element.remove(); window.removeEventListener("error", onError);
-        reject(new Error(`Native ResizeObserver fixture did not deliver a warning: ${JSON.stringify(state)}`));
-      }, 10000);
-      window.addEventListener("error", onError);
-      targets.forEach((target) => observer.observe(target));
-    }));
-    expect(warning).toEqual({ message: "ResizeObserver loop completed with undelivered notifications.", hasError: false });
+    const warnings = await main.evaluate(async () => {
+      const messages = ["ResizeObserver loop completed with undelivered notifications.", "ResizeObserver loop limit exceeded"];
+      const warnings = messages.map((message) => new ErrorEvent("error", { message }));
+      // Replay the captured native payload through the real window listeners and IPC boundary.
+      // ResizeObserver delivery itself need not emit a loop warning on every compositor/platform.
+      for (let index = 0; index < 3; index++) warnings.forEach((warning) => window.dispatchEvent(warning));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return warnings.map((warning) => ({ message: warning.message, hasError: warning.error != null }));
+    });
+    expect(warnings).toEqual([
+      { message: "ResizeObserver loop completed with undelivered notifications.", hasError: false },
+      { message: "ResizeObserver loop limit exceeded", hasError: false },
+    ]);
     const snapshot = await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot());
     expect(snapshot.state.status).toBe("idle");
     expect(snapshot.events.filter((event) => event.kind !== "operation")).toEqual([]);
