@@ -17,21 +17,27 @@ test("native ResizeObserver delivery warnings do not request fatal recovery", as
         return new Promise(() => {});
       };
     });
-    const warning = await main.evaluate(() => new Promise<{ message: string; hasError: boolean }>((resolve) => {
+    const warning = await main.evaluate(() => new Promise<{ message: string; hasError: boolean }>((resolve, reject) => {
       const element = document.createElement("div");
-      element.style.cssText = "position:absolute;width:1px;height:1px";
+      element.style.cssText = "position:absolute;width:100px;height:10px";
       document.body.appendChild(element);
-      let resized = false;
       const observer = new ResizeObserver(() => {
-        if (!resized) { resized = true; element.style.height = "2px"; }
+        // Force layout within delivery; a lone subpixel change can otherwise be deferred without a warning.
+        element.style.height = `${element.offsetHeight + 1}px`;
+        void element.offsetHeight;
       });
       /** Capture the browser-generated ErrorEvent, then remove the one-frame feedback loop. */
       const onError = (event: ErrorEvent) => {
         if (!event.message.startsWith("ResizeObserver loop")) return;
+        clearTimeout(timeout);
         observer.disconnect(); element.remove(); window.removeEventListener("error", onError);
         const result = { message: event.message, hasError: event.error != null };
         requestAnimationFrame(() => requestAnimationFrame(() => resolve(result)));
       };
+      const timeout = setTimeout(() => {
+        observer.disconnect(); element.remove(); window.removeEventListener("error", onError);
+        reject(new Error("Native ResizeObserver fixture did not deliver a warning"));
+      }, 10000);
       window.addEventListener("error", onError);
       observer.observe(element);
     }));
