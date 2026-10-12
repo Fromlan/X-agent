@@ -52,6 +52,32 @@ test("a real renderer crash records only bounded crash metadata", async () => {
   } finally { await app.close(); }
 });
 
+test("network and abort Promise rejections keep the interface alive and never request restart", async () => {
+  const { app, main } = await launchApp();
+  try {
+    await expect(main.locator(".composer-send")).toBeVisible();
+    await app.evaluate(({ dialog }) => {
+      (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs = 0;
+      dialog.showMessageBox = () => {
+        (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs++;
+        return new Promise(() => {});
+      };
+    });
+    for (const [message, reason] of [["Connection error.", "network"], ["Request was aborted.", "aborted"]]) {
+      await main.evaluate((text) => { void Promise.reject(new Error(text)); }, message);
+      await expect.poll(() => main.evaluate(async () => (await window.xAgent.appReport.getDiagnosticSnapshot()).events.at(-1))).toMatchObject({ kind: "renderer-rejection", reason });
+      expect(await app.evaluate(() => (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs)).toBe(0);
+      await expect(main.locator(".composer-send")).toBeVisible();
+    }
+    // Operational reports must not consume the fatal error latch.
+    await main.evaluate(() => { setTimeout(() => { throw new TypeError("private programming failure"); }, 0); });
+    await expect.poll(() => app.evaluate(() => (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs)).toBe(1);
+    const snapshot = await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot());
+    expect(snapshot.events.at(-1)).toMatchObject({ kind: "renderer-error", reason: "TypeError" });
+    expect(JSON.stringify(snapshot)).not.toContain("private programming failure");
+  } finally { await app.close(); }
+});
+
 test("a real uncaught main exception records metadata and exits instead of continuing", async () => {
   const { app, home } = await launchApp({ cleanupOnClose: false });
   const nativeProcess = app.process();
