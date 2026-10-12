@@ -9,7 +9,8 @@ function failureReason(error: unknown): RendererFailure["reason"] {
   const message = typeof detail.message === "string" ? detail.message : typeof error === "string" ? error : "";
   if (name === "AbortError" || name === "APIUserAbortError") return "aborted";
   // Programming exceptions stay fatal; fetch itself uses TypeError for transport failures.
-  if (["ReferenceError", "RangeError", "SyntaxError"].includes(name) || (name === "TypeError" && !/^(Failed to fetch|fetch failed|Load failed)\b/i.test(message))) return name as RendererFailure["reason"];
+  if (name === "TypeError" && /^(Failed to fetch|fetch failed|Load failed)\b/i.test(message)) return "network";
+  if (["ReferenceError", "RangeError", "SyntaxError", "TypeError"].includes(name)) return name as RendererFailure["reason"];
   const pattern = inspectError(`${name}: ${message}`).patternId;
   if (pattern === "aborted") return "aborted";
   if (pattern?.startsWith("network_") || name === "APIConnectionError") return "network";

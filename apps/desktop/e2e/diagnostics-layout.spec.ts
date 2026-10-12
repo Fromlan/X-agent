@@ -72,8 +72,8 @@ test("network and abort Promise rejections keep the interface alive and never re
         return new Promise(() => {});
       };
     });
-    for (const [message, reason] of [["Connection error.", "network"], ["Request was aborted.", "aborted"]]) {
-      await main.evaluate((text) => { void Promise.reject(new Error(text)); }, message);
+    for (const [message, reason, typeError] of [["Connection error.", "network", false], ["Request was aborted.", "aborted", false], ["Load failed", "network", true]] as const) {
+      await main.evaluate(({ text, typeError }) => { void Promise.reject(typeError ? new TypeError(text) : new Error(text)); }, { text: message, typeError });
       await expect.poll(() => main.evaluate(async () => (await window.xAgent.appReport.getDiagnosticSnapshot()).events.at(-1))).toMatchObject({ kind: "renderer-rejection", reason });
       expect(await app.evaluate(() => (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs)).toBe(0);
       await expect(main.locator(".composer-send")).toBeVisible();

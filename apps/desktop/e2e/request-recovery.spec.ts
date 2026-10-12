@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { launchApp } from "./helpers";
+import { IPC_CHANNELS } from "../shared/ipc-channels";
 
 const extension = `
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -72,5 +73,48 @@ test("connection error and user cancellation preserve the session and allow retr
     expect(snapshot.events.filter((event) => event.kind !== "operation")).toEqual([]);
     expect(snapshot.events.some((event) => event.operation === "agent" && event.outcome === "canceled")).toBe(true);
     expect(JSON.stringify(snapshot)).not.toContain(project);
+  } finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
+});
+
+test("rejected prompt IPC preserves the draft and allows resubmission without a recovery dialog", async () => {
+  const project = mkdtempSync(join(tmpdir(), "x-agent-ipc-recovery-"));
+  const { app, main } = await launchApp();
+  try {
+    expect((await main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new"), project)).ok).toBe(true);
+    await app.evaluate(({ dialog }) => {
+      (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs = 0;
+      dialog.showMessageBox = () => {
+        (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs++;
+        return new Promise(() => {});
+      };
+    });
+    const draft = "Preserve this draft when the request fails";
+    for (const [message, expected] of [["Connection error.", "网络异常：与供应商的连接中断"], ["Request was aborted.", "操作已中止"]]) {
+      // Exercise Electron's native rejected invoke through preload and the actual composer.
+      await app.evaluate(({ ipcMain }, { channel, message }) => {
+        ipcMain.removeHandler(channel);
+        ipcMain.handle(channel, () => { throw new Error(message); });
+      }, { channel: IPC_CHANNELS.prompt, message });
+      await main.locator(".composer textarea").fill(draft);
+      await main.locator(".composer-send").click();
+      await expect(main.getByText(expected, { exact: true })).toBeVisible();
+      await expect(main.locator(".composer textarea")).toHaveValue(draft);
+      await expect(main.locator(".composer-send")).toBeEnabled();
+      expect(await app.evaluate(() => (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs)).toBe(0);
+    }
+    await app.evaluate(({ ipcMain }, channel) => {
+      (globalThis as unknown as { acceptedPrompts: string[] }).acceptedPrompts = [];
+      ipcMain.removeHandler(channel);
+      ipcMain.handle(channel, (_event, payload: { text: string }) => {
+        (globalThis as unknown as { acceptedPrompts: string[] }).acceptedPrompts.push(payload.text);
+        return { ok: true };
+      });
+    }, IPC_CHANNELS.prompt);
+    await main.locator(".composer-send").click();
+    await expect.poll(() => app.evaluate(() => (globalThis as unknown as { acceptedPrompts: string[] }).acceptedPrompts)).toEqual([draft]);
+    await expect(main.locator(".composer textarea")).toHaveValue("");
+    const snapshot = await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot());
+    expect(snapshot.state.sessionActive).toBe(true);
+    expect(snapshot.events.filter((event) => event.kind !== "operation")).toEqual([]);
   } finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
 });

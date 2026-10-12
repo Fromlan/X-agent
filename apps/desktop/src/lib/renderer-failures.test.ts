@@ -61,6 +61,17 @@ it("recognizes translated network/abort errors wrapped by Electron IPC", async (
   ]);
 });
 
+it.each(["Failed to fetch", "fetch failed", "Load failed"])("keeps the transport TypeError %s recoverable without hiding later programming errors", async (message) => {
+  const target = new EventTarget(); const report = vi.fn(async () => undefined);
+  installRendererFailureHandlers(target as unknown as Window, report);
+  rejection(target, new TypeError(message));
+  rejection(target, new TypeError("Cannot read properties of undefined (reading 'fetch')"));
+  await Promise.resolve();
+  expect(report.mock.calls.map((call) => call[0])).toEqual([
+    { kind: "rejection", reason: "network" }, { kind: "rejection", reason: "TypeError" },
+  ]);
+});
+
 it("contains synchronous failures of the diagnostic reporter", async () => {
   const target = new EventTarget();
   const output = vi.spyOn(console, "error").mockImplementation(() => {});
