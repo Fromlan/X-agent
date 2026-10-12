@@ -56,6 +56,8 @@ export default defineConfig({
         "electron/agent/session-mode/goal-evaluator.ts",
         "electron/agent/session-mode/goal-journal.ts",
         "electron/boot/diagnostics.ts",
+        "electron/boot/diagnostic-operations.ts",
+        "shared/diagnostic-feedback.ts",
         "electron/boot/window-geometry.ts",
         "src/lib/renderer-failures.ts",
       ],

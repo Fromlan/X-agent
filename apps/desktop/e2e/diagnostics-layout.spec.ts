@@ -22,13 +22,22 @@ for (const scale of [1, 1.25, 1.5]) {
       await expect(main.locator(".settings-content")).toBeVisible();
       await main.locator(".settings-nav").getByRole("button", { name: "通用" }).click();
       const destination = join(home, "diagnostics-export.json");
+      const originalClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
       await app.evaluate(({ dialog }, path) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: path }); }, destination);
       await main.getByRole("button", { name: "导出诊断包" }).click();
       await expect.poll(() => existsSync(destination)).toBe(true);
       const snapshot = JSON.parse(readFileSync(destination, "utf8"));
-      expect(snapshot.version).toBe(1);
+      expect(snapshot.version).toBe(2);
+      expect(snapshot.reportId).toMatch(/^[0-9a-f-]{36}$/);
       expect(Object.keys(snapshot.state).sort()).toEqual(["godotClients", "mode", "sessionActive", "status"]);
       expect(JSON.stringify(snapshot)).not.toContain(home);
+      await main.getByText(/诊断预览（最近/).click();
+      await expect(main.locator(".diagnostics-preview pre")).toContainText(snapshot.reportId);
+      await expect(main.getByRole("button", { name: "复制反馈摘要" })).toBeVisible();
+      try {
+        await main.getByRole("button", { name: "复制反馈摘要" }).click();
+        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain(snapshot.reportId);
+      } finally { await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), originalClipboard); }
       await main.screenshot({ path: testInfo.outputPath(`settings-${scale}.png`) });
       await main.keyboard.press("Escape");
       await expect(main.locator(".composer-send")).toBeInViewport();

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { SelectMenu } from "../SelectMenu";
 import { SettingsNotice, useAutoClearNotice } from "../SettingsNotice";
 import { LogoPicker } from "./LogoPicker";
+import { DiagnosticsSettings } from "./DiagnosticsSettings";
 import {
   THEME_IDS,
   THEME_LABELS,
@@ -126,16 +127,7 @@ export function GeneralSettingsPage({
                 <div className="settings-page-head">
                   <h3>通用</h3>
                 </div>
-                <div className="settings-block">
-                  <h4>本地诊断</h4>
-                  <p className="settings-hint">导出版本、系统、运行状态与崩溃类型。不会包含对话、项目源码、路径或密钥，也不会自动上传。</p>
-                  <button className="btn btn-ghost btn-sm" onClick={async () => {
-                    try {
-                      const result = await window.xAgent.appReport.exportDiagnosticBundle();
-                      if (result.ok) setGeneralMsg("已导出本地诊断包");
-                    } catch { setGeneralMsg("诊断包导出失败，请检查保存位置权限"); }
-                  }}>导出诊断包</button>
-                </div>
+                <DiagnosticsSettings open={open} />
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">外观</h4>
