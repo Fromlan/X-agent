@@ -8,7 +8,7 @@
  *   损坏备份提示
  */
 import { app, dialog, type BrowserWindow, type IpcMain } from "electron";
-import { diagnosticSnapshot, normalizeRendererFailure, recordDiagnostic } from "../boot/diagnostics";
+import { configureDiagnosticState, diagnosticSnapshot, normalizeRendererFailure, recordDiagnostic } from "../boot/diagnostics";
 import { writeJsonAtomic } from "../agent/lib/atomic-write";
 import type { SessionHost } from "../agent/session-host";
 import { openPiLogin } from "../agent/pi-cli";
@@ -34,10 +34,13 @@ export type CoreIpcDeps = {
 export function registerCoreIpc(ipcMain: IpcMain, deps: CoreIpcDeps): void {
   const { sessionHost: host } = deps;
   /** Produce privacy-minimized support metadata without including cwd or transcript text. */
-  const snapshot = () => diagnosticSnapshot(app.getVersion(), {
-    status: host.getStatus().status, mode: host.getSessionMode().mode,
-    sessionActive: !!host.getStatus().cwd, godotClients: deps.getGodotClientCount(),
-  });
+  const state = () => {
+    const status = host.getStatus();
+    return { status: status.status, mode: host.getSessionMode().mode,
+      sessionActive: !!status.cwd, godotClients: deps.getGodotClientCount() };
+  };
+  configureDiagnosticState(state, app.getVersion());
+  const snapshot = () => diagnosticSnapshot(app.getVersion(), state());
   let rendererRecovering = false;
   handle(ipcMain, IPC_CHANNELS.reportRendererFailure, async (_event, value) => {
     const failure = normalizeRendererFailure(value);
@@ -59,10 +62,12 @@ export function registerCoreIpc(ipcMain: IpcMain, deps: CoreIpcDeps): void {
   });
   handle(ipcMain, IPC_CHANNELS.getDiagnosticSnapshot, async () => snapshot());
   handle(ipcMain, IPC_CHANNELS.exportDiagnosticBundle, async () => {
-    const result = await dialog.showSaveDialog({ title: "导出本地诊断包", defaultPath: "x-agent-diagnostics.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+    // Capture before the save dialog: actions during the dialog must not replace the reviewed failure.
+    const report = snapshot();
+    const result = await dialog.showSaveDialog({ title: "导出本地诊断包", defaultPath: `x-agent-diagnostics-${report.reportId.slice(0, 8)}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-    await writeJsonAtomic(result.filePath, snapshot());
-    return { ok: true, path: result.filePath };
+    await writeJsonAtomic(result.filePath, report);
+    return { ok: true, path: result.filePath, snapshot: report };
   });
 
   handle(

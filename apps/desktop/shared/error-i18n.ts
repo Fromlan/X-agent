@@ -129,6 +129,9 @@ const PATTERNS: ErrorPattern[] = [
   },
 ];
 
+/** Stable categories are safe to persist; the corresponding raw error messages are not. */
+export const ERROR_PATTERN_IDS: readonly string[] = PATTERNS.map((pattern) => pattern.id);
+
 /**
  * Try to extract a JSON body following an HTTP status code, e.g.
  * `401 {...}` → `{...}` (the message inside if present).

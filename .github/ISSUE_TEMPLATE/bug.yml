@@ -83,8 +83,8 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: 关键日志 / 截图
-      description: 设置 → 通用 → 打开日志目录,挑相关条目贴上来;截图拖到这里
+      label: 诊断信息 / 截图
+      description: 设置 → 通用 → 诊断与反馈，复制反馈摘要并粘贴到这里；导出的诊断 JSON 可粘贴在代码块内或压缩成 ZIP 附件，截图可直接拖入。请检查附件中是否包含私人信息。
     validations:
       required: false
 

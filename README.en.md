@@ -204,7 +204,7 @@ A: No. Upgrades preserve everything under `~/.pi/agent/`. To roll back, install 
 
 ## From source
 
-Development requires Node.js 24+. Settings → General → Export diagnostics saves local JSON with versions, system/runtime state and bounded exception metadata. It excludes raw errors, credentials, full conversations and project source; nothing is uploaded automatically. Main-process failures stop execution and exit; renderer failures offer restart or exit.
+Development requires Node.js 24+. Settings → General → Diagnostics and feedback previews and exports local JSON with versions, system/runtime state, up to 100 operation or exception records, operation durations and the latest failure-time state, retained across restarts. It excludes raw errors, credentials, conversations, project source and paths; nothing is uploaded automatically. Copy the feedback summary and open the Bug form to add reproduction steps and attach the diagnostic file or screenshots. Main-process failures stop execution and exit; renderer failures offer restart or exit.
 
 Goal token accounting includes evaluator usage. The budget stops continuation after a request completes and can be exceeded by a single request. Tool evidence improves evaluation but cannot replace deterministic acceptance. Retracting rolls back branch budget, not incurred fees.
 

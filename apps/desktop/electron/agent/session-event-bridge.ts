@@ -309,6 +309,7 @@ export function bridgeSessionEvents(
             type: "assistant_end",
             messageId: deps.messageIdFrom(event.message),
             isError,
+            ...(isAborted ? { aborted: true } : {}),
             errorMessage: msg.errorMessage,
             ...(turnUsage ? { usage: turnUsage } : {}),
           });
