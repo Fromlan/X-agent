@@ -2,6 +2,16 @@
 import { RENDERER_FAILURE_REASONS, type RendererFailure } from "@shared/diagnostics";
 import { inspectError } from "@shared/error-i18n";
 
+/** Resize delivery can be deferred by the browser without a JavaScript exception or broken renderer. */
+function isResizeDeliveryWarning(event: Event): boolean {
+  if (event.type !== "error") return false;
+  const error = event as ErrorEvent;
+  return error.error == null && (
+    error.message === "ResizeObserver loop completed with undelivered notifications." ||
+    error.message === "ResizeObserver loop limit exceeded"
+  );
+}
+
 /** Classify an async request failure locally; only a bounded category crosses IPC. */
 function failureReason(error: unknown): RendererFailure["reason"] {
   const detail = error && typeof error === "object" ? error as { name?: unknown; message?: unknown } : {};
@@ -21,7 +31,7 @@ function failureReason(error: unknown): RendererFailure["reason"] {
 export function installRendererFailureHandlers(target: Pick<Window, "addEventListener" | "removeEventListener">, report: (failure: RendererFailure) => Promise<unknown>): () => void {
   let reported = false;
   const handler = (event: Event) => {
-    if (reported) return;
+    if (reported || isResizeDeliveryWarning(event)) return;
     const kind = event.type === "unhandledrejection" ? "rejection" : "error";
     const reason = failureReason(kind === "rejection" ? (event as PromiseRejectionEvent).reason : (event as ErrorEvent).error);
     const recoverable = kind === "rejection" && (reason === "network" || reason === "aborted");
