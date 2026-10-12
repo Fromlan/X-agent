@@ -21,7 +21,14 @@ test("native ResizeObserver delivery warnings do not request fatal recovery", as
       const element = document.createElement("div");
       element.style.cssText = "position:absolute;width:100px;height:10px";
       document.body.appendChild(element);
+      let deliveries = 0;
+      let frames = 0;
+      let animation = 0;
+      /** Keep requesting rendering steps while the CI desktop may have no pending paints. */
+      const nextFrame = () => { frames++; animation = requestAnimationFrame(nextFrame); };
+      animation = requestAnimationFrame(nextFrame);
       const observer = new ResizeObserver(() => {
+        deliveries++;
         // Force layout within delivery; a lone subpixel change can otherwise be deferred without a warning.
         element.style.height = `${element.offsetHeight + 1}px`;
         void element.offsetHeight;
@@ -30,13 +37,16 @@ test("native ResizeObserver delivery warnings do not request fatal recovery", as
       const onError = (event: ErrorEvent) => {
         if (!event.message.startsWith("ResizeObserver loop")) return;
         clearTimeout(timeout);
+        cancelAnimationFrame(animation);
         observer.disconnect(); element.remove(); window.removeEventListener("error", onError);
         const result = { message: event.message, hasError: event.error != null };
         requestAnimationFrame(() => requestAnimationFrame(() => resolve(result)));
       };
       const timeout = setTimeout(() => {
+        cancelAnimationFrame(animation);
+        const state = { deliveries, frames, visibility: document.visibilityState, height: element.offsetHeight };
         observer.disconnect(); element.remove(); window.removeEventListener("error", onError);
-        reject(new Error("Native ResizeObserver fixture did not deliver a warning"));
+        reject(new Error(`Native ResizeObserver fixture did not deliver a warning: ${JSON.stringify(state)}`));
       }, 10000);
       window.addEventListener("error", onError);
       observer.observe(element);
