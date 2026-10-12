@@ -8,7 +8,7 @@
  *   损坏备份提示
  */
 import { app, dialog, type BrowserWindow, type IpcMain } from "electron";
-import { diagnosticSnapshot, recordDiagnostic } from "../boot/diagnostics";
+import { diagnosticSnapshot, normalizeRendererFailure, recordDiagnostic } from "../boot/diagnostics";
 import { writeJsonAtomic } from "../agent/lib/atomic-write";
 import type { SessionHost } from "../agent/session-host";
 import { openPiLogin } from "../agent/pi-cli";
@@ -39,8 +39,13 @@ export function registerCoreIpc(ipcMain: IpcMain, deps: CoreIpcDeps): void {
     sessionActive: !!host.getStatus().cwd, godotClients: deps.getGodotClientCount(),
   });
   let rendererRecovering = false;
-  handle(ipcMain, IPC_CHANNELS.reportRendererFailure, async () => {
-    recordDiagnostic("renderer-error", "unknown");
+  handle(ipcMain, IPC_CHANNELS.reportRendererFailure, async (_event, value) => {
+    const failure = normalizeRendererFailure(value);
+    recordDiagnostic(failure.kind === "rejection" ? "renderer-rejection" : "renderer-error", failure.reason);
+    if (failure.kind === "rejection" && (failure.reason === "network" || failure.reason === "aborted")) {
+      host.reportRequestFailure(failure.reason);
+      return { ok: true as const };
+    }
     if (!rendererRecovering) {
       rendererRecovering = true;
       try { await (await import("../app-runtime")).stopTurnForRecovery(); }
