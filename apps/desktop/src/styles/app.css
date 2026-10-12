@@ -3503,6 +3503,29 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   margin: 0;
 }
 
+.diagnostics-preview {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.diagnostics-preview summary {
+  cursor: pointer;
+}
+
+.diagnostics-preview pre {
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .settings-block-head {
   display: flex;
   align-items: flex-start;

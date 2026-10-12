@@ -28,6 +28,6 @@
 |---|---|---|
 | **Goal 证据与账本** | 关联工具调用、结果和错误；无有效证据或未解决失败时拒绝可执行目标完成。评估 usage 计入预算和总用量；预算为续轮停止阈值，撤回仅回滚分支预算，实际费用保留 | `session-mode/goal-evaluator.ts`、`goal-controller.ts`、`goal-journal.ts` |
 | **工具设置事务** | 串行等待持久化和工具集应用；失败恢复旧快照，重建/恢复失败均可观察 | `apply-tools.ts`、`register-prefs-ipc.ts` |
-| **本地诊断包** | 允许字段组成的系统/状态快照及最多 100 条枚举事件；不含错误正文、密钥、认证文件、完整对话或项目源码，不自动上传 | `electron/boot/diagnostics.ts`、`shared/diagnostics.ts`、`window.xAgent.appReport` |
+| **本地诊断包** | 系统/状态快照、最多 100 条操作/异常枚举事件、匿名关联编号与耗时；最近失败时状态独立保留，重启后可导出。设置支持预览、复制摘要及打开 Bug 表单；不含错误正文、密钥、认证文件、对话、源码或路径，不自动上传 | `electron/boot/diagnostics.ts`、`electron/boot/diagnostic-operations.ts`、`shared/diagnostics.ts`、`window.xAgent.appReport` |
 | **安全模型探测传输** | 每候选 8 秒、2 MiB 上限，拒绝重定向，连接时检查 DNS 地址；未统一保护 Pi SDK 其他传输 | `electron/agent/public-http.ts`、`model-fetch.ts` |
 | **撤回完成边界** | checkpoint flush 后才发布 idle；明确空路径不全量恢复。不能区分同文件或 Bash/Godot 并发人工编辑的所有副作用 | `session-event-bridge.ts`、`shadow-checkpoints.ts`、`shadow-git.ts` |

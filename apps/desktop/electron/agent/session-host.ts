@@ -5,6 +5,7 @@ import {
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { dbgLog, dbgTimer, dbgWarn } from "../../shared/debug-log";
+import { createAgentDiagnosticRecorder } from "../boot/diagnostic-operations";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   ALL_TOGGLEABLE_TOOLS,
@@ -336,7 +337,11 @@ export class SessionHost {
     return next;
   }
 
+  private readonly recordDiagnosticEvent = createAgentDiagnosticRecorder();
+
+  /** Capture only operation metadata before forwarding the live event to the renderer. */
   private emit(event: UiAgentEvent): void {
+    this.recordDiagnosticEvent(event);
     emitEventImpl(
       {
         getWindow: () => this.getWindow(),

@@ -542,6 +542,7 @@ export type UiAgentEvent =
       type: "assistant_end";
       messageId: string;
       isError?: boolean;
+      aborted?: boolean;
       errorMessage?: string;
       usage?: TurnUsage;
     }

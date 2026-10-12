@@ -70,7 +70,9 @@ test("connection error and user cancellation preserve the session and allow retr
     await expect(main.getByText("Request recovered successfully", { exact: true })).toBeVisible();
     const snapshot = await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot());
     expect(snapshot.state.sessionActive).toBe(true);
-    expect(snapshot.events).toEqual([]);
+    expect(snapshot.events.filter((event) => event.kind !== "operation")).toEqual([]);
+    expect(snapshot.events.some((event) => event.operation === "agent" && event.outcome === "canceled")).toBe(true);
+    expect(JSON.stringify(snapshot)).not.toContain(project);
   } finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
 });
 

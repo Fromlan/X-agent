@@ -14,6 +14,7 @@ import {
   isTranslatedIpcError,
 } from "../../shared/error-i18n";
 import { dbgWarn } from "../../shared/debug-log";
+import { traceDiagnosticIpc } from "../boot/diagnostic-operations";
 
 /**
  * Typed `ipcMain.handle` registrar: the handler signature is derived from
@@ -139,9 +140,13 @@ export function handle<K extends IpcChannelKey>(
       // 仍 work (IpcInvokeResult[K] = Result | SenderUntrustedError).
       throw makeSenderUntrustedError(channel);
     }
+    const finishDiagnostic = traceDiagnosticIpc(channel);
     try {
-      return await handler(event, ...args);
+      const result = await handler(event, ...args);
+      finishDiagnostic?.resolved(result);
+      return result;
     } catch (err) {
+      finishDiagnostic?.rejected(err);
       // SenderUntrustedError is a plain object thrown above, never reaches here.
       // Translate upstream / network / model errors so the renderer receives
       // a Chinese summary + a stable patternId (see shared/error-i18n.ts).
