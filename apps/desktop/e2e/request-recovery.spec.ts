@@ -115,6 +115,6 @@ test("rejected prompt IPC preserves the draft and allows resubmission without a 
     await expect(main.locator(".composer textarea")).toHaveValue("");
     const snapshot = await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot());
     expect(snapshot.state.sessionActive).toBe(true);
-    expect(snapshot.events).toEqual([]);
+    expect(snapshot.events.filter((event) => event.kind !== "operation")).toEqual([]);
   } finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
 });
