@@ -9,7 +9,29 @@ import { launchApp } from "./helpers";
 /** Wait for bootstrap to reveal the native window before testing browser rendering or user actions. */
 async function waitForMainWindow(app: ElectronApplication, main: Page): Promise<void> {
   const window = await app.browserWindow(main);
+  // Keep observer/lifecycle delivery active on unattended Windows desktops without a foreground surface.
+  await window.evaluate((window) => window.webContents.setBackgroundThrottling(false));
   await expect.poll(() => window.evaluate((window) => window.isVisible())).toBe(true);
+}
+
+/** Preserve isolated fixture geometry and browser state when a CI layout assertion fails. */
+async function captureLayoutFailure(app: ElectronApplication, main: Page): Promise<void> {
+  const renderer = await main.evaluate(async () => {
+    const stream = document.querySelector<HTMLElement>(".message-stream");
+    return {
+      userAgent: navigator.userAgent, visibility: document.visibilityState, scale: devicePixelRatio,
+      viewport: { width: innerWidth, height: innerHeight }, fonts: document.fonts.status,
+      stream: stream && { top: stream.scrollTop, height: stream.scrollHeight, viewport: stream.clientHeight },
+      rows: Array.from(document.querySelectorAll<HTMLElement>(".virtual-row")).map((row) => ({ index: row.dataset.index, height: row.offsetHeight, transform: row.style.transform })),
+      diagnostics: await window.xAgent.appReport.getDiagnosticSnapshot(),
+    };
+  }).catch(() => null);
+  const native = await app.evaluate(({ BrowserWindow, screen }) => {
+    const window = BrowserWindow.getAllWindows().find((window) => window.webContents.getURL().includes("renderer/index.html"));
+    return { bounds: window?.getBounds(), visible: window?.isVisible(), minimized: window?.isMinimized(), focused: window?.isFocused(), display: screen.getPrimaryDisplay().workArea };
+  }).catch(() => null);
+  await test.info().attach("layout-state", { body: JSON.stringify({ renderer, native }, null, 2), contentType: "application/json" });
+  await main.screenshot({ path: test.info().outputPath("layout-failure.png") }).catch(() => {});
 }
 
 test("native ResizeObserver delivery warnings do not request fatal recovery", async () => {
@@ -74,7 +96,8 @@ test("native ResizeObserver delivery warnings do not request fatal recovery", as
     await main.evaluate(() => { setTimeout(() => { throw new TypeError("ResizeObserver loop completed with undelivered notifications."); }, 0); });
     await expect.poll(() => app.evaluate(() => (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs)).toBe(1);
     expect((await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot())).events.at(-1)).toMatchObject({ kind: "renderer-error", reason: "TypeError" });
-  } finally { await app.close(); }
+  } catch (error) { await captureLayoutFailure(app, main); throw error; }
+  finally { await app.close(); }
 });
 
 test("a restored long conversation stays idle through delayed layout changes", async () => {
@@ -124,5 +147,6 @@ test("a restored long conversation stays idle through delayed layout changes", a
     expect(await app.evaluate(() => (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs)).toBe(0);
     await expect(main.getByText("Restored reply 35", { exact: true })).toBeVisible();
     await expect(main.locator(".composer textarea")).toBeEnabled();
-  } finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
+  } catch (error) { await captureLayoutFailure(app, main); throw error; }
+  finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
 });
