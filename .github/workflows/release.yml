@@ -86,7 +86,7 @@ jobs:
         run: Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-notes.md') -Destination 'release/release-notes.md'
 
       # Upload permission is granted only to a separate job after every check and build succeeds.
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: verified-release
           path: |
