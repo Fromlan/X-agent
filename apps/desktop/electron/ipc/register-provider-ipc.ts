@@ -10,7 +10,7 @@ import {
 } from "../agent/provider-store";
 import { fetchProviderModels } from "../agent/model-fetch";
 import type { SessionHost } from "../agent/session-host";
-import type { ProviderUpsertInput } from "../../shared/ipc";
+import type { FetchProviderModelsInput, ProviderUpsertInput } from "../../shared/ipc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
 import { handle } from "./register-ipc";
 
@@ -60,7 +60,7 @@ export function registerProviderIpc(
   handle(
     ipcMain,
     IPC_CHANNELS.fetchProviderModels,
-    async (_e, input: { baseUrl: string; apiKey: string }) =>
+    async (_e, input: FetchProviderModelsInput) =>
       fetchProviderModels(input),
   );
 }

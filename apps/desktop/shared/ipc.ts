@@ -156,6 +156,7 @@ export type {
   ProviderUpsertInput,
   ProviderActivateResult,
   FetchedProviderModel,
+  FetchProviderModelsInput,
   FetchProviderModelsResult,
   ProviderImportResult,
   InstalledPackageInfo,

@@ -74,6 +74,7 @@ import type {
   ReadProjectFileResult,
   ToolDetailDto,
   FetchProviderModelsResult,
+  FetchProviderModelsInput,
 } from "./ipc";
 
 /** Coarse workspace / session lifecycle facade (facade methods stay on window.xAgent). */
@@ -414,10 +415,7 @@ export type IpcInvokeMap = {
   ) => Promise<{ ok: boolean; error?: string; syncedToPi?: boolean }>;
   listProviderPresets: () => Promise<ProviderPreset[]>;
   importExistingProviderProfiles: () => Promise<ProviderImportResult>;
-  fetchProviderModels: (input: {
-    baseUrl: string;
-    apiKey: string;
-  }) => Promise<FetchProviderModelsResult>;
+  fetchProviderModels: (input: FetchProviderModelsInput) => Promise<FetchProviderModelsResult>;
   listInstalledPackages: () => Promise<InstalledPackageInfo[]>;
   installPackage: (source: string) => Promise<PackageInstallResult>;
   uninstallPackage: (
