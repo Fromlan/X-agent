@@ -84,8 +84,6 @@ export function useChatTranscriptVirtualizer(opts: {
     estimateSize: config.estimateSize,
     overscan: config.overscan,
     getItemKey,
-    // Measure after the observer delivery so restored rows cannot feed layout changes back into that delivery.
-    useAnimationFrameWithResizeObserver: true,
     /**
      * 聊天贴底锚定:发送/流式期间新行与既有行是异步测量(estimate →
      * 实测)的,totalSize 会随测量增长;若只在组件侧 rAF 里贴底,

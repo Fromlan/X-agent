@@ -91,6 +91,9 @@ test("a restored long conversation stays idle through delayed layout changes", a
   } });
   try {
     await waitForMainWindow(app, main);
+    const window = await app.browserWindow(main);
+    // Match the constrained 125% CI desktop so asynchronous row measurements exercise the same scroll range.
+    await window.evaluate((window) => { window.setMinimumSize(640, 420); window.setContentSize(808, 548); });
     await app.evaluate(({ dialog }) => {
       (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs = 0;
       dialog.showMessageBox = () => { (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs++; return new Promise(() => {}); };
