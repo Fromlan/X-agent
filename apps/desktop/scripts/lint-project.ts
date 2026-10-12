@@ -26,7 +26,7 @@ export function lintSource(path: string, text: string): string[] {
     const callee = node.callee as { type?: string; name?: string } | undefined;
     if ((node.type === "CallExpression" || node.type === "NewExpression") && callee?.type === "Identifier" && ["eval", "Function"].includes(callee.name ?? "")) report(node, "no-dynamic-code: avoid eval/Function execution");
     const specifier = node.source as { value?: string } | undefined;
-    if (node.type === "ImportDeclaration" && typeof specifier?.value === "string") checkModule(node, specifier.value);
+    if ((node.type === "ImportDeclaration" || node.type === "ImportExpression") && typeof specifier?.value === "string") checkModule(node, specifier.value);
     if (node.type === "CallExpression" && (callee?.type === "Import" || callee?.name === "require")) {
       const arg = (node.arguments as { type?: string; value?: string }[])[0];
       if (arg?.type === "StringLiteral" && typeof arg.value === "string") checkModule(node, arg.value);
