@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from "node:net";
-import { join, normalize, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type {

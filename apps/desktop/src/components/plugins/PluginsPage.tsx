@@ -4,7 +4,6 @@
  */
 import { SettingsNotice, useAutoClearNotice } from "../SettingsNotice";
 import { usePluginsState } from "./usePluginsState";
-import type { PluginsState } from "./usePluginsState";
 import { allSkillsEnabled } from "./PluginSkillToggle";
 import { PluginsToolbar } from "./PluginsToolbar";
 import { PluginsTabs } from "./PluginsTabs";

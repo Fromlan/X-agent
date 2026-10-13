@@ -11,7 +11,6 @@
 import { dbgLog, dbgTimer } from "../../shared/debug-log";
 import type {
   AgentStatus,
-  NoticeReplaceKey,
   PromptPayload,
   PromptResult,
 } from "../../shared/ipc";

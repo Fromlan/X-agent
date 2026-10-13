@@ -22,7 +22,6 @@ import { Sidebar } from "./Sidebar";
 import { ChatPanel } from "./ChatPanel";
 import { RightPanel } from "./RightPanel";
 import type { ChatItem } from "../stores/chat-store";
-import type { ComposerApiStatus } from "../hooks/useComposer";
 import { allGodotEditorToolsEnabled } from "../lib/ready-checklist";
 import { startersForProject, type ChatStarter } from "../lib/chat-starters";
 import { modelSupportsImage } from "../lib/model-capability";
@@ -163,7 +162,6 @@ export function AppMainRow(props: AppMainRowProps) {
     sessionId,
     autoCompactPercent,
     layout,
-    setPrefs,
     retractBusy,
     prefs,
     sidebarActions,

@@ -246,7 +246,7 @@ npm run test:e2e      # 实际 Electron 业务与界面回归
 
 ## 反馈与贡献
 
-- **Bug / 功能请求**：[Issues](../../issues)（Bug / Feature / Question 3 类模板）
+- **Bug / 功能请求**：[Issues](https://github.com/Fromlan/X-agent/issues)（Bug / Feature / Question 3 类模板）
 - **安全漏洞**：[`SECURITY.md`](SECURITY.md) — **不要**在公开 Issue 贴复现
 - **参与开发**：[`CONTRIBUTING.md`](CONTRIBUTING.md) / [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)
 - **行为准则**：[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)

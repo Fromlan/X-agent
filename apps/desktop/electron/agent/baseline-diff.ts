@@ -77,7 +77,6 @@ export function baselineDiffTextForEntry(
 
   // after 侧（当前盘上）
   const afterExists = existsSync(abs);
-  let afterExistsFlag = afterExists;
   let afterText = "";
   if (afterExists) {
     try {
@@ -86,7 +85,7 @@ export function baselineDiffTextForEntry(
       if (!isTextLikeBuffer(buf)) return { skipped: "binary" };
       afterText = buf.toString("utf8");
     } catch {
-      afterExistsFlag = false;
+      // Treat an unreadable current file as having no displayable content.
     }
   }
 

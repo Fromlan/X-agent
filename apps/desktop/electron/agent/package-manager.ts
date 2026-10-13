@@ -12,28 +12,23 @@
  * 调用方 (plugin-host / app-runtime / electron/main IPC handler) 全部不动.
  */
 import { existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { InstalledPackageInfo, PackageInstallResult } from "../../shared/ipc";
 import { checkPiCli } from "./pi-cli";
 import { runPiPackageCommand } from "./package-manager/spawn";
 import {
   dropRegistryPackagesBySource,
   findLivePackageSourcesByName,
-  GODOT_PI_PACKAGE_NAME,
-  isResolvablePackageSource,
-  listInstalledPackages,
   packageNameForSource,
   pruneMissingPiPackageSources,
   readPiSettingsPackageSources,
   readRegistry,
   reconcilePackageCatalog,
-  resolvePackageRoot,
   writeRegistry,
   enrichPackageCounts,
   invalidatePackageRootsCache,
   packageNameFromSource,
   normalizeSourceKey,
-  getInstalledPackageRoots,
 } from "./package-manager/catalog";
 
 // Re-export catalog + settings helpers for callers that used to import

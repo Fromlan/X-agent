@@ -7,7 +7,7 @@
  * - getStartupReport / getPrefsRecoveryNotice: 启动期失败摘要 + prefs
  *   损坏备份提示
  */
-import { app, dialog, type BrowserWindow, type IpcMain } from "electron";
+import { app, dialog, type IpcMain } from "electron";
 import { configureDiagnosticState, diagnosticSnapshot, normalizeRendererFailure, recordDiagnostic } from "../boot/diagnostics";
 import { writeJsonAtomic } from "../agent/lib/atomic-write";
 import type { SessionHost } from "../agent/session-host";

@@ -9,7 +9,6 @@ import {
   SessionManager,
   getAgentDir,
   type AgentSession,
-  type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_TOOL_REGISTRY,
