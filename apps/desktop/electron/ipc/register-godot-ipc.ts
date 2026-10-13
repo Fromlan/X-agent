@@ -1,4 +1,4 @@
-import { dialog, shell, type IpcMain } from "electron";
+import { dialog, type IpcMain } from "electron";
 import { existsSync, statSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -176,7 +176,7 @@ export function registerGodotIpc(
     try {
       // C9: spawn 的 error 是异步事件（ENOENT 之外 EACCES / 损坏 exe 等），
       // 同步 try/catch 抓不到。等 'spawn' 事件确认启动成功，失败时返回错误。
-      const child = await new Promise<ReturnType<typeof spawn>>(
+      await new Promise<ReturnType<typeof spawn>>(
         (resolvePromise, rejectPromise) => {
           const child = spawn(editor, args, {
             detached: true,

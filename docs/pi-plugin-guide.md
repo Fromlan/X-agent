@@ -2,7 +2,7 @@
 
 > 文档基于 https://pi.dev/docs/latest 及其子文档整理。所有具体链接均指向 pi.dev 官方文档。
 
-**与 X-agent**：桌面客户端 **设置 → 插件** 可管理全局 / 项目侧的 Prompt Templates、Skills、Extensions、Themes 与 Packages；「设置 → 供应商」可配置 API 档案并写入 Pi 的 `auth.json` / `models.json`（含从供应商拉取模型）。X-agent **不会**自动加载 `~/.agents/skills`（仅 `~/.pi/agent/skills`、项目 `.pi/skills` 与 Packages）。产品用法见仓库 [`README.md`](README.md)，开发约定见 [`CLAUDE.md`](CLAUDE.md)。本文侧重 Pi 扩展类型本身，不替代客户端操作说明。
+**与 X-agent**：桌面客户端 **设置 → 插件** 可管理全局 / 项目侧的 Prompt Templates、Skills、Extensions、Themes 与 Packages；「设置 → 供应商」可配置 API 档案并写入 Pi 的 `auth.json` / `models.json`（含从供应商拉取模型）。X-agent **不会**自动加载 `~/.agents/skills`（仅 `~/.pi/agent/skills`、项目 `.pi/skills` 与 Packages）。产品用法见仓库 [`README.md`](../README.md)，开发约定见 [`CLAUDE.md`](../CLAUDE.md)。本文侧重 Pi 扩展类型本身，不替代客户端操作说明。
 
 ## 一、方案总览
 
@@ -418,7 +418,7 @@ https://pi.dev/docs/latest/packages#scope-and-deduplication 规则：项目条�
 
 ## 十一、附录：计划模式 / 目标模式调研
 
-主流 Agent（Cursor / Claude Code / Codex / Windsurf）的 **Plan Mode** 与 **Goal Mode** 对照、Pi Extension / X-agent 钩子映射，以及半硬 `/plan`+`/build` MVP 规格，参考根目录 [`context.md`](../context.md) 与 [`CLAUDE.md`](../CLAUDE.md) 中「会话模式」相关章节。
+主流 Agent（Cursor / Claude Code / Codex / Windsurf）的 **Plan Mode** 与 **Goal Mode** 对照、Pi Extension / X-agent 钩子映射，以及半硬 `/plan`+`/build` MVP 规格，参考[`context.md`](context.md) 与 [`CLAUDE.md`](../CLAUDE.md) 中「会话模式」相关章节。
 
 ---
 

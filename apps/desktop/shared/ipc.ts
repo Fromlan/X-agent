@@ -27,7 +27,6 @@
 // ----- ipc-channels & session-type re-exports -----
 export type { RendererFailure } from "./diagnostics";
 export type { IpcChannelKey } from "./ipc-channels";
-import type { SessionType } from "./session-type";
 export {
   SESSION_TYPES,
   SESSION_TYPE_LABELS,

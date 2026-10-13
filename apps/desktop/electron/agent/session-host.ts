@@ -4,15 +4,11 @@ import {
   DefaultResourceLoader,
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
-import { dbgLog, dbgTimer, dbgWarn } from "../../shared/debug-log";
 import { createAgentDiagnosticRecorder } from "../boot/diagnostic-operations";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
-  ALL_TOGGLEABLE_TOOLS,
-  SESSION_TOOL_REGISTRY,
   type AgentSessionMode,
   type AgentStatus,
-  type ClientPrefs,
   type CompactSessionResult,
   type GoalInfo,
   type GoalResult,
@@ -38,9 +34,8 @@ import {
   type TurnUsage,
   type UiAgentEvent,
 } from "../../shared/ipc";
-import { IPC_EVENTS } from "../../shared/ipc-channels";
 import type { SessionType } from "../../shared/session-type";
-import { getAgentDirPath, getCachedPrefs, patchPrefs } from "./prefs";
+import { getAgentDirPath, patchPrefs } from "./prefs";
 import {
   repairDeepSeekModelsJson,
   repairMiniMaxModelsJson,
@@ -65,8 +60,6 @@ import {
   pruneToolDetailsToBranch as pruneToolDetailsToBranchImpl,
 } from "./history-emit";
 import {
-  TRUNCATION_RECOVERY_MARKER,
-  buildTruncationRecoveryHint,
   notifyTruncation as notifyTruncationImpl,
 } from "./truncation-recovery";
 import { emitEvent as emitEventImpl } from "./event-emit";
@@ -83,7 +76,6 @@ import {
 } from "./retract-orchestrator";
 import { TurnFileTracker } from "./turn-file-tracker";
 import { ShadowCheckpointTracker } from "./shadow-checkpoints";
-import { autoMaintain } from "./auto-maintain";
 import { reloadAuthStorageCache } from "./model-runtime-auth";
 import { type ToolDetailRecord } from "./session-host-helpers";
 import {
@@ -94,9 +86,6 @@ import type {
   CwdLock,
   EventBus,
   ResourceState,
-  SessionLifecycleHost,
-  SessionModeHost,
-  RetractOrchestratorHost,
 } from "./host-interfaces";
 import {
   bridgeSessionEvents,
@@ -124,12 +113,11 @@ export class SessionHost {
    * Consecutive-truncation retry counter. Incremented in `notifyTruncation`
    * (event-bridge detects `stopReason: "length"` with no actionable content)
    * and reset to 0 in `prompt()` whenever the text is not a recovery prompt
-   * (i.e. user-typed input). Capped at `MAX_TRUNCATION_RETRIES` — beyond that
+   * (i.e. user-typed input). Capped by truncation-recovery.ts — beyond that
    * the host sets an error status and stops auto-retrying, asking the user
    * to lower thinking level / switch model.
    */
   private consecutiveTruncationRetries = 0;
-  private static readonly MAX_TRUNCATION_RETRIES = 2;
   /**
    * True while prompt() is inside the preparePromptCheckpoint → session.prompt
    * transition (isStreaming is still false there, so a concurrent retract

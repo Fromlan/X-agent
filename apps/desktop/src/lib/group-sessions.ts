@@ -2,8 +2,6 @@ import type { SessionInfo } from "@shared/ipc";
 import {
   normalizeProjectKey,
   projectDisplayName,
-  filterVisibleProjectGroups,
-  joinProjectAbs,
 } from "@shared/project-path";
 
 export {

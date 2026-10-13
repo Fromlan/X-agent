@@ -63,12 +63,25 @@ export function getGodotAddonVersion() {
 }
 
 export function getTsxTestCount() {
-  const testScript = readJson('apps/desktop/package.json').scripts.test;
-  // 抓 `tsx ... scripts/<name>.<ext>` 与 `node ... check-skills.mjs` 的去重条目
-  const matches = testScript.matchAll(/(?:tsx(?:\s+--tsconfig\s+\S+)?\s+scripts\/[a-zA-Z0-9-]+\.[mc]?ts|node\s+[^\s|;&]+\/check-skills\.mjs)/g);
-  const uniq = new Set();
-  for (const m of matches) uniq.add(m[0].replace(/\s+/g, ' ').trim());
-  return uniq.size;
+  return getTestChainSummary().total;
+}
+
+/** Count executed test steps from the package script, including repeated commands. */
+export function getTestChainSummary(testScript = readJson('apps/desktop/package.json').scripts.test) {
+  const commands = testScript.split(/\s*&&\s*/).filter((command) => command.trim());
+  return {
+    tests: commands.filter((command) => /\bscripts\/test-[\w-]+\.[mc]?ts\b/.test(command)).length,
+    baseline: commands.filter((command) => /\bscripts\/measure-context-baseline\.ts\b/.test(command)).length,
+    skills: commands.filter((command) => /\/check-skills\.mjs\b/.test(command)).length,
+    total: commands.length,
+  };
+}
+
+/** Require every documented test count to match the same authoritative chain. */
+export function checkTestChainSummary(text, summary) {
+  const pattern = new RegExp(`(?<!\\d)${summary.tests}\\s*个\\s*test-\\*\\s*\\+\\s*${summary.baseline}\\s*个\\s*measure-context-baseline\\s*\\+\\s*${summary.skills}\\s*个\\s*godot-pi/scripts/check-skills\\.mjs\\s*=\\s*${summary.total}\\s*步`);
+  const result = findLine(text, pattern);
+  return { ok: result.line !== null, ...result };
 }
 
 export function getGodotToolsCount() {
@@ -104,28 +117,36 @@ export function checkText({ file, valuePattern }) {
   return { ok: result.line !== null, line: result.line, snippet: result.snippet };
 }
 
+/** Match the dependency's own declared version, rather than another number on its line. */
+export function checkDependencyVersion(file, name, version) {
+  const escape = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return checkLine({
+    file,
+    keyword: new RegExp(escape(name)),
+    valuePattern: new RegExp(`${escape(name)}(?:\\*\\*)?\\s+${escape(version)}(?=\\s|[；;（]|$)`),
+  });
+}
+
 // ─── Rules ────────────────────────────────────────────────────────────────────
 
 export const RULES = [
   {
     id: 'electron-vite',
-    label: 'electron-vite major',
+    label: 'electron-vite version',
     fetch: getElectronViteVersion,
     docs: [
       { file: 'docs/agent.md', check: (actual) => {
-        const major = String(actual).replace(/^\^?(\d+).*/, '$1');
-        return checkLine({ file: 'docs/agent.md', keyword: /electron-vite/i, valuePattern: new RegExp(`\\^?${major}`) });
+        return checkDependencyVersion('docs/agent.md', 'electron-vite', actual);
       } }
     ]
   },
   {
     id: 'vite',
-    label: 'vite major',
+    label: 'vite version',
     fetch: getViteVersion,
     docs: [
       { file: 'docs/agent.md', check: (actual) => {
-        const major = String(actual).replace(/^\^?(\d+).*/, '$1');
-        return checkLine({ file: 'docs/agent.md', keyword: /\bVite\b/, valuePattern: new RegExp(`\\^?${major}`) });
+        return checkDependencyVersion('docs/agent.md', 'Vite', actual);
       } }
     ]
   },
@@ -135,8 +156,7 @@ export const RULES = [
     fetch: getPiSdkVersion,
     docs: [
       { file: 'docs/agent.md', check: (actual) => {
-        const minorMinor = String(actual).replace(/^\^?(\d+\.\d+).*/, '$1');
-        return checkLine({ file: 'docs/agent.md', keyword: /pi-coding-agent/, valuePattern: new RegExp(minorMinor.replace('.', '\\.')) });
+        return checkDependencyVersion('docs/agent.md', '@earendil-works/pi-coding-agent', actual);
       } }
     ]
   },
@@ -158,22 +178,13 @@ export const RULES = [
   {
     id: 'tsx-test-count',
     label: 'npm test 串联条目数',
-    fetch: getTsxTestCount,
+    fetch: getTestChainSummary,
     docs: [
       { file: 'AGENTS.md', check: (actual) => {
-        const n = Number(actual);
-        // 文档中 "60 个 test-*" + "62 步" 两处都应出现
-        const text = readText('AGENTS.md');
-        const has60 = /60\s*个\s*test-/.test(text);
-        const has62 = new RegExp(`${n}\\s*步`).test(text);
-        return { ok: has60 && has62, line: has60 ? findLine(text, /60\s*个\s*test-/).line : null, snippet: has60 ? 'has 60 + has 62' : 'missing one' };
+        return checkTestChainSummary(readText('AGENTS.md'), actual);
       } },
       { file: 'docs/agent.md', check: (actual) => {
-        const n = Number(actual);
-        const text = readText('docs/agent.md');
-        const has60 = /60\s*个\s*test-/.test(text);
-        const has62 = new RegExp(`${n}\\s*步`).test(text);
-        return { ok: has60 && has62, line: has60 ? findLine(text, /60\s*个\s*test-/).line : null, snippet: has60 ? 'has 60 + has 62' : 'missing one' };
+        return checkTestChainSummary(readText('docs/agent.md'), actual);
       } }
     ]
   },
@@ -220,11 +231,11 @@ export function runChecks({ log = console.log, rules = RULES } = {}) {
       const result = doc.check(actual);
       if (result.ok) {
         passed++;
-        lines.push(`✅ ${rule.id}  ${actual}  ok  (${doc.file}:${result.line})`);
+        lines.push(`✅ ${rule.id}  ${typeof actual === 'object' ? JSON.stringify(actual) : actual}  ok  (${doc.file}:${result.line})`);
       } else {
         failed++;
         ruleFailed++;
-        lines.push(`❌ [${rule.id}] ${doc.file}  实际 ${actual}, 文档未匹配`);
+        lines.push(`❌ [${rule.id}] ${doc.file}  实际 ${typeof actual === 'object' ? JSON.stringify(actual) : actual}, 文档未匹配`);
       }
     }
     if (ruleFailed > 0) lines.push('');

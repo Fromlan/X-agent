@@ -8,8 +8,9 @@
  * Does not commit or push. After success:
  *   1. Review CHANGELOG.md + package.json
  *   2. git add … && git commit -m "release: vX.Y.Z"
- *   3. git tag vX.Y.Z && git push origin HEAD && git push origin vX.Y.Z
- *   4. Wait for .github/workflows/release.yml (authoritative GitHub Release artifacts)
+ *   3. Push the release branch and merge its PR into master after checks/review.
+ *   4. Maintainer tags the merged master commit and pushes vX.Y.Z.
+ *   5. Wait for .github/workflows/release.yml (authoritative GitHub Release artifacts)
  * Optional smoke before tagging: npm run release:dist (local typecheck + test + exe;
  *   do not commit apps/desktop/release/ — CI rebuilds what users download)
  *
@@ -194,8 +195,9 @@ function main() {
       "Next:",
       `  git add CHANGELOG.md apps/desktop/package.json apps/desktop/package-lock.json`,
       `  git commit -m "release: v${version}"`,
-      `  git tag v${version}`,
-      `  git push origin HEAD && git push origin v${version}`,
+      `  git push -u origin HEAD`,
+      `  Open a PR against master; merge only after required checks and review.`,
+      `  Maintainer: tag the merged master commit with v${version}, then push that tag.`,
       "",
       "Tag push triggers .github/workflows/release.yml：",
       "  - CI 构建并上传 GitHub Releases（安装包 + latest.yml）——用户下载的权威产物",

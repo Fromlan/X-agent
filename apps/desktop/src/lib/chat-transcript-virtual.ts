@@ -2,7 +2,7 @@
  * ChatTranscript virtualizer 配置 —— 阈值常量与 useChatVirtualizerConfig hook。
  * 抽离避免 ChatTranscript 主文件塞满 virtualizer 调参细节。
  */
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import {
   useVirtualizer,
   type Virtualizer,

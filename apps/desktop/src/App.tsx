@@ -34,7 +34,6 @@ import {
   appendAtPath,
   collapseFileBlocksToAtPaths,
 } from "./lib/expandAtPaths";
-import { startersForProject } from "./lib/chat-starters";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
 import { useAutoCompact } from "./hooks/useAutoCompact";
 import { useAppActions } from "./hooks/useAppActions";

@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createRequire } from "node:module";
 import {
   mkdirSync,
   readFileSync,

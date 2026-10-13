@@ -8,7 +8,11 @@
  * Retract) 都有独立的 vitest 套件, 子编排器类型从 host-interfaces.ts 拿,
  * mock host 自己造, 不再需要造一个真 SessionHost 测 lifecycle 单点逻辑.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadPrefsWithRecovery, patchPrefs } from "./prefs";
 import {
   SessionLifecycle,
   type SessionBundle,
@@ -16,6 +20,14 @@ import {
 import type { SessionLifecycleHost } from "./host-interfaces";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { UiAgentEvent } from "../../shared/ipc";
+
+const testHome = vi.hoisted(() => ({ path: "" }));
+
+// Keep both preference writes and session discovery inside the same disposable home.
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return { ...actual, homedir: () => testHome.path || actual.homedir() };
+});
 
 type MockSessionManager = {
   getEntries(): unknown[];
@@ -200,7 +212,16 @@ describe("SessionLifecycle（standalone mock host）", () => {
   let ctx: ReturnType<typeof makeHost>;
 
   beforeEach(() => {
+    testHome.path = mkdtempSync(join(tmpdir(), "x-agent-lifecycle-home-"));
+    loadPrefsWithRecovery();
     ctx = makeHost();
+  });
+
+  afterEach(async () => {
+    // Drain lifecycle's queued preference updates before removing their directory.
+    await patchPrefs({});
+    rmSync(testHome.path, { recursive: true, force: true });
+    testHome.path = "";
   });
 
   it("可以从 mock host 构造 (issue #59 主题 A: 3 子编排器脱离 SessionHost 单测)", () => {
@@ -215,7 +236,7 @@ describe("SessionLifecycle（standalone mock host）", () => {
     // listSessions 走 SessionManager.listAll, 会触碰磁盘; 真实环境
     // 在临时目录里跑. 这里只验证 lifecycle 不会在无 bundle 时崩.
     const list = await lifecycle.listSessions();
-    expect(Array.isArray(list)).toBe(true);
+    expect(list).toEqual([]);
   });
 
   it("无 bundle 时 closeWorkspace 返回 ok (走 emitClosedWorkspace 路径)", async () => {

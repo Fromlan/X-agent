@@ -96,12 +96,12 @@ export function measureToolResultChars(msg: MaybeToolResult): number {
 
 // --- single-message snip -------------------------------------------------
 
+/** Keep the requested head and tail while reporting the original text length. */
 function snipText(
   text: string,
   headKeep: number,
   tailKeep: number,
   marker: string,
-  originalTotal: number,
 ): { text: string; originalChars: number } {
   // Defensive: if head + tail cover the whole text, no snip is needed.
   if (headKeep + tailKeep >= text.length) {
@@ -138,7 +138,6 @@ export function snipOne(
       opts.headKeep,
       opts.tailKeep,
       renderedMarker,
-      originalTotal,
     );
     msg.content = text;
     const marker: SnipMarker = {
@@ -168,7 +167,6 @@ export function snipOne(
             opts.headKeep,
             opts.tailKeep,
             renderedMarker,
-            block.text.length,
           );
           block.text = text;
           touched = true;

@@ -245,7 +245,7 @@ Full roadmap: [`docs/roadmap.md`](docs/roadmap.md)
 
 ## Feedback & contributing
 
-- **Bug / feature requests**: [Issues](../../issues) (three templates: Bug / Feature / Question)
+- **Bug / feature requests**: [Issues](https://github.com/Fromlan/X-agent/issues) (three templates: Bug / Feature / Question)
 - **Security**: [`SECURITY.md`](SECURITY.md) — **do not** post reproduction details in a public issue
 - **Contributing**: [`CONTRIBUTING.md`](CONTRIBUTING.md) / [PR template](.github/PULL_REQUEST_TEMPLATE.md)
 - **Code of conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)

@@ -1,8 +1,8 @@
 # AGENTS.md
 
-> OpenCode 在本仓库工作时的入口指引。只记录「不查就会猜错 / 容易踩坑」的事实，不再重复各文档全文。
+> 编码助手在本仓库工作时的入口指引。只记录「不查就会猜错 / 容易踩坑」的事实，不再重复各文档全文。
 > 更完整的指引：开发者向 `CLAUDE.md`、模型上下文原理 `docs/agent-context.md`、领域词表 `docs/context.md`、设计规范 `docs/design.md`。
-> 注意：Pi SDK 会把 `docs/agent.md`、`docs/context.md`、`CLAUDE.md` **全文**注入到模型的项目上下文（见 `docs/agent-context.md` 第 3 节）——改它们会影响 Agent 实际看到的内容。
+> 上下文入口按目录选择一个文件：优先 `AGENTS.override.md`，然后 `AGENTS.md` / `CLAUDE.md`；X-agent 仅在该目录没有这些入口时补充单数 `AGENT.md`。选中的文件**全文**进入模型上下文；`docs/agent.md`、`docs/context.md` 等文档需按需读取，详见 `docs/agent-context.md`。
 
 ## 仓库结构（先记住这两点）
 
@@ -17,7 +17,7 @@
 ```bash
 cd apps/desktop
 npm install
-npm run typecheck        # tsc 两个 tsconfig：tsconfig.node.json + tsconfig.web.json
+npm run typecheck        # tsc 两个 tsconfig，含未使用导入 / 局部变量 / 参数检查
 npm run lint             # Babel AST 静态规则 + 发布工作流门禁检查
 npm test                 # 离线断言链：60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联（无需认证，见下）
 npm run test:unit        # vitest（node 环境，含 src/lib 纯逻辑；覆盖率门槛见 vitest.config.ts）
@@ -28,7 +28,7 @@ npm run debug            # 同上但置 X_AGENT_DEBUG=1
 npm run dist             # electron-builder --win（仅 NSIS 安装包；不产便携版）
 ```
 
-根目录等价转发脚本：`npm run desktop:dev|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。本仓库采用 [GitHub Flow](CLAUDE.md#3-分支策略-github-flow)：改动走 feature 分支 + PR 合并；发版时 maintainer 在 master 上打 tag 触发 `release.yml`。**Agent 不直接 push `master`、不主动打 tag、不提交 `apps/desktop/release/`**（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
+根目录等价转发脚本：`npm run desktop:dev|debug|build|typecheck|test|dist|smoke|reset-tutorial|lint`，以及 `release:prepare|notes|test-changelog|dist`。本仓库采用 [GitHub Flow](CLAUDE.md#3-分支策略-github-flow)：改动走 feature 分支 + PR 合并；发版时 maintainer 在 master 上打 tag 触发 `release.yml`。**Agent 不直接 push `master`、不主动打 tag、不提交 `apps/desktop/release/`**（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
 
 真实模型冒烟：`npm run desktop:smoke`（需本机 Pi 认证，`~/.pi/agent/auth.json`），不是 CI 检查。
 
@@ -36,13 +36,13 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 - `apps/desktop/scripts/test-*.ts` = 离线断言脚本，由 `npm test` **串行串联**（`&&`）。命名为 `test-*.ts` 的不属于 vitest。
 - `*.test.ts`（`electron/**`、`shared/**`、`src/**`）= vitest 单测（`npm run test:unit`），CI 有覆盖率门槛。
-- 跑单个离线脚本：`npx tsx scripts/test-xxx.ts`；**renderer 相关脚本需要走 web tsconfig**（`npx tsx --tsconfig=tsconfig.web.json scripts/test-xxx.ts`，如 `test-chat-*` / `test-plan-todos` / `test-skill-slash` / `test-confirm-provider` / `test-tool-batches` 等；以 `package.json` 的 `test` 脚本串联命令为准）。
+- 跑单个离线脚本：`npx tsx scripts/test-xxx.ts`；**renderer 相关脚本需要走 web tsconfig**（`npx tsx --tsconfig=tsconfig.web.json scripts/test-xxx.ts`，如 `test-chat-*` / `test-plan-todos` / `test-skill-slash` / `test-tool-batches` 等；以 `package.json` 的 `test` 脚本串联命令为准）。
 - 改 Godot 相关代码跑 `test-godot-addon-install`（bridge 协议已被 `electron/agent/godot-rpc-bridge.test.ts` 的 vitest 独占覆盖）；改模式/沙箱跑 `test-plan-mode-tools` / `test-plan-mode-guard` / `test-bash-readonly`（沙箱边界由 `cwd-sandbox.test.ts` / `project-fs.test.ts` 覆盖）；`npm test` 结尾还会跑 `packages/godot-pi/scripts/check-skills.mjs` 校验技能目录。
 
 ## 架构约束（改代码前必读）
 
 - 三进程边界：Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索**全在主进程**；renderer 只能经 `window.xAgent.*` 调用，**禁止直接访问 Node API**（`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**——preload 构建为 CJS 单文件，`electron.vite.config.ts` 中关闭 externalizeDeps，仅依赖 electron 受限 API；改 preload 依赖时不得引入需运行时 require 的包）。
-- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 名注册表）+ `shared/ipc.ts`（类型）+ `electron/ipc/register-*-ipc.ts`（handler，按模块挂：session / session-config / provider / godot / update，其余在 `app-runtime.ts` 的 `registerIpc()`）+ `electron/preload.ts`（bridge）。`window.xAgent` 暴露 6 个分面对象（`workspace` / `turn` / `plan` / `session` / `prefs` / `updates`）+ 其余 flat 方法（godot/plugins/providers/packages/project-fs/external/usage/startup-report 等）。新代码优先走分面；flat 是兼容入口，**不允许在分面之外新增无 facade 的方法**。
+- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 注册表）+ `shared/ipc-invoke-map.ts`（签名与分面，DTO 经 `shared/ipc.ts` 导出）+ `electron/ipc/register-*-ipc.ts`（handler，由 `register-ipc-handlers.ts` 组合）+ `electron/preload.ts`（bridge）。`window.xAgent` 暴露 14 个分面：`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `logo` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`；扁平 IPC 方法已移除，新增调用必须归入分面。`onEvent` / `notifyAppReady` 是事件订阅与启动通知。
 - **全部 IPC handler 经统一 sender 校验**（`electron/ipc/register-ipc.ts` 的 `handle()` 包装器：主窗口 webContents + frame origin 匹配），新增 handler 无需额外处理；主进程对外发起的网络请求（模型探测等）须过 `external-url.ts` 的 URL 校验（仅公网 http(s)）。
 - 上下文组装由 Pi SDK（`@earendil-works/pi-coding-agent`）完成，**不要手写 system prompt**。
 - 别名：renderer 用 `@/` → `src`、`@shared/` → `shared`；Node 侧仅 `@shared/`。`main.ts` 是薄入口，重逻辑动态 import `app-runtime`。
@@ -92,7 +92,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 - TypeScript 严格模式；生成代码时**加函数级注释**（新模块头部一句「做什么 + 为什么」）；注释/标识符以英文为主，用户面文案以 `README.md` / 设置页中文为准。
 - 主题颜色 / 圆角 / 阴影全走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**色值；图标用 `lucide-react` 不用 emoji；字重仅 400 / 500。
-- 几何：按钮 / chip / 单行 input 用 pill（`9999px`）；容器 12px、多行 8px；1px Board 边框；页面内无阴影（modal 除外）。设置页内容区需 `min-height: 0` + `overflow-y: auto`。
+- 几何：按钮 / chip / 单行 input 用 pill（`9999px`）；容器 12px、多行 8px；1px Board 边框；主元素 / hover / focus 阴影走主题 token，`contrast` 主题禁用阴影。设置页内容区需 `min-height: 0` + `overflow-y: auto`。
 - 完整规范见 `docs/design.md`（深色默认，`body[data-theme]` 覆盖浅色）。
 
 ## 提交前自检

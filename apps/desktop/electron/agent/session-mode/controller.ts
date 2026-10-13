@@ -14,7 +14,6 @@
  * - `goal` / `goalContinueInFlight` / `goalEvalGeneration` / `goalTurnLedger`
  *   — SessionModeController 持有, GoalController 通过 deps 读写
  */
-import type { AgentSession, DefaultResourceLoader, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   AgentSessionMode,
   GoalInfo,

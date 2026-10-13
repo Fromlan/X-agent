@@ -15,7 +15,6 @@ import type { ChatItem } from "../stores/chat-store";
 import { createEmptyState } from "../stores/chat-store";
 import {
   clearSessionUsage,
-  setSessionUsage,
 } from "../stores/session-usage-store";
 
 export type SyncFromHostOpts = {

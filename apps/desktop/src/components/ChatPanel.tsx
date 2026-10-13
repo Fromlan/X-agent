@@ -4,7 +4,6 @@ import type {
   GoalInfo,
   ImageContent,
   ModelInfo,
-  SessionSlashItem,
   ThinkingLevel,
 } from "@shared/ipc";
 import { isRestorableGoalStatus } from "@shared/ipc";
@@ -222,7 +221,6 @@ function ChatPanelImpl(props: Props) {
     [filtered],
   );
   const {
-    match: atMatch,
     menuOpen: atMenuOpen,
     candidates: atCandidates,
     highlight: atHighlight,
