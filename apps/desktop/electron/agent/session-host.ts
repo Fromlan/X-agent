@@ -106,6 +106,8 @@ export {
 export class SessionHost {
   private bundle: SessionBundle | null = null;
   private modelRuntime: ModelRuntime | null = null;
+  /** Share startup initialization so a late model list cannot replace the session runtime. */
+  private modelRuntimeInit: Promise<ModelRuntime> | null = null;
   private status: AgentStatus = "idle";
   /** Prevent overlapping model title requests for the same open session. */
   private autoTitleInFlight = false;
@@ -543,24 +545,34 @@ export class SessionHost {
     });
   }
 
+  /** Initialize one shared runtime for concurrent startup and session requests; failures remain retryable. */
   private async ensureRuntime(): Promise<ModelRuntime> {
-    if (!this.modelRuntime) {
-      const dir = getAgentDirPath();
-      // Fix legacy DeepSeek models.json entries missing reasoning (thinking→off).
-      await repairDeepSeekModelsJson();
-      // Fix legacy MiniMax models.json entries missing reasoning / forceAdaptiveThinking.
-      await repairMiniMaxModelsJson();
-      this.modelRuntime = await ModelRuntime.create({
-        authPath: join(dir, "auth.json"),
-        modelsPath: join(dir, "models.json"),
-        // Avoid 15s remote-catalog wait on startup / provider reload.
-        allowModelNetwork: false,
+    if (this.modelRuntime) return this.modelRuntime;
+    if (!this.modelRuntimeInit) {
+      const initializing = (async () => {
+        const dir = getAgentDirPath();
+        // Fix legacy DeepSeek models.json entries missing reasoning (thinking→off).
+        await repairDeepSeekModelsJson();
+        // Fix legacy MiniMax models.json entries missing reasoning / forceAdaptiveThinking.
+        await repairMiniMaxModelsJson();
+        this.modelRuntime = await ModelRuntime.create({
+          authPath: join(dir, "auth.json"),
+          modelsPath: join(dir, "models.json"),
+          // Avoid 15s remote-catalog wait on startup / provider reload.
+          allowModelNetwork: false,
+        });
+        return this.modelRuntime;
+      })().finally(() => {
+        if (this.modelRuntimeInit === initializing) this.modelRuntimeInit = null;
       });
+      this.modelRuntimeInit = initializing;
     }
-    return this.modelRuntime;
+    return this.modelRuntimeInit;
   }
 
+  /** Finish any startup initialization before refreshing or replacing the cached runtime. */
   async reloadRuntime(options?: { hard?: boolean }): Promise<void> {
+    if (this.modelRuntimeInit) await this.modelRuntimeInit;
     // Provider enable/disable must drop removed providers; soft reloadConfig can
     // leave builtins / stale composition in place — hard recreates ModelRuntime.
     if (options?.hard) {

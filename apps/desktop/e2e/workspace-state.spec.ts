@@ -55,12 +55,17 @@ async function fixture(project: string) {
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false } }));
   } });
-  await result.main.emulateMedia({ reducedMotion: "reduce" });
-  expect((await result.main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new"), project)).ok).toBe(true);
-  expect((await result.main.evaluate(() => window.xAgent.session.setModel("ui-fixture", "fixture"))).ok).toBe(true);
-  await result.main.evaluate(() => window.xAgent.prefs.set({ autoCompactPercent: 0 }));
-  await expect(result.main.locator(".composer textarea")).toBeEnabled();
-  return result;
+  try {
+    await result.main.emulateMedia({ reducedMotion: "reduce" });
+    expect((await result.main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new"), project)).ok).toBe(true);
+    expect(await result.main.evaluate(() => window.xAgent.session.setModel("ui-fixture", "fixture"))).toEqual({ ok: true });
+    await result.main.evaluate(() => window.xAgent.prefs.set({ autoCompactPercent: 0 }));
+    await expect(result.main.locator(".composer textarea")).toBeEnabled();
+    return result;
+  } catch (error) {
+    await result.app.close();
+    throw error;
+  }
 }
 
 /** Drive the real send button and wait for the host's complete settlement boundary. */
