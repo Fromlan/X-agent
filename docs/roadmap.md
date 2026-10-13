@@ -4,7 +4,7 @@
 
 > 来源：上一轮项目整体审查识别出的 20 项优化方向；本文件在其基础上做了依赖梳理与粒度拆分。
 > 维护：每个里程碑完成后更新对应行的「完成度」与「最终交付」；新增方向请直接补到对应 Phase 末或下一 Phase。
-> 关联：[`context.md`](context.md)（领域词表）/ [`CLAUDE.md`](CLAUDE.md)（工程约定）/ [`design.md`](design.md)（设计 token）/ [`agent.md`](agent.md)（Agent 协作约定）。
+> 关联：[`context.md`](context.md)（领域词表）/ [`CLAUDE.md`](../CLAUDE.md)（工程约定）/ [`design.md`](design.md)（设计 token）/ [`agent.md`](agent.md)（Agent 协作约定）。
 > 维护节奏（周 Issue 处理 / Dependabot / 月度回顾 / 发版）见 [`maintenance.md`](maintenance.md)。
 
 
@@ -116,7 +116,7 @@ flowchart LR
 ### 1.3 国际化基础（i18n）  `P0`
 
 - **状态**：🛑 已废弃（2026-08-26 决议）
-- **决策**：UI 短期不双语。`README.en.md` 已发布英文文档承担海外贡献者沟通；UI 仍中文 only（见 [`README.en.md` §UI language](README.en.md)）。0.5.x 全部 release 均无 i18n 条目，单兵项目维护两套文案的 token / 维护成本不划算。
+- **决策**：UI 短期不双语。`README.en.md` 已发布英文文档承担海外贡献者沟通；UI 仍中文 only（见 [`README.en.md` §UI language](../README.en.md)）。0.5.x 全部 release 均无 i18n 条目，单兵项目维护两套文案的 token / 维护成本不划算。
 - **如需重启**：移入 Phase 3 末；优先收敛设置 / 通用 / 错误码 / 文档链接 4 类静态文案，避免与运行时数据耦合。
 - **原计划**（仅作 ADR 记录，不实施）：
   - 引入 `i18next` + `react-i18next`（pin 到与 React 19 兼容版本）

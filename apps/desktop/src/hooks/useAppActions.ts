@@ -16,7 +16,6 @@
  */
 import { useCallback } from "react";
 import type {
-  BashCheckResult,
   ClientPrefs,
   GodotRpcStatusDto,
   PiCliStatus,

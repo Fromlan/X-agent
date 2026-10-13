@@ -14,7 +14,6 @@
  * - `goal` / `goalContinueInFlight` / `goalEvalGeneration` / `goalTurnLedger`
  *   — SessionModeController 持有, GoalController 通过 deps 读写
  */
-import type { AgentSession, DefaultResourceLoader, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   AgentSessionMode,
   GoalInfo,
@@ -177,6 +176,16 @@ export class SessionModeController {
     return this.goalCtrl.onAgentSettled();
   }
 
+  /** Forward actual paid request usage without changing Goal continuation state. */
+  recordRequestUsage(userEntryId: string | null, tokens: number, pendingUsageId?: string): void {
+    this.goalCtrl.recordRequestUsage(userEntryId, tokens, pendingUsageId);
+  }
+
+  /** Bind a known preflight charge to Pi's newly persisted user entry. */
+  bindPendingRequestUsage(pendingUsageId: string, userEntryId: string): void {
+    this.goalCtrl.bindPendingRequestUsage(pendingUsageId, userEntryId);
+  }
+
   rollbackGoalAfterRetract(abandonedUserEntryIds: readonly string[]): void {
     this.goalCtrl.rollbackGoalAfterRetract(abandonedUserEntryIds);
   }
@@ -278,17 +287,22 @@ export class SessionModeController {
 
   // ===== system prompt / tool 切换 (compose 串起 mode 状态) =====
 
-  composeModeAppend(base: string[]): string[] {
+  /** Compose the live append, or prepare a new session without resetting the active controller. */
+  composeModeAppend(
+    base: string[],
+    sessionType: SessionType = this.getSessionType(),
+    mode: AgentSessionMode = this.agentMode,
+  ): string[] {
     const out = [...base];
     // Type-level append FIRST (策划会话下, 任何 mode 都要看到写约束说明).
-    const typeAppend = this.getSessionTypePolicy().systemAppend();
+    const typeAppend = createSessionTypePolicy(sessionType).systemAppend();
     if (typeAppend) {
       out.push(typeAppend);
     }
     // GDD layout guide (策划会话 only). Anchors the standard 9-section
     // GDD skeleton so "整理 / 写入 设计文档" 任务不再产出 summary/audit/
     // integration-plan 这类自由发挥的副产物 (#40 follow-up).
-    if (this.getSessionType() === "design") {
+    if (sessionType === "design") {
       out.push(buildGameDesignLayoutGuide());
     }
     // Tool economy — read with offset/limit, edit over write, batch
@@ -296,12 +310,12 @@ export class SessionModeController {
     out.push(buildToolEconomyAppend());
     // Completion discipline — when to stop. Universal across all modes.
     out.push(buildCompletionDisciplineAppend());
-    if (this.agentMode === "ask") {
+    if (mode === "ask") {
       out.push(buildAskModeSystemAppend());
-    } else if (this.agentMode === "plan") {
+    } else if (mode === "plan") {
       out.push(buildPlanModeSystemAppend());
     } else if (
-      this.agentMode === "goal" &&
+      mode === "goal" &&
       this.goal?.status === "pursuing" &&
       this.goal.condition
     ) {

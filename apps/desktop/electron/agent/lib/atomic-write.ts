@@ -50,7 +50,11 @@ export async function writeJsonAtomic<T>(
  * 失败时同样清理 tmp；调用方通常用 try/catch 降级到 console.warn。
  */
 export function writeJsonAtomicSync<T>(filePath: string, data: T): void {
-  const payload = JSON.stringify(data, null, 2);
+  writeFileAtomicSync(filePath, JSON.stringify(data, null, 2));
+}
+
+/** Atomically restore exact bytes without JSON reserialization or temporary-file leftovers. */
+export function writeFileAtomicSync(filePath: string, payload: string | Uint8Array): void {
   const tmp = tmpPath(filePath);
   try {
     writeFileSync(tmp, payload, "utf8");

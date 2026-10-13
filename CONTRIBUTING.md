@@ -119,8 +119,13 @@ npm install
 npm run typecheck
 npm test           # offline assertion scripts (no auth needed)
 npm run lint      # AST rules and release workflow gates
+npm run test:coverage # Vitest and coverage thresholds
 npm run test:e2e   # Playwright (requires `npm run build` first)
 ```
+
+From the repository root, also run `npm run doc:drift` and
+`npm run test:doc-drift` when documentation or its checker changes.
+Type checking rejects unused imports, local variables and parameters.
 
 Real-model smoke tests need a Pi auth in `~/.pi/agent/auth.json` — they are
 **not** part of CI.
@@ -150,8 +155,10 @@ See [`docs/maintenance.md`](docs/maintenance.md#release-cadence). The short vers
 1. Update `## Unreleased` in `CHANGELOG.md`
 2. `npm run release:prepare -- 0.6.0` (validates the changelog, bumps
    `apps/desktop/package.json` + lockfile)
-3. Commit, push, `git tag v0.6.0 && git push origin v0.6.0`
-4. `release.yml` validates tag/HEAD/package/changelog identity and runs typecheck, lint, offline tests, coverage, build, E2E and real Godot before packaging. A separate dependent job uploads to GitHub Releases; dispatch cannot rewrite the package version.
+3. Commit on a feature branch, push, open a PR against `master`, and merge
+   after the required checks and review
+4. The maintainer tags the merged `master` commit and pushes `vX.Y.Z`
+5. `release.yml` validates tag/HEAD/package/changelog identity and runs typecheck, lint, offline tests, coverage, build, E2E and real Godot before packaging. A separate dependent job uploads to GitHub Releases; dispatch cannot rewrite the package version.
 
 ## Reviewer Policy
 

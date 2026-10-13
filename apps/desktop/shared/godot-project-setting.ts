@@ -19,7 +19,7 @@ const FORBIDDEN_PROJECT_SETTING_PREFIXES: readonly string[] = [
   "debug/shapes/",
   "debug/colors/",
   "network/tls/certificate_bundle_override",
-  "project_settings_override/",
+  "project_settings_override/", // Retain the old denied namespace for compatibility.
   "editor_plugins/enabled",
 ];
 
@@ -29,6 +29,9 @@ const FORBIDDEN_PROJECT_SETTING_EXACT: readonly string[] = [
   "debug/settings/stdout/print_fps",
   "debug/settings/stdout/verbose_stdout",
   "network/tls/certificate_bundle_override",
+  // Godot 4.6 ProjectSettings uses these complete keys, including feature-tag overrides.
+  "application/config/project_settings_override",
+  "application/config/disable_project_settings_override",
 ];
 
 const MAX_ARRAY_ITEMS = 64;
@@ -58,6 +61,9 @@ function coerceValue(
     return { ok: false, error: "value 不允许 null（写入会被序列化为空）" };
   }
   if (isPrimitive(value)) {
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      return { ok: false, error: "value 数值必须有限（不能为 NaN / Infinity）" };
+    }
     return { ok: true, value };
   }
   if (depth >= MAX_VALUE_DEPTH) {
@@ -80,6 +86,9 @@ function coerceValue(
     return { ok: true, value: coerced };
   }
   if (typeof value === "object") {
+    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+      return { ok: false, error: "value 对象必须是简单对象" };
+    }
     const obj = value as Record<string, unknown>;
     const keys = Object.keys(obj);
     if (keys.length > MAX_OBJECT_KEYS) {
@@ -89,7 +98,7 @@ function coerceValue(
     for (const k of keys) {
       const r = coerceValue(obj[k], depth + 1);
       if (!r.ok) return { ok: false, error: `value.${k}：${r.error}` };
-      coerced[k] = r.value;
+      Object.defineProperty(coerced, k, { value: r.value, enumerable: true, configurable: true, writable: true });
     }
     return { ok: true, value: coerced };
   }
@@ -112,19 +121,22 @@ function guardKey(rawKey: unknown): { ok: true; key: string } | { ok: false; err
     return { ok: false, error: "key 长度超过 256" };
   }
   // 限制字符：a-z 0-9 / _ .，避免注入换行 / 注释。结合 project.godot 解析行为。
-  if (!/^[a-zA-Z][a-zA-Z0-9_/]*[a-zA-Z0-9]$/.test(key) && !/^[a-zA-Z]$/.test(key)) {
+  if (!/^[a-zA-Z][a-zA-Z0-9_/]*(?:\.[a-zA-Z0-9_-]+)*$/.test(key) || key.endsWith("/")) {
     return {
       ok: false,
       error: "key 必须是英文 ProjectSettings 路径（如 application/config/name）",
     };
   }
+  // Godot suffixes such as .windows.debug override the same base property.
+  const baseKey = key.split(".")[0];
   for (const exact of FORBIDDEN_PROJECT_SETTING_EXACT) {
-    if (key === exact) {
+    if (baseKey === exact || baseKey.startsWith(`${exact}/`)) {
       return { ok: false, error: `不允许通过 RPC 修改该配置：${key}（敏感项）` };
     }
   }
   for (const prefix of FORBIDDEN_PROJECT_SETTING_PREFIXES) {
-    if (key === prefix.slice(0, -1) || key.startsWith(prefix)) {
+    const basePrefix = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+    if (baseKey === basePrefix || baseKey.startsWith(`${basePrefix}/`)) {
       return {
         ok: false,
         error: `不允许通过 RPC 修改该配置：${key}（敏感项：${prefix}）`,

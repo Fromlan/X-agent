@@ -114,8 +114,7 @@ X-agent 是基于 Pi SDK 的 Electron 桌面 Agent。仓库只有一个实际应
 - **已配模板**:
   - `.github/ISSUE_TEMPLATE/bug.yml` / `feature.yml`:Issue 提交规范
   - `.github/PULL_REQUEST_TEMPLATE.md`:PR 描述规范(改动类型 / 测试 / 影响面 / 回滚)
-- **待补**:
-  - `CODE_OF_CONDUCT.md`:正式社区行为准则(目前以 `CONTRIBUTING.md` §一 为约束,体量够大时再单独建)
+- **社区约定**：`CODE_OF_CONDUCT.md`（行为准则）+ `SECURITY.md`（安全报告与支持版本），维护时与贡献流程一起核对
 
 ### 9. 定期回顾
 
@@ -173,9 +172,7 @@ npm run release:dist               # 本机 typecheck + test + 打 Windows exe(�
 - 发版:PR 合并到 master → `git tag vX.Y.Z && git push origin vX.Y.Z` → CI 自动构建并上传 GitHub Release
 - **不提交** `apps/desktop/release/`(已在 `.gitignore`);发布源是 CI 的 GitHub Release,本地 exe 不是
 
-`npm test`（在 `apps/desktop`）串联：
-
-`test-history-mapper`、`test-transcript-golden`、`test-turn-file-tracker`、`test-session-bind-timing`、`test-session-paths`、`test-session-title`、`test-plan-mode-tools`、`test-plan-mode-guard`、`test-bash-readonly`、`test-bash-liveness`、`test-goal-evaluator`、`test-session-mode-controller`、`test-session-mode-smoke`、`test-plan-todos`、`test-plan-clarify`、`test-chat-store`、`test-group-sessions`、`test-plugin-host`、`test-provider-store`、`test-provider-activate`、`test-provider-last-enabled`、`test-auth-cache-invalidation`、`test-model-fetch`、`test-model-context`、`test-godot-addon-install`、`test-pi-cli`、`test-model-runtime-reload`、`test-package-manager`、`test-context-breakdown`、`test-cache-hit`、`measure-context-baseline`、`test-debug-log`、`test-error-i18n`、`test-exclude-agents-home-skills`、`test-skill-slash`、`test-user-message-files`、`test-chat-scroll-pin`、`test-chat-transcript-virtual`、`test-chat-markdown-streaming`、`test-chat-scroll-throttle`、`test-chat-virtual-cache`、`test-debug-mode`、`test-select-menu-scroll`、`test-tool-card-collapse`、`test-tool-batches`、`test-confirm-provider`、`test-prefs-defaults`、`test-prefs-recovery`、`test-update-feed`、`test-update-feed-resolve`、`test-session-host-helpers`、`test-session-slash-items`、`test-prompt-slash-wrap`、`test-extension-ui`、`test-session-event-bridge-stale`、`test-external-url`、`test-ready-checklist`、以及 `packages/godot-pi/scripts/check-skills.mjs`。
+`npm test`（在 `apps/desktop`）串行执行离线断言、上下文基线测量与 Godot Pi 技能校验。完整命令以 [`apps/desktop/package.json`](apps/desktop/package.json) 的 `scripts.test` 为准，避免在多份文档重复维护测试清单。根目录 `npm run doc:drift` 核对版本、工具数与测试条目数；`npm run test:doc-drift` 验证检查器。
 
 > 0.4.0 起 cwd-sandbox / usage-store / godot-rpc-bridge / shadow-checkpoints 的覆盖已收敛到 Vitest（`*.test.ts`），不再双写离线脚本。0.5.0 起更多关键模块（`godot-tools` / `mode-tools` / `mode-prompt` / `lib/store` 等）也走 Vitest。
 
@@ -189,9 +186,9 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\path\to\proje
 
 Electron 三进程边界：
 
-- `electron/main.ts`：注册 IPC；持有 `SessionHost`、`GodotRpcBridge`、`AppAutoUpdater`。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索均在主进程。
-- `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**（preload 为 CJS 单文件，仅依赖 electron 受限 API）；新增能力需同步改 `shared/ipc.ts`、main handler、preload。
-- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。新代码优先走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / …）；扁平方法仅作兼容。
+- `electron/main.ts`：薄启动入口，动态加载 `app-runtime.ts`；runtime 持有 `SessionHost`、`GodotRpcBridge`、`AppAutoUpdater`，经 `register-ipc-handlers.ts` 注册 IPC。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索均在主进程。
+- `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**（preload 为 CJS 单文件，仅依赖 electron 受限 API）；新增能力需同步改 `shared/ipc-channels.ts`、`shared/ipc-invoke-map.ts` / DTO、对应 IPC handler 与 preload。
+- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。所有 IPC 调用走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `logo` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`）；扁平 IPC 方法已移除。
 - `shared/ipc.ts`：跨进程协议源；`shared/godot-rpc.ts`：Godot TCP 协议。
 
 ### UI 壳层
@@ -201,7 +198,7 @@ Electron 三进程边界：
 | TopBar | 打开项目 / 新会话、设置、右栏开关、主题、状态 |
 | Sidebar | 按项目分组会话；重命名 / 删除；「从侧栏移除」写 `hiddenProjectKeys` |
 | Chat | 流式、steer、中止；撤回 / 编辑重发 / 重新生成；`@路径` 展开；底部工具条承载模式（智能体 / 调研 / 计划 / 目标）、模型 / Thinking / 展示思考、发送 |
-| RightPanel | 上下文（占用拆解 + 手动压缩）、工具、文件树、Godot 桥状态 |
+| RightPanel | 上下文（占用拆解 + 手动压缩）、计划、工具、文件树、Godot 桥状态 |
 | Settings | 通用 / 供应商 / 用量 / 工具 / 插件 / Godot（编辑器连接） |
 
 ### Agent 与事件
@@ -210,13 +207,13 @@ Electron 三进程边界：
 
 1. `ModelRuntime` 从 auth / models 初始化模型。
 2. `DefaultResourceLoader` 以项目 `cwd` 加载 skills / extensions 等；`skillsOverride` 排除 `~/.agents/skills`。
-3. `createAgentSession`：`tools` 注册 `ALL_TOGGLEABLE_TOOLS`，`setActiveToolsByName(prefs.tools)`；`customTools` 含 Godot RPC + Godot docs。
+3. `createAgentSession`：`tools` 注册 `SESSION_TOOL_REGISTRY`；`customTools` 含 Godot RPC 与 `write_plan`，实际启用工具由会话类型 / 模式策略过滤偏好白名单；Godot 文档通过技能按需读取。
 4. Pi 事件转为 `UiAgentEvent`，经 `agent:event` 推到 renderer。
 5. Renderer 用 [`chat-store.ts`](apps/desktop/src/stores/chat-store.ts) `applyAgentEvent` 归并；恢复时 `shared/transcript` 的 branch mapper 映射为同一 `HistoryItem` 结构。
 6. 用量经 `usage_update` / `usage-store`；右栏可 `compactSession` → `session.compact()`。
 7. `session_info` / status / prefs（如 `lastSessionPath`）写入顶栏与偏好。
 
-流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复前释放当前 session。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)，**按 diff 路径还原**，不整库 reset）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
+流式中再次 prompt 使用 `streamingBehavior: "steer"`。切换项目 / 新会话 / 恢复时先初始化候选 session，再发布新 bundle 并释放旧会话；候选初始化失败保留原会话、模式和资源。会话自动标题：[`session-title.ts`](apps/desktop/electron/agent/session-title.ts)。撤回：`navigateTree` + Shadow Git 检查点（[`shadow-git.ts`](apps/desktop/electron/agent/shadow-git.ts) / [`shadow-checkpoints.ts`](apps/desktop/electron/agent/shadow-checkpoints.ts)，**按 diff 路径还原**，不整库 reset）；无 Git 时降级 [`turn-file-tracker.ts`](apps/desktop/electron/agent/turn-file-tracker.ts)。
 
 上下文组装细节见 [`docs/agent-context.md`](docs/agent-context.md)。
 
@@ -284,11 +281,11 @@ Electron 三进程边界：
 
 ## UI 约束
 
-以 [`docs/design.md`](docs/design.md) 为准（Cindy 近单色扁平语言）：
+以 [`docs/design.md`](docs/design.md) 与 `src/styles/themes.css` 为准（默认近单色，主题 token 控制层次）：
 
-- 深色默认；浅色 `body[data-theme="light"]`
-- Surface / Card / Board + 语义色 token；组件与 JS 不硬编码色值
-- Inter + JetBrains Mono，约 13px；1px Board 边框；页面内无阴影（modal 除外）
+- 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 切换主题族与明暗模式
+- Surface / Card / Card-elev / Chrome + Board 与语义色 token；组件与 JS 不硬编码色值
+- Inter + JetBrains Mono，约 13px；1px Board 边框；主元素与交互阴影走主题 token，`contrast` 禁用阴影
 - Pill 交互几何（按钮 / chip / 单行 input）；容器 12px；多行 8px
 - 图标用 `lucide-react`，不用 emoji 充当 UI 图标
 - focus 用 `--focus-ring-soft`；尊重 `prefers-reduced-motion`
@@ -306,9 +303,9 @@ Canonical roles use matching label strings (`needs-triage`, `needs-info`, `ready
 
 ### Domain docs
 
-`docs/` 是**公开目录**(已在仓库内、随版本发布),按下面 8 个条目维护:
+`docs/` 是**公开目录**(已在仓库内、随版本发布),按下面条目维护:
 
-- [`docs/agent.md`](docs/agent.md) — Agent 工作入口(被 Pi `DefaultResourceLoader` 全文注入到 `<project_context>`)
+- [`docs/agent.md`](docs/agent.md) — Agent 工作参考（按需读取；自动上下文入口规则见 `agent-context.md`）
 - [`docs/agent-context.md`](docs/agent-context.md) — 模型上下文如何组装
 - [`docs/context.md`](docs/context.md) — 领域词表 + ADR 摘要(单一权威源)
 - [`docs/design.md`](docs/design.md) — 设计系统(token / 主题族 / 布局)

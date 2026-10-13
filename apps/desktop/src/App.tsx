@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,13 +29,13 @@ import { AppSettingsPanel } from "./components/AppSettingsPanel";
 import { type SettingsTabTarget } from "./components/ReadyChecklist";
 import { RetractConfirmModal } from "./components/RetractConfirmModal";
 import { TopBar } from "./components/TopBar";
+import { setRightPanelProject } from "./stores/right-panel-store";
 import { openToolInRightPanel } from "./components/RightPanel";
 import type { SettingsTab } from "./components/SettingsPanel";
 import {
   appendAtPath,
   collapseFileBlocksToAtPaths,
 } from "./lib/expandAtPaths";
-import { startersForProject } from "./lib/chat-starters";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
 import { useAutoCompact } from "./hooks/useAutoCompact";
 import { useAppActions } from "./hooks/useAppActions";
@@ -142,17 +143,6 @@ export default function App() {
     cwd, prefs, bash, git, auth, piCli, modelCount: models.length,
   });
 
-  // ─── Retract / edit / regenerate 流程 (放在 useWorkspaceSession 之前,
-  // 后者需要 setConfirmState) ──────────────────────────────────
-  const { confirmState, retractBusy, beginConfirm, runConfirmedRetract, cancelConfirm, setConfirmState } = useRetractConfirm({
-    editDraft,
-    setError,
-    setInput: (() => undefined) as React.Dispatch<React.SetStateAction<string>>,
-    setEditingEntryId,
-    setEditDraft,
-    refreshSessions,
-  });
-
   // ─── Goal 状态机 (主题 F C-202) ────────────────────────────────
   // 通过 ref 解开顺序: useGoalMode 需要 composer 的 input 真值, 但
   // useComposer 还没创建. 注入一个 placeholder, 创建后回填.
@@ -175,18 +165,6 @@ export default function App() {
   });
   goalDispatcherRef.current = goalApi;
 
-  // ─── Workspace session 6 method (open / new / resume / delete ...) ─
-  const { openProject, newSession, resumeSession, deleteSession, deleteProjectSessions, hideProject, renameSession } = useWorkspaceSession({
-    setItems, setStatus, setCwd, setSessionId, setError,
-    setBusy, setSessionType, setSessionMode, setPlanPath, setGoal,
-    setQueuedSteering, setEditingEntryId, setEditDraft,
-    setInput: (() => undefined) as React.Dispatch<React.SetStateAction<string>>,
-    setConfirmState, setFollowNonce, setPrefs, setAvailableThinkingLevels,
-    setPrefsRecovery, setSecretCodec, setBash, setGit, setAuth, setPiCli,
-    refreshSessions, refreshModels, refreshProjectReadiness,
-    prefs, cwd, sessionIdRef, usageFetchGen,
-  });
-
   // ─── Composer 状态机 (主题 F C-205) ────────────────────────────
   const currentModelKey = useMemo(
     () => (prefs?.provider && prefs?.model ? `${prefs.provider}/${prefs.model}` : ""),
@@ -199,8 +177,24 @@ export default function App() {
     refreshSessions,
   });
   composerRef.current = composer;
-  const setInputRef = useRef<(v: string) => void>(() => undefined);
-  setInputRef.current = (v) => composer.setInput(v);
+
+  // Composer owns the real draft; restore/switch hooks must share its setter.
+  const { confirmState, retractBusy, beginConfirm, runConfirmedRetract, cancelConfirm, setConfirmState } = useRetractConfirm({
+    editDraft, setError, setInput: composer.setInput,
+    setEditingEntryId, setEditDraft, refreshSessions,
+  });
+
+  // ─── Workspace session 6 method (open / new / resume / delete ...) ─
+  const { openProject, newSession, resumeSession, deleteSession, deleteProjectSessions, hideProject, renameSession } = useWorkspaceSession({
+    setItems, setStatus, setCwd, setSessionId, setError,
+    setBusy, setSessionType, setSessionMode, setPlanPath, setGoal,
+    setQueuedSteering, setEditingEntryId, setEditDraft,
+    setInput: composer.setInput,
+    setConfirmState, setFollowNonce, setPrefs, setAvailableThinkingLevels,
+    setPrefsRecovery, setSecretCodec, setBash, setGit, setAuth, setPiCli,
+    refreshSessions, refreshModels, refreshProjectReadiness,
+    prefs, cwd, sessionIdRef, usageFetchGen,
+  });
 
   // ─── 启动期初始化 (主题 F) ─────────────────────────────────────
   useSessionBootstrap({
@@ -233,6 +227,7 @@ export default function App() {
 
   // ─── 副作用: cwd / sessionType / sessionId / keyboard ─────────
   useEffect(() => { setReadyNotice(null); }, [cwd]);
+  useLayoutEffect(() => { setRightPanelProject(cwd); }, [cwd]);
   useEffect(() => {
     const next = sessionType ?? DEFAULT_SESSION_TYPE;
     document.body.dataset.sessionType = next;

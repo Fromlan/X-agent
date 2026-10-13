@@ -5,7 +5,7 @@
  * - 不接管 textarea 的 onKeyDown / onChange（与 useSlashMenu 一致，由 ChatPanel 协调）
  * - 类别三选一：path / skill / mode（data 来自 props）
  * - path 候选需要项目 cwd 上下文；本 hook 仅暴露状态机，候选由 ChatPanel 注入
- * - 完整 UI 文案依赖 i18n（ROADMAP 1.4），当前先用中文硬编码，后续替换
+ * - UI 文案遵循当前中文界面约定
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -14,7 +14,6 @@ import {
   filterModeCandidates,
   filterPathCandidates,
   filterSkillCandidates,
-  type AtCategory,
   type AtMatch,
 } from "@/lib/at-completion";
 

@@ -25,7 +25,7 @@ Use one of the following channels:
 - **Email**: [fromlan@qq.com](mailto:fromlan@qq.com) (preferred for sensitive
   issues; include `[SECURITY]` in the subject line)
 - **GitHub Security Advisories**: use the "Report a vulnerability" button on
-  the [Security tab](../../security/advisories/new) of this repository
+  the [Security tab](https://github.com/Fromlan/X-agent/security/advisories/new) of this repository
 
 A good report includes:
 

@@ -5,10 +5,12 @@
  * - 旧脚本：CI 必跑，快速冒烟
  * - 新套件：开发者本地 `npm run test:unit` 跑，享受 watch / coverage / IDE 集成
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as atomicWrite from "./lib/atomic-write";
+import { withStoreLock } from "./lib/store-mutex";
 import type { TurnUsage } from "../../shared/ipc";
 import {
   clearUsageSummary,
@@ -18,6 +20,7 @@ import {
   modelUsageKey,
   recordTurnUsage,
   setUsageStorePathForTests,
+  getUsageStorePath,
 } from "./usage-store";
 
 const TURN: TurnUsage = {
@@ -53,6 +56,33 @@ afterEach(() => {
 });
 
 describe("usage-store", () => {
+  it("waits for queued atomic writes before opening the summary file", async () => {
+    useTempUsageStore();
+    const key = modelUsageKey("openai", "gpt-test");
+    await recordTurnUsage(key, TURN);
+    let release!: () => void;
+    let held!: () => void;
+    const heldPromise = new Promise<void>((resolve) => { held = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const blocked = withStoreLock(getUsageStorePath(), async () => { held(); await gate; });
+    await heldPromise;
+    const read = vi.spyOn(atomicWrite, "readJsonStrict");
+    const written = recordTurnUsage(key, TURN);
+    const summary = getUsageSummary();
+    try {
+      // A reader must not open the Windows target while its writer owns the lock.
+      expect(read).not.toHaveBeenCalled();
+      release();
+      await blocked;
+      await written;
+      expect((await summary).totals.tokens.total).toBe(TURN.tokens.total * 2);
+    } finally {
+      release();
+      await Promise.allSettled([blocked, written, summary]);
+      read.mockRestore();
+    }
+  });
+
   it("recordTurnUsage 累加当日与按模型分桶", async () => {
     useTempUsageStore();
     const keyA = modelUsageKey("openai", "gpt-test");

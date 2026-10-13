@@ -5,7 +5,7 @@
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { lstatSync, readdirSync } from "node:fs";
-import { isPhysicallyInside } from "../lib/path-boundary";
+import { isLexicallyInside, isPhysicallyInside, physicalPath } from "../lib/path-boundary";
 
 /** Commands that are generally safe for codebase research (no mutation). */
 const READONLY_COMMAND_HEADS = new Set([
@@ -89,17 +89,13 @@ const MUTATION_PATTERNS: RegExp[] = [
   /^date\b[\s\S]*\s-{1,2}(?:s|set)\b/i, // `date -s` / `date --set` mutates the clock
 ];
 
+/** Strip known wrappers without executing or interpreting shell expansion. */
 function stripShellNoise(command: string): string {
   return command
     .replace(/^\s*(?:sudo\s+)+/i, "")
     .replace(/^\s*(?:command\s+)+/i, "")
-    .replace(/^\s*(?:env\s+(?:-i\s+)?(?:[A-Za-z_][\w]*=\S+\s+)*)/i, "")
+    .replace(/^\s*env\s+(?:-i\s+)?(?=[^\s=]+(?:\s|$))(?!(?:[^\s]*=))/, "")
     .trim();
-}
-
-function firstToken(segment: string): string {
-  const m = segment.trim().match(/^([^\s]+)/);
-  return (m?.[1] ?? "").replace(/^["']|["']$/g, "");
 }
 
 /**
@@ -117,18 +113,55 @@ function hasShellSubstitution(command: string): boolean {
   );
 }
 
-function splitShellSegments(command: string): string[] {
-  // Split on newlines, ; | && || while keeping it simple (no full shell parser).
-  // Newlines must be segments: otherwise `ls\nrm -rf x` looks like a single `ls` head.
-  return command
-    .split(/\r\n|\r|\n|(?:&&|\|\||[;|])/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+/** Preserve quoted argument boundaries and reject shell syntax we cannot safely classify. */
+function tokenizeShellSegments(command: string): string[][] | null {
+  const segments: string[][] = [];
+  let tokens: string[] = [];
+  let token = "";
+  let active = false;
+  let quote: "'" | '"' | null = null;
+  /** Flush one argument, including an explicitly quoted empty argument. */
+  const flushToken = () => {
+    if (active) tokens.push(token);
+    token = "";
+    active = false;
+  };
+  /** Flush one command in a pipeline or command sequence. */
+  const flushSegment = () => {
+    flushToken();
+    if (tokens.length) segments.push(tokens);
+    tokens = [];
+  };
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i];
+    if (ch === "\0") return null;
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (quote === '"' && ch === "\\" && /["\\]/.test(command[i + 1] ?? "")) token += command[++i];
+      else token += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; active = true; continue; }
+    // Escaped metacharacters can disguise option names and path traversals; fail closed.
+    if (ch === "\\" && /[\s'";&|{}()<>]/.test(command[i + 1] ?? "")) return null;
+    if (/[{}()<>]/.test(ch)) return null;
+    if (ch === "&") {
+      if (command[i + 1] !== "&") return null;
+      i += 1;
+      flushSegment();
+    } else if (ch === ";" || ch === "|" || ch === "\r" || ch === "\n") {
+      if (ch === "|" && command[i + 1] === "|") i += 1;
+      flushSegment();
+    } else if (/\s/.test(ch)) flushToken();
+    else { token += ch; active = true; }
+  }
+  if (quote) return null;
+  flushSegment();
+  return segments;
 }
 
-function isReadonlyGit(segment: string): boolean {
-  const tokens = segment.trim().split(/\s+/);
-  // git [-C path] <sub>
+/** Identify the existing allowed Git global-option boundary before classifying its subcommand. */
+function readonlyGitSubcommandIndex(tokens: readonly string[]): number | null {
   let i = 1;
   while (i < tokens.length && tokens[i].startsWith("-")) {
     if (
@@ -139,8 +172,17 @@ function isReadonlyGit(segment: string): boolean {
       i += 2;
       continue;
     }
+    if (/^-C.+/.test(tokens[i]) || /^--(?:git-dir|work-tree)=/.test(tokens[i])) { i += 1; continue; }
+    if (!["--no-pager", "--no-optional-locks", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs"].includes(tokens[i])) return null;
     i += 1;
   }
+  return i;
+}
+
+/** Check Git subcommand and option semantics, including options that execute external programs. */
+function isReadonlyGit(tokens: readonly string[]): boolean {
+  const i = readonlyGitSubcommandIndex(tokens);
+  if (i === null) return false;
   const sub = (tokens[i] ?? "").toLowerCase();
   if (!READONLY_GIT_SUBCOMMANDS.has(sub)) return false;
   if (sub === "stash") {
@@ -156,6 +198,7 @@ function isReadonlyGit(segment: string): boolean {
     // `--merged <branch>` lists are also rejected). Exception: `tag -l`
     // / `tag --list` takes an optional filter pattern that is not a write.
     const rest = tokens.slice(i + 1);
+    if (rest.some((t) => /^(?:-[a-zA-Z]*[dDmMcCfFu]|--(?:delete|move|copy|force|edit-description|set-upstream|unset-upstream))/.test(t))) return false;
     if (
       sub === "tag" &&
       (rest[0] === "-l" || rest[0] === "--list") &&
@@ -168,18 +211,74 @@ function isReadonlyGit(segment: string): boolean {
   if (sub === "remote") {
     // `remote add|set-url|remove|rename|set-head` write .git/config;
     // plain `remote`, `-v`, `show <name>`, `get-url <name>` are reads.
-    const op = (tokens[i + 1] ?? "").toLowerCase();
-    return !["add", "set-url", "remove", "rename", "set-head"].includes(op);
+    const remoteArgs = tokens.slice(i + 1);
+    while (remoteArgs[0] === "-v" || remoteArgs[0] === "--verbose") remoteArgs.shift();
+    const op = (remoteArgs[0] ?? "").toLowerCase();
+    return !op || op === "show" || op === "get-url";
   }
   if (sub === "config") {
     // Block mutating config writes: `git config name value` or --unset / --add
     const rest = tokens.slice(i + 1).join(" ");
-    if (/\b--(?:unset|add|remove-section)\b/i.test(rest)) return false;
+    if (/\b--(?:unset|add|remove-section|rename-section|edit|replace-all)\b/i.test(rest)) return false;
+    if (/\b(?:set|unset|edit|remove-section|rename-section)\b/.test(tokens[i + 1] ?? "")) return false;
     // `git config --get` / `--list` / single-arg get are OK; two+ non-flag args ≈ set
-    const nonFlags = tokens.slice(i + 1).filter((t) => !t.startsWith("-"));
+    const configArgs = tokens.slice(i + 1);
+    const nonFlags: string[] = [];
+    for (let j = 0; j < configArgs.length; j += 1) {
+      const arg = configArgs[j];
+      const option = arg.split("=")[0];
+      if (option === "-e" || ["--edit", "--unset", "--unset-all", "--add", "--remove-section", "--rename-section", "--replace-all", "--global", "--system", "--includes"].some((unsafe) => option.startsWith("--") && unsafe.startsWith(option))) return false;
+      if (["-f", "--file", "-t", "--type", "--default", "--blob"].includes(arg)) { j += 1; continue; }
+      if (!arg.startsWith("-")) nonFlags.push(arg);
+    }
     return nonFlags.length <= 1;
   }
   return true;
+}
+
+/** Reject side-effecting options even when the executable itself is a read command. */
+function hasUnsafeArguments(tokens: readonly string[]): boolean {
+  const head = tokens[0].toLowerCase();
+  const args = tokens.slice(1);
+  // `env` without a command is a read; quoted/nested wrappers must not dispatch arbitrary executables.
+  if (head === "env" && args.some((arg) => !["-0", "--null", "-i", "--ignore-environment", "--help", "--version"].includes(arg))) return true;
+  if (args.some((arg) => arg.startsWith("-") && arg.split("=")[0].includes("\\"))) return true;
+  const patterns: Record<string, readonly RegExp[]> = {
+    git: [/^--(?:output|ext-diff|textconv|filters|exec-path|config-env|paginate)(?:=|$)/, /^-c(?:.|$)/, /^--config(?:=|$)/],
+    find: [/^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls|L)$/],
+    fd: [/^--(?:exec|exec-batch|follow)(?:=|$)/, /^-[^-]*[xXL]/],
+    rg: [/^--(?:pre|hostname-bin|follow)(?:=|$)/, /^-[^-]*L/],
+    grep: [/^--dereference-recursive(?:=|$)/, /^-[^-]*R/],
+    ag: [/^--pager(?:=|$)/],
+    ack: [/^--pager(?:=|$)/],
+    yq: [/^--(?:inplace|in-place|split-exp|split-file|output-file|from-file)(?:=|$)/, /^-[^-]*[is]/, /\bload(?:_str|_base64|_xml|_props|_csv|_tsv)?\s*\(/],
+    jq: [/\b(?:include|import)\s/, /^--from-file(?:=|$)/, /^-[^-]*f/],
+    file: [/^--(?:compile|files-from)(?:=|$)/, /^-[^-]*[Cf]/],
+    tree: [/^-[^-]*[ol]/, /^--outfile(?:=|$)/],
+    ls: [/^--dereference(?:=|$)/, /^-[^-]*L/],
+    du: [/^--dereference(?:=|$)/, /^-[^-]*L/],
+    less: [/^-[oO](?:.|$)/, /^--(?:log-file|LOG-FILE)(?:=|$)/, /^\+/],
+    date: [/^--set(?:=|$)/, /^-s(?:.|$)/],
+  };
+  const unsafeLongOptions: Record<string, readonly string[]> = {
+    git: ["--output", "--ext-diff", "--textconv", "--filters", "--exec-path", "--config-env", "--paginate"],
+    file: ["--compile", "--files-from"],
+    jq: ["--from-file"],
+    yq: ["--inplace", "--in-place", "--split-exp", "--split-file", "--output-file", "--from-file"],
+    rg: ["--pre", "--hostname-bin", "--follow"],
+    fd: ["--exec", "--exec-batch", "--follow"],
+    grep: ["--dereference-recursive"],
+    tree: ["--outfile"],
+    less: ["--log-file", "--LOG-FILE"],
+    ls: ["--dereference"],
+    du: ["--dereference"],
+    date: ["--set"],
+  };
+  const forbidden = patterns[head] ?? [];
+  // Git and GNU utilities accept abbreviated long options; reject unsafe prefixes too.
+  return args.some((arg) => forbidden.some((pattern) => pattern.test(arg)) ||
+    (/^--[a-zA-Z-]+(?:=|$)/.test(arg) &&
+      (unsafeLongOptions[head] ?? []).some((option) => option.startsWith(arg.split("=")[0]))));
 }
 
 function unquote(token: string): string {
@@ -217,6 +316,12 @@ function expandTilde(token: string): string {
   return token;
 }
 
+/** Share Git Bash drive and home normalization between path checks and directory transitions. */
+function normalizeReadonlyPathToken(token: string): string {
+  const cleaned = expandTilde(unquote(token));
+  return process.platform === "win32" ? cleaned.replace(/^\/([a-z])(?:\/|$)/i, "$1:/") : cleaned;
+}
+
 /**
  * True when the resolved path is inside any of the allowed roots
  * (case-normalized prefix check, win32-safe). Used to extend the Ask/Plan
@@ -248,8 +353,15 @@ function pathEscapesReadArea(
   cwd: string,
   pathToken: string,
   allowedRoots?: readonly string[],
+  resolutionCwd = cwd,
 ): boolean {
-  const cleaned = expandTilde(unquote(pathToken));
+  if (/^~[^/\\]/.test(pathToken)) return true; // Unknown user-home expansion cannot be resolved safely.
+  const cleaned = normalizeReadonlyPathToken(pathToken);
+  // Git Bash maps /c/... to C:/..., while node:path would interpret it on the current drive.
+  if (process.platform === "win32") {
+    // Other POSIX absolute paths are rooted in Git Bash's installation, not the Node drive.
+    if (cleaned.startsWith("/") && !cleaned.startsWith("//")) return true;
+  }
   if (!cleaned) return false;
   if (/[*?\[]/.test(cleaned)) {
     const normalizedToken = cleaned.replace(/\\/g, "/");
@@ -257,7 +369,7 @@ function pathEscapesReadArea(
     const slash = normalizedToken.lastIndexOf("/");
     // Shell directory globs can traverse a junction we cannot resolve as one literal path.
     if (wildcard < slash) return true;
-    const parent = resolve(cwd, slash < 0 ? "." : normalizedToken.slice(0, slash) || "/");
+    const parent = resolve(resolutionCwd, slash < 0 ? "." : normalizedToken.slice(0, slash) || "/");
     const roots = [cwd, ...(allowedRoots ?? [])];
     if (!roots.some((r) => isPhysicallyInside(r, parent))) return true;
     try {
@@ -271,7 +383,7 @@ function pathEscapesReadArea(
     if (isAbsolute(cleaned) || /^[A-Za-z]:[\\/]/.test(cleaned)) {
       abs = normalize(resolve(cleaned));
     } else {
-      abs = normalize(resolve(root, cleaned));
+      abs = normalize(resolve(resolutionCwd, cleaned));
     }
   } catch {
     return true;
@@ -297,6 +409,61 @@ function pathEscapesReadArea(
   return !isPhysicallyInside(root, abs);
 }
 
+/** Follow Git chdir's real target while keeping the original authorized-root representation. */
+function resolveReadonlyGitCwd(cwd: string, token: string, authorizedRoots: readonly string[]): string {
+  const target = physicalPath(resolve(cwd, normalizeReadonlyPathToken(token)));
+  for (const root of authorizedRoots) {
+    const physicalRoot = physicalPath(root);
+    if (isLexicallyInside(physicalRoot, target)) return resolve(root, relative(physicalRoot, target));
+  }
+  throw new Error("Git directory escaped the authorized read roots");
+}
+
+/** Extract attached short-option paths without changing which command semantics are allowed. */
+function attachedReadonlyPathOption(commandHead: string, token: string): string | null {
+  const pathOptions: Record<string, string> = {
+    git: "CfO", // -C directory, config -f file, diff -O orderfile.
+    grep: "fL",
+    rg: "fL",
+    ag: "fL",
+    ack: "fL",
+    jq: "fL",
+    yq: "fL",
+    file: "m", // -f is rejected: its contents may name paths outside the project.
+    date: "f",
+  };
+  const options = pathOptions[commandHead.toLowerCase()];
+  if (!options) return null;
+  const match = token.match(new RegExp(`^-[a-zA-Z]*?[${options}](.+)$`));
+  return match?.[1] ?? null;
+}
+
+/** Locate explicit path arguments even when the consumed value resembles another option. */
+function readonlyPathArgumentOffset(commandHead: string, token: string): number | null {
+  if (!token.startsWith("-")) return null;
+  const pathArguments: Record<string, Record<string, number>> = {
+    git: { "-C": 1, "--git-dir": 1, "--work-tree": 1, "--prefix": 1, "-f": 1, "--file": 1, "-O": 1, "--order-file": 1 },
+    grep: { "-f": 1, "--file": 1 },
+    rg: { "-f": 1, "--file": 1, "--ignore-file": 1 },
+    ag: { "-f": 1, "--file": 1 },
+    ack: { "-f": 1, "--file": 1 },
+    jq: { "-f": 1, "--from-file": 1, "-L": 1, "--rawfile": 2, "--slurpfile": 2, "--argfile": 2 },
+    yq: { "--from-file": 1 },
+    file: { "-m": 1, "--magic-file": 1 },
+    date: { "-f": 1, "--file": 1 },
+  };
+  const options = pathArguments[commandHead.toLowerCase()];
+  if (!options) return null;
+  const name = token.split("=")[0];
+  if (options[name] !== undefined) return options[name];
+  if (name.startsWith("--")) {
+    const matches = Object.keys(options).filter((option) => option.startsWith(name));
+    return matches.length === 1 ? options[matches[0]] : null;
+  }
+  // A final path-taking short option in a cluster consumes the next argument (grep -nf FILE).
+  return /^-[a-zA-Z]+$/.test(name) ? options[`-${name.at(-1)}`] ?? null : null;
+}
+
 /**
  * True when the command references a path outside the read sandbox — project
  * cwd, or any of the optional read-only roots (absolute escape, `..`, or
@@ -312,29 +479,57 @@ export function bashCommandEscapesCwd(
   const cleaned = stripShellNoise(command);
   if (!cleaned) return false;
 
-  for (const segment of splitShellSegments(cleaned)) {
-    const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  const segments = tokenizeShellSegments(cleaned);
+  if (!segments) return true;
+  for (const tokens of segments) {
+    const head = tokens[0].toLowerCase();
+    const gitSubcommand = head === "git" ? readonlyGitSubcommandIndex(tokens) : null;
+    if (head === "git" && gitSubcommand === null) return true;
+    let effectiveCwd = root;
+    let optionsEnded = false;
     for (let i = 0; i < tokens.length; i++) {
       const tok = tokens[i];
-      const lower = tok.toLowerCase();
-      if (
-        lower === "-c" ||
-        lower === "--git-dir" ||
-        lower === "--work-tree" ||
-        lower === "--prefix"
-      ) {
-        const next = tokens[i + 1];
-        if (next && pathEscapesReadArea(root, next, allowedRoots)) return true;
-        i += 1;
+      if (tok === "--") { optionsEnded = true; continue; }
+      // Long option values and attached short file options are still real filesystem arguments.
+      const equalValue = !optionsEnded && tok.startsWith("--") && tok.includes("=") ? tok.slice(tok.indexOf("=") + 1) : null;
+      const globalGitCwd = head === "git" && i < (gitSubcommand ?? 0) && /^-C/.test(tok);
+      const gitCopyDetection = head === "git" && i >= (gitSubcommand ?? 0) && /^-C/.test(tok);
+      const attachedPath = optionsEnded || gitCopyDetection ? null : attachedReadonlyPathOption(head, tok);
+      const pathOffset = optionsEnded || gitCopyDetection ? null : readonlyPathArgumentOffset(head, tok);
+      const optionValue = equalValue ?? attachedPath;
+      if (optionValue !== null) {
+        // file's magic option accepts a list of paths; do not resolve that list as one harmless filename.
+        if (head === "file" && optionValue.includes(":") && !/^[a-z]:[^:]*$/i.test(optionValue)) return true;
+        let optionTargetExists = false;
+        try { lstatSync(resolve(effectiveCwd, optionValue)); optionTargetExists = true; }
+        catch (err) { if (!["ENOENT", "ENOTDIR"].includes((err as NodeJS.ErrnoException).code ?? "")) return true; }
+        if ((attachedPath !== null || pathOffset !== null || isPathLikeToken(optionValue) || optionTargetExists) && pathEscapesReadArea(root, optionValue, allowedRoots, effectiveCwd)) return true;
+        if (globalGitCwd) {
+          try { effectiveCwd = resolveReadonlyGitCwd(effectiveCwd, optionValue, [root, ...(allowedRoots ?? [])]); }
+          catch { return true; }
+        }
+      }
+      if (head === "file" && !tok.startsWith("-") && tok.includes(":") && !/^[a-z]:[^:]*$/i.test(tok)) return true;
+      if (optionValue === null && pathOffset !== null) {
+        const next = tokens[i + pathOffset];
+        if (next === undefined) return true;
+        if (head === "file" && next.includes(":") && !/^[a-z]:[^:]*$/i.test(next)) return true;
+        if (pathEscapesReadArea(root, next, allowedRoots, effectiveCwd)) return true;
+        if (globalGitCwd) {
+          try { effectiveCwd = resolveReadonlyGitCwd(effectiveCwd, next, [root, ...(allowedRoots ?? [])]); }
+          catch { return true; }
+        }
+        i += pathOffset;
         continue;
       }
       let existingTarget = false;
-      if (i > 0 && !tok.startsWith("-")) {
-        try { lstatSync(resolve(root, unquote(tok))); existingTarget = true; }
+      if (i > 0 && (!tok.startsWith("-") || optionsEnded)) {
+        try { lstatSync(resolve(effectiveCwd, unquote(tok))); existingTarget = true; }
         catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT" && (err as NodeJS.ErrnoException).code !== "ENOTDIR") return true; }
       }
       const fileGlob = i > 0 && /[*?\[]/.test(tok) && ["ls", "dir", "cat", "head", "tail", "stat", "file", "wc", "du"].includes(tokens[0].toLowerCase());
-      if ((isPathLikeToken(tok) || existingTarget || fileGlob) && pathEscapesReadArea(root, tok, allowedRoots)) {
+      const terminatedPath = optionsEnded && (/[\\/]/.test(tok) || tok.startsWith("~"));
+      if ((isPathLikeToken(tok) || existingTarget || fileGlob || terminatedPath) && pathEscapesReadArea(root, tok, allowedRoots, effectiveCwd)) {
         return true;
       }
     }
@@ -353,11 +548,13 @@ export function isReadonlyBashCommand(command: string): boolean {
   if (!cleaned) return false;
   if (hasShellSubstitution(cleaned)) return false;
 
-  for (const segment of splitShellSegments(cleaned)) {
-    if (MUTATION_PATTERNS.some((re) => re.test(segment))) return false;
-    const head = firstToken(segment).toLowerCase();
+  const segments = tokenizeShellSegments(cleaned);
+  if (!segments || segments.length === 0) return false;
+  for (const tokens of segments) {
+    const head = tokens[0].toLowerCase();
     if (!head || !READONLY_COMMAND_HEADS.has(head)) return false;
-    if (head === "git" && !isReadonlyGit(segment)) return false;
+    if (hasUnsafeArguments(tokens)) return false;
+    if (head === "git" && !isReadonlyGit(tokens)) return false;
   }
   return true;
 }

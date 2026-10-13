@@ -1,6 +1,6 @@
 # agent.md
 
-> 通用编码 Agent 在本仓库工作时的入口文档。Pi 的 `DefaultResourceLoader` 会将本文件与 `context.md`、`CLAUDE.md` 一起作为 `<project_context>` 注入到系统提示（**全文**，非索引；见 `agent-context.md` 第 3 节）。
+> 通用编码 Agent 在本仓库工作时的参考文档，需按需读取。Pi 按目录选择上下文入口，本仓库根目录默认选择 `AGENTS.md`；不会自动同时加载本文、`context.md` 和 `CLAUDE.md`，详见 `agent-context.md` 的上下文分层。
 >
 > 本文不重复 `CLAUDE.md`（开发者向）和 `agent-context.md`（模型上下文原理）的细节，只点出 Agent 工作中**反复需要用到**的事实。
 >
@@ -25,7 +25,7 @@
 | `apps/desktop/` | Electron 主应用（main / preload / renderer / shared） |
 | `apps/desktop/electron/agent/` | 主进程 agent 模块：会话、模型、供应商、Godot、撤回、检查点等 |
 | `apps/desktop/electron/agent/session-mode/` | **会话模式实现**：Ask / Plan / Goal / Bash 只读闸门 |
-| `apps/desktop/electron/ipc/` | 按分面拆分的 8 个 `register-*-ipc.ts`（workspace/turn/plan/session/session-config/provider/godot/update） |
+| `apps/desktop/electron/ipc/` | 按模块拆分的 `register-*-ipc.ts`，由 `register-ipc-handlers.ts` 组合 |
 | `apps/desktop/shared/` | main / renderer 共享类型与 `mode-tools`、`mode-prompt`、`transcript/` 等 |
 | `apps/desktop/src/` | React 19 renderer：组件、hooks、stores、lib、styles |
 | `packages/godot-editor-rpc` | Godot 4.x 编辑器插件（TCP JSON-lines 客户端） |
@@ -35,8 +35,8 @@
 
 ## 三、技术栈与版本下限
 
-- **Electron** ^43 + **electron-vite** ^6.0.0-beta.1 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
-- **React** 19 + **TypeScript** ^7.0 + **Vite** ^8.2.2；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
+- **Electron** ^43 + **electron-vite** ^6.0.0-beta.7 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
+- **React** 19 + **TypeScript** ^7.0 + **Vite** ^8.3.2；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
 - **@earendil-works/pi-coding-agent** ^0.99.2（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
 - 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
 - **Node.js 24+**（开发时需要；运行时 Electron 自带）
@@ -77,8 +77,8 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\\path\\to\\pr
 
 三进程模型，**不要越界**：
 
-- **`electron/main.ts`** — 持有 `SessionHost` / `GodotRpcBridge` / `AppAutoUpdater`。Pi SDK、文件系统、会话、模型、供应商、插件、用量、文档检索**全部在主进程**。
-- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关。**新增 IPC 能力必须同步改** `apps/desktop/shared/ipc.ts` + main handler + preload（handler 一般按"分面"在 8 个 `register-*-ipc.ts` 里挂；preload 实际暴露 6 个分面对象 `workspace` / `turn` / `plan` / `session` / `prefs` / `updates` + flat 方法）。
+- **`electron/main.ts`** — 薄启动入口，动态加载 `app-runtime.ts`，由 runtime 持有 `SessionHost` / `GodotRpcBridge` / `AppAutoUpdater`。Pi SDK、文件系统、会话、模型、供应商、插件、用量、文档检索**全部在主进程**。
+- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`；`contextIsolation` 开、`nodeIntegration` 关、主窗口 `sandbox: true`。**新增 IPC 必须同步** channel 注册表、`shared/ipc-invoke-map.ts` / DTO、对应 handler 与 preload；14 个分面见 `AGENTS.md`，扁平 IPC 方法已移除。
 - **`src/...`** — 纯 React renderer；通过 `window.xAgent.*` 调用主进程；**禁止**直接访问 Node API。
 
 `apps/desktop/shared/` 是 main / renderer 共享类型与逻辑（`ipc.ts` 工具名、`mode-tools.ts` 模式白名单、`transcript/` 流式映射）。
@@ -89,7 +89,7 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\\path\\to\\pr
 
 ### 6.1 持久化与隔离
 
-所有 X-agent 数据落在 `~/.pi/agent/` 下；与 Pi CLI **共用** `auth.json` / `models.json`，其余**隔离**：
+所有 X-agent 数据落在 `~/.pi/agent/` 下；与 Pi CLI **共用** `auth.json` / `models.json` / `settings.json`，其余**隔离**：
 
 | 路径 | 用途 |
 |---|---|
@@ -137,13 +137,13 @@ prefs / usage / provider / auth / godot-rpc **必须原子写**（`lib/atomic-wr
 
 ## 七、Godot 集成
 
-- **RPC 桥**：`.electron/agent/godot-rpc-bridge.ts` 多客户端 id / 活动选路；默认端口 `8765`，回退 `8765–8774`
-- **协议**：`.shared/godot-rpc.ts`；**Addon**：`packages/godot-editor-rpc/addons/x_agent_rpc/`
+- **RPC 桥**：`apps/desktop/electron/agent/godot-rpc-bridge.ts` 多客户端 id / 活动选路；默认端口 `8765`，回退 `8765–8774`
+- **协议**：`apps/desktop/shared/godot-rpc.ts`；**Addon**：`packages/godot-editor-rpc/addons/x_agent_rpc/`
 - **错误缓冲**：`run_current_scene` / `play_main_scene` 短时收集（Output ERROR/WARN、调试器 Errors）；插件**不**因报错自动停止
 - **工具**：`GODOT_TOOLS` 默认**关闭**，需在 设置 → 工具 勾选；调用通过 `godot-tools.ts` 转发到桥
 - **文档**：`packages/godot-pi/skills/godot-docs-4-7`（仅 Godot 项目自动索引）；不经过 RPC
 - **多编辑器**：每个 TCP 连接分配 `clientId`，请求发往活动客户端或在调用时显式 `clientId`
-- **握手 token**：桥每次 `start` 在 endpoint JSON 写入一次性 token；旧版插件（无 token 字段）会被拒绝——需要应用内"安装/更新 RPC 插件"覆盖
+- **握手 token**：桥启动优先复用 endpoint JSON 的 token / 端口，无有效记录时新建；`stop()` 保留记录；旧版插件（无 token 字段）会被拒绝——需要应用内"安装/更新 RPC 插件"覆盖
 
 UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读状态，完整控制在设置页）。
 
@@ -163,12 +163,12 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - **会破坏前缀缓存的操作**：改工具白名单、压缩、撤回/分支、流式 steer、中途改 Thinking / 模型
 - **DeepSeek 代理**：经 SiliconFlow / OpenRouter / 自建 openai-compatible 中转时，激活档案会为模型 id 含 `deepseek` 的条目写入 `reasoning` + `compat.thinkingFormat: "deepseek"`；官方 `api.deepseek.com` 走 Pi 自动检测
 
-## 十、UI 约束（Cindy 设计语言）
+## 十、UI 约束（主题 token 与层次）
 
 完整规范见 `design.md`。要点：
 
 - 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 覆盖 token；主题族：`default`（默认）/`nord` / `tokyo` / `paper` / `contrast`
-- **三层 Surface**：Surface / Card / Board + 1px 边；页面内**无阴影**（modal 除外）
+- **层次**：Surface / Card / Card-elev / Chrome + 1px Board 边；主元素与交互阴影走主题 token，`contrast` 禁用阴影
 - **Pill 优先**：按钮 / chip / 单行 input / tab 用 `9999px`；容器 `12px`；多行 `8px`
 - 颜色 / 圆角 / 阴影全部走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**
 - 字体：Inter 400/500 + JetBrains Mono；全局 13px / 1.5
@@ -177,13 +177,13 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - 设置：左侧分页 + 可滚动内容区（`min-height: 0` + `overflow-y: auto`）
 - 尊重 `prefers-reduced-motion`；功能态过渡 ≤150ms
 
-布局壳：`TopBar → [banners] → main-row`（`Sidebar` / `Chat` / `RightPanel`，≤960px 隐藏右栏）。右栏五页签：**上下文 / 计划 / 工具 / 文件 / Godot**。
+布局壳：`TopBar → [banners] → main-row`（`Sidebar` / `Chat` / `RightPanel`，≤1100px 右栏覆盖显示，≤960px 侧栏强制展开）。右栏五页签：**上下文 / 计划 / 工具 / 文件 / Godot**。
 
 ## 十一、发版流程
 
-完整流程见 [`CLAUDE.md` §7 开发流程](CLAUDE.md#7-发版流程)。本仓库采用 **GitHub Flow**——改动走 feature 分支 + PR 合并，发版时 maintainer 在 main 上打 tag → CI 自动构建并上传 GitHub Release。
+完整流程见 [`CLAUDE.md` §7 开发流程](../CLAUDE.md#7-发版流程)。本仓库采用 **GitHub Flow**——改动走 feature 分支 + PR 合并，发版时 maintainer 在 master 上打 tag → CI 自动构建并上传 GitHub Release。
 
-**Agent 约定**:不直接 push `main`、不主动打 tag、不提交 `apps/desktop/release/`（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
+**Agent 约定**:不直接 push `master`、不主动打 tag、不提交 `apps/desktop/release/`（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
 
 ## 十二、排障速查
 
@@ -219,7 +219,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - 函数级注释 / 关键决策注释保留；新模块头部补一句"做什么 + 为什么"
 - 中文用户面文案以 `README.md` / 设置页为准；注释 / 标识符英文为主
 - **不要**在 `docs/` 下写**个人**草稿（个人草稿走 `.scratch/notes/`，已 gitignored）；`docs/` 是公开目录，CI 可见
-- 提交前：`npm run desktop:typecheck` + `npm test`（在 `apps/desktop` 内）；然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR，CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿后合并
+- 提交前：在 `apps/desktop` 执行 `npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`，在根目录执行 `npm run doc:drift`；然后按 [CLAUDE.md §5 PR 流程](../CLAUDE.md#5-pull-request-流程) 提交 PR，CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿后合并
 
 ---
 

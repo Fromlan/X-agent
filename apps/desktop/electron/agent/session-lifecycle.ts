@@ -2,14 +2,15 @@
  * Workspace session lifecycle — open / resume / dispose / createSession.
  * SessionHost composes this module; turn / mode / retract stay on the host.
  */
-import { existsSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
 import {
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
+  CURRENT_SESSION_VERSION,
+  parseSessionEntries,
   getAgentDir,
   type AgentSession,
-  type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_TOOL_REGISTRY,
@@ -65,6 +66,7 @@ import {
 import type { SessionLifecycleHost } from "./host-interfaces";
 import { createInitCommandExtension } from "./extensions/init-command";
 import { augmentAgentsFiles } from "./agents-md-context";
+import { writeFileAtomicSync } from "./lib/atomic-write";
 
 export type SessionBundle = {
   session: AgentSession;
@@ -119,17 +121,92 @@ export class SessionLifecycle {
     this.a().setBaseAppendPrompt([]);
   }
 
+  /** Restore the persisted type and keep a failed, unpublished runtime from changing its conversation. */
   private async createSession(
     cwd: string,
     sessionManager: SessionManager,
     requestedType: SessionType = DEFAULT_SESSION_TYPE,
+    beforeOpen?: Buffer,
+  ): Promise<OpenProjectResult> {
+    const existingPath = sessionManager.getSessionFile();
+    const restoring = Boolean(existingPath && existsSync(existingPath));
+    // All resume paths share this decision. A request type only applies to a
+    // new manager; existing and legacy conversations keep their persisted type.
+    const loadedBytes = restoring ? readFileSync(existingPath!) : null;
+    const original = beforeOpen ?? loadedBytes;
+    const initialEntryCount = sessionManager.getEntries().length;
+    const oldLoader = this.a().getResourceLoader();
+    const oldAppend = this.a().getBaseAppendPrompt();
+    let pendingSession: AgentSession | null = null;
+    try {
+      const sessionType = restoring ? loadSessionType(existingPath!) : requestedType;
+      return await this.initializeSession(cwd, sessionManager, sessionType, restoring, (session) => {
+        pendingSession = session;
+      });
+    } catch (err) {
+      // Once published, the new bundle owns its file. Before publication, tear
+      // down a failed extension runtime and undo only provable SDK appends.
+      if (!pendingSession || this.a().getBundle()?.session !== pendingSession) {
+        try { (pendingSession as AgentSession | null)?.dispose(); } catch { /* preserve initialization error */ }
+        if (original && loadedBytes && existingPath) {
+          this.restoreInitializationAppends(existingPath, original, loadedBytes, sessionManager, initialEntryCount);
+        }
+        this.a().setResourceLoader(oldLoader);
+        this.a().setBaseAppendPrompt(oldAppend);
+      }
+      throw err;
+    }
+  }
+
+  /** Roll back exact SDK migration/initialization bytes atomically; preserve concurrent external edits. */
+  private restoreInitializationAppends(
+    sessionPath: string,
+    original: Buffer,
+    loadedBytes: Buffer,
+    sessionManager: SessionManager,
+    initialEntryCount: number,
+  ): void {
+    const appends = sessionManager.getEntries().slice(initialEntryCount);
+    if (appends.length === 0 && original.equals(loadedBytes)) return;
+    // SessionManager.open migrates legacy JSONL by serializing its complete
+    // header and entries. Only accept that exact SDK output as a rollback base.
+    if (!original.equals(loadedBytes)) {
+      const header = parseSessionEntries(original.toString("utf8")).find((entry) => entry.type === "session");
+      if (!header || (header.version ?? 1) >= CURRENT_SESSION_VERSION || header.id !== sessionManager.getSessionId()) return;
+      const migratedBytes = Buffer.from([sessionManager.getHeader(), ...sessionManager.getEntries().slice(0, initialEntryCount)]
+        .map((entry) => `${JSON.stringify(entry)}\n`).join(""));
+      if (!migratedBytes.equals(loadedBytes)) return;
+    }
+    const expected = Buffer.concat([
+      loadedBytes,
+      Buffer.from(appends.map((entry) => `${JSON.stringify(entry)}\n`).join("")),
+    ]);
+    try {
+      if (!readFileSync(sessionPath).equals(expected)) {
+        this.a().emitReplaceableNotice("session", "会话初始化失败期间文件发生了其他修改，已保留当前文件。", "warn");
+        return;
+      }
+      writeFileAtomicSync(sessionPath, original);
+    } catch (err) {
+      this.a().emitReplaceableNotice("session", `恢复会话初始化前内容失败：${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }
+
+  /** Prepare a session runtime before publishing its bundle or persisting a new type. */
+  private async initializeSession(
+    cwd: string,
+    sessionManager: SessionManager,
+    requestedType: SessionType,
+    restoring: boolean,
+    onSessionCreated: (session: AgentSession) => void,
   ): Promise<OpenProjectResult> {
     const prefs = getCachedPrefs();
     const modelRuntime = await this.a().ensureRuntime();
     const agentDir = getAgentDir();
-    // Mode resets with each new session bundle.
-    this.a().sessionMode.reset({ emit: false });
-    this.a().setBaseAppendPrompt([]);
+    // Stage resources locally. A failed model/resource/extension initialization
+    // must preserve the active bundle's mode, goal ledger and append cache.
+    let published = false;
+    let baseAppend: string[] = [];
     const loader = new DefaultResourceLoader({
       cwd,
       agentDir,
@@ -150,8 +227,11 @@ export class SessionLifecycle {
       // SessionHost mutates the returned array on mode change, then rebuilds
       // via setActiveToolsByName → getAppendSystemPrompt().
       appendSystemPromptOverride: (base) => {
-        this.a().setBaseAppendPrompt([...base]);
-        return this.a().sessionMode.composeModeAppend(base);
+        baseAppend = [...base];
+        if (published) this.a().setBaseAppendPrompt(baseAppend);
+        return published
+          ? this.a().sessionMode.composeModeAppend(base)
+          : this.a().sessionMode.composeModeAppend(base, requestedType, "agent");
       },
       // Pi's `loadProjectContextFiles` only walks AGENTS.md / CLAUDE.md per
       // directory. X-agent additionally picks up the single-name variants
@@ -188,7 +268,6 @@ export class SessionLifecycle {
       ],
     });
     await loader.reload();
-    this.a().setResourceLoader(loader);
 
     let selectedModel =
       prefs.provider && prefs.model
@@ -248,12 +327,7 @@ export class SessionLifecycle {
       ...(selectedModel ? { model: selectedModel } : {}),
       ...(!hasThinkingEntry ? { thinkingLevel: prefs.thinkingLevel } : {}),
     });
-    // Apply「默认 Thinking」to the live session (clamps to model capabilities).
-    session.setThinkingLevel(prefs.thinkingLevel);
-    const effectiveThinking = session.thinkingLevel as ThinkingLevel;
-    if (effectiveThinking !== prefs.thinkingLevel) {
-      void patchPrefs({ thinkingLevel: effectiveThinking });
-    }
+    onSessionCreated(session);
     // Initial active set = session-type derived from prefs (code = prefs.tools;
     // design = readonly core + write/edit, with write/edit path-checked by the
     // design-write-guard extension). Must run after createAgentSession so the
@@ -275,10 +349,18 @@ export class SessionLifecycle {
       }),
     });
 
+    // Delay preference writes and thinking-level persistence until model,
+    // resources and extensions have all initialized successfully.
+    session.setThinkingLevel(prefs.thinkingLevel);
+    const effectiveThinking = session.thinkingLevel as ThinkingLevel;
+    if (effectiveThinking !== prefs.thinkingLevel) {
+      void patchPrefs({ thinkingLevel: effectiveThinking });
+    }
+
     const sessionPath = this.sessionFileOf(session);
-    // Persist the type sidecar NOW (after we have sessionPath) so a follow-up
-    // resume can recover the type. Failure is non-fatal per plan §3.3.
-    if (sessionPath) {
+    // Persist a new type before publication. A failed sidecar write must not
+    // create a design conversation that later resumes with code permissions.
+    if (sessionPath && !restoring) {
       saveSessionType(sessionPath, requestedType);
     }
 
@@ -293,9 +375,54 @@ export class SessionLifecycle {
 
     const previous = this.a().getBundle();
     this.a().setBundle(nextBundle);
+    // Reset only after the candidate is ready; failed preparation leaves the
+    // previous controller (including paused/pursuing goals) untouched.
+    this.a().sessionMode.reset({ emit: false });
     await this.disposeBundle(previous);
     // Re-bind after disposeBundle — must stay set for Plan/Goal mode switches.
     this.a().setResourceLoader(loader);
+    this.a().setBaseAppendPrompt(baseAppend);
+    published = true;
+
+    // A published bundle is authoritative even if subsequent checkpoint setup
+    // fails. Broadcast its identity/type/history before any remaining fallible
+    // setup so the renderer cannot retain the disposed session's transcript.
+    const history: HistoryItem[] = branchEntriesToHistory(session.sessionManager.getBranch());
+    const info: OpenProjectResult = {
+      ok: true,
+      cwd,
+      sessionId: session.sessionId,
+      model: modelFromSession(session),
+      thinkingLevel: effectiveThinking,
+      sessionType: requestedType,
+      ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
+    };
+    this.a().setLastTurnUsage(undefined);
+    this.a().emit({
+      type: "session_info",
+      sessionId: session.sessionId,
+      cwd,
+      model: info.model,
+      thinkingLevel: info.thinkingLevel,
+      sessionType: requestedType,
+      availableThinkingLevels: session.getAvailableThinkingLevels(),
+      sessionPath,
+    });
+    dbgLog("lifecycle", "session_info (openSession)", {
+      sessionId: session.sessionId,
+      thinkingLevel: info.thinkingLevel,
+      available: session.getAvailableThinkingLevels(),
+    });
+    this.a().setLastHistoryFingerprint(this.a().historyFingerprint(history));
+    this.a().emit({ type: "history_replace", items: history });
+    // Restoring the same JSONL keeps its session ID but replaces the runtime;
+    // publish that runtime's queues before any later setup can fail.
+    this.a().emit({
+      type: "queue_update",
+      steering: [...session.getSteeringMessages()],
+      followUp: [...session.getFollowUpMessages()],
+    });
+
     // C11: 把 Godot RPC 路由绑定到当前会话项目，避免会话切换后旧项目
     // 的 Godot 编辑器还能接收/观察本会话的工具调用。
     this.a().godotRpc?.setCurrentCwd(cwd);
@@ -336,42 +463,9 @@ export class SessionLifecycle {
     await this.a().shadowCheckpoints.setCwd(cwd);
     this.a().shadowCheckpoints.loadFromSession(session.sessionManager);
 
-    const history: HistoryItem[] = branchEntriesToHistory(
-      session.sessionManager.getBranch(),
-    );
-
-    const info: OpenProjectResult = {
-      ok: true,
-      cwd,
-      sessionId: session.sessionId,
-      model: modelFromSession(session),
-      thinkingLevel: effectiveThinking,
-      sessionType: requestedType,
-      ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
-    };
-
-    this.a().emit({
-      type: "session_info",
-      sessionId: session.sessionId,
-      cwd,
-      model: info.model,
-      thinkingLevel: info.thinkingLevel,
-      sessionType: requestedType,
-      availableThinkingLevels: session.getAvailableThinkingLevels(),
-      sessionPath,
-    });
-    // DEBUG(thinking-switch #30): 标记 openSession 的 session_info
-    dbgLog("lifecycle", "session_info (openSession)", {
-      sessionId: session.sessionId,
-      thinkingLevel: info.thinkingLevel,
-      available: session.getAvailableThinkingLevels(),
-    });
-    this.a().setLastHistoryFingerprint(this.a().historyFingerprint(history));
-    this.a().emit({ type: "history_replace", items: history });
     if (modelFallbackMessage) {
       this.a().emitReplaceableNotice("model", modelFallbackMessage, "warn");
     }
-    this.a().setLastTurnUsage(undefined);
     this.a().setStatus("idle");
     this.a().emitUsageUpdate();
     return info;
@@ -389,6 +483,20 @@ export class SessionLifecycle {
     }
   }
 
+  /** Snapshot a discovery candidate before Pi's authoritative continueRecent can migrate it. */
+  private async snapshotRecentSession(cwd: string, root: string): Promise<{ path: string; bytes: Buffer } | null> {
+    // Pi list() is read-only, but orders by message activity. continueRecent()
+    // selects by file mtime, so use only discovery metadata for the snapshot;
+    // the SDK still opens/selects the session and its result is checked below.
+    const discovered = (await SessionManager.list(cwd, root))
+      .map((session) => ({ path: session.path, mtime: statSync(session.path).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime || a.path.localeCompare(b.path));
+    const candidate = discovered[0];
+    if (!candidate) return null;
+    loadSessionType(candidate.path);
+    return { path: candidate.path, bytes: readFileSync(candidate.path) };
+  }
+
   async openProject(
     cwd: string,
     mode: "continue" | "new" = "continue",
@@ -400,11 +508,16 @@ export class SessionLifecycle {
     return this.a().runReplaceExclusive(async () => {
       try {
         const root = getXAgentSessionsRoot();
+        const beforeOpen = mode === "continue" ? await this.snapshotRecentSession(cwd, root) : null;
         const sessionManager =
           mode === "new"
             ? SessionManager.create(cwd, root)
             : SessionManager.continueRecent(cwd, root);
-        const result = await this.createSession(cwd, sessionManager, sessionType);
+        const chosenPath = sessionManager.getSessionFile();
+        if (mode === "continue" && chosenPath && existsSync(chosenPath) && beforeOpen?.path !== chosenPath) {
+          throw new Error("最近会话在发现期间发生变化，请重新打开项目后重试");
+        }
+        const result = await this.createSession(cwd, sessionManager, sessionType, beforeOpen?.bytes);
         if (result.ok) {
           this.unhideProjectKey(cwd);
           // Fire-and-forget: 兜底 install 5 个 builtin design skill.
@@ -438,42 +551,45 @@ export class SessionLifecycle {
         if (!existsSync(sessionPath)) {
           return failOpen("会话文件不存在");
         }
-        const sessionManager = SessionManager.open(
-          sessionPath,
-          getXAgentSessionsRoot(),
-        );
+        // Fail before Pi can migrate JSONL if its locked type is unavailable.
+        loadSessionType(sessionPath);
+        // Pi may rewrite valid legacy JSONL while opening it. A runtime failure
+        // must preserve the bytes from before that migration as well.
+        const beforeOpen = readFileSync(sessionPath);
+        let sessionManager: SessionManager;
+        try {
+          sessionManager = SessionManager.open(sessionPath, getXAgentSessionsRoot());
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // Only the parser's explicit corruption signal permits quarantine.
+          // Filesystem failures (permissions, disappearing paths) preserve the file.
+          const parseFailure = err instanceof SyntaxError || /^Session file is not a valid .+ session:/.test(message);
+          let backedUp = "";
+          if (parseFailure) {
+            try {
+              if (existsSync(sessionPath)) {
+                const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+                backedUp = `${sessionPath}.broken-${stamp}.bak`;
+                renameSync(sessionPath, backedUp);
+              }
+            } catch { backedUp = ""; }
+          }
+          this.a().setStatus("error", message);
+          return failOpen(backedUp ? `会话文件无法解析，已备份到 ${backedUp}` : message, this.a().getBundle()?.cwd ?? "");
+        }
         const cwd = sessionManager.getCwd();
         if (!cwd) {
           return failOpen(
             "无法从会话文件解析项目路径，请先打开对应项目后再恢复",
           );
         }
-        // 恢复时从 sidecar 读 type, 缺省 fallback 到 DEFAULT_SESSION_TYPE (向后兼容).
-        const sessionType = loadSessionType(sessionPath);
-        const result = await this.createSession(cwd, sessionManager, sessionType);
+        const result = await this.createSession(cwd, sessionManager, DEFAULT_SESSION_TYPE, beforeOpen);
         if (result.ok) this.unhideProjectKey(cwd);
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        // E7: 会话文件损坏（崩溃半写等）时先备份，避免用户会话静默不可恢复。
-        let backedUp = "";
-        try {
-          if (existsSync(sessionPath)) {
-            const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-            const backup = `${sessionPath}.broken-${stamp}.bak`;
-            renameSync(sessionPath, backup);
-            backedUp = backup;
-          }
-        } catch {
-          /* ignore */
-        }
         this.a().setStatus("error", message);
-        return failOpen(
-          backedUp
-            ? `会话文件无法解析，已备份到 ${backedUp}`
-            : message,
-          this.a().getBundle()?.cwd ?? "",
-        );
+        return failOpen(message, this.a().getBundle()?.cwd ?? "");
       }
     });
   }
@@ -528,6 +644,10 @@ export class SessionLifecycle {
       );
       if (fallbackPath) {
         try {
+          // The fallback is an existing conversation too: validate its type and
+          // snapshot bytes before Pi can migrate a valid legacy JSONL file.
+          loadSessionType(fallbackPath);
+          const beforeOpen = readFileSync(fallbackPath);
           const sessionManager = SessionManager.open(
             fallbackPath,
             getXAgentSessionsRoot(),
@@ -537,10 +657,18 @@ export class SessionLifecycle {
             await this.emitClosedWorkspace();
             return { ok: true };
           }
-          await this.createSession(fallbackCwd, sessionManager);
+          await this.createSession(fallbackCwd, sessionManager, DEFAULT_SESSION_TYPE, beforeOpen);
           return { ok: true };
-        } catch {
+        } catch (err) {
+          // Checkpoint setup may fail after publishing the candidate. Close
+          // that runtime as well, rather than announcing a hidden live bundle.
+          const failed = this.a().getBundle();
+          this.a().setBundle(null);
+          await this.disposeBundle(failed);
+          this.clearResourceLoader();
+          this.a().setLastTurnUsage(undefined);
           await this.emitClosedWorkspace(cwd);
+          this.a().emitReplaceableNotice("session", `会话已删除，但恢复其他会话失败：${err instanceof Error ? err.message : String(err)}`, "warn");
           return { ok: true };
         }
       }
@@ -679,7 +807,8 @@ export class SessionLifecycle {
   async listSessions(): Promise<SessionInfo[]> {
     try {
       const all = await SessionManager.listAll(getXAgentSessionsRoot());
-      return all
+      let invalidTypeRecords = 0;
+      const listed = all
         .slice()
         .sort((a, b) => {
           const at = new Date(a.modified ?? a.created ?? 0).getTime();
@@ -687,15 +816,24 @@ export class SessionLifecycle {
           return bt - at;
         })
         .slice(0, 100)
-        .map((s) => ({
-          id: s.id,
-          name: displaySessionName(s.name, s.firstMessage),
-          path: s.path,
-          cwd: s.cwd ?? "",
-          updatedAt: new Date(s.modified ?? s.created ?? Date.now()).toISOString(),
-          // sessionType 从 sidecar 读; 缺省 fallback 到 DEFAULT_SESSION_TYPE.
-          sessionType: coerceSessionType(loadSessionType(s.path)),
-        }));
+        .flatMap((s): SessionInfo[] => {
+          let sessionType: SessionType;
+          try { sessionType = loadSessionType(s.path); }
+          catch { invalidTypeRecords += 1; return []; }
+          return [{
+            id: s.id,
+            name: displaySessionName(s.name, s.firstMessage),
+            path: s.path,
+            cwd: s.cwd ?? "",
+            updatedAt: new Date(s.modified ?? s.created ?? Date.now()).toISOString(),
+            // Only a missing legacy sidecar defaults to the code type.
+            sessionType: coerceSessionType(sessionType),
+          }];
+        });
+      if (invalidTypeRecords > 0) {
+        this.a().emitReplaceableNotice("session", `${invalidTypeRecords} 个会话的会话类型记录不可读取或损坏，已保留原文件；修复记录后可恢复。`, "warn");
+      }
+      return listed;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.a().emitReplaceableNotice(

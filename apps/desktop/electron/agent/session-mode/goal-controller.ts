@@ -53,6 +53,8 @@ export type GoalTurnLedgerEntry = {
   userEntryId: string | null;
   tokens: number;
   turnIncremented: boolean;
+  /** Identifies a paid preflight request that preceded the new user's append. */
+  pendingUsageId?: string;
 };
 
 /** Goal 状态镜像 (read+write) 通过 deps 暴露给 GoalController. */
@@ -92,6 +94,41 @@ function clampMaxTokens(n: number | undefined): number {
 
 export class GoalController {
   constructor(private readonly owner: GoalControllerDeps) {}
+
+  /** Persist returned request usage immediately; pause/retract never erase an unrecorded charge. */
+  recordRequestUsage(userEntryId: string | null, tokens: number, pendingUsageId?: string): void {
+    const goal = this.owner.getGoalState();
+    if (!goal || !isRestorableGoalStatus(goal.status) || !Number.isFinite(tokens) || tokens <= 0) return;
+    const ledger = this.owner.getGoalTurnLedger();
+    let entry = pendingUsageId
+      ? ledger.findLast((item) => item.pendingUsageId === pendingUsageId)
+      : ledger.findLast((item) => item.userEntryId === userEntryId && !item.pendingUsageId);
+    if (!entry) {
+      entry = { userEntryId, tokens: 0, turnIncremented: false, ...(pendingUsageId ? { pendingUsageId } : {}) };
+      ledger.push(entry);
+    }
+    entry.tokens += tokens;
+    goal.tokensUsed += tokens;
+    this.persistGoalJournal();
+    this.owner.emitGoal();
+  }
+
+  /** Move only a specifically identified preflight charge; historical anonymous ledger rows stay intact. */
+  bindPendingRequestUsage(pendingUsageId: string, userEntryId: string): void {
+    const ledger = this.owner.getGoalTurnLedger();
+    const pending = ledger.find((entry) => entry.pendingUsageId === pendingUsageId);
+    if (!pending) return;
+    const target = ledger.findLast((entry) => entry.userEntryId === userEntryId && !entry.pendingUsageId);
+    if (target) {
+      target.tokens += pending.tokens;
+      this.owner.setGoalTurnLedger(ledger.filter((entry) => entry !== pending));
+    } else {
+      pending.userEntryId = userEntryId;
+      delete pending.pendingUsageId;
+    }
+    this.persistGoalJournal();
+    this.owner.emitGoal();
+  }
 
   // ===== setMode("goal") commit (走独立 apply 路径) =====
 
@@ -396,7 +433,7 @@ export class GoalController {
     const bundle = this.owner.host().getBundle();
     if (!bundle) return;
     const goal = this.owner.getGoalState();
-    if (goal?.status !== "pursuing") return;
+    if (!goal || (goal.status !== "pursuing" && goal.status !== "paused")) return;
     if (this.owner.getContinueInFlight()) return;
     if (bundle.session.isStreaming) return;
 
@@ -404,23 +441,29 @@ export class GoalController {
     const previousEntry = userEntryId ? this.owner.getGoalTurnLedger().findLast((entry) => entry.userEntryId === userEntryId) : undefined;
     if (previousEntry?.turnIncremented) return; // Duplicate settled notifications must not charge/evaluate one turn twice.
 
+    // Pausing stops continuation, never refunds the requests that were already
+    // in flight. Charge the settled user run before deciding whether to evaluate.
+    const byUser = this.owner.host().getUserTurnTokenTotals?.();
+    const requests = byUser?.size ? byUser : new Map([[userEntryId, this.owner.host().getLastTurnTokenTotal()]]);
+    const ledger = this.owner.getGoalTurnLedger();
+    for (const [entryId, tokens] of requests) {
+      if (!ledger.some((entry) => entry.userEntryId === entryId)) {
+        const charge = Math.max(0, tokens);
+        ledger.push({ userEntryId: entryId, tokens: charge, turnIncremented: false });
+        goal.tokensUsed += charge;
+      }
+    }
+    const ledgerEntry = ledger.findLast((entry) => entry.userEntryId === userEntryId) ?? { userEntryId, tokens: 0, turnIncremented: false };
+    if (!ledger.includes(ledgerEntry)) ledger.push(ledgerEntry);
+    this.persistGoalJournal();
+    this.owner.emitGoal();
+    if (goal.status === "paused") return;
+
     this.owner.setContinueInFlight(true);
     const goalAtStart = goal;
     const generation = this.owner.getGoalGeneration();
     let continuePrompt: string | null = null;
     try {
-      const turnTokens = Math.max(0, this.owner.host().getLastTurnTokenTotal());
-      const ledgerEntry: GoalTurnLedgerEntry = previousEntry ?? {
-        userEntryId,
-        tokens: turnTokens,
-        turnIncremented: false,
-      };
-      if (!previousEntry) {
-        this.owner.getGoalTurnLedger().push(ledgerEntry);
-        goalAtStart.tokensUsed += turnTokens;
-      }
-      this.persistGoalJournal();
-      this.owner.emitGoal();
       if (goalAtStart.tokensUsed >= goalAtStart.maxTokens) {
         this.hitBudgetLimit(
           goalAtStart,

@@ -5,7 +5,7 @@
 // 自检:用 fixture 锁住 check-doc-drift.mjs 的核心 helper 与规则结构。
 // 跑法:`node --test scripts/test-check-doc-drift.mjs`
 //
-// 6 个 case 覆盖:
+// 核心覆盖:
 // 1. findLine 命中/未命中/多匹配
 // 2. checkLine keyword + value 同线检查
 // 3. checkText 全文 substring
@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { findLine, checkLine, checkText, RULES, runChecks } from './check-doc-drift.mjs';
+import { findLine, checkLine, checkText, checkDependencyVersion, getTestChainSummary, checkTestChainSummary, RULES, runChecks } from './check-doc-drift.mjs';
 
 test('runChecks: source failures fail the check and preserve remaining diagnostics', () => {
   const rules = [
@@ -49,12 +49,22 @@ test('findLine: 多行只取第一个', () => {
 });
 
 test('checkLine: keyword + valuePattern 同线才 ok', async () => {
-  // 真实情况:用真实 docs/agent.md 测(它已经有 electron-vite ^6.0.0-beta.1)
+  // Match the dependency prefix so prerelease suffixes cannot satisfy the check.
   const ok = checkLine({ file: 'docs/agent.md', keyword: /electron-vite/i, valuePattern: /\^?6/ });
   assert.equal(ok.ok, true, `expected line 38 to match; got ${JSON.stringify(ok)}`);
   // keyword 命中但 value 不命中(electron-vite 行不会有 ^7)
-  const bad = checkLine({ file: 'docs/agent.md', keyword: /electron-vite/i, valuePattern: /\^?7/ });
+  const bad = checkLine({ file: 'docs/agent.md', keyword: /electron-vite/i, valuePattern: /electron-vite\*\*\s+\^7\./ });
   assert.equal(bad.ok, false);
+});
+
+test('dependency checks reject other dependency versions and prerelease suffix digits', () => {
+  assert.equal(checkDependencyVersion('docs/agent.md', 'electron-vite', '^7').ok, false);
+  assert.equal(checkDependencyVersion('docs/agent.md', 'Vite', '^7.0').ok, false);
+  assert.equal(checkDependencyVersion('docs/agent.md', 'electron-vite', '^6.0.0-beta.1').ok, false);
+  for (const rule of RULES.filter((rule) => ['electron-vite', 'vite', 'pi-sdk'].includes(rule.id))) {
+    assert.equal(rule.docs[0].check(rule.fetch()).ok, true);
+    assert.equal(rule.docs[0].check('^99.99.99').ok, false);
+  }
 });
 
 test('checkLine: value 命中但 keyword 不命中', () => {
@@ -103,10 +113,22 @@ test('runChecks: 注入「过期 actual」可触发 drift 报告(反向冒烟)',
   assert.equal(result.ok, false, '故意传错的 actual 应未匹配');
 });
 
-test('tsx-test-count fetcher 在真实 package.json 上 = 62', async () => {
+test('test chain counts follow script changes and retain repeated executed steps', () => {
+  const summary = getTestChainSummary('tsx scripts/test-one.ts && tsx --tsconfig tsconfig.web.json scripts/test-two.ts && tsx scripts/test-one.ts && tsx scripts/measure-context-baseline.ts && node ../../packages/godot-pi/scripts/check-skills.mjs');
+  assert.deepEqual(summary, { tests: 3, baseline: 1, skills: 1, total: 5 });
+  const text = '3 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 5 步';
+  assert.equal(checkTestChainSummary(text, summary).ok, true);
+  assert.equal(checkTestChainSummary(text.replace('3 个', '2 个'), summary).ok, false);
+  assert.equal(checkTestChainSummary(text.replace('3 个', '13 个'), summary).ok, false);
+  assert.equal(checkTestChainSummary(text.replace('5 步', '4 步'), summary).ok, false);
+  assert.equal(checkTestChainSummary('3 个 test-*\n5 步', summary).ok, false);
+});
+
+test('tsx-test-count fetcher matches the documented chain', async () => {
   const { getTsxTestCount } = await import('./check-doc-drift.mjs');
   const n = getTsxTestCount();
-  assert.equal(n, 62, `expect 62 chained entries in npm test, got ${n}`);
+  const summary = getTestChainSummary();
+  assert.equal(n, summary.tests + summary.baseline + summary.skills);
 });
 
 test('godot-tools fetcher 在真实 godot-tools.ts 上 = 27', async () => {

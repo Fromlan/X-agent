@@ -12,7 +12,6 @@ import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { AppAutoUpdater } from "../agent/auto-updater";
 import type { PrefsRecoveryNotice } from "../agent/prefs";
 import type { StartupIssue } from "../boot/startup-issues";
-import { IPC_CHANNELS } from "../../shared/ipc-channels";
 import type { ClientPrefs } from "../../shared/ipc";
 import { configureIpcSenderGuard } from "./register-ipc";
 import { registerCoreIpc } from "./register-core-ipc";

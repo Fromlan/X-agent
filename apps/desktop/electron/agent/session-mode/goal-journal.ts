@@ -19,7 +19,7 @@ export type GoalJournalRecord = {
   sessionPath: string;
   goal: GoalInfo;
   updatedAt: number;
-  ledger?: { userEntryId: string | null; tokens: number; turnIncremented: boolean }[];
+  ledger?: { userEntryId: string | null; tokens: number; turnIncremented: boolean; pendingUsageId?: string }[];
 };
 
 export function getGoalsDir(): string {
@@ -64,7 +64,7 @@ export function loadGoalLedger(sessionPath: string): GoalJournalRecord["ledger"]
   try {
     const record = JSON.parse(readFileSync(goalJournalPath(sessionPath), "utf8")) as GoalJournalRecord;
     if (record.sessionPath !== sessionPath || record.version !== 1 || !Array.isArray(record.ledger)) return null;
-    if (record.ledger.some((e) => !e || (e.userEntryId !== null && typeof e.userEntryId !== "string") || !Number.isFinite(e.tokens) || e.tokens < 0 || typeof e.turnIncremented !== "boolean")) return null;
+    if (record.ledger.some((e) => !e || (e.userEntryId !== null && typeof e.userEntryId !== "string") || !Number.isFinite(e.tokens) || e.tokens < 0 || typeof e.turnIncremented !== "boolean" || (e.pendingUsageId !== undefined && (typeof e.pendingUsageId !== "string" || !e.pendingUsageId)))) return null;
     return record.ledger;
   } catch { return null; }
 }

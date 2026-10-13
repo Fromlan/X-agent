@@ -23,7 +23,6 @@ export function PlanTab({
     location,
     dirty,
     loading,
-    saving,
     error,
     hint,
     save,

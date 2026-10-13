@@ -46,8 +46,6 @@ import {
 } from "../lib/chat-unpin-input";
 import {
   ROW_GAP_PX,
-  VIRTUALIZE_MIN_ITEMS,
-  VIRTUALIZE_STREAMING_MIN_ITEMS,
   useChatTranscriptVirtualizer,
   useChatVirtualizerConfig,
 } from "../lib/chat-transcript-virtual";

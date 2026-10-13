@@ -12,6 +12,36 @@ import {
 } from "./godot-project-setting";
 
 describe("validateProjectSettingPayload", () => {
+  it("拒绝 Godot 4.6 的真实 override 键与全部 feature suffix", () => {
+    for (const key of [
+      "application/config/project_settings_override",
+      "application/config/project_settings_override.windows",
+      "application/config/project_settings_override.windows.debug",
+      "application/config/disable_project_settings_override",
+      "application/config/disable_project_settings_override.windows",
+      "editor_plugins/enabled.windows",
+    ]) expect(validateProjectSettingPayload({ key, value: "res://override.cfg" })).toMatchObject({ ok: false, error: expect.stringContaining("敏感") });
+  });
+
+  it("合法设置的 feature suffix 保持可用，近似名称不误命中", () => {
+    for (const key of ["application/config/name.windows", "application/config/project_settings_override_note"])
+      expect(validateProjectSettingPayload({ key, value: "Game" })).toEqual({ ok: true, key, value: "Game" });
+  });
+
+  it("拒绝非有限数值与具有自定义原型的值", () => {
+    for (const value of [Number.NaN, Infinity, -Infinity, new Date(), new Map(), Object.create({ hidden: true })])
+      expect(validateProjectSettingPayload({ key: "application/config/name", value }).ok).toBe(false);
+  });
+
+  it("字典中的 __proto__ 保留为普通键，不修改输出原型", () => {
+    const value = JSON.parse('{"__proto__":{"safe":true}}') as unknown;
+    const result = validateProjectSettingPayload({ key: "application/config/name", value });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.getPrototypeOf(result.value)).toBe(Object.prototype);
+      expect(Object.keys(result.value as object)).toEqual(["__proto__"]);
+    }
+  });
   it("通过合法 key + 标量 value", () => {
     const r = validateProjectSettingPayload({
       key: "application/config/name",

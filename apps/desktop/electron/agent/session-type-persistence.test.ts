@@ -2,7 +2,7 @@
  * Vitest 单元测试 — session-type sidecar persistence.
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -51,30 +51,34 @@ describe("saveSessionType + loadSessionType", () => {
   });
 });
 
-describe("loadSessionType fallback", () => {
+describe("loadSessionType legacy fallback and fail-closed records", () => {
   it("sidecar 不存在: 返回 DEFAULT_SESSION_TYPE (code)", () => {
     expect(loadSessionType(fakeSessionPath)).toBe("code");
   });
 
-  it("sidecar 损坏 JSON: 返回 DEFAULT_SESSION_TYPE, 不抛", () => {
+  it("sidecar 损坏 JSON: 拒绝降为 code 并保留原文件", () => {
     writeFileSync(
       `${fakeSessionPath}.session-type.json`,
       "{ invalid json ...",
       "utf8",
     );
-    expect(loadSessionType(fakeSessionPath)).toBe("code");
+    const original = readFileSync(`${fakeSessionPath}.session-type.json`);
+    expect(() => loadSessionType(fakeSessionPath)).toThrow(/会话类型.*损坏/);
+    expect(readFileSync(`${fakeSessionPath}.session-type.json`)).toEqual(original);
   });
 
-  it("sidecar version 错误: 返回 DEFAULT_SESSION_TYPE", () => {
+  it("sidecar version 错误: 拒绝恢复并保留原文件", () => {
     writeFileSync(
       `${fakeSessionPath}.session-type.json`,
       JSON.stringify({ version: 99, sessionType: "design", updatedAt: 0 }),
       "utf8",
     );
-    expect(loadSessionType(fakeSessionPath)).toBe("code");
+    const original = readFileSync(`${fakeSessionPath}.session-type.json`);
+    expect(() => loadSessionType(fakeSessionPath)).toThrow(/会话类型.*结构/);
+    expect(readFileSync(`${fakeSessionPath}.session-type.json`)).toEqual(original);
   });
 
-  it("sidecar sessionType 非法: 返回 DEFAULT_SESSION_TYPE", () => {
+  it("sidecar sessionType 非法: 拒绝恢复并保留原文件", () => {
     writeFileSync(
       `${fakeSessionPath}.session-type.json`,
       JSON.stringify({
@@ -84,7 +88,15 @@ describe("loadSessionType fallback", () => {
       }),
       "utf8",
     );
-    expect(loadSessionType(fakeSessionPath)).toBe("code");
+    const original = readFileSync(`${fakeSessionPath}.session-type.json`);
+    expect(() => loadSessionType(fakeSessionPath)).toThrow(/会话类型.*结构/);
+    expect(readFileSync(`${fakeSessionPath}.session-type.json`)).toEqual(original);
+  });
+
+  it("已存在 sidecar 的文件系统读取失败不会降为 code", () => {
+    mkdirSync(`${fakeSessionPath}.session-type.json`);
+    expect(() => loadSessionType(fakeSessionPath)).toThrow(/会话类型.*不可读取/);
+    expect(existsSync(`${fakeSessionPath}.session-type.json`)).toBe(true);
   });
 
   it("空 sessionPath: 返回 DEFAULT_SESSION_TYPE", () => {

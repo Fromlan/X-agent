@@ -7,6 +7,7 @@
  * SessionHost still provides the adapters.
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { randomUUID } from "node:crypto";
 import type { AgentStatus, TurnUsage, UiAgentEvent } from "../../shared/ipc";
 import {
   TRANSCRIPT_CAPS,
@@ -33,6 +34,8 @@ export interface SessionEventTurnFacet {
 /** Usage / compaction recording for the live session. */
 export interface SessionEventUsageFacet {
   setLastTurnUsage(usage: TurnUsage | undefined): void;
+  /** All paid assistant requests in one user run, including tool iterations and retries. */
+  setUserTurnTokenTotal(tokens: number, byUser: ReadonlyMap<string | null, number>): void;
   isCompactionRecording(): boolean;
   setCompactionRecording(value: boolean): void;
   captureCompactionBaseline(): void;
@@ -58,15 +61,16 @@ export interface SessionEventBridgeDeps {
   turn: SessionEventTurnFacet;
   usage: SessionEventUsageFacet;
   maybeAutoTitleSession(): Promise<void>;
-  /**
-   * Called on `turn_end` and periodically on `tool_execution_end` to run
-   * the snip-first + auto-compact pass. The host owns debounce / lock so
-   * the bridge just schedules; the call returns a promise that may be
-   * long-lived when compaction is needed. Errors are logged inside.
-   */
+  /** Run snip-first maintenance after Pi settles and checkpoints commit, before publishing idle. */
   autoMaintainIfNeeded(): Promise<void> | void;
-  /** Called after agent_end when not retrying — Goal Mode continuation hook. */
+  /** Hold the host's send/retract guard synchronously across asynchronous settlement. */
+  beginSettlement?(): () => void;
+  /** Called after checkpoint and maintenance settlement — Goal Mode continuation hook. */
   onAgentSettled?: () => void;
+  /** Persist actual request charges without applying an evaluation or stopping a request. */
+  onRequestUsage?(userEntryId: string | null, tokens: number, pendingId?: string): void;
+  /** Reassign a known preflight charge once Pi has persisted the new user message. */
+  onPendingUsageBound?(pendingId: string, userEntryId: string): void;
   /**
    * Called when an assistant message ends with `stopReason: "length"` AND the
    * content has no text / no tool call (only thinking). The host decides whether
@@ -132,10 +136,44 @@ export function bridgeSessionEvents(
   session: AgentSession,
   deps: SessionEventBridgeDeps,
 ): () => void {
-  // Mid-turn auto-maintain counter: every 5 tool executions within a single
-  // turn nudges the host to re-evaluate the snip / compact threshold. Reset
-  // to 0 on `turn_start` so each turn gets its own cadence.
-  let midTurnToolCount = 0;
+  // Pi may start a deferred run before our asynchronous checkpoint completes.
+  // Its generation invalidates callbacks from the preceding run on the same session.
+  let runGeneration = 0;
+  // Pi turn_start is one model/tool iteration, while agent_settled closes the
+  // user run after retries/SDK compaction. Keep their usage boundaries separate.
+  let userTurnOpen = false;
+  let settlingGeneration: number | null = null;
+  let userTurnTokens = 0;
+  const userTurnTokensByEntry = new Map<string | null, number>();
+  const recordedUsageMessages = new WeakSet<object>();
+  const recordedUsageIds = new Set<string>();
+  let compactionPending = false;
+  let preflightCompaction = false;
+  const pendingUserCharges: Array<{ id: string; tokens: number }> = [];
+
+  /** Transfer only identified preflight charges after the new user's append boundary. */
+  function bindPendingUserUsage(userEntryId: string | undefined | null): void {
+    if (!userEntryId || pendingUserCharges.length === 0) return;
+    const tokens = pendingUserCharges.reduce((sum, charge) => sum + charge.tokens, 0);
+    for (const charge of pendingUserCharges) deps.onPendingUsageBound?.(charge.id, userEntryId);
+    pendingUserCharges.length = 0;
+    const remaining = (userTurnTokensByEntry.get(null) ?? 0) - tokens;
+    if (remaining > 0) userTurnTokensByEntry.set(null, remaining);
+    else userTurnTokensByEntry.delete(null);
+    userTurnTokensByEntry.set(userEntryId, (userTurnTokensByEntry.get(userEntryId) ?? 0) + tokens);
+    deps.usage.setUserTurnTokenTotal(userTurnTokens, userTurnTokensByEntry);
+  }
+
+  /** Attribute every returned request to its user without changing the latest context snapshot. */
+  function accumulateUserTurnUsage(usage: TurnUsage, preflight = false): void {
+    userTurnTokens += usage.tokens.total;
+    const userEntryId = preflight ? null : bindActiveUserTurn(deps) ?? deps.turn.fileTracker.getActiveUserEntryId();
+    userTurnTokensByEntry.set(userEntryId, (userTurnTokensByEntry.get(userEntryId) ?? 0) + usage.tokens.total);
+    deps.usage.setUserTurnTokenTotal(userTurnTokens, userTurnTokensByEntry);
+    const pendingId = preflight ? randomUUID() : undefined;
+    if (pendingId) pendingUserCharges.push({ id: pendingId, tokens: usage.tokens.total });
+    deps.onRequestUsage?.(userEntryId, usage.tokens.total, pendingId);
+  }
   return session.subscribe((event) => {
     // Drop events after the host switched (or cleared) the active bundle.
     // Otherwise abort/turn_end from a disposed session can re-inject bubbles
@@ -143,6 +181,15 @@ export function bridgeSessionEvents(
     if (deps.getSession() !== session) return;
     switch (event.type) {
       case "agent_start":
+        runGeneration += 1;
+        if (!userTurnOpen || settlingGeneration !== null) {
+          userTurnTokens = pendingUserCharges.reduce((sum, charge) => sum + charge.tokens, 0);
+          userTurnTokensByEntry.clear();
+          if (userTurnTokens) userTurnTokensByEntry.set(null, userTurnTokens);
+          deps.usage.setUserTurnTokenTotal(userTurnTokens, userTurnTokensByEntry);
+          userTurnOpen = true;
+        }
+        settlingGeneration = null;
         deps.setStatus("streaming");
         deps.emit({ type: "agent_start" });
         break;
@@ -154,23 +201,48 @@ export function bridgeSessionEvents(
           deps.setStatus("retrying");
           deps.emit({ type: "agent_end", willRetry });
           deps.emitUsageUpdate();
-        } else {
-          // A visible idle state must not precede the final checkpoint; otherwise later user files become turn changes.
-          void deps.turn.shadowCheckpoints.flush().then(() => {
-            if (deps.getSession() !== session) return;
-            deps.setStatus("idle");
-            deps.emit({ type: "agent_end", willRetry: false });
-            deps.emitUsageUpdate();
-            void deps.maybeAutoTitleSession();
-            deps.onAgentSettled?.();
-          }).catch(() => {
-            if (deps.getSession() === session) deps.setStatus("error", "回合检查点保存失败，请先检查工作区状态");
-          });
         }
         break;
       }
+      case "agent_settled": {
+        if (!userTurnOpen || settlingGeneration === runGeneration) break;
+        const generation = runGeneration;
+        settlingGeneration = generation;
+        const release = deps.beginSettlement?.() ?? (() => undefined);
+        /** Reject stale callbacks after a replacement or a deferred SDK run. */
+        const current = () => deps.getSession() === session && generation === runGeneration && !session.isStreaming;
+        let checkpointDone = false;
+        void (async () => {
+          try {
+            await deps.turn.shadowCheckpoints.flush();
+            if (!current()) return;
+            checkpointDone = true;
+            await deps.autoMaintainIfNeeded();
+            if (!current()) return;
+            userTurnOpen = false;
+            // Deliver refreshed pressure before idle, so frontend auto-compact
+            // cannot act on the pre-maintenance snapshot at this transition.
+            deps.emitUsageUpdate();
+            release();
+            deps.setStatus("idle");
+            deps.emit({ type: "agent_end", willRetry: false });
+            void deps.maybeAutoTitleSession();
+            deps.onAgentSettled?.();
+          } catch {
+            if (current()) deps.setStatus("error", checkpointDone
+              ? "回合维护失败，请检查上下文后重试"
+              : "回合检查点保存失败，请先检查工作区状态");
+          } finally {
+            if (generation === runGeneration) {
+              userTurnOpen = false;
+              settlingGeneration = null;
+            }
+            release();
+          }
+        })();
+        break;
+      }
       case "turn_start":
-        midTurnToolCount = 0;
         deps.emit({ type: "turn_start" });
         break;
       case "turn_end": {
@@ -209,11 +281,6 @@ export function bridgeSessionEvents(
         deps.emit({ type: "turn_end" });
         deps.emitHistoryReplace();
         deps.emitUsageUpdate();
-        // Auto-maintain (snip-first, then compact if still over) runs after
-        // the turn ends so a long single-turn can recover without waiting
-        // for agent_end. The call is fire-and-forget: errors / busy states
-        // are swallowed inside `autoMaintainIfNeeded`.
-        void deps.autoMaintainIfNeeded();
         break;
       }
       case "message_start": {
@@ -223,6 +290,7 @@ export function bridgeSessionEvents(
           errorMessage?: string;
         };
         if (msg.role === "assistant") {
+          bindPendingUserUsage(deps.turn.currentUserEntryId());
           // Prefer already-bound id; fall back to leaf (user should be persisted by now).
           const userEntryId =
             deps.turn.fileTracker.getActiveUserEntryId() ??
@@ -280,9 +348,13 @@ export function bridgeSessionEvents(
           // bindPendingPre 会走 existing.pre 分支丢弃新 pre（无工具回合时
           // 不自行恢复）——升级 Pi SDK 时需回归 test-session-bind-timing。
           queueMicrotask(() => {
-            bindActiveUserTurn(deps);
+            if (deps.getSession() !== session) return;
+            bindPendingUserUsage(bindActiveUserTurn(deps));
           });
         } else if (msg.role === "assistant") {
+          const message = event.message as object;
+          const explicitId = (event.message as { id?: unknown }).id;
+          const requestId = typeof explicitId === "string" && explicitId ? explicitId : null;
           const isError =
             msg.stopReason === "error" || Boolean(msg.errorMessage);
           const isAborted = msg.stopReason === "aborted";
@@ -290,15 +362,26 @@ export function bridgeSessionEvents(
             !isError && !isAborted
               ? turnUsageFromMessage(event.message)
               : null;
-          if (turnUsage) {
-            deps.usage.setLastTurnUsage(turnUsage);
-            const model = deps.getSession()?.model;
+          // Returned requests can carry paid usage even when aborted/error.
+          // Duplicate notifications must never add another charge to either ledger.
+          const paidUsage = turnUsageFromMessage(event.message, true);
+          if (paidUsage && !recordedUsageMessages.has(message) && (!requestId || !recordedUsageIds.has(requestId))) {
+            recordedUsageMessages.add(message);
+            if (requestId) recordedUsageIds.add(requestId);
+            accumulateUserTurnUsage(paidUsage);
+            if (turnUsage) deps.usage.setLastTurnUsage(turnUsage);
+            // Selection can change while a request is in flight; the returned
+            // message identifies the model that actually produced its charge.
+            const requestModel = event.message as { provider?: string; model?: string };
+            const model = requestModel.provider && requestModel.model
+              ? { provider: requestModel.provider, id: requestModel.model }
+              : deps.getSession()?.model;
             if (model && !deps.usage.isCompactionRecording()) {
               // recordTurnUsage 改为 async (写盘走 atomic rename + 串行队列)。
               // event-bridge 是 sync callback,fire-and-forget + 错误走 dbgWarn。
               void recordTurnUsage(
                 modelUsageKey(model.provider, model.id),
-                turnUsage,
+                paidUsage,
               ).catch((err) => {
                 const message = err instanceof Error ? err.message : String(err);
                 dbgWarn("usage", "recordTurnUsage failed", message);
@@ -396,14 +479,6 @@ export function bridgeSessionEvents(
           ),
           isError: event.isError,
         });
-        // Mid-turn auto-maintain: every 5th tool execution nudges the host to
-        // re-evaluate. `autoMaintainIfNeeded` itself debounces (5s) and exits
-        // early when below threshold, so this stays cheap.
-        midTurnToolCount += 1;
-        if (midTurnToolCount >= 5) {
-          midTurnToolCount = 0;
-          void deps.autoMaintainIfNeeded();
-        }
         break;
       }
       case "queue_update":
@@ -438,6 +513,12 @@ export function bridgeSessionEvents(
         });
         break;
       case "compaction_start":
+        compactionPending = true;
+        preflightCompaction = !userTurnOpen && event.reason !== "manual";
+        if (preflightCompaction && pendingUserCharges.length === 0) {
+          userTurnTokens = 0;
+          userTurnTokensByEntry.clear();
+        }
         deps.usage.setCompactionRecording(true);
         deps.usage.captureCompactionBaseline();
         deps.emit({
@@ -447,12 +528,19 @@ export function bridgeSessionEvents(
         break;
       case "compaction_end": {
         const result = event.result as
-          | { tokensBefore?: number; estimatedTokensAfter?: number }
+          | { tokensBefore?: number; estimatedTokensAfter?: number; usage?: unknown }
           | undefined;
-        if (!event.aborted) {
-          deps.usage.recordCompactionDelta();
-        } else {
-          deps.usage.clearCompactionBaseline();
+        if (compactionPending) {
+          compactionPending = false;
+          const paidUsage = turnUsageFromMessage(result, true);
+          if (paidUsage) accumulateUserTurnUsage(paidUsage, preflightCompaction);
+          // Session stats already include the saved CompactionEntry. Keep the
+          // existing atomic aggregate delta path, rather than recording it twice.
+          if (!event.aborted) deps.usage.recordCompactionDelta();
+          else deps.usage.clearCompactionBaseline();
+          // Successful compaction invalidates the last assistant's pre-summary
+          // pressure snapshot; the next usage update must use current context.
+          if (!event.aborted && result) deps.usage.setLastTurnUsage(undefined);
         }
         deps.usage.setCompactionRecording(false);
         deps.emit({

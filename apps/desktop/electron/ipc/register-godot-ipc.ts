@@ -1,4 +1,4 @@
-import { dialog, shell, type IpcMain } from "electron";
+import { dialog, type IpcMain } from "electron";
 import { existsSync, statSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -7,12 +7,12 @@ import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { SessionHost } from "../agent/session-host";
 import { getCachedPrefs, patchPrefs } from "../agent/prefs";
 import { installGodotRpcAddon } from "../agent/godot-addon-install";
+import { requestGuardedGodotRpc } from "../agent/godot-rpc-request";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
 import {
   GODOT_RPC_DEFAULT_PORT,
   godotRpcMethodTool,
-  godotRpcTimeoutMs,
   isAllowedGodotRpcMethod,
 } from "../../shared/godot-rpc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
@@ -102,8 +102,7 @@ export function registerGodotIpc(
       if (paramError) {
         return { ok: false, error: `Godot RPC 参数不合法：${paramError}` };
       }
-      const req = { ...call, id: randomUUID() } as GodotRpcCall & { id: string };
-      const res = await godotRpc.request(req, godotRpcTimeoutMs(call), options);
+      const res = await requestGuardedGodotRpc(godotRpc, call as GodotRpcCall, options);
       if (!res.ok) return { ok: false, error: res.error, routedTo: res.routedTo };
       return { ok: true, result: res.result, routedTo: res.routedTo };
     },
@@ -176,7 +175,7 @@ export function registerGodotIpc(
     try {
       // C9: spawn 的 error 是异步事件（ENOENT 之外 EACCES / 损坏 exe 等），
       // 同步 try/catch 抓不到。等 'spawn' 事件确认启动成功，失败时返回错误。
-      const child = await new Promise<ReturnType<typeof spawn>>(
+      await new Promise<ReturnType<typeof spawn>>(
         (resolvePromise, rejectPromise) => {
           const child = spawn(editor, args, {
             detached: true,

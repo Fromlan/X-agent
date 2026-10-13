@@ -5,7 +5,7 @@
  * - `protocol.handle(LOGO_PROTOCOL, ...)`: app.whenReady 之后; 解析
  *   `custom/<uuid>` 形态, 任何其它路径返回 404
  */
-import { app, net, protocol } from "electron";
+import { net, protocol } from "electron";
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { LOGO_PROTOCOL, customFilePath } from "./agent/agent-logos";

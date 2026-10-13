@@ -3,8 +3,9 @@
  *
  * node 环境（主进程核心模块 + 纯逻辑 renderer lib 测试）。
  * 命名约定：`*.test.ts` 走 Vitest，`scripts/test-*.ts` 为离线断言脚本，
- * `npm run test` 串联两者（0.4.0 起不再双重覆盖：cwd-sandbox / usage-store /
- * godot-rpc-bridge / shadow-checkpoints 已由 Vitest 独占）。
+ * `npm test` 仅串联离线断言，Vitest 由 `test:unit` / `test:coverage` 单独运行。
+ * 0.4.0 起不再双重覆盖：cwd-sandbox / usage-store /
+ * godot-rpc-bridge / shadow-checkpoints 已由 Vitest 独占。
  */
 import { defineConfig } from "vitest/config";
 
