@@ -1,12 +1,14 @@
 /** Validate the actual editor addon and authenticated RPC against a disposable Godot 4 project. */
 import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { setAgentDirOverrideForTests } from "../electron/agent/prefs";
 import { setGodotRpcEndpointPathForTests, GodotRpcBridge } from "../electron/agent/godot-rpc-bridge";
 import { installGodotRpcAddon } from "../electron/agent/godot-addon-install";
+import { createGodotTools } from "../electron/agent/godot-tools";
+import { requestGuardedGodotRpc } from "../electron/agent/godot-rpc-request";
 
 /** Poll a specific running editor with a bounded deadline and fail immediately on process exit. */
 async function waitFor(editor: ChildProcess, condition: () => boolean, timeoutMs = 60_000): Promise<void> {
@@ -47,6 +49,34 @@ try {
   await waitFor(editor, () => (bridge.getStatus().authenticatedClients ?? 0) > 0);
   console.log(`Godot ${version}: authenticated addon loaded`);
   const info = await bridge.request({ id: "info", method: "get_editor_info" }); assert.equal(info.ok, true);
+  // Exercise the real tool -> shared guard -> authenticated bridge -> editor -> project.godot chain.
+  const setSetting = createGodotTools(bridge).find((tool) => tool.name === "godot_set_project_setting");
+  assert.ok(setSetting);
+  const legalSetting = await setSetting.execute("legal-setting", { key: "display/window/size/viewport_width", value: 1234 } as never, undefined as never, undefined as never, undefined as never);
+  assert.equal((legalSetting.details as { ok: boolean }).ok, true);
+  const readSetting = await bridge.request({ id: "read-setting", method: "get_project_setting", key: "display/window/size/viewport_width" });
+  assert.equal(readSetting.ok, true);
+  assert.equal((readSetting.result as { value: unknown }).value, 1234);
+  assert.match(readFileSync(join(project, "project.godot"), "utf8"), /size\/viewport_width=1234/);
+  for (const key of ["application/config/project_settings_override", "application/config/project_settings_override.windows", "application/config/disable_project_settings_override"]) {
+    const before = await bridge.request({ id: `before-${key}`, method: "get_project_setting", key });
+    assert.equal(before.ok, true);
+    const bytes = readFileSync(join(project, "project.godot"));
+    const blockedTool = await setSetting.execute("unsafe-setting", { key, value: "res://evil.cfg" } as never, undefined as never, undefined as never, undefined as never);
+    assert.equal((blockedTool.details as { ok: boolean }).ok, false);
+    const blockedSharedIngress = await requestGuardedGodotRpc(bridge, { method: "set_project_setting", key, value: "res://evil.cfg" });
+    assert.equal(blockedSharedIngress.ok, false);
+    const after = await bridge.request({ id: `after-${key}`, method: "get_project_setting", key });
+    assert.equal(after.ok, true);
+    assert.deepEqual(after.result, before.result, `${key} editor value must remain unchanged`);
+    assert.deepEqual(readFileSync(join(project, "project.godot")), bytes, `${key} must not alter project.godot`);
+  }
+  const invalidValue = await requestGuardedGodotRpc(bridge, { method: "set_project_setting", key: "display/window/size/viewport_width", value: null });
+  assert.equal(invalidValue.ok, false);
+  const retainedSetting = await bridge.request({ id: "retained-setting", method: "get_project_setting", key: "display/window/size/viewport_width" });
+  assert.equal(retainedSetting.ok, true);
+  assert.equal((retainedSetting.result as { value: unknown }).value, 1234);
+  console.log("Godot ProjectSettings passed: real tool write/readback, shared boundary rejects actual override keys and preserves editor values/file bytes");
   const open = await bridge.request({ id: "open", method: "open_scene", path: "res://main.tscn" }); assert.equal(open.ok, true);
   await waitFor(editor, () => log.includes("RPC"), 10_000);
   const scene = await bridge.request({ id: "scene", method: "get_edited_scene" }); assert.equal(scene.ok, true);

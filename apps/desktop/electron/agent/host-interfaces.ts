@@ -46,8 +46,10 @@ export interface ResourceState {
   shadowCheckpoints: ShadowCheckpointTracker;
   sessionMode: SessionModeController;
   godotRpc: GodotRpcBridge | null;
-  /** Last assistant turn token total (0 if unknown). */
+  /** All paid assistant requests in the last user run (0 if unknown). */
   getLastTurnTokenTotal(): number;
+  /** Paid requests attributed to every user prompt in the run, including steering. */
+  getUserTurnTokenTotals?(): ReadonlyMap<string | null, number>;
   /** Active user turn entry id (for goal budget ledger), if any. */
   getActiveUserEntryId(): string | null;
 }
@@ -118,6 +120,7 @@ export type SessionModeHost = Pick<
   | "getResourceLoader"
   | "getBaseAppendPrompt"
   | "getLastTurnTokenTotal"
+  | "getUserTurnTokenTotals"
   | "getActiveUserEntryId"
 > &
   Pick<EventBus, "emit" | "emitReplaceableNotice"> &

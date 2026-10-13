@@ -22,6 +22,8 @@ import type { SessionBundle } from "./session-lifecycle";
 export interface SessionAbortHost {
   getBundle(): SessionBundle | null;
   setStatus(status: AgentStatus, error?: string): void;
+  /** Await checkpoint and maintenance completion before making the canceled run appear idle. */
+  waitForSettlement?(): Promise<void>;
   emitReplaceableNotice(
     replaceKey: NoticeReplaceKey,
     text: string,
@@ -64,6 +66,13 @@ export async function runSessionAbort(host: SessionAbortHost): Promise<{
     dbgLog("session", "abort: bundle switched");
     return { ok: true };
   }
+  try {
+    await host.waitForSettlement?.();
+  } catch (err) {
+    host.setStatus("error", err instanceof Error ? err.message : String(err));
+    return { ok: false, cancelled: !bundle.session.isStreaming };
+  }
+  if (host.getBundle() !== bundle) return { ok: true };
   // 1.3 防御:abort 抛错时仍可能 isStreaming=true,盲目 setStatus("idle")
   // 会让 UI 以为已停止,造成新一轮 prompt 与未结束 stream 交错。
   // 重新检查:若仍 streaming,记录可见状态并写入 error。
@@ -78,6 +87,9 @@ export async function runSessionAbort(host: SessionAbortHost): Promise<{
       return { ok: false, cancelled: false };
     }
   }
+  // A deferred SDK/Goal run can start while settlement is being awaited.
+  // Its streaming status remains authoritative rather than being overwritten.
+  if (bundle.session.isStreaming) return { ok: true, cancelled: true };
   host.setStatus("idle");
   return { ok: true, cancelled: true };
 }

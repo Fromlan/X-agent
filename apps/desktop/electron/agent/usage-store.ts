@@ -8,6 +8,7 @@ import type {
 } from "../../shared/ipc";
 import { ensureAgentDir, getAgentDirPath } from "./prefs";
 import { createStore, type Store } from "./lib/store";
+import { withStoreLock } from "./lib/store-mutex";
 
 export interface UsageStoreFile {
   version: 1;
@@ -92,10 +93,10 @@ export function loadUsageStore(): UsageStoreFile {
   return usageStore.read();
 }
 
-/** 异步读 usage 并填 cache。 */
+/** Read committed usage under its writer lock so Windows reload handles cannot race atomic rename. */
 export async function loadUsageStoreAsync(): Promise<UsageStoreFile> {
   if (!usagePathOverride) ensureAgentDir();
-  return usageStore.reload();
+  return withStoreLock(usagePath(), () => usageStore.reload());
 }
 
 /** 异步原子写入 usage。锁内整体替换,与 recordTurnUsage 互斥不丢并发 turn。 */

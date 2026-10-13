@@ -52,6 +52,7 @@ function baseDeps(
     },
     usage: {
       setLastTurnUsage: () => {},
+      setUserTurnTokenTotal: () => {},
       isCompactionRecording: () => false,
       setCompactionRecording: () => {},
       captureCompactionBaseline: () => {},

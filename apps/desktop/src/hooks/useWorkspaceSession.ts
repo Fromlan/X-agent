@@ -156,16 +156,24 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       const projectPath =
         typeof path === "string" && path.trim() ? path.trim() : undefined;
       await withBusyLifecycle(setBusy, setError, async () => {
-        setItems(createEmptyState());
-        setQueuedSteering([]);
-        const result = await window.xAgent.workspace.open(projectPath);
+        // Selection can be canceled while the existing session is still live.
+        // Its transcript remains authoritative until the host replaces it.
+        let result;
+        try {
+          result = await window.xAgent.workspace.open(projectPath);
+        } catch (err) {
+          await syncFromHost();
+          setError(err instanceof Error ? err.message : "打开失败");
+          return;
+        }
         if (!result.ok) {
           if (result.error !== "已取消") {
-            setError(result.error ?? "打开失败");
             await syncFromHost();
+            setError(result.error ?? "打开失败");
           }
           return;
         }
+        setQueuedSteering([]);
         clearComposerEditState();
         setInput("");
         setCwd(result.cwd);
@@ -186,7 +194,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setCwd,
       setError,
       setInput,
-      setItems,
       setPrefs,
       setQueuedSteering,
       setSessionId,
@@ -197,16 +204,13 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
   const newSession = useCallback(
     async (sessionType: SessionType = "code") => {
       await withBusyLifecycle(setBusy, setError, async () => {
-        // Clear immediately — do not wait for history_replace; stale bubbles from
-        // the previous session must not linger if host events race with abort.
-        setItems(createEmptyState());
-        setQueuedSteering([]);
         const result = await window.xAgent.workspace.newSession(sessionType);
         if (!result.ok) {
           setError(result.error ?? "新建会话失败");
           await syncFromHost();
           return;
         }
+        setQueuedSteering([]);
         clearComposerEditState();
         setInput("");
         setSessionId(result.sessionId);
@@ -222,7 +226,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setError,
       setFollowNonce,
       setInput,
-      setItems,
       setQueuedSteering,
       setSessionId,
       setSessionType,
@@ -233,14 +236,13 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
   const resumeSession = useCallback(
     async (path: string) => {
       await withBusyLifecycle(setBusy, setError, async () => {
-        setItems(createEmptyState());
-        setQueuedSteering([]);
         const result = await window.xAgent.workspace.resume(path);
         if (!result.ok) {
           setError(result.error ?? "恢复会话失败");
           await syncFromHost();
           return;
         }
+        setQueuedSteering([]);
         clearComposerEditState();
         setInput("");
         setCwd(result.cwd);
@@ -261,7 +263,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setError,
       setFollowNonce,
       setInput,
-      setItems,
       setPrefs,
       setQueuedSteering,
       setSessionId,

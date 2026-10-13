@@ -2,12 +2,13 @@
  * Vitest 单元测试 —— atomic-write 的 tmp/rename 原子行为。
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   writeJsonAtomic,
   writeJsonAtomicSync,
+  writeFileAtomicSync,
   readJsonAsync,
   fileExistsAsync,
 } from "./atomic-write";
@@ -65,6 +66,26 @@ describe("writeJsonAtomicSync", () => {
   it("失败时抛出", () => {
     const path = join(dir, "no-such-dir/w.json");
     expect(() => writeJsonAtomicSync(path, { a: 1 })).toThrow();
+  });
+});
+
+describe("writeFileAtomicSync", () => {
+  it("preserves arbitrary bytes while replacing an existing file", () => {
+    const path = join(dir, "session.jsonl");
+    writeFileSync(path, "previous bytes");
+    const bytes = Buffer.from([0x00, 0x80, 0xff, 0x0a]);
+    writeFileAtomicSync(path, bytes);
+    expect(readFileSync(path)).toEqual(bytes);
+    expect(readdirSync(dir)).toEqual(["session.jsonl"]);
+  });
+
+  it("cleans the temporary file when rename fails and preserves the destination", () => {
+    const destination = join(dir, "protected");
+    mkdirSync(destination);
+    writeFileSync(join(destination, "existing"), "preserved");
+    expect(() => writeFileAtomicSync(destination, Buffer.from("replacement"))).toThrow();
+    expect(readFileSync(join(destination, "existing"), "utf8")).toBe("preserved");
+    expect(readdirSync(dir)).toEqual(["protected"]);
   });
 });
 

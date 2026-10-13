@@ -4,8 +4,9 @@
  * Per-session type is locked at creation and stored in a sidecar JSON file
  * named `<sessionPath>.session-type.json` (NOT inside the .jsonl so we don't
  * need to teach the Pi SessionManager about our schema). Pattern mirrors
- * plan-journal / goal-journal: atomic write, fail-open on read, silent on
- * cleanup failure.
+ * plan-journal / goal-journal: atomic write and silent cleanup failure.
+ * Existing unreadable/invalid records fail closed so a design conversation
+ * cannot acquire code permissions merely because its sidecar was damaged.
  *
  * Old sessions without a sidecar are treated as "code" — backward compatible
  * with all sessions created before this feature shipped.
@@ -30,6 +31,7 @@ function sidecarPath(sessionPath: string): string {
   return `${sessionPath}.session-type.json`;
 }
 
+/** Persist the permission-bearing type atomically before a new session can be published. */
 export function saveSessionType(
   sessionPath: string,
   sessionType: SessionType,
@@ -38,37 +40,38 @@ export function saveSessionType(
   if (!isSessionType(sessionType)) return;
   const path = sidecarPath(sessionPath);
   const dir = dirname(path);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const record: SessionTypeRecord = {
     version: 1,
     sessionType,
     updatedAt: Date.now(),
   };
   try {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeJsonAtomicSync(path, record);
   } catch (err) {
-    // 写失败不致命: 跟 plan-journal / goal-journal 同等级, console.warn 即可。
-    // 下次 resume 时读不到 sidecar → fallback 到 DEFAULT_SESSION_TYPE。
-    console.warn(
-      `[session-type-persistence] 写入失败 (${path}): ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
+    throw new Error(`会话类型记录保存失败，已保留原文件（${(err as NodeJS.ErrnoException).code ?? "I/O"}）`);
   }
 }
 
+/** Restore a locked type; only a missing legacy sidecar defaults to code. */
 export function loadSessionType(sessionPath: string): SessionType {
   if (!sessionPath.trim()) return DEFAULT_SESSION_TYPE;
   const path = sidecarPath(sessionPath);
-  if (!existsSync(path)) return DEFAULT_SESSION_TYPE;
+  let content: string;
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as SessionTypeRecord;
-    if (raw?.version !== 1) return DEFAULT_SESSION_TYPE;
-    if (!isSessionType(raw.sessionType)) return DEFAULT_SESSION_TYPE;
-    return raw.sessionType;
-  } catch {
-    return DEFAULT_SESSION_TYPE;
+    content = readFileSync(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return DEFAULT_SESSION_TYPE;
+    throw new Error(`会话类型记录不可读取，已保留原文件（${(err as NodeJS.ErrnoException).code ?? "I/O"}）`);
   }
+  let raw: unknown;
+  try { raw = JSON.parse(content); }
+  catch { throw new Error("会话类型记录 JSON 损坏，已保留原文件；请修复后重试"); }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) ||
+      (raw as SessionTypeRecord).version !== 1 || !isSessionType((raw as SessionTypeRecord).sessionType)) {
+    throw new Error("会话类型记录结构不合法，已保留原文件；请修复后重试");
+  }
+  return (raw as SessionTypeRecord).sessionType;
 }
 
 export function clearSessionType(sessionPath: string): void {

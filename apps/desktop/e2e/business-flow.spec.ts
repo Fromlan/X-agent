@@ -66,7 +66,12 @@ test("real send, write, retract, resume and long transcript preserve user files"
     expect(status.sessionPath!.toLowerCase().startsWith(home.toLowerCase())).toBe(true);
     expect((await main.evaluate((path) => window.xAgent.workspace.resume(path), status.sessionPath!)).ok).toBe(true);
     for (let i = 0; i < 20; i++) {
-      expect((await main.evaluate((index) => window.xAgent.turn.prompt({ text: `read fixture ${index}` }), i)).ok).toBe(true);
+      const prompted = await main.evaluate((index) => window.xAgent.turn.prompt({ text: `read fixture ${index}` }), i);
+      const failure = prompted.ok ? undefined : await main.evaluate(async () => ({
+        status: await window.xAgent.workspace.getStatus(),
+        events: (window as unknown as { auditEvents: unknown[] }).auditEvents.slice(-12),
+      }));
+      expect(prompted.ok, JSON.stringify({ index: i, prompted, failure })).toBe(true);
       await expect.poll(() => main.evaluate(async () => (await window.xAgent.workspace.getStatus()).status)).toBe("idle");
     }
     const snapshot = await main.evaluate(() => window.xAgent.appReport.getDiagnosticSnapshot());

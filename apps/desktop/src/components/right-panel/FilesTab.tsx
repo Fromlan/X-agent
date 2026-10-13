@@ -29,10 +29,11 @@ type ContextMenuState = {
   x: number;
   y: number;
   relPath: string;
+  cwd: string;
 };
 
 interface TreeNodeProps {
-  cwdReady: boolean;
+  cwd: string | null;
   relDir: string;
   depth: number;
   selectedPath: string | null;
@@ -50,7 +51,7 @@ function joinRel(dir: string, name: string): string {
 }
 
 function TreeNode({
-  cwdReady,
+  cwd,
   relDir,
   depth,
   selectedPath,
@@ -61,13 +62,17 @@ function TreeNode({
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const loadGeneration = useRef(0);
 
+  /** Ignore responses from an unmounted project node or an older refresh. */
   const load = useCallback(async () => {
-    if (!cwdReady) return;
+    if (!cwd) return;
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError(null);
     try {
       const res = await window.xAgent.files.list(relDir);
+      if (generation !== loadGeneration.current) return;
       if (!res.ok) {
         setError(res.error ?? "列出目录失败");
         setEntries([]);
@@ -75,19 +80,22 @@ function TreeNode({
       }
       setEntries(res.entries ?? []);
     } catch {
+      if (generation !== loadGeneration.current) return;
       // D10: IPC 异常（如项目切换中）时展示错误态，避免 unhandled rejection。
       setError("读取目录失败");
       setEntries([]);
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
-  }, [cwdReady, relDir]);
+  }, [cwd, relDir]);
+
+  useEffect(() => () => { loadGeneration.current += 1; }, [cwd, relDir]);
 
   useEffect(() => {
     if (open && entries === null) void load();
   }, [open, entries, load]);
 
-  if (!cwdReady) return null;
+  if (!cwd) return null;
 
   return (
     <div className="rp-tree-node" style={{ paddingLeft: depth === 0 ? 0 : 12 }}>
@@ -109,8 +117,8 @@ function TreeNode({
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => {
-              setEntries(null);
               setOpen(true);
+              void load();
             }}
             title="刷新"
           >
@@ -129,7 +137,7 @@ function TreeNode({
               return (
                 <TreeNode
                   key={childPath}
-                  cwdReady={cwdReady}
+                  cwd={cwd}
                   relDir={childPath}
                   depth={depth + 1}
                   selectedPath={selectedPath}
@@ -174,6 +182,19 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const markdown = isMarkdownPath(previewPath);
+  const previousCwd = useRef(cwd);
+
+  // Project replacement invalidates selection and all state derived from it.
+  useLayoutEffect(() => {
+    if (previousCwd.current !== cwd) setPreviewPath(null);
+    previousCwd.current = cwd;
+    setMenu(null);
+    setContent("");
+    setError(null);
+    setLoading(false);
+    setPreviewTruncated(false);
+    setMdSource(false);
+  }, [cwd]);
 
   useEffect(() => {
     setMdSource(false);
@@ -184,10 +205,12 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
     if (!cwd || !previewPath) {
       setContent("");
       setError(null);
+      setLoading(false);
       setPreviewTruncated(false);
       return;
     }
     setLoading(true);
+    setContent("");
     setError(null);
     setPreviewTruncated(false);
     void window.xAgent.files.read(previewPath).then((res) => {
@@ -202,6 +225,11 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
       // D12: 大文件预览被截断时提示（与工具详情面板行为一致）。
       setPreviewTruncated(Boolean(res.truncated));
       setError(null);
+    }).catch(() => {
+      if (cancelled) return;
+      setContent("");
+      setError("读取失败");
+      setLoading(false);
     });
     return () => {
       cancelled = true;
@@ -218,10 +246,11 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
     (relPath: string, e: ReactMouseEvent, isDir: boolean) => {
       e.preventDefault();
       e.stopPropagation();
+      if (!cwd) return;
       if (!isDir) setPreviewPath(relPath);
-      setMenu({ x: e.clientX, y: e.clientY, relPath });
+      setMenu({ x: e.clientX, y: e.clientY, relPath, cwd });
     },
-    [],
+    [cwd],
   );
 
   const onSelectFile = useCallback(
@@ -273,7 +302,7 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
   const runMenu = async (
     action: "add" | "reveal" | "copyAbs" | "copyRel",
   ) => {
-    if (!menu || !cwd) return;
+    if (!menu || !cwd || menu.cwd !== cwd) return;
     const { relPath } = menu;
     closeMenu();
     if (action === "add") {
@@ -302,7 +331,8 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
         ref={treeRef}
       >
         <TreeNode
-          cwdReady={Boolean(cwd)}
+          key={cwd}
+          cwd={cwd}
           relDir=""
           depth={0}
           selectedPath={highlightPath}

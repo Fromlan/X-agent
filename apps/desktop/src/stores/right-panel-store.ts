@@ -17,6 +17,7 @@ type Listener = () => void;
 let state: PanelState = { ...DEFAULT_STATE };
 const listeners = new Set<Listener>();
 let storeVersion = 0;
+let projectCwd: string | null = null;
 
 function emit(): void {
   storeVersion += 1;
@@ -50,6 +51,13 @@ export function selectToolInPanel(
 
 export function setPreviewPath(previewPath: string | null): void {
   patchPanelState({ previewPath });
+}
+
+/** Invalidate project-owned selections even while the file tab or panel is unmounted. */
+export function setRightPanelProject(cwd: string | null): void {
+  if (projectCwd === cwd) return;
+  projectCwd = cwd;
+  patchPanelState({ selectedToolId: null, previewPath: null });
 }
 
 export function subscribeRightPanelStore(listener: Listener): () => void {

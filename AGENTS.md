@@ -55,7 +55,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 - **路径类只读工具也受 cwd 约束**：`read` / `grep` / `find` / `ls` / `godot_detect_project` 的 `path` 参数经 `plan-mode-guard.ts` 校验（Pi 工具会展开 `~` / 绝对路径 / `file://`，检查器同样展开后判定）。
 - CWD 沙箱：`electron/agent/cwd-sandbox.ts`（拒绝逃出 cwd，Windows 大小写归一）。Agent 模式下 Pi `bash` 仍可访问更广路径——不要承诺绝对安全。
 - Godot RPC 工具开关在 IPC 层强制：`godotRpcRequest` 校验 `prefs.tools` 是否启用对应工具（GODOT_TOOLS 默认关闭），被攻陷的 renderer 也无法绕过。
-- **Godot 项目设置硬闸**：`godot_set_project_setting` 经 `shared/godot-project-setting.ts` 校验，敏感前缀（`autoload/*` / `input/*` / `debug/file_logging/*` / `project_settings_override/*` 等）拒绝写入；value 收窄为 string/number/boolean 或简单嵌套。
+- **Godot 项目设置硬闸**：工具和 `godotRpcRequest` 共用 `godot-rpc-request.ts` → `shared/godot-project-setting.ts` 校验；拒绝 `autoload/*` / `input/*` / `debug/file_logging/*`、完整键 `application/config/project_settings_override` / `application/config/disable_project_settings_override` 及 feature-tag 变体；value 收窄为有限数值、string/boolean 或简单嵌套。
 - **Provider baseUrl DNS 闸**：保存供应商档案时 `upsertProviderProfile` 经 `validateUpsertAsync` 双重校验（静态 host 黑名单 + 异步 DNS rebinding 解析），拒绝私网 / `localtest.me` / `*.nip.io` 等。
 - **shellPath 真 Bash 闸**：`applyBashShellPath` 要求 `--version` 输出包含 GNU bash 特征；非可信目录（Git for Windows / `/bin` / `/usr/bin` 等之外）会同时返回 `warning`，由 renderer 横幅提示。
 
@@ -99,7 +99,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 - 真实 Godot：在 PowerShell 设置 `$env:GODOT_BIN` 为 Godot 4.6.2 console 可执行文件绝对路径，在 `apps/desktop` 跑 `npm run test:godot`；缺少环境失败，不静默跳过。CI 固定同版本并校验官方 SHA-256。
 - 链接边界共用 `lib/path-boundary.ts`，新文件解析最近存在父目录；仍有校验后替换竞态。模型探测使用 `public-http.ts` 连接时 DNS 检查且拒绝重定向，Pi SDK 的其他传输不统一受此约束。
-- 配置只有 ENOENT 可初始化，损坏/权限/结构失败保留原文件；工具设置等保存和应用成功后才返回。Goal 评估费用入账，预算为续轮阈值；checkpoint flush 后才发布 idle，空恢复路径不全量 reset。
+- 配置只有 ENOENT 可初始化，损坏/权限/结构失败保留原文件；工具设置等保存和应用成功后才返回。Goal 实际请求与评估费用入账，预算为续轮阈值；Pi `agent_settled` 后等待 checkpoint flush 和 snip-first 维护，再更新用量、发布 idle 并评估 Goal。空恢复路径不全量 reset。
 
 - 在 `apps/desktop` 内：`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`（CI 会再跑一遍 + E2E）。
 - 然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR：CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿、≥1 approve 后 squash merge 回 `master`。

@@ -7,12 +7,12 @@ import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { SessionHost } from "../agent/session-host";
 import { getCachedPrefs, patchPrefs } from "../agent/prefs";
 import { installGodotRpcAddon } from "../agent/godot-addon-install";
+import { requestGuardedGodotRpc } from "../agent/godot-rpc-request";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
 import {
   GODOT_RPC_DEFAULT_PORT,
   godotRpcMethodTool,
-  godotRpcTimeoutMs,
   isAllowedGodotRpcMethod,
 } from "../../shared/godot-rpc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
@@ -102,8 +102,7 @@ export function registerGodotIpc(
       if (paramError) {
         return { ok: false, error: `Godot RPC 参数不合法：${paramError}` };
       }
-      const req = { ...call, id: randomUUID() } as GodotRpcCall & { id: string };
-      const res = await godotRpc.request(req, godotRpcTimeoutMs(call), options);
+      const res = await requestGuardedGodotRpc(godotRpc, call as GodotRpcCall, options);
       if (!res.ok) return { ok: false, error: res.error, routedTo: res.routedTo };
       return { ok: true, result: res.result, routedTo: res.routedTo };
     },
