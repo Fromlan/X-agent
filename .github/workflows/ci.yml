@@ -75,17 +75,18 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      # 缓存 Playwright 浏览器,避免每次重下
-      - name: Playwright Cache
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('apps/desktop/package-lock.json') }}
       - run: npm ci
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      # 全部 E2E 通过 _electron.launch 启动应用，不需要独立 Chromium。
       - run: npm run test:e2e
+      - name: Upload E2E failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-failure-traces
+          path: apps/desktop/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   godot-integration:
     runs-on: windows-latest

@@ -17,6 +17,41 @@ function rejection(target: EventTarget, reason: unknown): void {
   target.dispatchEvent(event);
 }
 
+/** Supply ErrorEvent fields in Node while preserving the real listener's error/rejection seam. */
+function errorEvent(target: EventTarget, message: string, error?: unknown): void {
+  const event = new Event("error");
+  Object.defineProperties(event, { message: { value: message }, error: { value: error } });
+  target.dispatchEvent(event);
+}
+
+it.each(["ResizeObserver loop completed with undelivered notifications.", "ResizeObserver loop limit exceeded"])("ignores only the layout notification %s without masking a real exception", async (message) => {
+  const target = new EventTarget(); const report = vi.fn(async () => undefined);
+  installRendererFailureHandlers(target as unknown as Window, report);
+  for (let i = 0; i < 3; i++) errorEvent(target, message);
+  await Promise.resolve();
+  expect(report).not.toHaveBeenCalled();
+  errorEvent(target, message, new TypeError(message));
+  await Promise.resolve();
+  expect(report).toHaveBeenCalledExactlyOnceWith({ kind: "error", reason: "TypeError" });
+});
+
+it.each(["Script error.", "ResizeObserver loop completed with undelivered notifications. private source"])("retains fatal recovery for the unattributed error %s", async (message) => {
+  const target = new EventTarget(); const report = vi.fn(async () => undefined);
+  installRendererFailureHandlers(target as unknown as Window, report);
+  errorEvent(target, message);
+  await Promise.resolve();
+  expect(report).toHaveBeenCalledExactlyOnceWith({ kind: "error", reason: "unknown" });
+  expect(JSON.stringify(report.mock.calls)).not.toContain("private");
+});
+
+it("does not filter a Promise rejection just because its text matches a layout notification", async () => {
+  const target = new EventTarget(); const report = vi.fn(async () => undefined);
+  installRendererFailureHandlers(target as unknown as Window, report);
+  rejection(target, "ResizeObserver loop completed with undelivered notifications.");
+  await Promise.resolve();
+  expect(report).toHaveBeenCalledExactlyOnceWith({ kind: "rejection", reason: "unknown" });
+});
+
 it("classifies network/abort rejections without consuming the later fatal report", async () => {
   const target = new EventTarget(); const report = vi.fn(async () => undefined);
   installRendererFailureHandlers(target as unknown as Window, report);
