@@ -13,11 +13,9 @@
  *      LLM call; we let Pi's existing `isCompacting` lock serialize this.
  *
  * Concurrency:
- *   - Single-flight: a `pending` flag stops overlapping executions; the
- *     `runReplaceExclusive` wrapper from `session-host.ts` enforces the
- *     "no compact while user is mid-stream" rule at the call site.
- *   - Debounce: a 5s minimum gap between two auto-maintain runs (in-session).
- *   - The snip pass is pure local mutation and does not need the lock.
+ *   - The host's replace lock covers both snipping and compaction, while its
+ *     synchronous maintenance guard blocks new prompts during the pass.
+ *   - Debounce is per session so switching projects does not suppress a run.
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ClientPrefs } from "../../shared/ipc";
@@ -67,11 +65,11 @@ export type AutoMaintainDeps = {
   log?: (line: string) => void;
 };
 
-const moduleState: { lastRunAt: number } = { lastRunAt: 0 };
+let lastRunBySession = new WeakMap<AgentSession, number>();
 
 /** Reset the in-process debounce clock. Tests only. */
 export function __resetAutoMaintainState(): void {
-  moduleState.lastRunAt = 0;
+  lastRunBySession = new WeakMap();
 }
 
 /** Read percent / tokens from a Pi session, tolerating any thrown shape. */
@@ -93,7 +91,7 @@ function readContextUsage(
 
 /**
  * Run the snip-first auto-maintain pass. Designed to be called by
- * `session-event-bridge` on `turn_end` and on every Nth `tool_execution_end`.
+ * `session-event-bridge` after SDK settlement and checkpoint persistence.
  *
  * Returns a report describing what happened. Never throws — failures inside
  * `session.compact()` are reported via `outcome: "compact-failed"` and
@@ -108,9 +106,9 @@ export async function autoMaintain(
   deps: AutoMaintainDeps = {},
 ): Promise<AutoMaintainReport> {
   const now = deps.now ?? (() => Date.now());
-  const getLast = deps.getLastRunAt ?? (() => moduleState.lastRunAt);
+  const getLast = deps.getLastRunAt ?? (() => lastRunBySession.get(session) ?? 0);
   const setLast = deps.setLastRunAt ?? ((at: number) => {
-    moduleState.lastRunAt = at;
+    lastRunBySession.set(session, at);
   });
   const log = deps.log ?? (() => {});
 

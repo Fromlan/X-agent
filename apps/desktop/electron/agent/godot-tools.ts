@@ -1,7 +1,6 @@
 /**
  * Pi custom tools that drive the Godot editor via GodotRpcBridge.
  */
-import { randomUUID } from "node:crypto";
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -12,10 +11,9 @@ import {
   clampGodotListLimit,
   clampGodotRunWaitMs,
   clampGodotWaitMs,
-  godotRpcTimeoutMs,
   type GodotRpcMethodName,
 } from "../../shared/godot-rpc";
-import { validateProjectSettingPayload } from "../../shared/godot-project-setting";
+import { requestGuardedGodotRpc } from "./godot-rpc-request";
 
 /**
  * 主题 I (issue #66 C-406) — RPC method 名 single-source of truth.
@@ -56,10 +54,7 @@ async function callBridge(
   bridge: GodotRpcBridge,
   call: GodotRpcCall,
 ): Promise<GodotRpcResponse> {
-  return bridge.request(
-    { ...call, id: randomUUID() },
-    godotRpcTimeoutMs(call),
-  );
+  return requestGuardedGodotRpc(bridge, call);
 }
 
 function formatResponse(res: GodotRpcResponse): {
@@ -597,23 +592,11 @@ export function createGodotTools(bridge: GodotRpcBridge): ToolDefinition[] {
       ],
       parameters: setProjectSettingParams,
       async execute(_id, params) {
-        // 桌面端硬闸：黑名单敏感 key + value 类型收窄，避免一次调用写入
-        // autoload/* / input/* / debug/file_logging/* 等「写入即生效」开关。
-        const guard = validateProjectSettingPayload({
-          key: params.key,
-          value: params.value,
-        });
-        if (!guard.ok) {
-          return textResult(`Godot RPC error: ${guard.error}`, {
-            ok: false,
-            error: guard.error,
-          });
-        }
         return formatResponse(
           await callBridge(bridge, {
             method: "set_project_setting",
-            key: guard.key,
-            value: guard.value,
+            key: params.key,
+            value: params.value,
           }),
         );
       },

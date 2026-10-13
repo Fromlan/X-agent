@@ -125,6 +125,14 @@ export class SessionHost {
    * while this flag is set.
    */
   promptPreparing = false;
+  /** Block new sends/retracts between SDK settlement and the final maintenance result. */
+  private settlementToken: symbol | null = null;
+  /** Abort must wait for the same checkpoint/maintenance boundary before it publishes idle. */
+  private settlementCompletion: Promise<void> = Promise.resolve();
+  /** Serialize maintenance with replacements and prevent prompts bypassing that queue. */
+  private maintenanceActive = false;
+  /** Restore idle after a manual maintenance pass that reserved an otherwise idle host. */
+  private maintenanceReservedIdle = false;
   private lastError: string | undefined;
   private getWindow: () => BrowserWindow | null;
   private godotRpc: GodotRpcBridge | null;
@@ -141,6 +149,10 @@ export class SessionHost {
   private shadowCheckpoints = new ShadowCheckpointTracker();
   /** Last successful assistant turn usage (for snapshot lastTurn). */
   private lastTurnUsage: TurnUsage | undefined;
+  /** Whole user-run tokens for Goal budgets; lastTurnUsage remains a context snapshot. */
+  private userTurnTokenTotal = 0;
+  /** Preserve per-user attribution when steering adds another prompt inside one run. */
+  private userTurnTokensByEntry = new Map<string | null, number>();
   /** Session stats snapshot at compaction_start for daily-store delta. */
   private compactionStatsBaseline: CompactionStatsBaseline | null = null;
   /** Skip per-message daily recording while compaction LLM usage is in flight. */
@@ -198,7 +210,8 @@ export class SessionHost {
       shadowCheckpoints: this.shadowCheckpoints,
       sessionMode: this.sessionMode,
       godotRpc: this.godotRpc,
-      getLastTurnTokenTotal: () => this.lastTurnUsage?.tokens.total ?? 0,
+      getLastTurnTokenTotal: () => this.userTurnTokenTotal,
+      getUserTurnTokenTotals: () => this.userTurnTokensByEntry,
       getActiveUserEntryId: () => this.fileTracker.getActiveUserEntryId(),
     };
   }
@@ -228,12 +241,17 @@ export class SessionHost {
       prompt: (payload) =>
         this.prompt(typeof payload === "string" ? { text: payload } : payload),
       promptPreparing: this.promptPreparing,
-      isPromptPreparing: () => this.promptPreparing,
+      isPromptPreparing: () => this.promptPreparing || this.settlementToken !== null || this.maintenanceActive,
       // 原 RuntimeState 部分
       runReplaceExclusive: (fn) => this.runReplaceExclusive(fn),
       historyFingerprint: (items) => historyFingerprintImpl(items),
       toolDetails: this.toolDetails,
       setBundle: (bundle) => {
+        if (this.bundle?.session !== bundle?.session) {
+          this.settlementToken = null;
+          this.userTurnTokenTotal = 0;
+          this.userTurnTokensByEntry.clear();
+        }
         this.bundle = bundle;
       },
       setResourceLoader: (loader) => {
@@ -244,6 +262,10 @@ export class SessionHost {
       },
       setLastTurnUsage: (u) => {
         this.lastTurnUsage = u;
+        if (!u) {
+          this.userTurnTokenTotal = 0;
+          this.userTurnTokensByEntry.clear();
+        }
       },
       clearCompactionState: () => {
         this.compactionStatsBaseline = null;
@@ -370,6 +392,9 @@ export class SessionHost {
   }
 
   private setStatus(status: AgentStatus, error?: string): void {
+    // Abort/retract/lifecycle adapters share this publisher. Their completion
+    // cannot override an active checkpoint/maintenance settlement boundary.
+    if (status === "idle" && (this.settlementToken !== null || this.maintenanceActive)) return;
     this.status = status;
     if (error !== undefined) {
       this.lastError = error;
@@ -432,6 +457,10 @@ export class SessionHost {
         setLastTurnUsage: (usage) => {
           this.lastTurnUsage = usage;
         },
+        setUserTurnTokenTotal: (tokens, byUser) => {
+          this.userTurnTokenTotal = tokens;
+          this.userTurnTokensByEntry = new Map(byUser);
+        },
         isCompactionRecording: () => this.compactionRecording,
         setCompactionRecording: (value) => {
           this.compactionRecording = value;
@@ -444,8 +473,25 @@ export class SessionHost {
       },
       maybeAutoTitleSession: () => this.maybeAutoTitleSession(),
       autoMaintainIfNeeded: () => this.autoMaintainIfNeeded(),
+      beginSettlement: () => {
+        const token = Symbol("settlement");
+        let complete!: () => void;
+        this.settlementCompletion = new Promise<void>((resolve) => { complete = resolve; });
+        this.settlementToken = token;
+        if (this.status === "idle") this.setStatus("streaming");
+        return () => {
+          if (this.settlementToken === token) this.settlementToken = null;
+          complete();
+        };
+      },
       onAgentSettled: () => {
         void this.sessionMode.onAgentSettled();
+      },
+      onRequestUsage: (userEntryId, tokens, pendingUsageId) => {
+        this.sessionMode.recordRequestUsage(userEntryId, tokens, pendingUsageId);
+      },
+      onPendingUsageBound: (pendingUsageId, userEntryId) => {
+        this.sessionMode.bindPendingRequestUsage(pendingUsageId, userEntryId);
       },
       notifyTruncation: (detail) => {
         void this.notifyTruncation(detail);
@@ -675,6 +721,9 @@ export class SessionHost {
    * retry surface through `SessionPromptHost`.
    */
   async prompt(payload: PromptPayload): Promise<PromptResult> {
+    if (this.settlementToken !== null || this.maintenanceActive) {
+      return { ok: false, error: "会话维护中，请等待完成后再发送" };
+    }
     return runSessionPrompt(this.promptHost(), payload);
   }
 
@@ -710,6 +759,12 @@ export class SessionHost {
     return {
       getBundle: () => this.bundle,
       setStatus: (status, error) => this.setStatus(status, error),
+      waitForSettlement: async () => {
+        const wasSettling = this.settlementToken !== null;
+        await this.settlementCompletion;
+        await this.replaceChain;
+        if (wasSettling && this.status === "error") throw new Error(this.lastError ?? "回合结算失败");
+      },
       emitReplaceableNotice: (replaceKey, text, level) =>
         this.emitReplaceableNotice(replaceKey, text, level),
     };
@@ -860,9 +915,8 @@ export class SessionHost {
   }
 
   /**
-   * Run the snip-first + auto-compact pass. Called from
-   * `session-event-bridge` on `turn_end` and on every Nth `tool_execution_end`.
-   * Skips silently if there is no active bundle or the session is mid-stream.
+   * Run snip-first maintenance after SDK settlement and checkpoint persistence.
+   * Keep the visible status busy until this pass finishes and Goal may continue.
    * Never throws; failures are logged via `dbgWarn`.
    * 逻辑在 `./session-maintenance.ts` (issue #59 主题 A 提取).
    */
@@ -876,6 +930,18 @@ export class SessionHost {
     return {
       getBundle: () => this.bundle,
       getStatus: () => this.status,
+      isPromptPreparing: () => this.promptPreparing,
+      isMaintaining: () => this.maintenanceActive || this.settlementToken !== null || this.sessionMode.getContinueInFlight(),
+      setMaintaining: (active: boolean) => {
+        this.maintenanceActive = active;
+        if (active && this.status === "idle") {
+          this.maintenanceReservedIdle = true;
+          this.setStatus("streaming");
+        } else if (!active && this.maintenanceReservedIdle) {
+          this.maintenanceReservedIdle = false;
+          if (!this.settlementToken && !this.bundle?.session.isStreaming && this.status === "streaming") this.setStatus("idle");
+        }
+      },
       runReplaceExclusive: <T>(fn: () => Promise<T>) =>
         this.runReplaceExclusive(fn),
       getResourceLoader: () => this.resourceLoader,

@@ -5,7 +5,7 @@ import { bridgeSessionEvents, type SessionEventBridgeDeps } from "./session-even
 
 /** Build the real bridge around a controllable checkpoint barrier. */
 function fixture() {
-  let listener!: (event: { type: "agent_end" }) => void;
+  let listener!: (event: { type: "agent_start" | "agent_end" | "agent_settled" }) => void;
   let release!: () => void;
   const barrier = new Promise<void>((resolve) => { release = resolve; });
   const session = { subscribe: (fn: typeof listener) => { listener = fn; return () => {}; } } as unknown as AgentSession;
@@ -14,10 +14,12 @@ function fixture() {
     emit: vi.fn(), setStatus: vi.fn(), setLastErrorSilently: vi.fn(), emitUsageUpdate: vi.fn(), emitHistoryReplace: vi.fn(),
     messageIdFrom: () => "id", toolDetails: new Map(), getSession: () => current,
     turn: { fileTracker: {} as never, shadowCheckpoints: { flush: () => barrier } as never, currentUserEntryId: () => undefined },
-    usage: {} as never, maybeAutoTitleSession: vi.fn(async () => {}), autoMaintainIfNeeded: vi.fn(), onAgentSettled: vi.fn(),
+    usage: { setUserTurnTokenTotal: vi.fn() } as never, maybeAutoTitleSession: vi.fn(async () => {}), autoMaintainIfNeeded: vi.fn(), onAgentSettled: vi.fn(),
   };
   bridgeSessionEvents(session, deps);
-  return { deps, finish: () => listener({ type: "agent_end" }), release, replace: () => { current = null; } };
+  listener({ type: "agent_start" });
+  vi.mocked(deps.setStatus).mockClear();
+  return { deps, finish: () => { listener({ type: "agent_end" }); listener({ type: "agent_settled" }); }, release, replace: () => { current = null; } };
 }
 
 it("publishes idle and evaluates goals only after the final checkpoint is committed", async () => {
