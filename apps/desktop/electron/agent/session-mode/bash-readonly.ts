@@ -5,7 +5,7 @@
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { lstatSync, readdirSync } from "node:fs";
-import { isPhysicallyInside } from "../lib/path-boundary";
+import { isLexicallyInside, isPhysicallyInside, physicalPath } from "../lib/path-boundary";
 
 /** Commands that are generally safe for codebase research (no mutation). */
 const READONLY_COMMAND_HEADS = new Set([
@@ -160,9 +160,8 @@ function tokenizeShellSegments(command: string): string[][] | null {
   return segments;
 }
 
-/** Check Git subcommand and option semantics, including options that execute external programs. */
-function isReadonlyGit(tokens: readonly string[]): boolean {
-  // git [-C path] <sub>
+/** Identify the existing allowed Git global-option boundary before classifying its subcommand. */
+function readonlyGitSubcommandIndex(tokens: readonly string[]): number | null {
   let i = 1;
   while (i < tokens.length && tokens[i].startsWith("-")) {
     if (
@@ -174,9 +173,16 @@ function isReadonlyGit(tokens: readonly string[]): boolean {
       continue;
     }
     if (/^-C.+/.test(tokens[i]) || /^--(?:git-dir|work-tree)=/.test(tokens[i])) { i += 1; continue; }
-    if (!["--no-pager", "--no-optional-locks", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs"].includes(tokens[i])) return false;
+    if (!["--no-pager", "--no-optional-locks", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs"].includes(tokens[i])) return null;
     i += 1;
   }
+  return i;
+}
+
+/** Check Git subcommand and option semantics, including options that execute external programs. */
+function isReadonlyGit(tokens: readonly string[]): boolean {
+  const i = readonlyGitSubcommandIndex(tokens);
+  if (i === null) return false;
   const sub = (tokens[i] ?? "").toLowerCase();
   if (!READONLY_GIT_SUBCOMMANDS.has(sub)) return false;
   if (sub === "stash") {
@@ -221,7 +227,7 @@ function isReadonlyGit(tokens: readonly string[]): boolean {
     for (let j = 0; j < configArgs.length; j += 1) {
       const arg = configArgs[j];
       const option = arg.split("=")[0];
-      if (option === "-e" || ["--edit", "--unset", "--unset-all", "--add", "--remove-section", "--rename-section", "--replace-all", "--global", "--system"].some((unsafe) => option.startsWith("--") && unsafe.startsWith(option))) return false;
+      if (option === "-e" || ["--edit", "--unset", "--unset-all", "--add", "--remove-section", "--rename-section", "--replace-all", "--global", "--system", "--includes"].some((unsafe) => option.startsWith("--") && unsafe.startsWith(option))) return false;
       if (["-f", "--file", "-t", "--type", "--default", "--blob"].includes(arg)) { j += 1; continue; }
       if (!arg.startsWith("-")) nonFlags.push(arg);
     }
@@ -247,7 +253,7 @@ function hasUnsafeArguments(tokens: readonly string[]): boolean {
     ack: [/^--pager(?:=|$)/],
     yq: [/^--(?:inplace|in-place|split-exp|split-file|output-file|from-file)(?:=|$)/, /^-[^-]*[is]/, /\bload(?:_str|_base64|_xml|_props|_csv|_tsv)?\s*\(/],
     jq: [/\b(?:include|import)\s/, /^--from-file(?:=|$)/, /^-[^-]*f/],
-    file: [/^--compile(?:=|$)/, /^-[^-]*C/],
+    file: [/^--(?:compile|files-from)(?:=|$)/, /^-[^-]*[Cf]/],
     tree: [/^-[^-]*[ol]/, /^--outfile(?:=|$)/],
     ls: [/^--dereference(?:=|$)/, /^-[^-]*L/],
     du: [/^--dereference(?:=|$)/, /^-[^-]*L/],
@@ -256,7 +262,7 @@ function hasUnsafeArguments(tokens: readonly string[]): boolean {
   };
   const unsafeLongOptions: Record<string, readonly string[]> = {
     git: ["--output", "--ext-diff", "--textconv", "--filters", "--exec-path", "--config-env", "--paginate"],
-    file: ["--compile"],
+    file: ["--compile", "--files-from"],
     jq: ["--from-file"],
     yq: ["--inplace", "--in-place", "--split-exp", "--split-file", "--output-file", "--from-file"],
     rg: ["--pre", "--hostname-bin", "--follow"],
@@ -310,6 +316,12 @@ function expandTilde(token: string): string {
   return token;
 }
 
+/** Share Git Bash drive and home normalization between path checks and directory transitions. */
+function normalizeReadonlyPathToken(token: string): string {
+  const cleaned = expandTilde(unquote(token));
+  return process.platform === "win32" ? cleaned.replace(/^\/([a-z])(?:\/|$)/i, "$1:/") : cleaned;
+}
+
 /**
  * True when the resolved path is inside any of the allowed roots
  * (case-normalized prefix check, win32-safe). Used to extend the Ask/Plan
@@ -341,12 +353,12 @@ function pathEscapesReadArea(
   cwd: string,
   pathToken: string,
   allowedRoots?: readonly string[],
+  resolutionCwd = cwd,
 ): boolean {
   if (/^~[^/\\]/.test(pathToken)) return true; // Unknown user-home expansion cannot be resolved safely.
-  let cleaned = expandTilde(unquote(pathToken));
+  const cleaned = normalizeReadonlyPathToken(pathToken);
   // Git Bash maps /c/... to C:/..., while node:path would interpret it on the current drive.
   if (process.platform === "win32") {
-    cleaned = cleaned.replace(/^\/([a-z])(?:\/|$)/i, "$1:/");
     // Other POSIX absolute paths are rooted in Git Bash's installation, not the Node drive.
     if (cleaned.startsWith("/") && !cleaned.startsWith("//")) return true;
   }
@@ -357,7 +369,7 @@ function pathEscapesReadArea(
     const slash = normalizedToken.lastIndexOf("/");
     // Shell directory globs can traverse a junction we cannot resolve as one literal path.
     if (wildcard < slash) return true;
-    const parent = resolve(cwd, slash < 0 ? "." : normalizedToken.slice(0, slash) || "/");
+    const parent = resolve(resolutionCwd, slash < 0 ? "." : normalizedToken.slice(0, slash) || "/");
     const roots = [cwd, ...(allowedRoots ?? [])];
     if (!roots.some((r) => isPhysicallyInside(r, parent))) return true;
     try {
@@ -371,7 +383,7 @@ function pathEscapesReadArea(
     if (isAbsolute(cleaned) || /^[A-Za-z]:[\\/]/.test(cleaned)) {
       abs = normalize(resolve(cleaned));
     } else {
-      abs = normalize(resolve(root, cleaned));
+      abs = normalize(resolve(resolutionCwd, cleaned));
     }
   } catch {
     return true;
@@ -397,6 +409,61 @@ function pathEscapesReadArea(
   return !isPhysicallyInside(root, abs);
 }
 
+/** Follow Git chdir's real target while keeping the original authorized-root representation. */
+function resolveReadonlyGitCwd(cwd: string, token: string, authorizedRoots: readonly string[]): string {
+  const target = physicalPath(resolve(cwd, normalizeReadonlyPathToken(token)));
+  for (const root of authorizedRoots) {
+    const physicalRoot = physicalPath(root);
+    if (isLexicallyInside(physicalRoot, target)) return resolve(root, relative(physicalRoot, target));
+  }
+  throw new Error("Git directory escaped the authorized read roots");
+}
+
+/** Extract attached short-option paths without changing which command semantics are allowed. */
+function attachedReadonlyPathOption(commandHead: string, token: string): string | null {
+  const pathOptions: Record<string, string> = {
+    git: "CfO", // -C directory, config -f file, diff -O orderfile.
+    grep: "fL",
+    rg: "fL",
+    ag: "fL",
+    ack: "fL",
+    jq: "fL",
+    yq: "fL",
+    file: "m", // -f is rejected: its contents may name paths outside the project.
+    date: "f",
+  };
+  const options = pathOptions[commandHead.toLowerCase()];
+  if (!options) return null;
+  const match = token.match(new RegExp(`^-[a-zA-Z]*?[${options}](.+)$`));
+  return match?.[1] ?? null;
+}
+
+/** Locate explicit path arguments even when the consumed value resembles another option. */
+function readonlyPathArgumentOffset(commandHead: string, token: string): number | null {
+  if (!token.startsWith("-")) return null;
+  const pathArguments: Record<string, Record<string, number>> = {
+    git: { "-C": 1, "--git-dir": 1, "--work-tree": 1, "--prefix": 1, "-f": 1, "--file": 1, "-O": 1, "--order-file": 1 },
+    grep: { "-f": 1, "--file": 1 },
+    rg: { "-f": 1, "--file": 1, "--ignore-file": 1 },
+    ag: { "-f": 1, "--file": 1 },
+    ack: { "-f": 1, "--file": 1 },
+    jq: { "-f": 1, "--from-file": 1, "-L": 1, "--rawfile": 2, "--slurpfile": 2, "--argfile": 2 },
+    yq: { "--from-file": 1 },
+    file: { "-m": 1, "--magic-file": 1 },
+    date: { "-f": 1, "--file": 1 },
+  };
+  const options = pathArguments[commandHead.toLowerCase()];
+  if (!options) return null;
+  const name = token.split("=")[0];
+  if (options[name] !== undefined) return options[name];
+  if (name.startsWith("--")) {
+    const matches = Object.keys(options).filter((option) => option.startsWith(name));
+    return matches.length === 1 ? options[matches[0]] : null;
+  }
+  // A final path-taking short option in a cluster consumes the next argument (grep -nf FILE).
+  return /^-[a-zA-Z]+$/.test(name) ? options[`-${name.at(-1)}`] ?? null : null;
+}
+
 /**
  * True when the command references a path outside the read sandbox — project
  * cwd, or any of the optional read-only roots (absolute escape, `..`, or
@@ -415,43 +482,54 @@ export function bashCommandEscapesCwd(
   const segments = tokenizeShellSegments(cleaned);
   if (!segments) return true;
   for (const tokens of segments) {
+    const head = tokens[0].toLowerCase();
+    const gitSubcommand = head === "git" ? readonlyGitSubcommandIndex(tokens) : null;
+    if (head === "git" && gitSubcommand === null) return true;
+    let effectiveCwd = root;
+    let optionsEnded = false;
     for (let i = 0; i < tokens.length; i++) {
       const tok = tokens[i];
-      const lower = tok.toLowerCase();
+      if (tok === "--") { optionsEnded = true; continue; }
       // Long option values and attached short file options are still real filesystem arguments.
-      const equalValue = tok.startsWith("-") && tok.includes("=") ? tok.slice(tok.indexOf("=") + 1) : null;
-      const attachedPath = tokens[0] === "git" && /^-C.+/.test(tok) ? tok.slice(2)
-        : ["grep", "rg", "ag", "ack", "jq", "yq"].includes(tokens[0]) && /^-[a-zA-Z]*[fL].+/.test(tok)
-          ? tok.slice(tok.search(/[fL]/) + 1)
-          : tokens[0] === "file" && /^-[a-zA-Z]*m.+/.test(tok) ? tok.slice(tok.indexOf("m") + 1) : null;
+      const equalValue = !optionsEnded && tok.startsWith("--") && tok.includes("=") ? tok.slice(tok.indexOf("=") + 1) : null;
+      const globalGitCwd = head === "git" && i < (gitSubcommand ?? 0) && /^-C/.test(tok);
+      const gitCopyDetection = head === "git" && i >= (gitSubcommand ?? 0) && /^-C/.test(tok);
+      const attachedPath = optionsEnded || gitCopyDetection ? null : attachedReadonlyPathOption(head, tok);
+      const pathOffset = optionsEnded || gitCopyDetection ? null : readonlyPathArgumentOffset(head, tok);
       const optionValue = equalValue ?? attachedPath;
       if (optionValue !== null) {
         // file's magic option accepts a list of paths; do not resolve that list as one harmless filename.
-        if (tokens[0] === "file" && optionValue.includes(":") && !/^[a-z]:[^:]*$/i.test(optionValue)) return true;
+        if (head === "file" && optionValue.includes(":") && !/^[a-z]:[^:]*$/i.test(optionValue)) return true;
         let optionTargetExists = false;
-        try { lstatSync(resolve(root, optionValue)); optionTargetExists = true; }
+        try { lstatSync(resolve(effectiveCwd, optionValue)); optionTargetExists = true; }
         catch (err) { if (!["ENOENT", "ENOTDIR"].includes((err as NodeJS.ErrnoException).code ?? "")) return true; }
-        if ((isPathLikeToken(optionValue) || optionTargetExists) && pathEscapesReadArea(root, optionValue, allowedRoots)) return true;
+        if ((attachedPath !== null || pathOffset !== null || isPathLikeToken(optionValue) || optionTargetExists) && pathEscapesReadArea(root, optionValue, allowedRoots, effectiveCwd)) return true;
+        if (globalGitCwd) {
+          try { effectiveCwd = resolveReadonlyGitCwd(effectiveCwd, optionValue, [root, ...(allowedRoots ?? [])]); }
+          catch { return true; }
+        }
       }
-      if (tokens[0] === "file" && !tok.startsWith("-") && tok.includes(":") && !/^[a-z]:[^:]*$/i.test(tok)) return true;
-      if (
-        lower === "-c" ||
-        lower === "--git-dir" ||
-        lower === "--work-tree" ||
-        lower === "--prefix"
-      ) {
-        const next = tokens[i + 1];
-        if (next && pathEscapesReadArea(root, next, allowedRoots)) return true;
-        i += 1;
+      if (head === "file" && !tok.startsWith("-") && tok.includes(":") && !/^[a-z]:[^:]*$/i.test(tok)) return true;
+      if (optionValue === null && pathOffset !== null) {
+        const next = tokens[i + pathOffset];
+        if (next === undefined) return true;
+        if (head === "file" && next.includes(":") && !/^[a-z]:[^:]*$/i.test(next)) return true;
+        if (pathEscapesReadArea(root, next, allowedRoots, effectiveCwd)) return true;
+        if (globalGitCwd) {
+          try { effectiveCwd = resolveReadonlyGitCwd(effectiveCwd, next, [root, ...(allowedRoots ?? [])]); }
+          catch { return true; }
+        }
+        i += pathOffset;
         continue;
       }
       let existingTarget = false;
-      if (i > 0 && !tok.startsWith("-")) {
-        try { lstatSync(resolve(root, unquote(tok))); existingTarget = true; }
+      if (i > 0 && (!tok.startsWith("-") || optionsEnded)) {
+        try { lstatSync(resolve(effectiveCwd, unquote(tok))); existingTarget = true; }
         catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT" && (err as NodeJS.ErrnoException).code !== "ENOTDIR") return true; }
       }
       const fileGlob = i > 0 && /[*?\[]/.test(tok) && ["ls", "dir", "cat", "head", "tail", "stat", "file", "wc", "du"].includes(tokens[0].toLowerCase());
-      if ((isPathLikeToken(tok) || existingTarget || fileGlob) && pathEscapesReadArea(root, tok, allowedRoots)) {
+      const terminatedPath = optionsEnded && (/[\\/]/.test(tok) || tok.startsWith("~"));
+      if ((isPathLikeToken(tok) || existingTarget || fileGlob || terminatedPath) && pathEscapesReadArea(root, tok, allowedRoots, effectiveCwd)) {
         return true;
       }
     }

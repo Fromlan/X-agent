@@ -63,6 +63,33 @@ describe("isReadonlyBashCommand", () => {
 });
 
 describe("bashCommandEscapesCwd", () => {
+  it.each([
+    "git config -f../other/config --get user.name",
+    "GIT config -f../other/config --get user.name",
+    "GIT -C../other status",
+    "GREP -f../other/patterns README.md",
+    'git config -f"../other/config with spaces" --get user.name',
+    "git config -fD:/other/config --get user.name",
+    'git config -f"D:/other/config with spaces" --get user.name',
+    "git diff -O../other/order",
+    "git diff -OD:/other/order",
+    "date -f../other/dates",
+    "date -fD:/other/dates",
+    "FILE -m./magic:../other/magic README.md",
+  ])("提取附加短选项中的实际读取路径：%s", (command) => {
+    expect(isReadonlyBashCommand(command)).toBe(true);
+    expect(bashCommandEscapesCwd(command, CWD)).toBe(true);
+  });
+
+  it.each([
+    "git config -f./config --get user.name",
+    'git config -f"./config with spaces" --get user.name',
+    "git diff -O./order",
+    "date -f./dates",
+  ])("附加短选项中的cwd内合法路径仍可读取：%s", (command) => {
+    expect(isReadonlyBashCommand(command)).toBe(true);
+    expect(bashCommandEscapesCwd(command, CWD)).toBe(false);
+  });
   it("cwd 内命令不逃逸", () => {
     expect(bashCommandEscapesCwd("ls -la", CWD)).toBe(false);
     expect(bashCommandEscapesCwd("cat README.md", CWD)).toBe(false);
@@ -101,6 +128,21 @@ describe("bashCommandEscapesCwd", () => {
   it("实际上很长的允许命令也不逃逸", () => {
     const cmd = `find ${CWD}/src -name '*.ts' | xargs grep -n 'TODO'`;
     expect(bashCommandEscapesCwd(cmd, CWD)).toBe(false);
+  });
+});
+
+describe("indirect filename list boundary", () => {
+  it.each(["file -f../outside/list", "file -f./list", "file --files-from=./list"])("拒绝可在列表内容中隐藏外部路径的文件选项：%s", (command) => {
+    expect(isReadonlyBashCommand(command)).toBe(false);
+  });
+});
+
+describe("explicit Git include boundary", () => {
+  it.each(["--includes", "--include", "--incl", "--inc"])("拒绝显式间接配置读取：%s", (option) => {
+    expect(isReadonlyBashCommand(`git config -f./config ${option} --get user.name`)).toBe(false);
+  });
+  it("保留显式禁用include的只读形式", () => {
+    expect(isReadonlyBashCommand("git config -f./config --no-includes --get user.name")).toBe(true);
   });
 });
 
