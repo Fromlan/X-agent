@@ -79,6 +79,8 @@ export {
   type BuiltinToolName,
   GODOT_TOOLS,
   type GodotToolName,
+  WEB_TOOLS,
+  type WebToolName,
   ALL_TOGGLEABLE_TOOLS,
   SESSION_TOOL_REGISTRY,
 } from "./ipc/registries";

@@ -96,6 +96,8 @@ export interface ClientPrefs {
   model: string | null;
   thinkingLevel: ThinkingLevel;
   tools: string[];
+  /** Explicit DeepSeek credential profile for web tools, independent of the chat model. */
+  deepseekWebProviderId: string | null;
   /**
    * Skill ids excluded from the session `<available_skills>` index and slash menu.
    * Empty = all discovered skills enabled (after Godot / home filters).
@@ -192,6 +194,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   model: null,
   thinkingLevel: "high",
   tools: [...AVAILABLE_TOOLS],
+  deepseekWebProviderId: null,
   disabledSkills: [],
   godotEditorPath: null,
   rightPanelOpen: false,
@@ -237,6 +240,7 @@ export const ClientPrefsSchema = Type.Object({
     ) as never,
   ),
   tools: Type.Array(Type.String()),
+  deepseekWebProviderId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 256 })]),
   disabledSkills: Type.Array(Type.String()),
   godotEditorPath: Type.Union([Type.Null(), Type.String()]),
   rightPanelOpen: Type.Boolean(),

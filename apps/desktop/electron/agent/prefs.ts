@@ -159,6 +159,8 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     goalMaxTurns,
     goalMaxTokens,
     goalEvaluatorModel,
+    deepseekWebProviderId: typeof rest.deepseekWebProviderId === "string" && rest.deepseekWebProviderId.trim()
+      ? rest.deepseekWebProviderId.trim() : null,
     clientLogoId,
   };
 }

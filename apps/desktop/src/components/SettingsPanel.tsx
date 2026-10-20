@@ -169,6 +169,7 @@ export function SettingsPanel({
 
             {tab === "tools" && (
               <ToolsSettingsPage
+                onOpenProviders={() => setTab("providers")}
                 prefs={prefs}
                 hasActiveSession={hasActiveSession}
                 onToggleTool={onToggleTool}
