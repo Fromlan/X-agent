@@ -14,8 +14,10 @@ import {
   AVAILABLE_TOOLS,
   ALL_TOGGLEABLE_TOOLS,
   GODOT_TOOLS,
+  WEB_TOOLS,
 } from "../shared/ipc";
 import { createGodotTools } from "../electron/agent/godot-tools";
+import { createDeepSeekWebTools } from "../electron/agent/deepseek-web-tools";
 import type { GodotRpcBridge } from "../electron/agent/godot-rpc-bridge";
 
 import { estimateTextTokens } from "../electron/agent/context-breakdown";
@@ -118,6 +120,7 @@ async function main(): Promise<void> {
   const defsByName: Record<string, ToolDefLike> = {
     ...builtinByName,
     ...godotByName,
+    ...toolDefsByName(createDeepSeekWebTools()),
   };
 
   const tools7 = [...AVAILABLE_TOOLS];
@@ -128,8 +131,8 @@ async function main(): Promise<void> {
     `sanity: AVAILABLE_TOOLS length should be 7, got ${tools7.length}`,
   );
   assert(
-    toolsAll.length === 7 + GODOT_TOOLS.length,
-    `sanity: ALL_TOGGLEABLE_TOOLS length should be ${7 + GODOT_TOOLS.length}, got ${toolsAll.length}`,
+    toolsAll.length === 7 + WEB_TOOLS.length + GODOT_TOOLS.length,
+    `sanity: ALL_TOGGLEABLE_TOOLS length should be ${7 + WEB_TOOLS.length + GODOT_TOOLS.length}, got ${toolsAll.length}`,
   );
 
   const system7 = estimateSystemTokens({ cwd, toolNames: tools7, defsByName });

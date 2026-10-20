@@ -8,7 +8,7 @@
  * documents live in <cwd>/game-design/ as plain markdown, not in
  * ~/.pi/agent/x-agent/plans/.
  *
- * For Godot tools, only readonly variants are allowed. Optional readonly
+ * Web tools and readonly Godot variants are allowed. Optional readonly
  * tools (PLAN_MODE_OPTIONAL_READONLY_TOOLS) are merged from prefs if the
  * user has enabled them.
  *

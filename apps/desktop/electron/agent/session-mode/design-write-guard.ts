@@ -22,6 +22,7 @@
  */
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { SessionType } from "../../../shared/session-type";
+import { WEB_TOOLS } from "../../../shared/tools/web";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,6 +87,7 @@ function normalizeToolPath(raw: string): string {
  * subject to the path check.
  */
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  ...WEB_TOOLS,
   // Core Pi builtins
   "read",
   "grep",

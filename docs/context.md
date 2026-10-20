@@ -30,4 +30,5 @@
 | **工具设置事务** | 串行等待持久化和工具集应用；失败恢复旧快照，重建/恢复失败均可观察 | `apply-tools.ts`、`register-prefs-ipc.ts` |
 | **本地诊断包** | 系统/状态快照、最多 100 条操作/异常枚举事件、匿名关联编号与耗时；最近失败时状态独立保留，重启后可导出。设置支持预览、复制摘要及打开 Bug 表单；不含错误正文、密钥、认证文件、对话、源码或路径，不自动上传 | `electron/boot/diagnostics.ts`、`electron/boot/diagnostic-operations.ts`、`shared/diagnostics.ts`、`window.xAgent.appReport` |
 | **安全模型探测传输** | 每候选 8 秒、2 MiB 上限，拒绝重定向，连接时检查 DNS 地址；未统一保护 Pi SDK 其他传输 | `electron/agent/public-http.ts`、`model-fetch.ts` |
+| **DeepSeek 网络工具** | `web_search` / `web_fetch` 默认关闭；`deepseekWebProviderId` 显式选择已启用的 DeepSeek 官方档案，与聊天模型独立。主进程固定请求官方 Search/Fetch 地址，每次执行复核开关与密钥；支持取消、30 秒超时、2 MiB 响应及 60,000 字符输出限制。Ask / Plan / Design 只读工具白名单均包含已启用网络工具；按次费用暂不计入 Token 用量账本 | `electron/agent/deepseek-web-tools.ts`、`shared/tools/web.ts`、`src/components/settings/DeepSeekWebSettings.tsx` |
 | **撤回完成边界** | checkpoint flush 后才发布 idle；明确空路径不全量恢复。不能区分同文件或 Bash/Godot 并发人工编辑的所有副作用 | `session-event-bridge.ts`、`shadow-checkpoints.ts`、`shadow-git.ts` |

@@ -5,6 +5,7 @@ import {
   type ClientPrefs,
 } from "@shared/ipc";
 import { useConfirm } from "../../lib/app-confirm";
+import { DeepSeekWebSettings } from "./DeepSeekWebSettings";
 
 type Props = {
   prefs: ClientPrefs;
@@ -12,6 +13,7 @@ type Props = {
   onToggleTool: (tool: string) => void;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onOpenGodotSettings: () => void;
+  onOpenProviders: () => void;
 };
 
 export function ToolsSettingsPage({
@@ -20,6 +22,7 @@ export function ToolsSettingsPage({
   onToggleTool,
   onPrefsChanged,
   onOpenGodotSettings,
+  onOpenProviders,
 }: Props) {
   const confirm = useConfirm();
   const allBuiltinToolsEnabled = AVAILABLE_TOOLS.every((tool) =>
@@ -89,6 +92,9 @@ export function ToolsSettingsPage({
           })}
         </div>
       </div>
+
+      <DeepSeekWebSettings prefs={prefs} onToggleTool={onToggleTool}
+        onPrefsChanged={onPrefsChanged} onOpenProviders={onOpenProviders} />
 
       <div className="settings-block">
         <div className="settings-block-head">

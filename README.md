@@ -140,11 +140,19 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
 | 通用 | 主题、Thinking 默认、bash 路径、Pi 登录、自动更新、**品牌（logo 选择）** |
 | 供应商 | 模型档案、导入 Pi / cc-switch 配置、Thinking 钳制 |
 | 用量 | 本地按日 / 按模型汇总 |
-| 工具 | 内置 / Godot 编辑器 / Godot 文档 工具白名单；Agent / Goal 模式生效 |
+| 工具 | 内置 / DeepSeek 网络 / Godot 编辑器工具白名单；调研 / 计划模式仅保留已启用的只读工具 |
 | 插件 | Prompt / Skill / Extension / Theme / Packages（Pi 五类） |
 | Godot | **编辑器连接**（RPC 桥 + 插件安装/更新） |
 
 完整配置项：[`docs/agent.md` §四](docs/agent.md) / [`docs/context.md`](docs/context.md)
+
+### DeepSeek 网络搜索与网页抓取
+
+在“设置 → 供应商”添加并启用 DeepSeek 官方配置，再到“设置 → 工具 → DeepSeek 网络”选择该配置，勾选网页搜索（`web_search`）或网页抓取（`web_fetch`）。两项默认关闭，可供任意聊天模型使用，也支持调研、计划和策划会话。
+
+搜索返回标题、来源链接、摘要与发布时间，支持站点、语言及日期筛选；抓取返回页面标题和 Markdown 正文。密钥复用所选供应商配置，仅在主进程读取；官方 OpenAI 与 Anthropic 兼容配置均可使用。第三方中转配置不在支持范围内。
+
+搜索词和目标网址会发送给 DeepSeek，接口按请求单独计费，暂不计入应用的模型 Token 费用统计。调用规则与价格以 [DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/guides/search/) 为准。
 
 ## 数据位置
 

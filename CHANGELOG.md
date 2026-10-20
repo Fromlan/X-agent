@@ -28,6 +28,10 @@ CHANGELOG 是**用户面向**的 release notes，不是 commit log，也不是�
 
 ## Unreleased
 
+### 新增
+
+- 支持 DeepSeek 网页搜索与网页抓取。在工具设置中选择 DeepSeek 官方供应商后，可为任意聊天模型开启联网能力；调研、计划和策划会话均可使用，搜索与抓取按请求单独计费。
+
 ## 0.6.7
 
 ### 改进

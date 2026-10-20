@@ -16,6 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { AVAILABLE_TOOLS, type BuiltinToolName } from "./available";
 import { GODOT_TOOLS, type GodotToolName } from "./godot";
+import { WEB_TOOLS } from "./web";
 import {
   ALL_TOGGLEABLE_TOOLS,
   SESSION_TOOL_REGISTRY,
@@ -57,7 +58,7 @@ describe("ALL_TOGGLEABLE_TOOLS = AVAILABLE ∪ GODOT (derive)", () => {
 
   it("length = AVAILABLE.length + GODOT.length (no silent loss)", () => {
     expect(ALL_TOGGLEABLE_TOOLS.length).toBe(
-      AVAILABLE_TOOLS.length + GODOT_TOOLS.length,
+      AVAILABLE_TOOLS.length + WEB_TOOLS.length + GODOT_TOOLS.length,
     );
   });
 

@@ -22,3 +22,4 @@ export {
   ALL_TOGGLEABLE_TOOLS,
   SESSION_TOOL_REGISTRY,
 } from "../tools/derived";
+export { WEB_TOOLS, type WebToolName } from "../tools/web";
