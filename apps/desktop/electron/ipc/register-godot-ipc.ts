@@ -177,8 +177,23 @@ export function registerGodotIpc(
       if (input.action === "project" && normalizeProjectKey(project ?? "") !== normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) {
         return { ok: false, error: "项目已切换，请为当前项目重新选择引擎" };
       }
+      const previousPrefs = getCachedPrefs();
       const prefs = await updateGodotEngine(input);
-      if (input.action === "remove" || input.action === "default") connection.engineSettingsChanged();
+      const currentProject = sessionHost.getStatus().cwd;
+      if (currentProject && (input.action === "remove" || input.action === "default")) {
+        const pinned = previousPrefs.godotProjectEditors[normalizeProjectKey(currentProject)];
+        const status = connection.getStatus().connection;
+        const selected = normalizeProjectKey(status?.projectPath ?? "") === normalizeProjectKey(currentProject)
+          ? status?.enginePath
+          : undefined;
+        // Only invalidate configuration used by this project; unrelated registry edits must preserve its connection attempt.
+        const affected = input.action === "default"
+          ? !pinned && normalizeProjectKey(previousPrefs.godotEditorPath ?? "") !== normalizeProjectKey(prefs.godotEditorPath ?? "")
+          : pinned
+            ? normalizeProjectKey(pinned) === normalizeProjectKey(input.path)
+            : !selected || normalizeProjectKey(selected) === normalizeProjectKey(input.path);
+        if (affected) connection.engineSettingsChanged();
+      }
       if (input.action === "project" && normalizeProjectKey(project ?? "") === normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) {
         connection.engineSelected(input.path ?? undefined);
       }

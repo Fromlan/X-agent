@@ -10,19 +10,24 @@ import { registerGodotEngine, updateGodotEngine } from "../agent/prefs";
 import { dialog } from "electron";
 import { DEFAULT_PREFS } from "../../shared/ipc";
 
-const prefs = vi.hoisted(() => ({ tools: ["godot_set_project_setting", "godot_get_project_setting"], godotEngines: [{ path: "C:/saved.exe", name: "Saved", version: "4.7.2.stable" }] }));
+const prefs = vi.hoisted(() => ({
+  tools: ["godot_set_project_setting", "godot_get_project_setting"],
+  godotEngines: [{ path: "C:/saved.exe", name: "Saved", version: "4.7.2.stable" }],
+  godotEditorPath: null as string | null,
+  godotProjectEditors: {} as Record<string, string>,
+}));
 vi.mock("electron", () => ({ dialog: { showOpenDialog: vi.fn() } }));
 vi.mock("../agent/prefs", () => ({ getCachedPrefs: () => prefs, patchPrefs: vi.fn(), rememberGodotEditor: vi.fn(async () => {}), registerGodotEngine: vi.fn(), updateGodotEngine: vi.fn() }));
 vi.mock("../agent/godot-engine-discovery", () => ({ probeGodotEngine: vi.fn(async () => ({ path: "C:/Godot.exe", version: "4.6.2.stable" })) }));
 
 /** Register real handlers with a trusted sender, avoiding a live Electron profile. */
-function fixture() {
+function fixture(connectionState: { projectPath?: string; enginePath?: string } = {}) {
   const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
   const request = vi.fn(async () => ({ id: "reply", ok: true, result: { saved: true } }));
   const bridge = { request };
   let cwd = "D:/game";
   const connection = {
-    getStatus: () => ({ connection: { candidates: [{ path: "C:/Godot.exe", version: "4.6.2.stable" }] } }),
+    getStatus: () => ({ connection: { ...connectionState, candidates: [{ path: "C:/Godot.exe", version: "4.6.2.stable" }] } }),
     engineSelected: vi.fn(),
     engineSettingsChanged: vi.fn(),
   };
@@ -42,7 +47,12 @@ function fixture() {
   };
 }
 
-beforeEach(() => { vi.clearAllMocks(); prefs.tools = ["godot_set_project_setting", "godot_get_project_setting"]; });
+beforeEach(() => {
+  vi.clearAllMocks();
+  prefs.tools = ["godot_set_project_setting", "godot_get_project_setting"];
+  prefs.godotEditorPath = null;
+  prefs.godotProjectEditors = {};
+});
 afterEach(() => resetIpcSenderGuard());
 
 describe.each(["ipc", "tool"] as const)("%s ProjectSettings ingress", (ingress) => {
@@ -155,4 +165,34 @@ it("returns cancellation and persistence errors without losing current settings"
   vi.mocked(updateGodotEngine).mockRejectedValueOnce(new Error("disk unavailable"));
   expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: false, error: "disk unavailable" });
   await expect(context.manageEngine({ action: "add" }, { sender: {}, senderFrame: { url: "file:///app/index.html" } })).rejects.toMatchObject({ __senderUntrusted: true });
+});
+
+it.each(["remove", "default"] as const)("does not cancel a project bound to another engine after %s", async (action) => {
+  const context = fixture();
+  prefs.godotProjectEditors = { "d:/game": "C:/pinned.exe" };
+  vi.mocked(updateGodotEngine).mockResolvedValueOnce({ ...DEFAULT_PREFS, ...prefs });
+  expect(await context.manageEngine({ action, path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).not.toHaveBeenCalled();
+});
+
+it("cancels the current project's connection when its own pinned engine is removed", async () => {
+  const context = fixture();
+  prefs.godotProjectEditors = { "d:/game": "C:/saved.exe" };
+  vi.mocked(updateGodotEngine).mockResolvedValueOnce(DEFAULT_PREFS);
+  expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).toHaveBeenCalledOnce();
+});
+
+it("invalidates an unpinned project when its global default changes", async () => {
+  const context = fixture();
+  vi.mocked(updateGodotEngine).mockResolvedValueOnce({ ...DEFAULT_PREFS, godotEditorPath: "C:/saved.exe" });
+  expect(await context.manageEngine({ action: "default", path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).toHaveBeenCalledOnce();
+});
+
+it("preserves an unpinned project's selected engine when another entry is removed", async () => {
+  const context = fixture({ projectPath: "D:/game", enginePath: "C:/Godot.exe" });
+  vi.mocked(updateGodotEngine).mockResolvedValueOnce(DEFAULT_PREFS);
+  expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).not.toHaveBeenCalled();
 });
