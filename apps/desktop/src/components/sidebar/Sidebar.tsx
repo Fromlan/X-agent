@@ -97,7 +97,7 @@ function SidebarImpl({
 
   return (
     <aside className={className} data-collapsed={collapsed ? "true" : undefined}>
-      <SidebarWorkspace state={state} cwd={activeCwd} isGodotProject={isGodotProject} collapsed={collapsed} busy={busy} locked={locked} selectedType={selectedType} onOpen={onOpen} onNew={onNew} onSettings={onSettings} onResume={onResume} />
+      <SidebarWorkspace state={state} cwd={activeCwd} isGodotProject={isGodotProject} collapsed={collapsed} busy={busy} locked={locked} selectedType={selectedType} onOpen={onOpen} onNew={onNew} onResume={onResume} />
       <div className="sidebar-head">
         {!collapsed && <h2>会话</h2>}
         <div className="sidebar-head-actions">
