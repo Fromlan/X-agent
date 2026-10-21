@@ -1,7 +1,7 @@
 # AGENTS.md
 
 > 编码助手在本仓库工作时的入口指引。只记录「不查就会猜错 / 容易踩坑」的事实，不再重复各文档全文。
-> 更完整的指引：开发者向 `CLAUDE.md`、模型上下文原理 `docs/agent-context.md`、领域词表 `docs/context.md`、设计规范 `docs/design.md`。
+> 更多指引：协作与发布流程 `CLAUDE.md`、开发与验证速查 `docs/agent.md`、模型上下文原理 `docs/agent-context.md`、领域词表 `docs/context.md`、设计规范 `docs/design.md`。
 > 上下文入口按目录选择一个文件：优先 `AGENTS.override.md`，然后 `AGENTS.md` / `CLAUDE.md`；X-agent 仅在该目录没有这些入口时补充单数 `AGENT.md`。选中的文件**全文**进入模型上下文；`docs/agent.md`、`docs/context.md` 等文档需按需读取，详见 `docs/agent-context.md`。
 
 ## 仓库结构（先记住这两点）
