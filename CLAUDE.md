@@ -285,7 +285,7 @@ Electron 三进程边界：
 
 - 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 切换主题族与明暗模式
 - Surface / Card / Card-elev / Chrome + Board 与语义色 token；组件与 JS 不硬编码色值
-- Inter + JetBrains Mono，约 13px；1px Board 边框；主元素与交互阴影走主题 token，`contrast` 禁用阴影
+- Inter + JetBrains Mono，全局 14px，助手正文和输入文字 15px；1px Board 边框；主元素与交互阴影走主题 token，`contrast` 禁用阴影
 - Pill 交互几何（按钮 / chip / 单行 input）；容器 12px；多行 8px
 - 图标用 `lucide-react`，不用 emoji 充当 UI 图标
 - focus 用 `--focus-ring-soft`；尊重 `prefers-reduced-motion`

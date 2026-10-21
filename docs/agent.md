@@ -171,7 +171,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 - **层次**：Surface / Card / Card-elev / Chrome + 1px Board 边；主元素与交互阴影走主题 token，`contrast` 禁用阴影
 - **Pill 优先**：按钮 / chip / 单行 input / tab 用 `9999px`；容器 `12px`；多行 `8px`
 - 颜色 / 圆角 / 阴影全部走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**
-- 字体：Inter 400/500 + JetBrains Mono；全局 13px / 1.5
+- 字体：Inter 400/500 + JetBrains Mono；全局 14px / 1.5；助手正文和输入文字 15px，历史会话标题 14px
 - 图标用 `lucide-react`，**不用 emoji** 充当 UI 图标
 - 字重仅 400 / 500；不用 600+
 - 设置：左侧分页 + 可滚动内容区（`min-height: 0` + `overflow-y: auto`）

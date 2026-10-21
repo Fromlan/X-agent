@@ -1,8 +1,8 @@
 /**
  * Prefs 损坏恢复提示 (主题 E #62) — apply 转换 PrefsLoadResult,
- * consume 取走一次后清空. patchPrefs 副作用通过 fake timer / fs sandbox 隔离.
+ * consume 取走一次后清空. patchPrefs 副作用通过 fs sandbox 隔离并等待实际落盘.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +29,12 @@ beforeEach(() => {
   setAgentDirOverrideForTests(AGENT_DIR);
 });
 
+// Writes are awaited by each recovery case before resetting the shared store path.
+afterEach(() => {
+  setAgentDirOverrideForTests(null);
+  rmSync(AGENT_DIR, { recursive: true, force: true });
+});
+
 describe("boot/prefs-recovery-notice", () => {
   it("ok=true 的结果不写入 notice", () => {
     applyStartupPrefsLoad({
@@ -39,7 +45,7 @@ describe("boot/prefs-recovery-notice", () => {
     expect(consumePrefsRecoveryNotice()).toBeNull();
   });
 
-  it("ok=false + recovered: 写入 notice, consume 拿到后清空", () => {
+  it("ok=false + recovered: 写入 notice, consume 拿到后清空", async () => {
     applyStartupPrefsLoad({
       ok: false,
       prefs: { themeId: "default" } as never,
@@ -59,6 +65,9 @@ describe("boot/prefs-recovery-notice", () => {
     });
     // 二次 consume 应为空 (queue 语义)
     expect(consumePrefsRecoveryNotice()).toBeNull();
+    await vi.waitFor(() => {
+      expect(existsSync(join(AGENT_DIR, "x-agent.json"))).toBe(true);
+    });
   });
 
   it("backedUp=true 时副作用 patchPrefs({}) 写默认 prefs (隔离到 tmp)", async () => {
@@ -72,11 +81,9 @@ describe("boot/prefs-recovery-notice", () => {
         error: "corrupt",
       },
     });
-    // patchPrefs 内部 store.mutate 是 microtask 同步触发, 但 await 让 setImmediate
-    // 落盘; 真实 x-agent.json 在 AGENT_DIR 内被创建.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(existsSync(join(AGENT_DIR, "x-agent.json"))).toBe(true);
-    // 清理
-    rmSync(AGENT_DIR, { recursive: true, force: true });
+    // Wait for the atomic write, rather than assuming disk I/O finishes within 50 ms.
+    await vi.waitFor(() => {
+      expect(existsSync(join(AGENT_DIR, "x-agent.json"))).toBe(true);
+    });
   });
 });
