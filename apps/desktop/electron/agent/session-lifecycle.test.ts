@@ -33,6 +33,9 @@ const initialization = vi.hoisted(() => ({
   sessions: [] as AgentSession[],
   sidecarReadFailure: false,
   sidecarSaveFailure: false,
+  renameTarget: "",
+  renameRelease: null as Promise<void> | null,
+  renameExternalEdit: "",
 }));
 
 // Exercise failed atomic type persistence without denying unrelated preference writes.
@@ -59,6 +62,19 @@ vi.mock("node:fs", async (importOriginal) => {
         throw Object.assign(new Error("fixture sidecar permission denied"), { code: "EACCES" });
       }
       return Reflect.apply(actual.readFileSync, actual, [path, ...args]);
+    },
+    renameSync: (from: unknown, to: unknown) => {
+      if (to === initialization.renameTarget) {
+        if (!initialization.renameRelease) {
+          initialization.renameRelease = new Promise((resolve) => setImmediate(() => {
+            if (initialization.renameExternalEdit) actual.writeFileSync(initialization.renameTarget, initialization.renameExternalEdit);
+            initialization.renameTarget = "";
+            resolve();
+          }));
+        }
+        throw Object.assign(new Error("fixture pending read stream close"), { code: "EPERM" });
+      }
+      return Reflect.apply(actual.renameSync, actual, [from, to]);
     },
   };
 });
@@ -353,9 +369,13 @@ describe("SessionLifecycle（standalone mock host）", () => {
     initialization.sessions = [];
     initialization.sidecarReadFailure = false;
     initialization.sidecarSaveFailure = false;
+    initialization.renameTarget = "";
+    initialization.renameRelease = null;
+    initialization.renameExternalEdit = "";
   });
 
   afterEach(async () => {
+    await initialization.renameRelease;
     // Drain lifecycle's queued preference updates before removing their directory.
     await patchPrefs({});
     rmSync(testHome.path, { recursive: true, force: true });
@@ -736,6 +756,32 @@ describe("SessionLifecycle（standalone mock host）", () => {
     initialization.failure = "";
     expect((await lifecycle.resumeSession(fallback)).ok).toBe(true);
     await expectDesignPolicy(ctx, fallback, cwd);
+  });
+
+  it.each([false, true])("failed fallback waits for a pending stream close and preserves external edits: %s", async (externalEdit) => {
+    ctx = makeHost({ bundle: null });
+    const cwd = join(testHome.path, "project");
+    const fallback = createConversation(cwd);
+    const entries = parseSessionEntries(readFileSync(fallback, "utf8"));
+    entries.find((entry) => entry.type === "session")!.version = 2;
+    writeFileSync(fallback, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+    const original = readFileSync(fallback);
+    const sidecar = readFileSync(`${fallback}.session-type.json`);
+    const doomedPath = createConversation(cwd, "code");
+    const lifecycle = makeLifecycle(ctx.host);
+    expect((await lifecycle.resumeSession(doomedPath)).ok).toBe(true);
+    initialization.failure = "model";
+    initialization.renameTarget = fallback;
+    initialization.renameExternalEdit = externalEdit ? original.toString() + "external edit\n" : "";
+    expect(await lifecycle.deleteSession(doomedPath)).toEqual({ ok: true });
+    await initialization.renameRelease;
+    expect(initialization.renameRelease).not.toBeNull();
+    expect(readFileSync(fallback)).toEqual(externalEdit ? Buffer.from(initialization.renameExternalEdit) : original);
+    expect(readFileSync(`${fallback}.session-type.json`)).toEqual(sidecar);
+    expect(ctx.host.getBundle()).toBeNull();
+    expect(readdirSync(getXAgentSessionsRoot()).some((file) => file.endsWith(".tmp"))).toBe(false);
+    expect(ctx.notices.some((notice) => notice.text.includes("已保留当前文件"))).toBe(externalEdit);
+    expect(ctx.notices.some((notice) => notice.text.includes("恢复会话初始化前内容失败"))).toBe(false);
   });
 
   it("delete fallback checkpoint failure closes a published candidate instead of keeping a hidden live bundle", async () => {

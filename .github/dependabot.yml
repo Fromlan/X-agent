@@ -19,6 +19,12 @@ updates:
       - "dependencies"
       - "area: ci"
     groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
       pi-sdk:
         patterns:
           - "@earendil-works/*"

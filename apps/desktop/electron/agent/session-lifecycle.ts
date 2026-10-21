@@ -150,7 +150,7 @@ export class SessionLifecycle {
       if (!pendingSession || this.a().getBundle()?.session !== pendingSession) {
         try { (pendingSession as AgentSession | null)?.dispose(); } catch { /* preserve initialization error */ }
         if (original && loadedBytes && existingPath) {
-          this.restoreInitializationAppends(existingPath, original, loadedBytes, sessionManager, initialEntryCount);
+          await this.restoreInitializationAppends(existingPath, original, loadedBytes, sessionManager, initialEntryCount);
         }
         this.a().setResourceLoader(oldLoader);
         this.a().setBaseAppendPrompt(oldAppend);
@@ -160,13 +160,13 @@ export class SessionLifecycle {
   }
 
   /** Roll back exact SDK migration/initialization bytes atomically; preserve concurrent external edits. */
-  private restoreInitializationAppends(
+  private async restoreInitializationAppends(
     sessionPath: string,
     original: Buffer,
     loadedBytes: Buffer,
     sessionManager: SessionManager,
     initialEntryCount: number,
-  ): void {
+  ): Promise<void> {
     const appends = sessionManager.getEntries().slice(initialEntryCount);
     if (appends.length === 0 && original.equals(loadedBytes)) return;
     // SessionManager.open migrates legacy JSONL by serializing its complete
@@ -182,14 +182,24 @@ export class SessionLifecycle {
       loadedBytes,
       Buffer.from(appends.map((entry) => `${JSON.stringify(entry)}\n`).join("")),
     ]);
-    try {
-      if (!readFileSync(sessionPath).equals(expected)) {
-        this.a().emitReplaceableNotice("session", "会话初始化失败期间文件发生了其他修改，已保留当前文件。", "warn");
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if (!readFileSync(sessionPath).equals(expected)) {
+          this.a().emitReplaceableNotice("session", "会话初始化失败期间文件发生了其他修改，已保留当前文件。", "warn");
+          return;
+        }
+        writeFileAtomicSync(sessionPath, original);
+        return;
+      } catch (err) {
+        // SDK session listing can resolve before its Windows read streams close.
+        // Yield for pending handle cleanup, then recheck bytes before each atomic retry.
+        if (attempt < 4 && ["EPERM", "EBUSY"].includes((err as NodeJS.ErrnoException).code ?? "")) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+          continue;
+        }
+        this.a().emitReplaceableNotice("session", `恢复会话初始化前内容失败：${err instanceof Error ? err.message : String(err)}`, "error");
         return;
       }
-      writeFileAtomicSync(sessionPath, original);
-    } catch (err) {
-      this.a().emitReplaceableNotice("session", `恢复会话初始化前内容失败：${err instanceof Error ? err.message : String(err)}`, "error");
     }
   }
 
