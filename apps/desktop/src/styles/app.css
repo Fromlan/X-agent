@@ -17,103 +17,14 @@
 }
 
 :root {
-  color-scheme: dark;
-
-  /* Default Dark — Surface / Card / Board (fallback before prefs apply) */
-  --bg-app: #141414;
-  --bg-sidebar: #141414;
-  --bg-main: #141414;
-  --bg-header: #2c2c2a;
-  --bg-input: #2c2c2a;
-  --bg-modal: #2c2c2a;
-  --bg-list-hover: #3c3c3a;
-  --bg-list-selected: #3c3c3a;
-  --bg-result: #0f0f0f;
-  --surface-chip: #3c3c3a;
-
-  --text-primary: #d4d4d4;
-  --text-secondary: #a3a3a3;
-  --text-muted: #737373;
-  --text-dim: #737373;
-  --text-placeholder: #525252;
-  --text-code: #d4d4d4;
-  --text-error: #ff7b72;
-
-  --focus-ring: #417cdd;
-  --focus-ring-soft: rgba(65, 124, 221, 0.5);
-  --warning-accent: #ea6b17;
-  --accent-blue: #417cdd;
-  --accent-green: #2aae5b;
-  --accent-red: #d91f37;
-  --accent-yellow: #f3a115;
-  --accent-purple: var(--text-secondary);
-  --accent-gray: #737373;
-
-  /* Diff semantic colors — resolved against the active theme pack's accents. */
-  --diff-add-bg: color-mix(in srgb, var(--accent-green) 13%, transparent);
-  --diff-del-bg: color-mix(in srgb, var(--accent-red) 13%, transparent);
-  --diff-add-text: var(--accent-green);
-  --diff-del-text: var(--accent-red);
-  --diff-hunk-text: var(--accent-blue);
-  --diff-meta-text: var(--text-muted);
-
-  /* Context breakdown / turn stack (Cindy muted hues) */
-  --ctx-system: #6b8fce;
-  --ctx-project: #5ba87a;
-  --ctx-skills: #9b7ebd;
-  --ctx-tools: #c49a4a;
-  --ctx-messages: #7a9eae;
-  --ctx-overhead: #737373;
-  --ctx-turn-input: #6b8fce;
-  --ctx-turn-output: #5ba87a;
-  --ctx-turn-cache: #7a9eae;
-
-  --border-primary: #3c3c3a;
-  --border-input: #3c3c3a;
-  --border-focus: var(--focus-ring);
-
-  --btn-bg: #ffffff;
-  --btn-text: #000000;
-  --overlay-bg: rgb(0 0 0 / 0.45);
-  --scrollbar-thumb: rgb(255 255 255 / 12%);
-  --scrollbar-thumb-hover: rgb(255 255 255 / 20%);
-
-  --bubble-user: var(--surface-chip);
-  --bubble-text: #2c2c2a;
-  --bubble-thinking: #262625;
-  --bubble-tool: #2c2c2a;
-  --bubble-result: var(--bg-result);
-
-  --radius-control: 8px;
-  --radius-container: 12px;
-  --radius-pill: 9999px;
-  --radius-sm: var(--radius-control);
-  --radius-md: var(--radius-control);
-  --radius-lg: var(--radius-control);
-  --radius-xl: var(--radius-container);
-  --radius-2xl: var(--radius-container);
-
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.28);
-
-  /* —— Elevation 分层（design system v1.1）—— */
-  --bg-card-elev: #33332f;
-  --bg-chrome: #1a1a1a;
-  --shadow-soft: 0 1px 2px rgb(0 0 0 / 8%), 0 2px 8px rgb(0 0 0 / 6%);
-  --shadow-strong: 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 12%);
-  --shadow-modal: 0 1px 2px rgb(0 0 0 / 12%), 0 12px 36px rgb(0 0 0 / 18%);
-  --radius-floating: 16px;
-  --radius-card: var(--radius-container);
-  --space-section: 20px;
-  --space-chrome: 12px;
-
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "PingFang SC",
     "Hiragino Sans", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
     "Courier New", monospace;
-
   --right-panel-width: 360px;
+  --titlebar-height: 48px;
+  --dialog-gutter: 16px;
+  --dialog-available-height: calc(100dvh - var(--titlebar-height) - 2 * var(--dialog-gutter));
 }
 
 * {
@@ -131,7 +42,7 @@ body {
   background: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   transition: background-color 0.2s ease, color 0.2s ease;
   -webkit-font-smoothing: antialiased;
@@ -402,65 +313,53 @@ input:not([type]):-webkit-autofill {
   flex-direction: column;
   height: 100%;
   background: var(--bg-app);
-}
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: var(--space-chrome) 14px;
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--border-primary);
-  min-height: 52px;
-  flex-shrink: 0;
-  transition: box-shadow 0.2s ease;
-}
-
-.topbar[data-elevated="true"] {
-  box-shadow: var(--shadow-soft);
-}
-
-.topbar-left,
-.topbar-right {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-}
-
-.topbar-left {
-  flex: 1 1 200px;
-}
-
-.topbar-right {
-  flex: 1 1 auto;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-
-.topbar .btn-sm {
-  flex-shrink: 0;
-}
-
-.topbar-update-badge {
-  max-width: 11rem;
-}
-
-.cwd {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: var(--font-mono);
-  flex: 1 1 72px;
-  min-width: 0;
-  max-width: 360px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.app-shell[data-maximized="true"] {
+  border: 0;
+  border-radius: 0;
+}
+
+/* The title bar is a draggable window surface; commands opt out of dragging. */
+.topbar {
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-height);
+  padding-left: 24px;
+  flex-shrink: 0;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-subtle);
+  -webkit-app-region: drag;
+}
+.window-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+.window-controls button {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.window-controls button:hover {
+  background: var(--bg-list-hover);
+  color: var(--text-primary);
+}
+.window-controls .window-close:hover {
+  background: var(--accent-red);
+  color: var(--bg-app);
+}
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  color: var(--brand-mark);
 }
 
 .field {
@@ -928,11 +827,9 @@ body.is-resizing-column * {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: var(--bg-chrome);
-  border-right: 1px solid var(--border-primary);
-  transition: width 0.2s ease;
+  overflow: hidden;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .sidebar.is-collapsed {
@@ -943,9 +840,10 @@ body.is-resizing-column * {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--space-chrome);
-  border-bottom: 1px solid var(--border-primary);
-  background: var(--bg-chrome);
+  min-height: 48px;
+  margin-top: 14px;
+  padding: 12px 18px 8px;
+  background: var(--bg-sidebar);
 }
 
 .sidebar.is-collapsed .sidebar-head {
@@ -966,17 +864,15 @@ body.is-resizing-column * {
 
 .sidebar-head h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 500;
-  color: var(--text-secondary);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--text-primary);
 }
 
 .session-list {
   list-style: none;
   margin: 0;
-  padding: 8px;
+  padding: 4px 10px 16px;
   overflow: auto;
   flex: 1;
 }
@@ -1059,69 +955,10 @@ body.is-resizing-column * {
   padding: 12px 0;
 }
 
-.project-group-header {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0;
-  margin: 0;
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
-}
-
 .project-group-header:hover,
 .project-group-header.is-menu-target {
   background: var(--bg-list-hover);
   color: var(--text-primary);
-}
-
-.project-group-header.is-active-project {
-  color: var(--text-primary);
-}
-
-.project-group-toggle {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 6px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-family: var(--font-sans);
-  cursor: pointer;
-  text-align: left;
-}
-
-.project-group-label {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.project-group-count {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-family: var(--font-mono);
-}
-
-.project-group-sessions {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 0 2px;
-}
-
-.project-group-sessions > li {
-  margin: 0;
 }
 
 .session-empty {
@@ -1160,8 +997,12 @@ body.is-resizing-column * {
 }
 
 @keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .session-card {
@@ -1187,16 +1028,26 @@ body.is-resizing-column * {
   background: var(--bg-list-selected);
 }
 
+.session-card.active::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--focus-ring);
+}
+
 .session-card-main {
   flex: 1;
   display: flex;
-  gap: 7px;
-  align-items: flex-start;
+  gap: 14px;
+  align-items: center;
+  min-height: 44px;
   text-align: left;
   border: none;
   background: transparent;
   color: inherit;
-  padding: 5px 8px;
+  padding: 10px 14px;
   cursor: pointer;
   border-radius: var(--radius-md);
   min-width: 0;
@@ -1241,23 +1092,12 @@ body.is-resizing-column * {
 }
 
 .session-card-title {
-  font-weight: 500;
-  font-size: 12.5px;
+  font-weight: 400;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
-}
-
-.session-card-meta {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 1px;
-  opacity: 0.75;
 }
 
 .sidebar.is-context-menu-open .session-list {
@@ -1279,8 +1119,8 @@ body.is-resizing-column * {
 
 /* 策划会话: 聊天窗口左侧 3px 描边条 + 极淡背景色, 提示"策划 mode". */
 body[data-session-type="design"] .chat-panel {
-  box-shadow: inset 3px 0 0 var(--session-design-accent, #d59c5b);
-  background: var(--session-design-accent-soft, rgba(213, 156, 91, 0.08));
+  box-shadow: inset 3px 0 0 var(--session-design-accent);
+  background: var(--session-design-accent-soft);
 }
 
 .chat-transcript {
@@ -1296,13 +1136,7 @@ body[data-session-type="design"] .chat-panel {
 .message-stream {
   flex: 1;
   overflow: auto;
-  padding: 20px 20px 36px;
-  /* Block, not flex: tanstack virtual measures the scrollport; flex on the
-     scroller can yield a 0-range (no rows) until a later remount/remeasure. */
-  /* 虚拟行 / flow 行的 z-index(行内上盖下)会穿透 static 的滚动容器,
-     直接在根层叠上下文与 .scroll-to-bottom(z-index:3) 竞争,轮次多时
-     (行 z-index = itemCount - index 可达几十上百)消息会盖住按钮。
-     isolate 把行内层叠关进消息流,按钮回到所有消息之上。 */
+  padding: 28px 24px 36px;
   isolation: isolate;
   overscroll-behavior: contain;
 }
@@ -1310,7 +1144,7 @@ body[data-session-type="design"] .chat-panel {
 .message-stream-inner {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   min-height: 100%;
 }
 
@@ -1371,20 +1205,18 @@ body[data-session-type="design"] .chat-panel {
   font-weight: 500;
 }
 
-/* 会话类型徽章 — 空对话中央唯一主标.
-   字号撑大到 48px, 不加外框, 30% 不透明度,
-   让 "代码模式 / 策划模式" 像轻量水印一样居于中央. */
+/* Empty conversations use a quiet, readable session-type heading. */
 .empty-state-session-type {
-  font-size: 48px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 500;
   line-height: 1.15;
   letter-spacing: -0.01em;
   color: var(--text-primary);
-  opacity: 0.3;
+  opacity: 1;
 }
 
 .empty-state-session-type[data-session-type="design"] {
-  color: var(--session-design-accent, #d59c5b);
+  color: var(--session-design-accent);
 }
 
 .empty-state-hint {
@@ -1698,15 +1530,14 @@ body[data-session-type="design"] .chat-panel {
 }
 
 .bubble {
-  border-radius: var(--radius-lg);
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.6;
+  border-radius: var(--radius-control);
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.7;
   word-break: break-word;
   overflow-wrap: anywhere;
-  /* Cap reading width on wide screens: 82% of narrow viewports, hard 760px ceiling. */
-  max-width: min(82%, 760px);
-  border: 1px solid var(--border-primary);
+  max-width: min(88%, 840px);
+  border: 1px solid var(--border-subtle);
   position: relative;
   z-index: 2;
   box-sizing: border-box;
@@ -2144,11 +1975,12 @@ body[data-session-type="design"] .chat-panel {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.6;
 }
 
 .bubble-user {
+  padding: 16px 18px;
   align-self: flex-end;
   margin-inline-start: auto;
   background: var(--bubble-user);
@@ -2271,7 +2103,11 @@ body[data-session-type="design"] .chat-panel {
 
 .bubble-text {
   align-self: flex-start;
-  background: var(--bubble-text);
+  width: 100%;
+  max-width: 840px;
+  padding: 4px 0 8px;
+  border-color: transparent;
+  background: transparent;
 }
 
 .bubble-thinking {
@@ -2314,27 +2150,23 @@ body[data-session-type="design"] .chat-panel {
   z-index: 2;
   align-self: flex-start;
   background: var(--bubble-tool);
-  border-left: 3px solid var(--warning-accent);
-  max-width: 82%;
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--warning-accent);
+  max-width: 100%;
   border-radius: var(--radius-container);
-  padding: 8px 10px;
-  border-top: 1px solid var(--border-primary);
-  border-right: 1px solid var(--border-primary);
-  border-bottom: 1px solid var(--border-primary);
-  line-height: 1.3;
-  transition: box-shadow 0.15s ease;
+  padding: 10px 12px;
+  line-height: 1.5;
 }
 
 /* 展开态 tool card 提为软 elevation，与 Composer 主元素呼应 */
 .bubble-tool[open] {
-  box-shadow: var(--shadow-soft);
   background: var(--bg-card);
 }
 
 /* Collapsed: compact single-row chips so tool chains stay short */
 .bubble-tool:not([open]) {
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
+  padding: 8px 12px;
+  border-radius: var(--radius-container);
 }
 
 /* Collapsed tool chips: tighten consecutive rows (flow + virtual). */
@@ -2377,32 +2209,31 @@ body[data-session-type="design"] .chat-panel {
 }
 
 /* ===== Tool batch container: 连续 tool 的合并折叠容器 ===== */
-/* 折叠态 = 单行 pill,展开态 = 竖排子 ToolCard (子卡保留各自开合记忆)。
+/* 折叠态为紧凑记录行，展开态为竖排子 ToolCard（保留各自开合记忆）。
    视觉风格沿用 bubble-tool,但容器有自己的间距策略以避免与相邻行收紧规则冲突。 */
 .bubble-tool-batch {
   position: relative;
   align-self: flex-start;
+  width: min(100%, 840px);
   background: var(--bubble-tool);
-  border-left: 3px solid var(--warning-accent);
-  max-width: 82%;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-container);
-  transition: box-shadow 0.15s ease;
+  padding: 12px 14px;
 }
 
 .bubble-tool-batch[open] {
-  box-shadow: var(--shadow-soft);
-  background: var(--bg-card);
+  background: var(--bubble-tool);
 }
 
-/* 折叠: 单行 pill */
+/* Collapsed batches retain the same container geometry as expanded records. */
 .bubble-tool-batch:not([open]) {
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
+  padding: 12px 14px;
+  border-radius: var(--radius-container);
 }
 
 /* 整体完成: 绿色左边框 (与单 ToolCard 一致) */
 .bubble-tool-batch.toolbatch-done:not(.toolbatch-failed) {
-  border-left-color: var(--accent-green);
+  border-color: var(--border-subtle);
 }
 
 /* 任意失败: 红色左边框 */
@@ -2440,7 +2271,7 @@ body[data-session-type="design"] .chat-panel {
 }
 
 .bubble-tool-batch:not([open]) .toolbatch-name {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* 折叠态隐藏详细状态徽标文本,只留图标 */
@@ -2487,15 +2318,19 @@ body[data-session-type="design"] .chat-panel {
 
 /* 批次内容: 竖排子卡,内边距给 children 一些呼吸 */
 .toolbatch-body {
-  margin-top: 6px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
 }
 
 /* 子卡去掉自身 max-width,避免与容器 82% 双重缩窄 */
 .toolbatch-body > .tool-with-actions > .bubble-tool {
+  width: 100%;
   max-width: 100%;
+  background: var(--bg-result);
+  border: none;
+  border-radius: 0;
 }
 
 .bubble-tool.is-skill .tool-name {
@@ -2643,8 +2478,8 @@ body[data-session-type="design"] .chat-panel {
 
 /* —— Markdown (assistant body) —— */
 .markdown {
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.75;
   word-break: break-word;
   color: var(--text-primary);
 }
@@ -2777,90 +2612,11 @@ body[data-session-type="design"] .chat-panel {
 
 /* —— Composer —— */
 .composer {
-  border-top: 1px solid var(--border-primary);
-  padding: 18px 14px 16px;
-  background: var(--bg-app);
+  padding: 12px 20px 20px;
+  background: var(--bg-main);
   flex-shrink: 0;
   min-width: 0;
-}
-
-/* 模式 pill —— 拆掉原 `.composer-mode-pills` 外框,4 个独立 pill;
-   尺寸略缩(原外框 padding:3px + 内 pill 6px)以保证底栏高度不增。 */
-.composer-mode-pill {
-  --mode-color: var(--text-secondary);
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 5px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.composer-mode-pill[data-mode="agent"] {
-  --mode-color: var(--accent-blue);
-}
-
-.composer-mode-pill[data-mode="ask"] {
-  --mode-color: var(--ctx-messages);
-}
-
-.composer-mode-pill[data-mode="plan"] {
-  --mode-color: var(--ctx-skills);
-}
-
-.composer-mode-pill[data-mode="goal"] {
-  --mode-color: var(--accent-yellow);
-}
-
-.composer-mode-pill svg {
-  flex-shrink: 0;
-  color: var(--mode-color);
-  opacity: 0.78;
-  transition: opacity 0.15s ease;
-}
-
-.composer-mode-pill:hover:not(:disabled) {
-  color: var(--mode-color);
-  background: color-mix(in srgb, var(--mode-color) 9%, transparent);
-  transform: translateY(-1px);
-}
-
-.composer-mode-pill:hover:not(:disabled) svg,
-.composer-mode-pill.is-active svg {
-  opacity: 1;
-}
-
-.composer-mode-pill.is-active {
-  color: var(--text-primary);
-  font-weight: 500;
-  border-color: color-mix(in srgb, var(--mode-color) 60%, transparent);
-  background: color-mix(in srgb, var(--mode-color) 18%, var(--bg-card-elev));
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--mode-color) 38%, transparent);
-}
-
-.composer-mode-pill.is-active:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--mode-color) 21%, var(--bg-header));
-  transform: none;
-}
-
-.composer-mode-pill:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  container-type: inline-size;
 }
 
 /* =============================================================
@@ -2887,9 +2643,6 @@ body[data-session-type="design"] .chat-panel {
 }
 
 /* TopBar 双按钮视觉分组 —— 策划按钮在 hover / focus 走暖色边 */
-.topbar [data-session-type="design"]:not(:disabled):hover {
-  border-color: var(--accent-purple);
-}
 
 .goal-banner {
   display: flex;
@@ -2944,21 +2697,21 @@ body[data-session-type="design"] .chat-panel {
 }
 
 .composer-shell {
-  --mode-color: var(--accent-blue);
+  --mode-color: var(--text-secondary);
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid transparent;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-input);
   border-radius: var(--radius-floating);
   background: var(--bg-card-elev);
   box-shadow: var(--shadow-soft);
-  transition: box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .composer-shell[data-session-mode="agent"] {
-  --mode-color: var(--accent-blue);
+  --mode-color: var(--text-secondary);
 }
 
 .composer-shell[data-session-mode="ask"] {
@@ -2980,7 +2733,7 @@ body[data-session-type="design"] .chat-panel {
 .composer-shell:focus-within,
 .composer-shell[data-streaming="true"] {
   box-shadow: var(--shadow-strong);
-  border-color: color-mix(in srgb, var(--mode-color) 24%, transparent);
+  border-color: var(--border-focus);
 }
 
 .composer-shell[data-dragover="true"] {
@@ -2991,24 +2744,15 @@ body[data-session-type="design"] .chat-panel {
 
 /* 策划会话: composer shell 加策划色描边 + 浅色 glow, 不抢 mode pill 的颜色. */
 body[data-session-type="design"] .composer-shell {
-  border-color: var(--session-design-accent, #d59c5b);
-  box-shadow:
-    var(--shadow-soft),
-    0 0 0 1px var(--session-design-accent-soft, rgba(213, 156, 91, 0.16)),
-    0 0 18px var(--session-design-accent-soft, rgba(213, 156, 91, 0.16));
+  border-color: var(--session-design-accent);
+  box-shadow: var(--shadow-soft);
 }
 
 /* 策划 + focus/streaming 时 mode-color 与 design-accent 叠加: focus 偏 mode 色, idle 偏 design 色. */
 body[data-session-type="design"] .composer-shell:focus-within,
 body[data-session-type="design"] .composer-shell[data-streaming="true"] {
-  box-shadow:
-    var(--shadow-strong),
-    0 0 0 1px
-      color-mix(
-        in srgb,
-        var(--mode-color) 24%,
-        var(--session-design-accent, #d59c5b)
-      );
+  box-shadow: var(--shadow-strong);
+  border-color: var(--session-design-accent);
 }
 
 .composer-shell:has(textarea:disabled) {
@@ -3017,8 +2761,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 
 .composer textarea {
   width: 100%;
-  max-width: 760px;
-  /* 全屏宽窗下输入框保持与消息气泡一致的左对齐,避免文本从屏幕中间开始 */
+  max-width: 100%;
+  /* Match the full composer width while keeping the text left aligned. */
   margin-inline: 0;
   resize: none;
   min-height: 52px;
@@ -3051,33 +2795,28 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 
 .composer-toolbar {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  column-gap: 8px;
-  row-gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   min-width: 0;
 }
 
-/* 底栏左侧:模式 4 个独立 pill + 可选「执行计划」 —— 跨满整行 */
+/* The mode picker and attachments stay together when the model controls wrap. */
 .composer-mode-row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  flex-shrink: 1;
+  gap: 6px;
+  flex-shrink: 0;
   min-width: 0;
-  grid-column: 1 / -1;
 }
 
 /* 底栏中段:模型 + Thinking SelectMenu + 展示思考按钮 —— 紧贴模式组 */
 .composer-model-row {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
-  flex-shrink: 1;
+  flex: 1 1 180px;
   min-width: 0;
 }
 
@@ -3086,12 +2825,10 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 6px;
-  padding: 4px 8px;
+  margin: 0;
   font-size: 11px;
-  /* 与 thinking 态 20px orb 等高，保证 orb 与文字垂直居中对齐 */
   line-height: 20px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   user-select: none;
 }
 
@@ -3103,9 +2840,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  margin-left: auto;
   flex-shrink: 0;
-  /* grid 第二行右列,紧贴 model-row 右侧 */
-  justify-self: end;
 }
 
 .composer-send.btn-cta:disabled {
@@ -3367,11 +3103,13 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--titlebar-height) 0 0;
+  padding: var(--dialog-gutter);
   background: var(--overlay-bg);
   display: grid;
   place-items: center;
   z-index: 40;
+  -webkit-app-region: no-drag;
 }
 
 .modal-panel {
@@ -3384,8 +3122,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 
 .modal-panel.settings-modal {
   width: min(960px, calc(100vw - 32px));
-  height: min(800px, calc(100vh - 48px));
-  max-height: min(800px, calc(100vh - 48px));
+  height: min(800px, var(--dialog-available-height));
+  max-height: var(--dialog-available-height);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3497,6 +3235,215 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   font-weight: 500;
   color: var(--text-secondary);
   letter-spacing: 0.01em;
+}
+
+/* Palette previews use the same theme boundary as the full workbench. */
+.theme-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.theme-picker-head .select-menu-trigger {
+  min-width: 86px;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  gap: 10px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-modal);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-card:hover {
+  border-color: var(--border-input);
+  background: var(--bg-list-hover);
+}
+
+.theme-card[aria-pressed="true"] {
+  border-color: var(--focus-ring);
+  background: var(--bg-list-selected);
+  color: var(--text-primary);
+}
+
+.theme-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.theme-card:disabled {
+  cursor: wait;
+}
+
+.theme-card-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 7px 5px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.theme-card-label svg {
+  color: var(--focus-ring);
+}
+
+.theme-preview {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100px;
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  background: var(--bg-main);
+}
+
+.theme-preview-top {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 10px;
+  flex-shrink: 0;
+  padding: 0 5px;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.theme-preview-top i {
+  width: 3px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+
+.theme-preview-body {
+  display: grid;
+  grid-template-columns: 23% 1fr 20%;
+  flex: 1;
+  min-height: 0;
+}
+
+.theme-preview-rail,
+.theme-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 5px;
+  background: var(--bg-sidebar);
+}
+
+.theme-preview-rail {
+  border-right: 1px solid var(--border-primary);
+}
+
+.theme-preview-panel {
+  border-left: 1px solid var(--border-primary);
+}
+
+.theme-preview-rail i,
+.theme-preview-panel i {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--border-input);
+}
+
+.theme-preview-rail i:first-child {
+  background: var(--focus-ring);
+  width: 55%;
+  margin-bottom: 4px;
+}
+
+.theme-preview-rail i:nth-child(2) {
+  height: 8px;
+  background: var(--bg-list-selected);
+}
+
+.theme-preview-panel i:first-child {
+  background: var(--accent-green);
+  width: 60%;
+  margin-bottom: 3px;
+}
+
+.theme-preview-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px;
+}
+
+.theme-preview-user {
+  height: 10px;
+  width: 60%;
+  align-self: flex-end;
+  background: var(--bubble-user);
+  border-radius: var(--radius-control);
+  margin-bottom: 2px;
+}
+
+.theme-preview-line {
+  width: 80%;
+  height: 2px;
+  background: var(--text-secondary);
+  border-radius: var(--radius-pill);
+}
+
+.theme-preview-line.short {
+  width: 55%;
+}
+
+.theme-preview-tool {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  background: var(--bg-header);
+}
+
+.theme-preview-tool i {
+  width: 3px;
+  height: 3px;
+  background: var(--accent-green);
+  border-radius: var(--radius-pill);
+}
+
+.theme-preview-tool i + i {
+  width: 60%;
+  background: var(--border-input);
+}
+
+.theme-preview-composer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding: 3px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  background: var(--bg-card-elev);
+}
+
+.theme-preview-composer i {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--btn-bg);
 }
 
 .settings-block > .modal-hint {
@@ -4837,41 +4784,43 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 .right-panel {
   position: relative;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  background: var(--bg-chrome);
-  border-left: 1px solid var(--border-primary);
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-subtle);
 }
 
 .rp-nav {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 6px;
-  width: 56px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 8px 0;
+  min-height: 67px;
   flex-shrink: 0;
-  background: var(--bg-chrome);
-  border-right: 1px solid var(--border-primary);
-  overflow-y: auto;
-  overflow-x: hidden;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .rp-nav-tab {
   position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  gap: 5px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 2px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
   background: transparent;
   color: var(--text-secondary);
+  font-size: 14px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .rp-nav-tab svg {
@@ -4885,10 +4834,9 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 
 .rp-nav-tab.active {
-  background: var(--bg-card);
+  background: transparent;
   color: var(--text-primary);
-  border-color: var(--border-primary);
-  box-shadow: inset 2px 0 0 var(--accent-blue);
+  border-bottom-color: var(--focus-ring);
 }
 
 .rp-nav-tab.active svg {
@@ -4896,12 +4844,17 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 
 .rp-nav-spacer {
-  flex: 1 1 auto;
-  min-height: 8px;
+  display: none;
 }
 
 .rp-nav-close {
-  margin-top: 4px;
+  align-self: flex-start;
+  margin: 0;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 4px;
 }
 
 .rp-tab-dot {
@@ -4918,7 +4871,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   gap: 8px;
   min-height: 0;
   flex: 1;
-  padding: 10px 12px 12px;
+  padding: 20px;
   color: var(--text-primary);
 }
 
@@ -5323,8 +5276,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  color: var(--text-muted);
-  background: var(--bg-app);
+  color: var(--text-secondary);
+  background: var(--bg-sidebar);
 }
 
 .rp-empty {
@@ -5344,12 +5297,11 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 
 .rp-context-hero {
-  margin: 12px 12px 16px;
-  padding: 16px 16px 18px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-floating);
-  background: var(--bg-card-elev);
-  box-shadow: var(--shadow-soft);
+  margin: 20px 16px 12px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-container);
+  background: var(--bg-card);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -6154,12 +6106,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
     background: var(--bg-main);
     border-left: 1px solid var(--border-primary);
   }
-  .topbar .btn-label {
+  .sidebar-actions .btn > span {
     display: none;
-  }
-
-  .topbar .btn-sm:not(.btn-icon) {
-    padding-inline: 8px;
   }
 
   .field select {
@@ -6201,16 +6149,6 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 
 /* ≤700px —— 模式 pill 文字隐藏,只保留图标,腾出横向空间给模型/发送。 */
 @media (max-width: 700px) {
-  .composer-mode-pill-text {
-    display: none;
-  }
-
-  .composer-mode-pill {
-    padding-left: 8px;
-    padding-right: 8px;
-    gap: 0;
-  }
-
   /* 进一步压缩 SelectMenu 触发器,确保模型行能放下发送按钮 */
   .select-menu-pill .select-menu-trigger {
     width: clamp(72px, 18vw, 150px);
@@ -6231,184 +6169,6 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   }
 }
 
-
-/* ===== Logo picker (设置 → 通用 → 品牌) ===== */
-.logo-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.logo-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.logo-tile {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 6px 6px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md, 8px);
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
-}
-
-.logo-tile:hover:not(:disabled) {
-  border-color: var(--border-strong, var(--border-primary));
-  background: var(--bg-list-hover);
-}
-
-.logo-tile.is-active {
-  border-color: var(--accent-blue, #4f8cff);
-  background: var(--surface-chip);
-  color: var(--text-primary);
-}
-
-.logo-tile:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.logo-tile img {
-  width: 64px;
-  height: 64px;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-}
-
-.logo-tile-label {
-  font-size: 11px;
-  line-height: 1.2;
-  text-align: center;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.logo-tile-check {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent-blue, #4f8cff);
-  color: var(--text-on-accent, #fff);
-}
-
-.logo-customs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border-primary);
-}
-
-.logo-customs-title {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.logo-customs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.logo-custom-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md, 6px);
-  background: transparent;
-}
-
-.logo-custom-row.is-active {
-  border-color: var(--accent-blue, #4f8cff);
-  background: var(--surface-chip);
-}
-
-.logo-custom-thumb-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--radius-sm, 4px);
-}
-
-.logo-custom-thumb-btn:hover:not(:disabled) {
-  background: var(--bg-list-hover);
-}
-
-.logo-custom-thumb-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.logo-custom-thumb-btn img {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-  border-radius: 4px;
-}
-
-.logo-custom-label {
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.logo-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.logo-active-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  margin-left: auto;
-}
-
-@media (max-width: 640px) {
-  .logo-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
 /* Composer attachments (#42): 粘贴截图 / 拖放图片的缩略图 + 计数 */
 .composer-attachments {
@@ -6539,3 +6299,684 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   min-width: 0;
 }
 
+
+/* Workbench identity and conversation hierarchy. */
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 10px;
+  flex-shrink: 0;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 80px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.chat-header-main {
+  flex: 1;
+  min-width: 0;
+}
+.chat-header h1 {
+  margin: 0 0 4px;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  min-width: 0;
+}
+.chat-header-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-header-meta > :not(.chat-header-project) {
+  flex-shrink: 0;
+}
+.chat-header-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.chat-header-connection > span {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+.chat-header-connection.is-connected > span {
+  background: var(--accent-green);
+}
+.assistant-identity {
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.toolbatch-body > .tool-with-actions {
+  align-items: stretch;
+}
+.toolbatch-body > .tool-with-actions + .tool-with-actions {
+  border-top: 1px solid var(--border-subtle);
+}
+.toolbatch-done .toolbatch-state {
+  color: var(--accent-green);
+}
+.composer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.composer-mode-select {
+  position: relative;
+  flex-shrink: 0;
+}
+.composer-mode-select > svg {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+}
+.composer-mode-select .select-menu-trigger {
+  width: auto;
+  min-width: 102px;
+  padding-left: 34px;
+}
+.composer-model-row .field {
+  flex: 1 1 auto;
+}
+.composer-model-row .field-label {
+  display: none;
+}
+.composer-model-row .select-menu {
+  width: 100%;
+}
+.composer-model-row .select-menu-trigger {
+  width: 100%;
+  max-width: 220px;
+  min-height: 32px;
+}
+.composer-model-row .field[title="Thinking"] {
+  flex: 0 1 82px;
+}
+.composer-send {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 8px;
+}
+.composer-send svg {
+  width: 18px;
+  height: 18px;
+}
+.rp-tab-dot {
+  position: absolute;
+  top: 3px;
+  right: 8px;
+}
+.rp-nav-label {
+  white-space: nowrap;
+}
+.rp-plan-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 16px;
+}
+.rp-plan-heading h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.rp-plan-heading > span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.rp-plan-todos {
+  border-color: var(--border-subtle);
+  background: transparent;
+  padding: 10px;
+  gap: 10px;
+  max-height: 240px;
+}
+.rp-plan-todo-toggle[aria-pressed="true"] > svg {
+  color: var(--accent-green);
+}
+.rp-plan-todo-text.is-done {
+  text-decoration: none;
+  color: var(--text-secondary);
+}
+@container (max-width: 520px) {
+  .composer-mode-row {
+  order: 0;
+}
+  .composer-actions {
+  order: 1;
+}
+  .composer-model-row {
+  order: 2;
+  flex-basis: 100%;
+}
+  .composer-shortcut {
+  display: none;
+}
+}
+@media (max-width: 1100px) {
+  .topbar-brand {
+  margin-right: 0;
+}
+  .chat-header {
+  min-height: 70px;
+  padding: 12px 18px;
+}
+}
+@media (max-height: 650px) {
+  .chat-header {
+  min-height: 60px;
+  padding-block: 8px;
+}
+  .chat-header h1 {
+  font-size: 16px;
+}
+  .composer {
+  padding-block: 8px;
+}
+  .composer-shell {
+  padding-block: 10px;
+  gap: 6px;
+}
+  .composer textarea {
+  min-height: 42px;
+  max-height: 120px;
+}
+}
+.composer-attach {
+  flex-shrink: 0;
+}
+
+/* Present steps once by default while retaining the complete document and source editor. */
+.rp-plan-document {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.rp-plan-document > summary {
+  cursor: pointer;
+  padding: 12px 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.rp-plan-document .rp-plan-preview {
+  min-height: 0;
+  border-color: var(--border-subtle);
+  background: transparent;
+}
+
+/* Reference layout: project identity and actions live above the calendar history. */
+.sidebar-workspace {
+  flex-shrink: 0;
+  padding: 22px 16px 0;
+}
+.sidebar-project {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.sidebar-project-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  background: var(--bg-list-hover);
+}
+.sidebar-project-copy {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-project-copy > span {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.sidebar-project-select .select-menu-trigger {
+  padding: 0;
+  min-height: 26px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-size: 17px;
+  font-weight: 500;
+}
+.sidebar-project-select .select-menu-popover {
+  min-width: 210px;
+}
+.sidebar-actions {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 34px;
+  gap: 6px;
+  margin-top: 18px;
+}
+.sidebar-actions .btn {
+  min-height: 36px;
+  padding: 6px;
+  gap: 6px;
+  font-size: 12px;
+  border-radius: var(--radius-control);
+  white-space: nowrap;
+}
+.sidebar-head-actions {
+  opacity: 0;
+  transition: opacity .12s;
+}
+.sidebar:hover .sidebar-head-actions, .sidebar:focus-within .sidebar-head-actions, .sidebar.is-collapsed .sidebar-head-actions {
+  opacity: 1;
+}
+.sidebar-session-types {
+  display: flex;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-control);
+  padding: 2px;
+  margin: 0 16px 4px;
+  flex-shrink: 0;
+}
+.sidebar-session-types button {
+  flex: 1;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 5px;
+  font-size: 14px;
+}
+.sidebar-session-types button[aria-pressed="true"] {
+  background: var(--bg-list-selected);
+  color: var(--text-primary);
+}
+.session-date-label {
+  padding: 14px 10px 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.date-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.date-session-list > li + li {
+  margin-top: 2px;
+}
+.session-card-more {
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  width: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  border-radius: var(--radius-control);
+}
+.session-card.active .session-card-more, .session-card:hover .session-card-more, .session-card:focus-within .session-card-more {
+  opacity: 1;
+}
+.session-card-more:hover {
+  color: var(--text-primary);
+}
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 18px;
+  flex-shrink: 0;
+}
+.sidebar-footer button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.sidebar-version {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.sidebar.is-collapsed .sidebar-workspace {
+  padding: 16px 8px 0;
+}
+.sidebar.is-collapsed .sidebar-actions {
+  grid-template-columns: 1fr;
+  margin-top: 12px;
+}
+.sidebar.is-collapsed .sidebar-footer {
+  padding: 16px;
+}
+.sidebar.is-collapsed .sidebar-head {
+  margin-top: 0;
+}
+.workspace-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.workspace-menu > summary {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 32px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: var(--radius-control);
+}
+.workspace-menu > summary:hover {
+  background: var(--bg-list-hover);
+}
+.workspace-menu-body {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 75;
+  min-width: 190px;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  padding: 6px;
+  box-shadow: var(--shadow-lg);
+}
+.workspace-menu-body button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+.workspace-menu-body button:hover {
+  background: var(--bg-list-hover);
+}
+.workspace-summary {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 24px;
+  margin-top: 14px;
+}
+.workspace-context-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 17px;
+}
+.workspace-context-heading > span + span {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.workspace-context-meter {
+  height: 9px;
+  margin-top: 12px;
+  background: var(--bg-list-selected);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.workspace-context-meter > span {
+  display: block;
+  height: 100%;
+  width: var(--context-fill);
+  background: var(--accent-green);
+  border-radius: inherit;
+}
+.workspace-context-tokens {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+.workspace-editor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  margin-top: 26px;
+  font-size: 13px;
+}
+.workspace-editor > svg {
+  color: var(--accent-blue);
+}
+.workspace-editor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.workspace-editor-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+.workspace-editor-status.is-connected i {
+  background: var(--accent-green);
+}
+.rp-plan-actions {
+  margin-top: auto;
+  padding-top: 20px;
+}
+.rp-plan-todos {
+  border: 0;
+  padding: 0;
+  gap: 6px;
+}
+.rp-plan-todo-toggle {
+  min-height: 42px;
+  gap: 14px;
+  font-size: 14px;
+}
+.rp-plan-todo-toggle > svg {
+  flex-shrink: 0;
+}
+.rp-plan-todo-toggle[aria-pressed="true"] > svg {
+  fill: var(--accent-green);
+  color: var(--bg-sidebar);
+}
+.rp-plan-heading > span {
+  font-size: 14px;
+}
+
+/* Composer controls use the same broad, quiet geometry as the approved image. */
+.composer-shell {
+  padding: 18px 14px 16px;
+  gap: 14px;
+}
+.composer textarea {
+  min-height: 46px;
+  padding-right: 155px;
+  font-size: 15px;
+}
+.composer-shortcut {
+  position: absolute;
+  right: 20px;
+  top: 22px;
+  color: var(--text-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.composer-toolbar {
+  gap: 10px;
+}
+.composer-mode-row {
+  gap: 12px;
+}
+.composer-mode-select .select-menu-trigger {
+  min-height: 44px;
+  border-radius: var(--radius-container);
+  min-width: 124px;
+}
+.composer-model-row {
+  gap: 10px;
+}
+.composer-model-row .select-menu-trigger {
+  min-height: 44px;
+  border-radius: var(--radius-container);
+}
+.composer-model-row .field[title="Thinking"] {
+  flex: 0 1 126px;
+}
+.composer-attach {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-container);
+}
+.composer-send {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-container);
+}
+.composer-send svg {
+  width: 24px;
+  height: 24px;
+}
+.composer-model-row .thinking-toggle-label, .composer-model-row .thinking-toggle-state {
+  display: none;
+}
+.composer-model-row .thinking-toggle {
+  width: 30px;
+  padding: 6px;
+  flex-shrink: 0;
+}
+@container (max-width: 600px) {
+  .composer-shortcut {
+    display: none;
+  }
+  .composer textarea {
+    padding-right: 0;
+  } }
+.bubble-text .markdown {
+  font-size: 15px;
+  line-height: 1.8;
+}
+.assistant-identity {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.chat-header-meta {
+  font-size: 14px;
+}
+.chat-header-connection {
+  font-size: 13px;
+}
+.session-date-label {
+  font-size: 13px;
+}
+.toolbatch-head {
+  min-height: 28px;
+  font-size: 15px;
+}
+.toolbatch-success {
+  color: var(--bg-main);
+  fill: var(--accent-green);
+}
+.toolbatch-name .toolbatch-chevron {
+  display: none;
+}
+.toolbatch-head > .toolbatch-state {
+  display: none;
+}
+.toolbatch-head::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid var(--text-secondary);
+  border-bottom: 1px solid var(--text-secondary);
+  transform: rotate(45deg);
+  margin-right: 4px;
+}
+.bubble-tool-batch[open] > .toolbatch-head::after {
+  transform: rotate(225deg);
+}
+.toolbatch-body {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-container);
+  overflow: hidden;
+}
+.toolbatch-body .tool-head {
+  min-height: 28px;
+}
+.toolbatch-body .tool-name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  flex: 1;
+}
+.tool-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.tool-name > svg {
+  flex-shrink: 0;
+}
+.toolbatch-body .tool-name > svg:not(.tool-chevron) {
+  display: none;
+}
+.toolbatch-body .tool-state > svg {
+  color: var(--accent-green);
+  width: 18px;
+  height: 18px;
+}
+.toolbatch-body .toolcall-error .tool-state > svg {
+  color: var(--accent-red);
+}
+.toolbatch-body .toolcall-done:not(.toolcall-error) .tool-state > svg {
+  fill: var(--accent-green);
+  color: var(--bg-result);
+}
+.rp-plan-todo-toggle {
+  color: var(--text-primary);
+}
+.rp-plan-todo-text.is-done {
+  color: var(--text-primary);
+}

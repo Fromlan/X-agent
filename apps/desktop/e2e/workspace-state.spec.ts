@@ -3,7 +3,7 @@ import { test, expect, type ElectronApplication, type Page } from "@playwright/t
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { launchApp } from "./helpers";
+import { launchApp, toggleToolPanel } from "./helpers";
 import { IPC_CHANNELS } from "../shared/ipc-channels";
 
 const extension = `
@@ -107,10 +107,12 @@ test("07 successful new code/design, sidebar resume and folder-open buttons clea
     await main.evaluate((path) => window.xAgent.workspace.renameSession(path, "history-to-resume"), original.sessionPath!);
     for (const type of ["code", "design"]) {
       await main.locator(".composer textarea").fill(`${type} stale draft`);
-      await main.locator(`.topbar button[data-session-type="${type}"]`).click();
-      await expect(main.locator(`.topbar button[data-session-type="${type}"]`)).toBeEnabled();
+      await main.locator(`.sidebar-session-types button[data-session-type="${type}"]`).click();
+      await main.getByRole("button", { name: "新会话", exact: true }).click();
+      await expect(main.getByRole("button", { name: "新会话", exact: true })).toBeEnabled();
       await expect(main.locator(".composer textarea")).toHaveValue("");
     }
+    await main.locator('.sidebar-session-types button[data-session-type="code"]').click();
     await main.locator(".composer textarea").fill("resume stale draft");
     await main.locator(".session-card-main").filter({ hasText: "history-to-resume" }).click();
     await expect.poll(() => main.evaluate(async () => (await window.xAgent.workspace.getStatus()).sessionId)).toBe(original.sessionId);
@@ -194,7 +196,7 @@ test("09 an open Files tab follows project identity and ignores an older directo
   const second = makeProject("second");
   const { app, main } = await fixture(first);
   try {
-    if (!(await main.locator(".right-panel").isVisible())) await main.getByRole("button", { name: "切换工具面板", exact: true }).click();
+    if (!(await main.locator(".right-panel").isVisible())) await toggleToolPanel(main);
     await main.locator(".rp-nav").getByRole("button", { name: "文件", exact: true }).click();
     await main.locator(".rp-tree-row").filter({ hasText: "first.txt" }).click();
     await expect(main.locator(".rp-file-content")).toContainText("first project preview");

@@ -147,8 +147,8 @@ export function buildPlanFilePath(title: string, d = new Date()): string {
   return join(getPlansDir(), name);
 }
 
-/** Optional read-only Godot tools already enabled in user prefs. */
-function appendOptionalReadonlyGodotTools(
+/** Optional read-only web and Godot tools already enabled in user prefs. */
+function appendOptionalReadonlyTools(
   tools: string[],
   prefsTools: readonly string[],
 ): void {
@@ -162,22 +162,22 @@ function appendOptionalReadonlyGodotTools(
 }
 
 /**
- * Tools active in Ask (调研) mode: core read-only + optional Godot read-only
+ * Tools active in Ask (调研) mode: core read-only + optional web/Godot read-only
  * from prefs. No write_plan.
  */
 export function computeAskModeTools(prefsTools: readonly string[]): string[] {
   const tools: string[] = [...READONLY_CORE_TOOLS];
-  appendOptionalReadonlyGodotTools(tools, prefsTools);
+  appendOptionalReadonlyTools(tools, prefsTools);
   return tools;
 }
 
 /**
  * Tools active in Plan mode: core read-only + write_plan, plus optional
- * Godot read-only tools that are already enabled in user prefs.
+ * web/Godot read-only tools that are already enabled in user prefs.
  */
 export function computePlanModeTools(prefsTools: readonly string[]): string[] {
   const tools: string[] = [...PLAN_MODE_CORE_TOOLS];
-  appendOptionalReadonlyGodotTools(tools, prefsTools);
+  appendOptionalReadonlyTools(tools, prefsTools);
   return tools;
 }
 

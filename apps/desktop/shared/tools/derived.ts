@@ -4,7 +4,7 @@
  * Two consumers exist:
  *
  * 1. `ALL_TOGGLEABLE_TOOLS` 鈥?every tool togglable via `ClientPrefs.tools`
- *    (= `AVAILABLE_TOOLS` 鈭?`GODOT_TOOLS`). Used by:
+ *    (= AVAILABLE_TOOLS + WEB_TOOLS + GODOT_TOOLS). Used by:
  *      - `app-runtime.ts`  鈫?validate the renderer-supplied `tools` patch
  *      - `session-host.ts` 鈫?re-hydrate the runtime tool set
  *
@@ -24,10 +24,11 @@
 import { deriveToolList } from "./derive";
 import { AVAILABLE_TOOLS } from "./available";
 import { GODOT_TOOLS } from "./godot";
+import { WEB_TOOLS } from "./web";
 import { WRITE_PLAN_TOOL } from "../mode-tools";
 
-/** All builtins + all Godot editor tools, in declaration order. */
-export const ALL_TOGGLEABLE_TOOLS = deriveToolList(AVAILABLE_TOOLS, GODOT_TOOLS);
+/** All builtins, opt-in web tools and Godot editor tools, in declaration order. */
+export const ALL_TOGGLEABLE_TOOLS = deriveToolList(AVAILABLE_TOOLS, WEB_TOOLS, GODOT_TOOLS);
 
 /**
  * Toggleable tools + the Plan-mode-only `write_plan` custom tool.

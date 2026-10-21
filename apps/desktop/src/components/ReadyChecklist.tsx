@@ -249,9 +249,6 @@ export function ReadyChecklist(props: Props) {
                       <span className="ready-strip-tag">可选</span>
                     )}
                   </div>
-                  {item.detail && (
-                    <div className="ready-strip-detail">{item.detail}</div>
-                  )}
                 </div>
                 {action && (
                   <button

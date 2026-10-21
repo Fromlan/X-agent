@@ -47,8 +47,7 @@ import { useProjectReadiness } from "./hooks/useProjectReadiness";
 import { useRetractConfirm } from "./hooks/useRetractConfirm";
 import { useSessionBootstrap } from "./hooks/useSessionBootstrap";
 import { useWorkspaceSession } from "./hooks/useWorkspaceSession";
-import { useScrollElevated } from "./hooks/useScrollElevated";
-import { useLogo } from "./hooks/useLogo";
+import { useWindowChrome } from "./hooks/useWindowChrome";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { createEmptyState, type ChatItem } from "./stores/chat-store";
 import {
@@ -107,7 +106,7 @@ export default function App() {
   const usageFetchGen = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
   const chatStreamRef = useRef<HTMLDivElement | null>(null);
-  const topbarElevated = useScrollElevated(chatStreamRef);
+  const windowChrome = useWindowChrome(setError);
   useSyncExternalStore(
     subscribeSessionUsageStore,
     getSessionUsageStoreVersion,
@@ -117,7 +116,6 @@ export default function App() {
   const compacting = getCompacting();
   const appUpdate = useAppUpdate({ onError: (message) => setError(message) });
   const { status: updateStatus, busy: updateActionBusy, onTopBarUpdateClick } = appUpdate;
-  const logo = useLogo(prefs);
 
   // ─── 工具 IPC 包装 (refreshSessions / refreshModels) ──────────────
   const refreshSessions = useCallback(async () => {
@@ -139,7 +137,7 @@ export default function App() {
   const sessionsLoading = !sessionsLoaded;
 
   // ─── Project readiness (Godot / RPC / ready) ─────────────────────
-  const { isGodotProject, setRpcStatus, setAddonInstalled, setReadyChecklistHidden, refreshProjectReadiness, projectKey, readyItems, showReadyChecklist, showGodotToolsNudge } = useProjectReadiness({
+  const { isGodotProject, rpcStatus, setRpcStatus, setAddonInstalled, setReadyChecklistHidden, refreshProjectReadiness, projectKey, readyItems, showReadyChecklist, showGodotToolsNudge } = useProjectReadiness({
     cwd, prefs, bash, git, auth, piCli, modelCount: models.length,
   });
 
@@ -342,24 +340,10 @@ export default function App() {
   usePlanSessionAutoOpen(planPath, layout.ensureRightPanelOpen);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-maximized={windowChrome.maximized}>
       <TopBar
-        cwd={cwd}
-        status={status}
-        theme={prefs?.colorMode ?? "dark"}
-        onOpenProject={openProject}
-        onNewCodeSession={() => void newSession("code")}
-        onNewDesignSession={() => void newSession("design")}
-        onToggleTheme={actions.toggleTheme}
-        onToggleRightPanel={layout.toggleRightPanel}
-        onOpenSettings={openSettings}
-        onUpdateAction={onTopBarUpdateClick}
-        updateStatus={updateStatus}
-        updateActionBusy={updateActionBusy}
-        rightPanelOpen={prefs?.rightPanelOpen ?? false}
-        compacting={compacting}
-        busy={busy}
-        elevated={topbarElevated}
+        maximized={windowChrome.maximized}
+        onWindowAction={windowChrome.control}
       />
       <AppBanners
         error={error}
@@ -382,7 +366,16 @@ export default function App() {
         busy={busy}
       />
       <AppMainRow
+        appVersion={windowChrome.version}
+        updateStatus={updateStatus}
+        updateActionBusy={updateActionBusy}
         sidebarActions={{
+          onOpen: openProject,
+          onNew: (type) => void newSession(type),
+          onSettings: openSettings,
+          onToggleTheme: actions.toggleTheme,
+          onToggleRightPanel: layout.toggleRightPanel,
+          onUpdate: onTopBarUpdateClick,
           onResume: resumeSession,
           onDelete: deleteSession,
           onDeleteProjectSessions: deleteProjectSessions,
@@ -442,6 +435,7 @@ export default function App() {
         forceFollowKey={`${sessionId ?? ""}:${followNonce}`}
         sessionType={sessionType}
         isGodotProject={isGodotProject}
+        rpcStatus={rpcStatus}
         editingEntryId={editingEntryId}
         editDraft={editDraft}
         sessionMode={sessionMode}
@@ -473,7 +467,6 @@ export default function App() {
           open={settingsOpen}
           prefs={prefs}
           cwd={cwd}
-          logo={logo}
           initialTab={settingsTab}
           hasActiveSession={Boolean(sessionId)}
           onClose={() => {

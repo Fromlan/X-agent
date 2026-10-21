@@ -8,8 +8,10 @@
 import type {
   AgentSessionMode,
   AgentStatus,
+  AppUpdateStatus,
   ClientPrefs,
   GoalInfo,
+  GodotRpcStatusDto,
   ImageContent,
   ModelInfo,
   SessionInfo,
@@ -20,6 +22,8 @@ import { THINKING_LEVELS } from "@shared/ipc";
 import type { SessionType } from "@shared/session-type";
 import { Sidebar } from "./Sidebar";
 import { ChatPanel } from "./ChatPanel";
+import { ChatHeader } from "./ChatHeader";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 import { RightPanel } from "./RightPanel";
 import type { ChatItem } from "../stores/chat-store";
 import { allGodotEditorToolsEnabled } from "../lib/ready-checklist";
@@ -30,6 +34,12 @@ import { useMemo, type CSSProperties, type RefObject } from "react";
 import type { FileReference } from "../lib/file-attachment";
 
 export type AppMainRowSidebarActions = {
+  onOpen: () => void;
+  onNew: (type: SessionType) => void;
+  onSettings: () => void;
+  onToggleTheme: () => void;
+  onToggleRightPanel: () => void;
+  onUpdate: () => void;
   onResume: (path: string) => Promise<void>;
   onDelete: (path: string) => Promise<void>;
   onDeleteProjectSessions: (projectCwd: string) => Promise<void>;
@@ -72,6 +82,9 @@ export type AppMainRowChatActions = {
 };
 
 export type AppMainRowProps = {
+  appVersion: string;
+  updateStatus: AppUpdateStatus | null;
+  updateActionBusy: boolean;
   // sidebar state
   sessions: SessionInfo[];
   hiddenProjectKeys: string[];
@@ -99,6 +112,7 @@ export type AppMainRowProps = {
   forceFollowKey: string;
   sessionType: SessionType;
   isGodotProject: boolean;
+  rpcStatus: GodotRpcStatusDto | null;
   // edit / retract state
   editingEntryId: string | null;
   editDraft: string;
@@ -149,6 +163,7 @@ export function AppMainRow(props: AppMainRowProps) {
     forceFollowKey,
     sessionType,
     isGodotProject,
+    rpcStatus,
     editingEntryId,
     editDraft,
     sessionMode,
@@ -203,6 +218,12 @@ export function AppMainRow(props: AppMainRowProps) {
       }
     >
       <Sidebar
+        appVersion={props.appVersion}
+        isGodotProject={isGodotProject}
+        sessionType={sessionType}
+        onOpen={sidebarActions.onOpen}
+        onNew={sidebarActions.onNew}
+        onSettings={sidebarActions.onSettings}
         sessions={sessions}
         hiddenProjectKeys={hiddenProjectKeys}
         activeSessionId={activeSessionId}
@@ -230,6 +251,25 @@ export function AppMainRow(props: AppMainRowProps) {
         resizing={layout.sidebarResizing}
       />
       <ChatPanel
+        header={
+          <ChatHeader
+            cwd={activeCwd}
+            title={sessions.find((session) => session.id === activeSessionId)?.name}
+            sessionType={sessionType}
+            isGodotProject={isGodotProject}
+            rpcStatus={rpcStatus}
+            actions={<WorkspaceMenu
+              theme={prefs?.colorMode ?? "dark"}
+              rightPanelOpen={prefs?.rightPanelOpen ?? false}
+              onToggleTheme={sidebarActions.onToggleTheme}
+              onToggleRightPanel={sidebarActions.onToggleRightPanel}
+              onToggleSidebar={layout.onToggleSidebarCollapsed}
+              updateStatus={props.updateStatus}
+              updateBusy={props.updateActionBusy}
+              onUpdate={sidebarActions.onUpdate}
+            />}
+          />
+        }
         items={items}
         showThinking={showThinking}
         status={agentStatus}
@@ -283,6 +323,8 @@ export function AppMainRow(props: AppMainRowProps) {
       />
       {prefs?.rightPanelOpen && (
         <RightPanel
+          isGodotProject={isGodotProject}
+          rpcStatus={rpcStatus}
           cwd={activeCwd}
           items={items}
           enabledTools={prefs?.tools ?? []}

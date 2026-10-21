@@ -381,7 +381,7 @@ export function FilesTab({ cwd, previewPath, onAddPathToChat }: Props) {
           <pre className="rp-file-content">{content}</pre>
         )}
         {!previewPath && !loading && (
-          <div className="rp-empty">从上方树中选择文件，或从工具详情联动路径</div>
+          <div className="rp-empty">未选择文件</div>
         )}
       </div>
       {menu && (

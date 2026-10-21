@@ -3,7 +3,7 @@
  *
  * 视觉：
  *   - 标题行："工具调用 ×N" + 状态汇总（完成 X · 失败 Y · 运行中 K）
- *   - 折叠态 = 单行 pill
+ *   - 折叠态 = 紧凑记录行，完成后使用简短操作摘要
  *   - 展开态 = 竖排子 ToolCard，每张保持自己的开合记忆
  *
  * 数据层：本组件只消费已经派生的 toolBatch 节点，不接触 ChatItem[];
@@ -85,7 +85,10 @@ export const ToolBatch = memo(function ToolBatch(props: ToolBatchProps) {
   }, []);
 
   // 标题文案：基础 + 状态汇总（仅当存在非「完成」项时显示）。
-  const titlePrefix = `工具调用 ×${item.items.length}`;
+  const finishedSuccessfully = summary.allDone && summary.failed === 0;
+  const titlePrefix = finishedSuccessfully
+    ? `已完成 ${item.items.length} 项操作`
+    : `工具调用 ×${item.items.length}`;
   const statusSuffix = useMemo(() => {
     const parts: string[] = [];
     if (summary.done > 0) parts.push(`完成 ${summary.done}`);
@@ -123,9 +126,9 @@ export const ToolBatch = memo(function ToolBatch(props: ToolBatchProps) {
       <summary className="toolbatch-head">
         <span className="toolbatch-name">
           <ChevronRight size={12} className="toolbatch-chevron" aria-hidden />
-          <Layers size={12} />
+          {finishedSuccessfully ? <CheckCircle2 size={19} className="toolbatch-success" /> : <Layers size={16} />}
           <span className="toolbatch-title">{titlePrefix}</span>
-          {statusSuffix && (
+          {statusSuffix && !finishedSuccessfully && (
             <span className={`toolbatch-status is-${overallState}`}>
               {statusSuffix}
             </span>

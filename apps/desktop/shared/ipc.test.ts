@@ -20,6 +20,7 @@ import {
   ALL_TOGGLEABLE_TOOLS,
   AVAILABLE_TOOLS,
   GODOT_TOOLS,
+  WEB_TOOLS,
   SESSION_TOOL_REGISTRY,
   type BuiltinToolName,
   type GodotToolName,
@@ -98,7 +99,7 @@ describe("工具注册表 derive + boundary (主题 D C-306)", () => {
       expect(set.has(t), `ALL_TOGGLEABLE_TOOLS 有重名: ${t}`).toBe(false);
       set.add(t);
     }
-    expect(ALL_TOGGLEABLE_TOOLS.length).toBe(AVAILABLE_TOOLS.length + GODOT_TOOLS.length);
+    expect(ALL_TOGGLEABLE_TOOLS.length).toBe(AVAILABLE_TOOLS.length + WEB_TOOLS.length + GODOT_TOOLS.length);
   });
 
   it("SESSION_TOOL_REGISTRY = ALL_TOGGLEABLE + write_plan, 无重名", () => {

@@ -60,9 +60,6 @@ export function CreatePluginModal({ state, cwd }: Props) {
               aria-label="作用域"
             />
           </div>
-          <p className="modal-hint">
-            名称：1–64 位小写字母、数字、连字符（不能首尾为连字符）
-          </p>
           <div className="modal-actions">
             <button
               type="button"

@@ -65,9 +65,8 @@ export function DiagnosticsSettings({ open }: { open: boolean }) {
   return (
     <div className="settings-block">
       <h4 className="settings-block-title">诊断与反馈</h4>
-      <p className="settings-hint">保存最近操作、耗时、错误类型和失败时状态，重启后仍可查看。不会包含原始错误、对话、项目源码、路径或密钥，也不会自动上传。</p>
       {report?.lastFailure && (
-        <p className="settings-hint">最近失败：{diagnosticTime(report.lastFailure.at)} · {diagnosticEventSummary(report.lastFailure)}。该记录可能来自上次运行。</p>
+        <p className="settings-hint">最近失败：{diagnosticTime(report.lastFailure.at)} · {diagnosticEventSummary(report.lastFailure)}</p>
       )}
       <div className="settings-inline-row">
         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void exportReport()}><Download size={14} />导出诊断包</button>
@@ -82,7 +81,6 @@ export function DiagnosticsSettings({ open }: { open: boolean }) {
           <pre tabIndex={0}>{JSON.stringify(report, null, 2)}</pre>
         </details>
       )}
-      <p className="settings-hint">反馈时请填写触发步骤、预期与实际结果；截图或录屏可选。GitHub 反馈公开可见，提交前请检查附件。</p>
     </div>
   );
 }

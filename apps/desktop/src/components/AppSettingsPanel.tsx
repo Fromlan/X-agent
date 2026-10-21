@@ -22,7 +22,6 @@ export type AppSettingsPanelProps = {
   open: boolean;
   prefs: ClientPrefs;
   cwd: string | null;
-  logo: import("../hooks/useLogo").UseLogoResult;
   initialTab: SettingsTab | undefined;
   hasActiveSession: boolean;
   onClose: () => void;
@@ -40,7 +39,6 @@ export function AppSettingsPanel(props: AppSettingsPanelProps) {
     open,
     prefs,
     cwd,
-    logo,
     initialTab,
     hasActiveSession,
     onClose,
@@ -72,7 +70,6 @@ export function AppSettingsPanel(props: AppSettingsPanelProps) {
       open={open}
       prefs={prefs}
       cwd={cwd}
-      logo={logo}
       initialTab={initialTab}
       onClose={onClose}
       onToggleTool={onToggleTool}

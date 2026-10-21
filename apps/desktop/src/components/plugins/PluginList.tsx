@@ -12,14 +12,11 @@ interface Props {
 }
 
 export function PluginList({ state, prefs, kind, onOpen, onToggle }: Props) {
-  const { filtered, isSkillTab, busy, packages, selectedPath } = state;
+  const { filtered, isSkillTab, busy, selectedPath } = state;
   if (filtered.length === 0) {
     return (
       <p className="empty-state">
         暂无{kindLabel(kind as PluginKind)}插件。
-        {packages.length > 0 && kind !== "theme"
-          ? " 若刚安装了 Package，点「刷新」；包内资源会标 Package。"
-          : null}
       </p>
     );
   }

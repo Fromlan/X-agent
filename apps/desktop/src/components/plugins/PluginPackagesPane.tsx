@@ -11,7 +11,7 @@ export function PluginPackagesPane({ state }: Props) {
       <aside className="plugins-list-pane">
         {packages.length === 0 ? (
           <p className="empty-state">
-            尚无 Packages。安装后会出现在此列表（与 <code>pi list</code> 同源）。
+            暂无已安装的技能包
           </p>
         ) : (
           <div className="plugins-list">
@@ -58,10 +58,6 @@ export function PluginPackagesPane({ state }: Props) {
       </aside>
       <section className="plugins-editor-pane">
         <h3>安装 Package</h3>
-        <p className="modal-hint">
-          执行 <code>pi install</code>，包内技能 / 提示词会出现在对应页签。
-          <code>godot-*</code> 技能仅在打开 Godot 项目时索引。
-        </p>
         <div className="settings-toolbar">
           <button
             type="button"

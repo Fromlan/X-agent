@@ -117,7 +117,7 @@ flowchart TD
 | `resourceLoader` | `DefaultResourceLoader` + `reload()` + 技能 / 上下文 / append hooks | skills / extensions / prompts / themes / context files |
 | `tools`（注册） | `SESSION_TOOL_REGISTRY` | 可切换全集；否则后续勾选会被静默忽略 |
 | 实际启用 | `prefs.tools` 经会话类型 / 模式策略过滤 | 当前可用工具集 |
-| `customTools` | `godot-tools.ts` + `session-mode/plan-tools.ts` | Godot RPC 与 `write_plan`（仍受白名单 / 模式硬闸约束） |
+| `customTools` | `deepseek-web-tools.ts` + `godot-tools.ts` + `session-mode/plan-tools.ts` | 网络工具、Godot RPC 与 `write_plan`（仍受白名单 / 模式硬闸约束） |
 | `model` / `thinkingLevel` | prefs + `ModelRuntime`（auth / models） | 选用模型与推理级别 |
 | `sessionManager` | `create` / `continueRecent` / `open`，根在 `x-agent/sessions/` | 对话持久化与恢复 |
 
@@ -167,7 +167,7 @@ flowchart TD
    - 技能教领域流程与何时用 RPC；扩展可注册如 `godot_detect_project` 等工具（仍受白名单过滤）。  
    - 安装后需资源重载或新会话才会进 loader。
 
-[`godot-rpc-bridge.ts`](../apps/desktop/electron/agent/godot-rpc-bridge.ts) 由当前 `SessionHost` 使用；多编辑器客户端经 `setActiveClient` 选路（与会话无关）。
+[`godot-rpc-bridge.ts`](../apps/desktop/electron/agent/godot-rpc-bridge.ts) 由当前 `SessionHost` 使用；会话生命周期绑定项目 cwd，多编辑器客户端经 `setActiveClient` 或显式 `clientId` 选路，只允许匹配当前项目的编辑器接收请求。
 
 ---
 

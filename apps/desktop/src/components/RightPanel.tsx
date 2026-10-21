@@ -4,12 +4,13 @@ import {
   Box,
   ClipboardList,
   FolderTree,
-  PanelRightClose,
+  X,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { ChatItem } from "../stores/chat-store";
-import type { SessionUsageSnapshot } from "@shared/ipc";
+import type { GodotRpcStatusDto, SessionUsageSnapshot } from "@shared/ipc";
+import { WorkspaceSummary } from "./right-panel/WorkspaceSummary";
 import {
   extractToolPath,
   getPanelState,
@@ -34,6 +35,8 @@ const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
 ];
 
 interface Props {
+  isGodotProject: boolean;
+  rpcStatus: GodotRpcStatusDto | null;
   cwd: string | null;
   items: ChatItem[];
   enabledTools: string[];
@@ -54,6 +57,8 @@ interface Props {
 }
 
 export function RightPanel({
+  isGodotProject,
+  rpcStatus,
   cwd,
   items,
   enabledTools,
@@ -114,6 +119,7 @@ export function RightPanel({
               aria-pressed={state.tab === t.id}
             >
               <Icon size={16} aria-hidden strokeWidth={2} />
+              <span className="rp-nav-label">{t.label}</span>
               {t.id === "plan" && planPath ? (
                 <span className="rp-tab-dot" aria-hidden />
               ) : null}
@@ -128,7 +134,7 @@ export function RightPanel({
           title="收起工具面板"
           aria-label="收起工具面板"
         >
-          <PanelRightClose size={14} />
+          <X size={14} />
         </button>
       </nav>
       <div className="right-panel-body">
@@ -144,6 +150,7 @@ export function RightPanel({
         )}
         {state.tab === "plan" && (
           <PlanTab
+            summary={<WorkspaceSummary cwd={cwd} usage={usage} isGodotProject={isGodotProject} rpcStatus={rpcStatus} />}
             planPath={planPath}
             busy={busy}
             onBuildPlan={() => onBuildPlan?.()}

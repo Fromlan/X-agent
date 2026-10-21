@@ -23,6 +23,7 @@ import { registerPluginIpc } from "./register-plugin-ipc";
 import { registerPackageIpc } from "./register-package-ipc";
 import { registerAssetsIpc } from "./register-assets-ipc";
 import { registerWorkspaceIpc } from "./register-workspace-ipc";
+import { registerWindowIpc } from "./register-window-ipc";
 import { registerTurnIpc } from "./register-turn-ipc";
 import { registerPlanIpc } from "./register-plan-ipc";
 import { registerSessionConfigIpc } from "./register-session-config-ipc";
@@ -43,8 +44,6 @@ export type RegisterIpcDeps = {
   // Prefs port (issue #62 主题 E-3, 显式注入而非 module-singleton)
   loadPrefs: () => ClientPrefs;
   patchPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
-  getCachedPrefs: () => ClientPrefs;
-  notifyLogoChange: (id: string, win: BrowserWindow | null) => void;
   // 启动期一次性 queue
   consumePrefsRecoveryNotice: () => PrefsRecoveryNotice | null;
   consumeStartupIssues: () => StartupIssue[];
@@ -74,6 +73,7 @@ export function registerIpcHandlers(deps: RegisterIpcDeps): void {
   // session / workspace / turn / plan / provider / godot / update — 由之前 wave
   // 拆出, 这里只是再串起来.
   registerWorkspaceIpc(ipcMain, sessionHost);
+  registerWindowIpc(ipcMain, getMainWindow);
   registerTurnIpc(ipcMain, sessionHost);
   registerPlanIpc(ipcMain, sessionHost);
   registerSessionConfigIpc(ipcMain, sessionHost);
@@ -92,20 +92,14 @@ export function registerIpcHandlers(deps: RegisterIpcDeps): void {
   registerPrefsIpc(ipcMain, {
     loadPrefs: deps.loadPrefs,
     patchPrefs: deps.patchPrefs,
-    getCachedPrefs: deps.getCachedPrefs,
     applyTools: (tools) => sessionHost.applyTools(tools),
     reloadResources: () => sessionHost.reloadResources(),
-    notifyLogoChange: deps.notifyLogoChange,
-    getMainWindow,
   });
   registerBashIpc(ipcMain);
   registerEnvIpc(ipcMain);
   registerProjectFsIpc(ipcMain, sessionHost);
   registerPluginIpc(ipcMain, sessionHost);
   registerPackageIpc(ipcMain, sessionHost);
-  registerAssetsIpc(ipcMain, {
-    getCachedPrefs: deps.getCachedPrefs,
-    getMainWindow,
-  });
+  registerAssetsIpc(ipcMain);
   registerUpdateIpc(ipcMain, updater);
 }

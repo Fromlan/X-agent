@@ -133,8 +133,8 @@ Real-model smoke tests need a Pi auth in `~/.pi/agent/auth.json` — they are
 ## Local Development Setup
 
 ```bash
-# 1. Install dependencies
-cd apps/desktop && npm install && cd ..
+# 1. Install dependencies from the repository root
+npm install --prefix apps/desktop
 
 # 2. Install pre-commit / commit-msg hooks
 git config core.hooksPath scripts/git-hooks
@@ -153,7 +153,7 @@ security-sensitive reports.
 See [`docs/maintenance.md`](docs/maintenance.md#release-cadence). The short version:
 
 1. Update `## Unreleased` in `CHANGELOG.md`
-2. `npm run release:prepare -- 0.6.0` (validates the changelog, bumps
+2. `npm run release:prepare -- X.Y.Z` (validates the changelog, bumps
    `apps/desktop/package.json` + lockfile)
 3. Commit on a feature branch, push, open a PR against `master`, and merge
    after the required checks and review

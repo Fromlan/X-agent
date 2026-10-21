@@ -29,11 +29,12 @@
 
 - [`README.md`](../README.md) / [`README.en.md`](../README.en.md)：用户能力与使用步骤。
 - [`AGENTS.md`](../AGENTS.md)：编码助手必须提前知道的边界与入口。
-- [`CLAUDE.md`](../CLAUDE.md) / [`agent.md`](agent.md)：工程流程与工作参考。
+- [`CLAUDE.md`](../CLAUDE.md)：协作、PR、发布流程与架构导航。
+- [`agent.md`](agent.md)：技术栈、验证命令与查阅入口。
 - [`context.md`](context.md)：领域概念与当前模块职责。
 - [`agent-context.md`](agent-context.md)：模型实际上下文的加载规则。
 - [`design.md`](design.md)：主题、几何与布局约定。
-- [`roadmap.md`](roadmap.md)：规划、交付状态与明确标注的历史记录。
+- [`roadmap.md`](roadmap.md)：后续候选方向；具体范围和交付状态以 Issue / PR 为准。
 
 版本以 `apps/desktop/package.json` 为准，addon 版本以 `plugin.cfg` 为准，工具与 IPC 以共享注册表、类型和 preload 为准。在根目录执行 `npm run doc:drift`，修改检查器时再运行 `npm run test:doc-drift`。文档链接应从所在文件目录解析；GitHub Issues、安全报告等页面使用完整仓库链接。
 
