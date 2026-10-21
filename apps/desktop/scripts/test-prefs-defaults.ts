@@ -45,7 +45,7 @@ assert.equal(
   null,
   "DEFAULT_PREFS.goalEvaluatorModel 必须是 null (issue #1)",
 );
-assert.equal(DEFAULT_PREFS.clientLogoId, "default", "DEFAULT_PREFS.clientLogoId");
+assert.ok(!("clientLogoId" in DEFAULT_PREFS), "Logo customization has no default preference");
 assert.ok(!("updateSource" in DEFAULT_PREFS));
 assert.deepEqual(DEFAULT_PREFS.tools, [
   "read", "bash", "edit", "write", "grep", "find", "ls",
@@ -155,41 +155,22 @@ try {
   rmSync(projectPrefsDir, { recursive: true, force: true });
 }
 
-// 7. clientLogoId 白名单 + 加载时 dirty 兜底为 "default"
-const logoPrefsDir = mkdtempSync(join(tmpdir(), "x-agent-logo-prefs-"));
+// Retired logo preferences are ignored without disturbing other persisted settings.
+const logoPrefsDir = mkdtempSync(join(tmpdir(), "x-agent-retired-logo-prefs-"));
 try {
   setAgentDirOverrideForTests(logoPrefsDir);
-  const base = await patchPrefs({ clientLogoId: "default" });
-  assert.equal(base.clientLogoId, "default");
-
-  const preset = await patchPrefs({ clientLogoId: "preset:03-plasma-thunder" });
-  assert.equal(preset.clientLogoId, "preset:03-plasma-thunder");
-
-  const custom = await patchPrefs({
-    clientLogoId: "custom:7f3c0a4d-1234-5678-9abc-def012345678",
-  });
-  assert.equal(custom.clientLogoId, "custom:7f3c0a4d-1234-5678-9abc-def012345678");
-
-  // 拒绝任意路径 / 脚本片段 / 外部 scheme
-  const evil = await patchPrefs({ clientLogoId: "../../etc/passwd" });
-  assert.equal(evil.clientLogoId, "custom:7f3c0a4d-1234-5678-9abc-def012345678",
-    "evil clientLogoId is ignored, keeps previous value");
-
-  // 空字符串 → 默认
-  const blanked = await patchPrefs({ clientLogoId: "   " });
-  assert.equal(blanked.clientLogoId, "default", "blank clientLogoId reverts to default");
-
-  // 加载时：磁盘上的脏值（不在白名单命名空间）→ default
-  writeFileSync(
-    join(logoPrefsDir, "x-agent.json"),
-    JSON.stringify({ ...DEFAULT_PREFS, clientLogoId: "garbage-not-in-whitelist" }),
-    "utf8",
-  );
-  setAgentDirOverrideForTests(null);
-  setAgentDirOverrideForTests(logoPrefsDir);
-  const reloaded = loadPrefs();
-  assert.equal(reloaded.clientLogoId, "default",
-    "on-disk value outside the default/preset:/custom: namespace is normalized to default");
+  writeFileSync(join(logoPrefsDir, "x-agent.json"), JSON.stringify({
+    ...DEFAULT_PREFS, clientLogoId: "preset:03-plasma-thunder", themeId: "nord", showThinking: false,
+    retainedMetadata: { enabled: true },
+  }));
+  const loaded = loadPrefs();
+  assert.ok(!("clientLogoId" in loaded));
+  assert.equal(loaded.themeId, "nord");
+  assert.equal(loaded.showThinking, false);
+  await patchPrefs({ colorMode: "light" });
+  const saved = JSON.parse(readFileSync(join(logoPrefsDir, "x-agent.json"), "utf8"));
+  assert.ok(!("clientLogoId" in saved));
+  assert.deepEqual(saved.retainedMetadata, { enabled: true });
 } finally {
   setAgentDirOverrideForTests(null);
   rmSync(logoPrefsDir, { recursive: true, force: true });

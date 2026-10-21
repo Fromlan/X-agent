@@ -176,6 +176,15 @@ export interface SessionInfo {
   sessionType: SessionType;
 }
 
+/** Window chrome commands are explicit so renderer code cannot invoke arbitrary native methods. */
+export type AppWindowAction = "minimize" | "toggleMaximize" | "close";
+
+/** Native window state and the authoritative package version used by custom chrome. */
+export interface AppWindowInfo {
+  maximized: boolean;
+  version: string;
+}
+
 export interface BashCheckResult {
   ok: boolean;
   shellPath: string | null;
@@ -1030,79 +1039,6 @@ export type StartupIssueStage =
 export interface StartupIssue {
   stage: StartupIssueStage;
   message: string;
-}
-
-// -----------------------------------------------------------------------
-// Client logo DTOs
-// -----------------------------------------------------------------------
-
-/**
- * Logo identifier for the user's client-branding choice.
- *
- * Encoded as a single string in `ClientPrefs.clientLogoId` so prefs round-trip
- * stays simple. Three shapes:
- *   - `"default"`        — original X-agent logo (build/icon.* + public/logo.png)
- *   - `"preset:NN-name"` — built-in preset under `apps/desktop/public/logos/`
- *   - `"custom:<uuid>"`  — user-uploaded image under
- *                          `~/.pi/agent/x-agent-logos/<uuid>.png`
- *
- * Anything else is treated as `"default"` by `parseLogoId` (defensive).
- */
-export type ClientLogoId = string;
-
-export interface LogoPreset {
-  /** Always `"preset:NN-<slug>"`. */
-  id: string;
-  /** Human-readable Chinese label, e.g. "雁翎演练". */
-  label: string;
-  /** Renderer-relative path to the 1024×1024 webp (favicon / full-size). */
-  url: string;
-  /** Renderer-relative path to the 256×256 webp thumbnail (settings grid). */
-  thumbnailUrl: string;
-  width: number;
-  height: number;
-  sizeBytes: number;
-}
-
-export interface CustomLogo {
-  /** Always `"custom:<uuid>"`. */
-  id: string;
-  /** Display label: `<originalName> · YYYY-MM-DD HH:mm`. */
-  label: string;
-  /** Renderer-relative URL served via the `x-agent-logos://` custom protocol. */
-  url: string;
-  fileName: string;
-  sizeBytes: number;
-  width: number;
-  height: number;
-  uploadedAt: number;
-}
-
-export interface LogoList {
-  presets: LogoPreset[];
-  customs: CustomLogo[];
-  /** The currently effective `ClientPrefs.clientLogoId`. */
-  active: string;
-}
-
-export interface LogoUploadError {
-  ok: false;
-  error: string;
-  code: "INVALID_FILE" | "FILE_TOO_LARGE" | "DIM_OUT_OF_RANGE" | "WRITE_FAILED";
-}
-
-export interface LogoUploadSuccess {
-  ok: true;
-  logo: CustomLogo;
-}
-
-export type LogoUploadResult = LogoUploadSuccess | LogoUploadError;
-
-export interface LogoClearResult {
-  ok: boolean;
-  error?: string;
-  /** True when the deletion also reverted `clientLogoId` to `"default"`. */
-  revertedActive?: boolean;
 }
 
 // -----------------------------------------------------------------------

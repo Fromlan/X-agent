@@ -1,10 +1,11 @@
-import { CheckSquare, FolderInput, Hammer, Loader2, Save, Square, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CircleCheck, FolderInput, Hammer, Loader2, Save, Circle, X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { usePlanSession, planFileLabel } from "../../hooks/usePlanSession";
 import { parsePlanTodos, togglePlanTodo } from "../../lib/plan-todos";
 import { MarkdownBody } from "../MarkdownBody";
 
 interface Props {
+  summary?: ReactNode;
   planPath: string | null;
   busy: boolean;
   onBuildPlan: () => void;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function PlanTab({
+  summary,
   planPath,
   busy,
   onBuildPlan,
@@ -40,13 +42,17 @@ export function PlanTab({
     return (
       <div className="rp-plan-empty">
         <p>尚无计划文件。</p>
-        <p className="rp-muted">切 Plan 后由 Agent 调用 write_plan 生成。</p>
+        {summary}
       </div>
     );
   }
 
   return (
     <div className="rp-plan">
+      <div className="rp-plan-heading">
+        <h2>执行计划</h2>
+        {todos.length > 0 && <span>{todos.filter((todo) => todo.checked).length} / {todos.length} 已完成</span>}
+      </div>
       <div className="rp-plan-meta">
         <span className="rp-plan-name" title={loadedPath ?? planPath}>
           {planFileLabel(loadedPath ?? planPath)}
@@ -67,7 +73,7 @@ export function PlanTab({
           {viewMode === "render" ? "源码" : "渲染"}
         </button>
       </div>
-      {todos.length > 0 && (
+      {todos.length > 0 && viewMode === "render" && (
         <ul className="rp-plan-todos" aria-label="计划步骤">
           {todos.map((todo) => (
             <li key={todo.lineIndex} className="rp-plan-todo">
@@ -84,9 +90,9 @@ export function PlanTab({
                 }}
               >
                 {todo.checked ? (
-                  <CheckSquare size={14} aria-hidden />
+                  <CircleCheck size={22} aria-hidden />
                 ) : (
-                  <Square size={14} aria-hidden />
+                  <Circle size={22} aria-hidden />
                 )}
                 <span
                   className={
@@ -106,9 +112,18 @@ export function PlanTab({
           加载中…
         </div>
       ) : viewMode === "render" ? (
-        <div className="rp-plan-preview" aria-label="计划渲染预览">
-          <MarkdownBody content={markdown} />
-        </div>
+        todos.length > 0 ? (
+          <details className="rp-plan-document">
+            <summary>查看完整计划</summary>
+            <div className="rp-plan-preview" aria-label="计划渲染预览">
+              <MarkdownBody content={markdown} />
+            </div>
+          </details>
+        ) : (
+          <div className="rp-plan-preview" aria-label="计划渲染预览">
+            <MarkdownBody content={markdown} />
+          </div>
+        )
       ) : (
         <textarea
           className="rp-plan-editor"
@@ -123,6 +138,7 @@ export function PlanTab({
       )}
       {error && <div className="rp-plan-error">{error}</div>}
       {hint && !error && <div className="rp-plan-hint">{hint}</div>}
+      {viewMode === "render" && summary}
       <div className="rp-plan-actions">
         <button
           type="button"

@@ -1,6 +1,6 @@
 /**
- * IPC invoke channel signatures + 14 facade types (workspace/turn/plan/
- * session/prefs/appReport/logo/godot/updates/files/provider/plugin/
+ * IPC invoke channel signatures + 13 facade types (workspace/turn/plan/
+ * session/prefs/appReport/godot/updates/files/provider/plugin/
  * package/usage). Single source for preload ↔ main IPC contracts.
  *
  * History:
@@ -12,22 +12,21 @@
  *    删 XAgentApiFlat / FlatInvokeApi / DELETED_FLAT_KEYS / DeletedFlatKey.
  *    渲染端必须走 facade 调用. 漏的 5 个分类(files / provider / plugin /
  *    package / usage)各加一个 facade, openPiLogin 归到 provider.login.
- *    XAgentApi 直接含 14 facade + onEvent + notifyAppReady (无 flat 表面).
+ *    XAgentApi 直接含 13 facade + onEvent + notifyAppReady (无 flat 表面).
  */
 import type { IpcChannelKey } from "./ipc-channels";
 import type { SessionType } from "./session-type";
 import type { DiagnosticExportResult, DiagnosticSnapshot, RendererFailure } from "./diagnostics";
 import type {
   AgentSessionMode,
+  AppWindowAction,
+  AppWindowInfo,
   AppUpdateStatus,
   ClientPrefs,
   CompactSessionResult,
   GoalInfo,
   GoalResult,
   InstallGodotRpcAddonResult,
-  LogoClearResult,
-  LogoList,
-  LogoUploadResult,
   ModelInfo,
   OpenProjectMode,
   OpenProjectResult,
@@ -88,6 +87,8 @@ export type WorkspaceApi = {
   deleteProjectSessions: IpcInvokeMap["deleteProjectSessions"];
   renameSession: IpcInvokeMap["renameSession"];
   getStatus: IpcInvokeMap["getStatus"];
+  getWindowInfo: IpcInvokeMap["getWindowInfo"];
+  controlWindow: IpcInvokeMap["controlWindow"];
 };
 
 /**
@@ -184,19 +185,6 @@ export type AppReportApi = {
   getDiagnosticSnapshot: IpcInvokeMap["getDiagnosticSnapshot"];
   exportDiagnosticBundle: IpcInvokeMap["exportDiagnosticBundle"];
   reportRendererFailure: IpcInvokeMap["reportRendererFailure"];
-};
-
-/**
- * Client logo asset management. The actual `clientLogoId` selection lives in
- * `ClientPrefs` (set via `prefs.set`); this facade only handles the binary
- * asset side (preset enumeration, custom upload/clear).
- */
-export type LogoApi = {
-  listPresets: IpcInvokeMap["logoListPresets"];
-  uploadCustom: IpcInvokeMap["logoUploadCustom"];
-  clearCustom: IpcInvokeMap["logoClearCustom"];
-  /** Subscribe to main-process `logo:changed` pushes (e.g. when another window / a tool flips the active id). */
-  onChanged: (handler: (payload: { id: string }) => void) => () => void;
 };
 
 /** Godot editor RPC + addon lifecycle facade. */
@@ -300,6 +288,8 @@ export type UsageApi = {
  * doc (为什么 `ok: false` 字段让 union narrowing 仍然 work).
  */
 export type IpcInvokeMap = {
+  getWindowInfo: () => Promise<AppWindowInfo>;
+  controlWindow: (action: AppWindowAction) => Promise<AppWindowInfo>;
   openProject: (path?: string, mode?: OpenProjectMode) => Promise<OpenProjectResult>;
   prompt: (payload: PromptPayload) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
@@ -435,20 +425,6 @@ export type IpcInvokeMap = {
   clearUsageSummary: () => Promise<{ ok: boolean; error?: string }>;
   /** Signal main process that renderer boot finished — closes splash and shows the main window. */
   appReady: () => Promise<{ ok: boolean }>;
-  /** Built-in logo presets + user-uploaded customs + currently active id. */
-  logoListPresets: () => Promise<LogoList>;
-  /**
-   * Show a native file picker, validate the chosen file, save it under
-   * `~/.pi/agent/x-agent-logos/`, and return its descriptor. The renderer is
-   * expected to call `setPrefs({ clientLogoId: result.logo.id })` afterwards
-   * if the user wants this to become active.
-   *
-   * `result.ok === false` when the user cancels (code `INVALID_FILE` with
-   * `error: "已取消"`), the file fails validation, or write fails.
-   */
-  logoUploadCustom: () => Promise<LogoUploadResult>;
-  /** Delete a custom logo. If it was the active one, also reverts to `default`. */
-  logoClearCustom: (customId: string) => Promise<LogoClearResult>;
 };
 
 /**
@@ -499,7 +475,7 @@ declare const _assertInvokeMapCoverage: Exclude<
  * (renderer 必须走 facade, 例如 `window.xAgent.turn.prompt(...)`), 这个
  * interface 只列:
  *
- *  - 14 个 facade (workspace/turn/plan/session/prefs/appReport/logo/godot/
+ *  - 13 个 facade (workspace/turn/plan/session/prefs/appReport/godot/
  *    updates/files/provider/plugin/package/usage)
  *  - 2 个 top-level 事件 / 启动: `onEvent` (agent push) + `notifyAppReady`
  *    (renderer boot 完成信号, splash 关闭)
@@ -521,7 +497,6 @@ export interface XAgentApi {
   appReport: AppReportApi;
   godot: GodotApi;
   updates: UpdatesApi;
-  logo: LogoApi;
   files: FilesApi;
   provider: ProviderApi;
   plugin: PluginApi;

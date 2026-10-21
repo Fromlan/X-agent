@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GodotRpcStatusDto } from "@shared/ipc";
 import type { ChatItem } from "../../stores/chat-store";
 import { selectToolInPanel } from "../../stores/right-panel-store";
+import { godotConnectionWarning } from "../../lib/godot-connection";
 
 function formatMaybeJson(value: unknown): string {
   if (value == null) return "";
@@ -23,6 +24,7 @@ export function GodotTab({ active, items }: Props) {
   const [busy, setBusy] = useState(false);
   const [pingOut, setPingOut] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const warning = godotConnectionWarning(status?.warning);
 
   const refresh = useCallback(async () => {
     try {
@@ -126,8 +128,8 @@ export function GodotTab({ active, items }: Props) {
       </div>
 
       {error && <div className="rp-banner-soft">{error}</div>}
-      {status?.warning && (
-        <div className="rp-banner-soft">{status.warning}</div>
+      {warning && (
+        <div className="rp-banner-soft">{warning}</div>
       )}
 
       <div className="rp-section">
@@ -158,7 +160,7 @@ export function GodotTab({ active, items }: Props) {
         <div className="rp-section-label">已连接编辑器</div>
         {(status?.clientInfos?.length ?? 0) === 0 ? (
           <div className="rp-empty">
-            尚无客户端。请启用 RPC 并打开项目。
+            暂无已连接编辑器
           </div>
         ) : (
           <ul className="rp-client-list">
@@ -207,7 +209,7 @@ export function GodotTab({ active, items }: Props) {
             </span>
           </button>
         ) : (
-          <div className="rp-empty">本槽位尚无 godot_* 工具调用</div>
+          <div className="rp-empty">暂无工具调用</div>
         )}
       </div>
     </div>

@@ -80,9 +80,6 @@ export function PluginsPage(props: Props) {
           </>
         )}
       </div>
-      <footer className="plugins-footer">
-        文档：pi.dev/docs/latest · 仓库 Pi插件指导文档.md
-      </footer>
       <CreatePluginModal state={state} cwd={cwd} />
     </div>
   );

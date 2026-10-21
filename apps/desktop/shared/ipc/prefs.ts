@@ -34,6 +34,7 @@ export const THEME_IDS = [
   "nord",
   "tokyo",
   "paper",
+  "sage",
   "contrast",
 ] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -41,11 +42,12 @@ export type ThemeId = (typeof THEME_IDS)[number];
 export type ColorMode = "light" | "dark";
 
 export const THEME_LABELS: Record<ThemeId, string> = {
-  default: "默认",
-  nord: "Nord",
-  tokyo: "Tokyo Night",
-  paper: "Warm Paper",
-  contrast: "High Contrast",
+  default: "石墨",
+  nord: "雾蓝",
+  tokyo: "暮紫",
+  paper: "暖砂",
+  sage: "松绿",
+  contrast: "高对比",
 };
 
 export function isThemeId(value: unknown): value is ThemeId {
@@ -174,11 +176,6 @@ export interface ClientPrefs {
    * back to the session model and emits a one-time warning.
    */
   goalEvaluatorModel: string | null;
-  /**
-   * User-selected client logo. See `ClientLogoId` for the encoding.
-   * Persisted as-is; unknown values fall back to `"default"` at load time.
-   */
-  clientLogoId: string;
 }
 
 export const DEFAULT_PREFS: ClientPrefs = {
@@ -211,7 +208,6 @@ export const DEFAULT_PREFS: ClientPrefs = {
   goalMaxTurns: DEFAULT_GOAL_MAX_TURNS,
   goalMaxTokens: DEFAULT_GOAL_MAX_TOKENS,
   goalEvaluatorModel: null,
-  clientLogoId: "default",
 };
 
 // -----------------------------------------------------------------------
@@ -264,7 +260,6 @@ export const ClientPrefsSchema = Type.Object({
   // Encoded as a free-form string; renderer side filters against the known
   // preset/custom list. Loose string schema here keeps IPC handler small and
   // lets new presets/customs flow through without schema bumps.
-  clientLogoId: Type.String(),
 });
 
 export const ClientPrefsPatchSchema = Type.Partial(ClientPrefsSchema, {

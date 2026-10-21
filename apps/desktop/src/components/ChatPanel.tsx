@@ -14,18 +14,17 @@ import { ChatTranscript } from "./ChatTranscript";
 import { SlashMenu } from "./SlashMenu";
 import { AtMenu } from "./AtMenu";
 import { SelectMenu } from "./SelectMenu";
+import { SessionModeSelect } from "./SessionModeSelect";
 import { dbgLog } from "@shared/debug-log";
 import { formatVisionModelExamples } from "../lib/model-capability";
 import {
-  Bot,
+  ArrowUp,
+  AlertTriangle,
+  Paperclip,
   Brain,
-  ClipboardList,
   Flag,
   Hammer,
-  Search,
-  Send,
   Square,
-  Target,
 } from "lucide-react";
 import {
   memo,
@@ -42,12 +41,13 @@ import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion"
 import { ThinkingOrb } from "./ThinkingOrb";
 import { ComposerAttachments } from "./ComposerAttachments";
 import { MAX_IMAGE_COUNT, type FileReference } from "../lib/file-attachment";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 /** @-补全 path 候选暂未接入 file-tree IPC；空数组常量化避免每次渲染新建引用。 */
 const EMPTY_PATH_CANDIDATES: AtPathCandidate[] = [];
 
 interface Props {
+  header?: ReactNode;
   items: ChatItem[];
   showThinking: boolean;
   status: AgentStatus;
@@ -129,10 +129,10 @@ function formatWait(waitedMs?: number): string {
   return `（已等待 ${sec}s）`;
 }
 
-/** Thinking level 标签首字母大写展示。 */
-function capitalizeLabel(text: string): string {
-  if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
+/** Translate reasoning levels while preserving the protocol's stable values. */
+function thinkingLabel(level: ThinkingLevel): string {
+  const labels: Record<ThinkingLevel, string> = { off: "关闭", minimal: "最低", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高" };
+  return `思考：${labels[level]}`;
 }
 
 function ChatPanelImpl(props: Props) {
@@ -186,12 +186,13 @@ function ChatPanelImpl(props: Props) {
         });
   const thinkingOptions = props.thinkingLevels.map((level) => ({
     value: level,
-    label: capitalizeLabel(level),
+    label: thinkingLabel(level),
   }));
   const modelDisabled = props.disabled || streaming || props.models.length === 0;
   const thinkingDisabled = props.disabled || streaming;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [cursor, setCursor] = useState(0);
 
   const {
@@ -344,6 +345,7 @@ function ChatPanelImpl(props: Props) {
 
   return (
     <section className="chat-panel">
+      {props.header}
       <ChatTranscript
         items={props.items}
         showThinking={props.showThinking}
@@ -459,9 +461,7 @@ function ChatPanelImpl(props: Props) {
                 role="status"
                 aria-live="polite"
               >
-                <span className="composer-model-warning-icon" aria-hidden>
-                  ⚠
-                </span>
+                <AlertTriangle size={16} className="composer-model-warning-icon" aria-hidden />
                 <span className="composer-model-warning-text">
                   当前模型
                   {props.currentModelLabel
@@ -496,45 +496,7 @@ function ChatPanelImpl(props: Props) {
             onSelect={selectAtCandidate}
             onClose={() => dismissAtMenu()}
           />
-          {props.apiStatus ? (
-            <div
-              className={`api-status-line api-status-${props.apiStatus.phase}`}
-              role="status"
-              aria-live="polite"
-            >
-              {/* per-phase orb: thinking→orbits, receiving→wave, retrying→constellation */}
-              <ThinkingOrb
-                state={
-                  props.apiStatus.phase === "receiving"
-                    ? "listening"
-                    : props.apiStatus.phase === "retrying"
-                      ? "connecting"
-                      : "working"
-                }
-                size={20}
-                aria-hidden="true"
-              />
-              <span className="api-status-text">
-                {props.apiStatus.phase === "thinking" && (
-                  <>模型响应中{formatWait(props.apiStatus.waitedMs)}…</>
-                )}
-                {props.apiStatus.phase === "receiving" && <>正在接收回复…</>}
-                {props.apiStatus.phase === "retrying" && (
-                  <>自动重试中{formatWait(props.apiStatus.waitedMs)}…</>
-                )}
-              </span>
-            </div>
-          ) : (
-            // idle: always-on breathing ring + ready label
-            <div
-              className="api-status-line api-status-idle"
-              role="status"
-              aria-live="polite"
-            >
-              <ThinkingOrb state="breathing" size={20} aria-hidden="true" />
-              <span className="api-status-text">已就绪</span>
-            </div>
-          )}
+          <span className="composer-shortcut">Shift + Tab 切换模式</span>
           <textarea
             ref={textareaRef}
             value={props.input}
@@ -576,7 +538,7 @@ function ChatPanelImpl(props: Props) {
                             : "输入可验证的完成条件…"
                         : streaming
                           ? "运行中：Enter 发送 steer…"
-                          : "输入消息，Enter 发送…"
+                          : "继续描述你的想法，或 @ 引用项目文件…"
             }
             disabled={composerLocked}
             rows={2}
@@ -586,70 +548,32 @@ function ChatPanelImpl(props: Props) {
           />
           <div className="composer-toolbar" role="toolbar" aria-label="会话控制">
             <div className="composer-mode-row" role="group" aria-label="会话模式">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = Array.from(event.currentTarget.files ?? []);
+                  if (files.length) props.onAddFiles?.(files);
+                  event.currentTarget.value = "";
+                }}
+              />
               <button
                 type="button"
-                className={
-                  sessionMode === "agent"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="agent"
-                aria-pressed={sessionMode === "agent"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("agent")}
-                title="执行任务并修改文件"
+                className="btn btn-ghost btn-icon composer-attach"
+                aria-label="添加附件"
+                title="添加图片或文件"
+                disabled={composerLocked || !props.onAddFiles}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <Bot size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">智能体</span>
+                <Paperclip size={16} aria-hidden />
               </button>
-              <button
-                type="button"
-                className={
-                  sessionMode === "ask"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="ask"
-                aria-pressed={sessionMode === "ask"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("ask")}
-                title="只读研究与问答，不改文件"
-              >
-                <Search size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">调研</span>
-              </button>
-              <button
-                type="button"
-                className={
-                  sessionMode === "plan"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="plan"
-                aria-pressed={sessionMode === "plan"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("plan")}
-                title="只读研究并写出计划"
-              >
-                <ClipboardList size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">计划</span>
-              </button>
-              <button
-                type="button"
-                className={
-                  sessionMode === "goal"
-                    ? "composer-mode-pill is-active"
-                    : "composer-mode-pill"
-                }
-                data-mode="goal"
-                aria-pressed={sessionMode === "goal"}
-                disabled={modeSwitchDisabled || !props.onSessionModeChange}
-                onClick={() => props.onSessionModeChange?.("goal")}
-                title="设定完成条件并自动续轮"
-              >
-                <Target size={14} strokeWidth={2} aria-hidden />
-                <span className="composer-mode-pill-text">目标</span>
-              </button>
+              <SessionModeSelect
+                value={sessionMode}
+                disabled={modeSwitchDisabled}
+                onChange={props.onSessionModeChange}
+              />
               {sessionMode === "plan" && props.planPath && (
                 <button
                   type="button"
@@ -725,6 +649,8 @@ function ChatPanelImpl(props: Props) {
               <button
                 type="button"
                 className="btn btn-cta btn-sm composer-send"
+                aria-label={streaming ? "Steer" : "发送"}
+                title={streaming ? "发送补充指令" : "发送（Enter）"}
                 onClick={props.onSend}
                 disabled={
                   props.disabled ||
@@ -742,11 +668,41 @@ function ChatPanelImpl(props: Props) {
                   )
                 }
               >
-                <Send size={14} />
-                {streaming ? "Steer" : "发送"}
+                <ArrowUp size={18} aria-hidden />
               </button>
             </div>
           </div>
+          {props.apiStatus && <div className="composer-footer">
+            {(
+              <div
+                className={`api-status-line api-status-${props.apiStatus.phase}`}
+                role="status"
+                aria-live="polite"
+              >
+                {/* per-phase orb: thinking→orbits, receiving→wave, retrying→constellation */}
+                <ThinkingOrb
+                  state={
+                    props.apiStatus.phase === "receiving"
+                      ? "listening"
+                      : props.apiStatus.phase === "retrying"
+                        ? "connecting"
+                        : "working"
+                  }
+                  size={20}
+                  aria-hidden="true"
+                />
+                <span className="api-status-text">
+                  {props.apiStatus.phase === "thinking" && (
+                    <>模型响应中{formatWait(props.apiStatus.waitedMs)}…</>
+                  )}
+                  {props.apiStatus.phase === "receiving" && <>正在接收回复…</>}
+                  {props.apiStatus.phase === "retrying" && (
+                    <>自动重试中{formatWait(props.apiStatus.waitedMs)}…</>
+                  )}
+                </span>
+              </div>
+            )}
+          </div>}
         </div>
       </div>
     </section>

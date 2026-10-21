@@ -33,7 +33,7 @@ describe("boot/prefs-recovery-notice", () => {
   it("ok=true 的结果不写入 notice", () => {
     applyStartupPrefsLoad({
       ok: true,
-      prefs: { clientLogoId: "default" } as never,
+      prefs: { themeId: "default" } as never,
       recovered: null,
     });
     expect(consumePrefsRecoveryNotice()).toBeNull();
@@ -42,7 +42,7 @@ describe("boot/prefs-recovery-notice", () => {
   it("ok=false + recovered: 写入 notice, consume 拿到后清空", () => {
     applyStartupPrefsLoad({
       ok: false,
-      prefs: { clientLogoId: "default" } as never,
+      prefs: { themeId: "default" } as never,
       recovered: {
         ok: false,
         backedUp: true,
@@ -64,7 +64,7 @@ describe("boot/prefs-recovery-notice", () => {
   it("backedUp=true 时副作用 patchPrefs({}) 写默认 prefs (隔离到 tmp)", async () => {
     applyStartupPrefsLoad({
       ok: false,
-      prefs: { clientLogoId: "default" } as never,
+      prefs: { themeId: "default" } as never,
       recovered: {
         ok: false,
         backedUp: true,

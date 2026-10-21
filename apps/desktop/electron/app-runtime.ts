@@ -17,7 +17,6 @@ import { ipcMain } from "electron";
 import { ensureBuiltinDesignSkillsInstalledSync } from "./agent/builtin-skills-installer";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
 import {
-  getCachedPrefs,
   loadPrefs,
   loadPrefsWithRecovery,
   patchPrefs,
@@ -27,7 +26,6 @@ import { SessionHost } from "./agent/session-host";
 import { recoverAllDisabledNestedGit } from "./agent/shadow-git";
 import { AppAutoUpdater } from "./agent/auto-updater";
 import { ensureGodotPiPackageInstalled } from "./agent/package-manager";
-import { notifyLogoChange } from "./agent/agent-logos";
 import { cleanupOrphanTmpFiles } from "./agent/lib/orphan-cleanup";
 import { dbgLog, dbgWarn } from "../shared/debug-log";
 import {
@@ -56,12 +54,7 @@ let updater: AppAutoUpdater | null = null;
 const prefsPort = {
   loadPrefs: () => loadPrefs(),
   patchPrefs: (patch: Partial<ClientPrefs>) => patchPrefs(patch),
-  getCachedPrefs: () => getCachedPrefs(),
 };
-
-/** Re-export so main.ts's `runtime.notifyLogoChange(...)` call site still
- *  works after C-405 moved the implementation to agent-logos.ts. */
-export { notifyLogoChange };
 
 /** Call only after splash is visible. */
 export function bootRuntime(hooks: RuntimeHooks): void {
@@ -79,8 +72,6 @@ export function bootRuntime(hooks: RuntimeHooks): void {
     openExternalHttpUrl: hooks.openExternalHttpUrl,
     loadPrefs: prefsPort.loadPrefs,
     patchPrefs: prefsPort.patchPrefs,
-    getCachedPrefs: prefsPort.getCachedPrefs,
-    notifyLogoChange,
     consumePrefsRecoveryNotice,
     consumeStartupIssues,
   });

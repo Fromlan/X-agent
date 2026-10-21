@@ -1,10 +1,10 @@
 /**
  * E2E 策划会话类型契约 —— 验证核心视觉:
- * 1. TopBar 双按钮存在
+ * 1. 侧栏类型筛选与新会话按钮存在
  * 2. 点「新策划会话」后 body[data-session-type="design"]
  * 3. chat-panel 应用策划 accent 描边 (inset box-shadow)
  * 4. 点「新代码会话」回到 body[data-session-type="code"], 描边消失
- * 5. 策划会话内 mode pills 仍可互切
+ * 5. 策划会话内模式菜单仍可互切
  *
  * 与 mode-switch.spec.ts 同模板, 通过 window.xAgent.workspace.open
  * 绕过原生目录对话框.
@@ -28,7 +28,7 @@ import { launchApp } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
+test("策划会话类型 侧栏新会话 + 背景色 + chat-panel 描边", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "x-agent-e2e-design-"));
   const { app, main } = await launchApp();
   try {
@@ -38,10 +38,9 @@ test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
       if (!res.ok) throw new Error(res.error ?? "openProject failed");
     }, tmp);
 
-    // TopBar 应有两个新按钮 — 用 .topbar 限定,避免命中侧栏 session-card-main
-    // (侧栏卡片也带 data-session-type,scope 不对会 strict mode 命中多个元素)。
-    const codeBtn = main.locator('.topbar button[data-session-type="code"]');
-    const designBtn = main.locator('.topbar button[data-session-type="design"]');
+    // Type tabs filter history; only the new-session action changes the active session type.
+    const codeBtn = main.locator('.sidebar-session-types button[data-session-type="code"]');
+    const designBtn = main.locator('.sidebar-session-types button[data-session-type="design"]');
     await expect(codeBtn).toBeVisible();
     await expect(designBtn).toBeVisible();
 
@@ -53,6 +52,8 @@ test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
 
     // 点新策划会话
     await designBtn.click();
+    await expect(main.locator("body")).toHaveAttribute("data-session-type", "code");
+    await main.getByRole("button", { name: "新会话", exact: true }).click();
     await expect(main.locator("body")).toHaveAttribute(
       "data-session-type",
       "design",
@@ -69,6 +70,7 @@ test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
 
     // 切回新代码会话
     await codeBtn.click();
+    await main.getByRole("button", { name: "新会话", exact: true }).click();
     await expect(main.locator("body")).toHaveAttribute(
       "data-session-type",
       "code",
@@ -84,75 +86,31 @@ test("策划会话类型 TopBar + 背景色 + chat-panel 描边", async () => {
   }
 });
 
-test("策划会话内 mode 切换 pills 仍可用", async () => {
+test("策划会话内模式菜单保留工具硬闸与回滚反馈", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "x-agent-e2e-design-"));
   const { app, main } = await launchApp();
   try {
-    await main.evaluate(async (cwd) => {
-      const res = await window.xAgent.workspace.open(cwd, "new", "design");
-      if (!res.ok) throw new Error(res.error ?? "openProject failed");
-    }, tmp);
-
-    // 验证确实在 design 状态
-    await expect(main.locator("body")).toHaveAttribute(
-      "data-session-type",
-      "design",
-    );
-
-    // 切到 plan 模式 (策划会话内 mode 仍可互切).
-    // Design session 下 plan 模式走 rollback 路径 (DESIGN_SESSION_TYPE_TOOLS
-    // 故意不含 write_plan, controller.ts:347 触发回滚 + emit "plan" 错误提示).
-    // 接受两种结果:
-    //   (A) plan 切换成功: aria-pressed="true"
-    //   (B) design 专属 rollback: agentMode 仍是 agent, 但 emit 含 "write_plan" 错误提示
-    // body data-session-type 始终为 design (mode 不影响 type).
-    //
-    // Windows runner 上 IPC 经常跑 30+ 秒 (#79 锁定), 不能 click 后立刻查 aria-pressed.
-    // 用一个 15s 的 waitForFunction 同时观察两条 settle 信号, 任一命中即通过.
-    const planPill = main.locator('[data-mode="plan"]');
-    await expect(planPill).toBeEnabled();
-    await planPill.click();
-    await main
-      .waitForFunction(
-        () => {
-          const pill = document.querySelector('[data-mode="plan"]');
-          const notice = document.querySelector(".bubble-system.level-error");
-          if (pill?.getAttribute("aria-pressed") === "true") return true;
-          if (notice?.textContent?.includes("write_plan")) return true;
-          return false;
-        },
-        { timeout: 15_000 },
-      )
-      .catch(() => {
-        // 让下面的最终断言给出更具体的错误
-      });
-
-    const planAria = await planPill.getAttribute("aria-pressed");
-    if (planAria === "true") {
-      // (A) plan mode 切换成功路径
-      await expect(planPill).toHaveAttribute("aria-pressed", "true");
-    } else {
-      // (B) design session rollback 路径 — 验证 emit 含 write_plan 错误提示
-      //     notice 通过 emitReplaceableNotice("plan", ..., "error") 进入 system bubble.
-      //     完整文案: "Plan 模式未能激活 write_plan（工具未注册）。请重开项目后再试。"
-      await expect(
-        main.locator(".bubble-system.level-error", {
-          hasText: "write_plan",
-        }),
-      ).toBeVisible({ timeout: 15_000 });
-      // rollback 后 agentMode 仍是 agent, plan pill 应保持 unpressed
-      await expect(planPill).toHaveAttribute("aria-pressed", "false");
+    expect((await main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new", "design"), tmp)).ok).toBe(true);
+    await expect(main.locator("body")).toHaveAttribute("data-session-type", "design");
+    const picker = main.getByRole("button", { name: "会话模式", exact: true });
+    await expect(picker).toBeEnabled();
+    await picker.click();
+    await main.getByRole("option", { name: "计划", exact: true }).click();
+    // Design sessions may reject write_plan; either settlement must remain visible and usable.
+    await expect.poll(() => main.evaluate(() => {
+      const mode = document.querySelector(".composer-mode-select")?.getAttribute("data-mode");
+      const notice = document.querySelector(".bubble-system.level-error")?.textContent;
+      return mode === "plan" || Boolean(notice?.includes("write_plan"));
+    })).toBe(true);
+    const mode = await main.evaluate(async () => (await window.xAgent.plan.getMode()).mode);
+    if (mode !== "plan") {
+      expect(mode).toBe("agent");
+      await expect(main.locator(".bubble-system.level-error", { hasText: "write_plan" })).toBeVisible();
     }
-
-    await expect(main.locator("body")).toHaveAttribute(
-      "data-session-type",
-      "design",
-    );
-
-    // 切回 agent (无论上一路径是 A 还是 B, agent pill 都应可切)
-    const agentPill = main.locator('[data-mode="agent"]');
-    await agentPill.click();
-    await expect(agentPill).toHaveAttribute("aria-pressed", "true");
+    await picker.click();
+    await main.getByRole("option", { name: "智能体", exact: true }).click();
+    await expect(main.locator(".composer-mode-select")).toHaveAttribute("data-mode", "agent");
+    await expect(main.locator("body")).toHaveAttribute("data-session-type", "design");
   } finally {
     await main.evaluate(() => window.xAgent.workspace.close()).catch(() => {});
     await app.close();

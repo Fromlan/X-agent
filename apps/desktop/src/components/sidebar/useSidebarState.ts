@@ -1,5 +1,5 @@
 /**
- * Sidebar 业务状态:编辑中菜单 / 折叠集合 / 上下文菜单 / 重命名提交。
+ * Sidebar 业务状态:编辑中菜单 / 上下文菜单 / 重命名提交。
  * 抽到独立 hook 让 Sidebar.tsx 顶层壳只渲染与组合子组件。
  */
 import {
@@ -40,7 +40,6 @@ export type ContextMenuState =
 export interface SidebarStateOpts {
   sessions: SessionInfo[];
   hiddenProjectKeys: string[];
-  activeSessionId: string | null;
   activeCwd: string | null;
   busy: boolean;
   renaming?: boolean;
@@ -54,7 +53,6 @@ export function useSidebarState(opts: SidebarStateOpts) {
   const {
     sessions,
     hiddenProjectKeys,
-    activeSessionId,
     activeCwd,
     busy,
     renaming: externalRenaming = false,
@@ -67,7 +65,6 @@ export function useSidebarState(opts: SidebarStateOpts) {
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
   const [renaming, setRenaming] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -81,31 +78,6 @@ export function useSidebarState(opts: SidebarStateOpts) {
       ),
     [sessions, hiddenProjectKeys],
   );
-
-  const keysToExpand = useMemo(() => {
-    const keys = new Set<string>();
-    if (activeCwd) keys.add(normalizeProjectKey(activeCwd));
-    if (activeSessionId) {
-      const match = sessions.find((s) => s.id === activeSessionId);
-      if (match) keys.add(normalizeProjectKey(match.cwd));
-    }
-    return keys;
-  }, [activeCwd, activeSessionId, sessions]);
-
-  useEffect(() => {
-    if (keysToExpand.size === 0) return;
-    setCollapsed((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const key of keysToExpand) {
-        if (next.has(key)) {
-          next.delete(key);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [keysToExpand]);
 
   useEffect(() => {
     if (editingPath) {
@@ -206,14 +178,6 @@ export function useSidebarState(opts: SidebarStateOpts) {
     [cancelEdit, commitEdit],
   );
 
-  const toggleGroup = useCallback((key: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
 
   const openSessionMenu = useCallback(
     (s: SessionInfo, e: ReactMouseEvent) => {
@@ -303,8 +267,6 @@ export function useSidebarState(opts: SidebarStateOpts) {
 
   return {
     groups,
-    collapsed,
-    toggleGroup,
     editingPath,
     draftName,
     setDraftName,

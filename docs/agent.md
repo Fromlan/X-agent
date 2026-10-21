@@ -78,7 +78,7 @@ npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\\path\\to\\pr
 三进程模型，**不要越界**：
 
 - **`electron/main.ts`** — 薄启动入口，动态加载 `app-runtime.ts`，由 runtime 持有 `SessionHost` / `GodotRpcBridge` / `AppAutoUpdater`。Pi SDK、文件系统、会话、模型、供应商、插件、用量、文档检索**全部在主进程**。
-- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`；`contextIsolation` 开、`nodeIntegration` 关、主窗口 `sandbox: true`。**新增 IPC 必须同步** channel 注册表、`shared/ipc-invoke-map.ts` / DTO、对应 handler 与 preload；14 个分面见 `AGENTS.md`，扁平 IPC 方法已移除。
+- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`；`contextIsolation` 开、`nodeIntegration` 关、主窗口 `sandbox: true`。**新增 IPC 必须同步** channel 注册表、`shared/ipc-invoke-map.ts` / DTO、对应 handler 与 preload；13 个分面见 `AGENTS.md`，扁平 IPC 方法已移除。
 - **`src/...`** — 纯 React renderer；通过 `window.xAgent.*` 调用主进程；**禁止**直接访问 Node API。
 
 `apps/desktop/shared/` 是 main / renderer 共享类型与逻辑（`ipc.ts` 工具名、`mode-tools.ts` 模式白名单、`transcript/` 流式映射）。
@@ -167,7 +167,7 @@ UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读
 
 完整规范见 `design.md`。要点：
 
-- 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 覆盖 token；主题族：`default`（默认）/`nord` / `tokyo` / `paper` / `contrast`
+- 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 覆盖 token；主题族：`default`（石墨，默认）/ `nord`（雾蓝）/ `tokyo`（暮紫）/ `paper`（暖砂）/ `sage`（松绿）/ `contrast`（高对比）。设置中的缩略预览复用主题 token。
 - **层次**：Surface / Card / Card-elev / Chrome + 1px Board 边；主元素与交互阴影走主题 token，`contrast` 禁用阴影
 - **Pill 优先**：按钮 / chip / 单行 input / tab 用 `9999px`；容器 `12px`；多行 `8px`
 - 颜色 / 圆角 / 阴影全部走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**

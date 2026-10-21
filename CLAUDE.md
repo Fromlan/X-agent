@@ -188,7 +188,7 @@ Electron 三进程边界：
 
 - `electron/main.ts`：薄启动入口，动态加载 `app-runtime.ts`；runtime 持有 `SessionHost`、`GodotRpcBridge`、`AppAutoUpdater`，经 `register-ipc-handlers.ts` 注册 IPC。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索均在主进程。
 - `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**（preload 为 CJS 单文件，仅依赖 electron 受限 API）；新增能力需同步改 `shared/ipc-channels.ts`、`shared/ipc-invoke-map.ts` / DTO、对应 IPC handler 与 preload。
-- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。所有 IPC 调用走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `logo` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`）；扁平 IPC 方法已移除。
+- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。所有 IPC 调用走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`）；扁平 IPC 方法已移除。
 - `shared/ipc.ts`：跨进程协议源；`shared/godot-rpc.ts`：Godot TCP 协议。
 
 ### UI 壳层

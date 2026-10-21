@@ -171,7 +171,7 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
     exposed = getExposedXAgent() as ExposedXAgent;
   });
 
-  it("顶层只 expose 14 个 facade + onEvent + notifyAppReady, 没有 flat surface", () => {
+  it("顶层只 expose 13 个 facade + onEvent + notifyAppReady, 没有 flat surface", () => {
     const expectedFacades = [
       "workspace",
       "turn",
@@ -181,7 +181,6 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
       "appReport",
       "godot",
       "updates",
-      "logo",
       "files",
       "provider",
       "plugin",
@@ -192,6 +191,7 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
       expect(exposed[name], `facade ${name} 应该暴露`).toBeDefined();
       expect(typeof exposed[name]).toBe("object");
     }
+    expect(exposed.logo).toBeUndefined();
     expect(typeof exposed.onEvent).toBe("function");
     expect(typeof exposed.notifyAppReady).toBe("function");
   });
@@ -288,13 +288,15 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
     }
   });
 
-  it("14 个 facade 都有正确的方法 (smoke)", () => {
+  it("13 个 facade 都有正确的方法 (smoke)", () => {
     // 锁住 facade 形态, 防止以后漏加新方法或拼错名字
     expect(Object.keys(exposed.workspace).sort()).toEqual([
       "close",
+      "controlWindow",
       "deleteProjectSessions",
       "deleteSession",
       "getStatus",
+      "getWindowInfo",
       "listSessions",
       "newSession",
       "open",

@@ -49,6 +49,8 @@ export function createMainWindow(opts: {
   const win = new BrowserWindow({
     ...geometry,
     title: "X-agent",
+    // The reference uses one integrated title bar; native resize borders remain enabled on Windows.
+    frame: false,
     backgroundColor: BG,
     show: false,
     ...(icon ? { icon } : {}),

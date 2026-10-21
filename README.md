@@ -105,7 +105,6 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
 |---|---|---|
 | **🎯 策划会话 design 类型** | 0.5.5 | 写只允许落到 `<cwd>/game-design/`，UI 暖色主题 |
 | **🛠 5 个内置 design skill** | 0.5.5 | 立项 / 流程 / 系统 / 数值 / 核心循环懒写即用 |
-| **🎨 8 套品牌 logo + 自定义** | 0.5.5 | 设置 → 通用 → 品牌（霓虹赛博 / 熔岩灼烧 / …） |
 | **🎨 v1.1 elevation 设计语言** | 0.5.4 | Composer 唯一主元素，三栏降为低调 chrome |
 | **⚡ Diff 显示** | 0.5.3 | 撤回前 `+/-` 着色 diff，带 `+N` / `-N` 统计 |
 | **🔮 thinking-orbs 状态行动画** | 0.5.2 | 运行中粒子轨道而非转圈 |
@@ -137,7 +136,7 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
 
 | 分页 | 内容 |
 |---|---|
-| 通用 | 主题、Thinking 默认、bash 路径、Pi 登录、自动更新、**品牌（logo 选择）** |
+| 通用 | 石墨 / 雾蓝 / 暮紫 / 暖砂 / 松绿 / 高对比主题预览与深浅切换、Thinking 默认、bash 路径、Pi 登录、自动更新 |
 | 供应商 | 模型档案、导入 Pi / cc-switch 配置、Thinking 钳制 |
 | 用量 | 本地按日 / 按模型汇总 |
 | 工具 | 内置 / DeepSeek 网络 / Godot 编辑器工具白名单；调研 / 计划模式仅保留已启用的只读工具 |
@@ -164,7 +163,6 @@ X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可�
 | `x-agent/sessions/` | 本应用会话（与 Pi CLI 分开） |
 | `x-agent/checkpoints/` | Shadow Git 检查点（按项目隔离，**不写你的 .git**） |
 | `x-agent/plans/` / `x-agent/goals/` | Plan 文件 / Goal 日记 |
-| `x-agent-logos/` | 自定义品牌 logo（UUID 文件名，**应用外勿编辑**） |
 | `x-agent-{providers,packages,usage,godot-rpc}.json` | 档案 / 安装记录 / 用量 / RPC endpoint |
 
 完整清单：[`CLAUDE.md` §持久化与隔离](CLAUDE.md)

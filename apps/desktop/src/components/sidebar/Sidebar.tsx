@@ -2,10 +2,11 @@
  * Sidebar 顶层壳 —— 组合 head / group list / context menu / resize handle。
  * 业务状态由 `useSidebarState` 提供,子组件只渲染。
  */
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftClose, PanelLeftOpen, RefreshCw } from "lucide-react";
-import type { AgentStatus, SessionInfo } from "@shared/ipc";
+import { PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from "lucide-react";
+import type { AgentStatus, SessionInfo, SessionType } from "@shared/ipc";
+import { SidebarWorkspace } from "./SidebarWorkspace";
 import { useSidebarState } from "./useSidebarState";
 import { SidebarGroupList } from "./SidebarGroupList";
 import { SidebarItemMenu } from "./SidebarItemMenu";
@@ -15,6 +16,12 @@ interface Props {
   hiddenProjectKeys: string[];
   activeSessionId: string | null;
   activeCwd: string | null;
+  isGodotProject: boolean;
+  sessionType: SessionType;
+  appVersion: string;
+  onOpen: () => void;
+  onNew: (type: SessionType) => void;
+  onSettings: () => void;
   agentStatus: AgentStatus;
   busy: boolean;
   /** True while context compaction is in progress. */
@@ -40,6 +47,12 @@ function SidebarImpl({
   hiddenProjectKeys,
   activeSessionId,
   activeCwd,
+  isGodotProject,
+  sessionType,
+  appVersion,
+  onOpen,
+  onNew,
+  onSettings,
   agentStatus,
   busy,
   compacting = false,
@@ -56,10 +69,11 @@ function SidebarImpl({
   onResizeDoubleClick,
   resizing = false,
 }: Props) {
+  const [selectedType, setSelectedType] = useState<SessionType>(sessionType);
+  useEffect(() => setSelectedType(sessionType), [sessionType, activeSessionId]);
   const state = useSidebarState({
     sessions,
     hiddenProjectKeys,
-    activeSessionId,
     activeCwd,
     busy,
     onDelete,
@@ -83,6 +97,7 @@ function SidebarImpl({
 
   return (
     <aside className={className} data-collapsed={collapsed ? "true" : undefined}>
+      <SidebarWorkspace state={state} cwd={activeCwd} isGodotProject={isGodotProject} collapsed={collapsed} busy={busy} locked={locked} selectedType={selectedType} onOpen={onOpen} onNew={onNew} onSettings={onSettings} onResume={onResume} />
       <div className="sidebar-head">
         {!collapsed && <h2>会话</h2>}
         <div className="sidebar-head-actions">
@@ -115,6 +130,12 @@ function SidebarImpl({
           )}
         </div>
       </div>
+      {!collapsed && (
+        <div className="sidebar-session-types" role="group" aria-label="会话类型筛选">
+          <button type="button" data-session-type="code" aria-pressed={selectedType === "code"} onClick={() => setSelectedType("code")}>代码</button>
+          <button type="button" data-session-type="design" aria-pressed={selectedType === "design"} onClick={() => setSelectedType("design")}>策划</button>
+        </div>
+      )}
       <SidebarGroupList
         state={state}
         activeSessionId={activeSessionId}
@@ -123,7 +144,12 @@ function SidebarImpl({
         loading={sessionsLoading}
         onResume={onResume}
         collapsed={collapsed}
+        selectedType={selectedType}
       />
+      <div className="sidebar-footer">
+        <button type="button" className="btn btn-ghost" title="设置（Ctrl+,）" aria-label="设置" onClick={onSettings}><Settings size={20} aria-hidden />{!collapsed && <span>设置</span>}</button>
+        {!collapsed && <span className="sidebar-version">{appVersion ? `v${appVersion}` : ""}</span>}
+      </div>
       <SidebarItemMenu state={state} busy={busy} locked={locked} renaming={false} />
       {!collapsed && onResizePointerDown && (
         <div

@@ -124,13 +124,7 @@ export function AppBanners(props: AppBannersProps) {
         <div className="banner warn">
           <AlertTriangle size={14} />
           <span>
-            供应商密钥将以明文存储——系统密钥链不可用
-            {secretCodec.reason === "keychain-unavailable"
-              ? "(safeStorage 不可用)"
-              : secretCodec.reason === "encrypt-failed"
-                ? "(safeStorage 加密失败)"
-                : "(未在 Electron 环境中)"}
-            。请到「设置 → 供应商」检查密钥是否需要重新保存。
+            系统密钥保护不可用，供应商密钥将以明文存储。
           </span>
           <button
             type="button"

@@ -560,11 +560,6 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                   >
                     {SESSION_TYPE_LABELS[props.sessionType ?? "code"]}模式
                   </span>
-                  <p className="empty-state-hint">
-                    {props.sessionType === "design"
-                      ? "选择提示或直接提问；写只落到 game-design/"
-                      : "选择提示或直接提问"}
-                  </p>
                   {props.readinessHints && props.readinessHints.length > 0 && (
                     <div className="empty-ready-hints">
                       {props.readinessHints.map((hint) => (
