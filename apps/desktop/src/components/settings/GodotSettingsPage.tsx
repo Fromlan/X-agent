@@ -9,6 +9,7 @@ import {
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
 import { godotConnectionLabel, godotConnectionWarning, isProjectGodotConnected, projectGodotConnection } from "../../lib/godot-connection";
 import { normalizeProjectKey } from "@shared/project-path";
+import { GodotEngineSettings } from "./GodotEngineSettings";
 
 /** Kept for API compat; Godot settings is editor-only (no docs sub-section). */
 export type GodotSettingsSection = "editor";
@@ -51,9 +52,10 @@ export function GodotSettingsPage({
     const unsubscribe = window.xAgent.godot.onStatus(setRpc);
     let cancelled = false;
     void (async () => {
-      const status = await window.xAgent.godot.status();
+      const [status, latestPrefs] = await Promise.all([window.xAgent.godot.status(), window.xAgent.prefs.get()]);
       if (cancelled) return;
       setRpc(status);
+      onPrefsChanged?.(latestPrefs);
     })();
     return () => {
       cancelled = true;
@@ -105,8 +107,10 @@ export function GodotSettingsPage({
         <h3>Godot</h3>
       </div>
 
+      <GodotEngineSettings prefs={prefs} cwd={cwd} onPrefsChanged={onPrefsChanged} onMessage={setRpcMsg} />
+
       <div className="settings-block">
-        <h4 className="settings-block-title">引擎</h4>
+        <h4 className="settings-block-title">项目连接</h4>
         <label className="settings-row settings-row-check">
           <span className="settings-row-label">打开项目时自动连接 Godot</span>
           <input type="checkbox" checked={prefs.godotAutoConnect} onChange={async (event) => {

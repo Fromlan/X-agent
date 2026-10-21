@@ -130,6 +130,9 @@ export async function discoverGodotEngine(
     seen.add(normalizeProjectKey(path));
     const engine = await probe(path, options.signal);
     if (engine && compatible(engine)) return { engine, candidates: [engine] };
+    if (path === prefs.godotProjectEditors[key]) return {
+      candidates: [], message: engine ? "当前项目选择的引擎不支持 C#，请选择 Godot 4 .NET 引擎。" : "当前项目选择的引擎不可用，请重新选择引擎配置。",
+    };
   }
   const candidates: GodotEngine[] = [];
   const global = prefs.godotEditorPath;
@@ -144,7 +147,7 @@ export async function discoverGodotEngine(
     }
   }
   const deadline = Date.now() + 15_000;
-  for (const path of options.candidates ?? localGodotCandidates()) {
+  for (const path of [...prefs.godotEngines.map((engine) => engine.path), ...(options.candidates ?? localGodotCandidates())]) {
     options.signal?.throwIfAborted();
     if (Date.now() >= deadline) break;
     if (seen.has(normalizeProjectKey(path))) continue;

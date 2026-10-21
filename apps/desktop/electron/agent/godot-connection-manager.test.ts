@@ -79,7 +79,7 @@ describe("GodotConnectionManager", () => {
     context.bridge.setCurrentCwd("D:/game");
     await waitFor(() => context.manager.getStatus().connection?.phase === "connected");
     expect(context.deps.launch).toHaveBeenCalledOnce();
-    expect(context.deps.remember).toHaveBeenCalledWith(expect.any(String), "C:/Godot.exe");
+    expect(context.deps.remember).toHaveBeenCalledWith(expect.any(String), "C:/Godot.exe", expect.any(AbortSignal));
     expect(context.prefs.tools).toEqual(originalTools);
   });
 
@@ -184,5 +184,24 @@ describe("GodotConnectionManager", () => {
     await context.manager.connect();
     expect(context.deps.launch).toHaveBeenCalledOnce();
     expect(context.manager.getStatus().connection?.phase).toBe("connected");
+  });
+
+  it("cancels obsolete discovery after a registry change without launching its removed engine", async () => {
+    const context = await fixture();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    context.deps.discover.mockImplementationOnce(async () => {
+      await gate;
+      return { engine: { path: "C:/removed.exe", version: "4.7.2.stable" }, candidates: [] };
+    });
+    context.bridge.setCurrentCwd("D:/game");
+    const pending = context.manager.connect();
+    await waitFor(() => context.deps.discover.mock.calls.length === 1);
+    context.manager.engineSettingsChanged();
+    release();
+    expect(await pending).toMatchObject({ ok: false });
+    expect(context.deps.launch).not.toHaveBeenCalled();
+    expect(context.deps.remember).not.toHaveBeenCalled();
+    expect(context.manager.getStatus().connection?.phase).toBe("idle");
   });
 });

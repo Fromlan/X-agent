@@ -67,6 +67,7 @@ export const IPC_CHANNELS = {
   godotRpcRequest: "godotRpcRequest",
   godotRpcSetActiveClient: "godotRpcSetActiveClient",
   pickGodotEditor: "pickGodotEditor",
+  manageGodotEngine: "manageGodotEngine",
   launchGodotEditor: "launchGodotEditor",
   installGodotRpcAddon: "installGodotRpcAddon",
   pickGodotScene: "pickGodotScene",

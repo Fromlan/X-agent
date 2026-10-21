@@ -69,7 +69,7 @@ jobs:
       - run: npm run test:coverage
       - run: npm run build
       - run: npm run test:e2e
-      - name: Install verified Godot 4.6.2
+      - name: Install verified Godot 4.7.2
         working-directory: ${{ github.workspace }}
         shell: pwsh
         run: ./scripts/setup-godot.ps1

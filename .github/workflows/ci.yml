@@ -102,7 +102,7 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
       - run: npm ci
-      - name: Install verified Godot 4.6.2
+      - name: Install verified Godot 4.7.2
         working-directory: ${{ github.workspace }}
         shell: pwsh
         run: ./scripts/setup-godot.ps1

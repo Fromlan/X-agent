@@ -97,7 +97,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 
 ## 提交前自检
 
-- 真实 Godot：在 PowerShell 设置 `$env:GODOT_BIN` 为 Godot 4.6.2 console 可执行文件绝对路径，在 `apps/desktop` 跑 `npm run test:godot`；缺少环境失败，不静默跳过。CI 固定同版本并校验官方 SHA-256。
+- 真实 Godot：在 PowerShell 设置 `$env:GODOT_BIN` 为 Godot 4.7.2 console 可执行文件绝对路径，在 `apps/desktop` 跑 `npm run test:godot`；缺少环境失败，不静默跳过。CI 固定同版本并校验官方 SHA-256。
 - 链接边界共用 `lib/path-boundary.ts`，新文件解析最近存在父目录；仍有校验后替换竞态。模型探测使用 `public-http.ts` 连接时 DNS 检查且拒绝重定向，Pi SDK 的其他传输不统一受此约束。
 - 配置只有 ENOENT 可初始化，损坏/权限/结构失败保留原文件；工具设置等保存和应用成功后才返回。Goal 实际请求与评估费用入账，预算为续轮阈值；Pi `agent_settled` 后等待 checkpoint flush 和 snip-first 维护，再更新用量、发布 idle 并评估 Goal。空恢复路径不全量 reset。
 

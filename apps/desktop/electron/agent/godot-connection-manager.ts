@@ -7,11 +7,12 @@ import type { ClientPrefs } from "../../shared/ipc";
 import type { GodotConnectionStatus } from "../../shared/godot-connection";
 import { projectGodotClients } from "../../shared/godot-connection";
 import { normalizeProjectKey } from "../../shared/project-path";
+import { godotEngineName } from "../../shared/godot-engines";
 import type { GodotRpcBridgeStatus } from "../../shared/godot-rpc";
 import { GodotRpcBridge } from "./godot-rpc-bridge";
 import { inspectGodotRpcAddon, installGodotRpcAddon } from "./godot-addon-install";
-import { discoverGodotEngine, listRunningGodotEditors, type GodotEngineDiscovery, type RunningGodotEditor } from "./godot-engine-discovery";
-import { getCachedPrefs, rememberGodotEditor } from "./prefs";
+import { discoverGodotEngine, listRunningGodotEditors, probeGodotEngine, type GodotEngineDiscovery, type RunningGodotEditor } from "./godot-engine-discovery";
+import { getCachedPrefs, registerGodotEngine } from "./prefs";
 
 export interface GodotConnectionDeps {
   prefs: () => ClientPrefs;
@@ -22,7 +23,7 @@ export interface GodotConnectionDeps {
   discover: (project: string, prefs: ClientPrefs, running: RunningGodotEditor[], signal?: AbortSignal) => Promise<GodotEngineDiscovery>;
   launch: (engine: string, project: string) => Promise<number>;
   isAlive: (pid: number) => boolean;
-  remember: (project: string, engine: string) => Promise<void>;
+  remember: (project: string, engine: string, signal: AbortSignal) => Promise<void>;
   connectTimeoutMs?: number;
   attachGraceMs?: number;
 }
@@ -144,11 +145,20 @@ export class GodotConnectionManager {
   }
 
   /** Discard stale discovery when a user explicitly selects an engine during an ongoing attempt. */
-  engineSelected(path: string): void {
+  engineSelected(path?: string): void {
     this.controller.abort();
     this.inFlight = null;
     this.publish({ enginePath: path, candidates: undefined });
     void this.connect();
+  }
+
+  /** Cancel work using obsolete configuration without closing any editor or launching a replacement. */
+  engineSettingsChanged(): void {
+    this.controller.abort();
+    this.inFlight = null;
+    if (this.connection.phase !== "connected") {
+      this.publish({ phase: "idle", enginePath: undefined, candidates: undefined, message: "引擎配置已更新，可重新连接 Godot" });
+    }
   }
 
   /** Update the addon through the same status source used by automatic connection. */
@@ -196,13 +206,13 @@ export class GodotConnectionManager {
     return false;
   }
 
-  /** Mark readiness only after health verification and remember the engine solely for this project. */
+  /** Mark readiness after health verification and refresh the installation without pinning automatic choices. */
   private async connected(project: string, signal: AbortSignal, engine?: string): Promise<GodotConnectResult> {
     this.check(signal);
     const explicit = this.deps.prefs().godotProjectEditors[normalizeProjectKey(project)];
     let message = "Godot 已连接";
     if (engine && (!explicit || normalizeProjectKey(explicit) === normalizeProjectKey(engine))) {
-      try { await this.deps.remember(project, engine); }
+      try { await this.deps.remember(project, engine, signal); }
       catch { message = "Godot 已连接，但未能保存引擎路径；请检查偏好文件的权限或内容。"; }
     }
     this.check(signal);
@@ -285,10 +295,10 @@ export function createGodotConnectionManager(bridge: GodotRpcBridge): GodotConne
     discover: (project, prefs, running, signal) => discoverGodotEngine(project, prefs, running, { signal }),
     launch: launchEditor,
     isAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
-    remember: async (project, engine) => {
-      const prefs = getCachedPrefs();
-      const key = normalizeProjectKey(project);
-      if (prefs.godotProjectEditors[key] !== engine) await rememberGodotEditor(project, engine, { onlyIfUnset: true });
+    remember: async (_project, engine, signal) => {
+      const installation = await probeGodotEngine(engine, signal);
+      signal.throwIfAborted();
+      if (installation) await registerGodotEngine({ ...installation, name: godotEngineName(installation.version) }, signal);
     },
   });
 }

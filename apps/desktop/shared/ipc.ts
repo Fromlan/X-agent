@@ -27,6 +27,7 @@
 // ----- ipc-channels & session-type re-exports -----
 export type { RendererFailure } from "./diagnostics";
 export type { IpcChannelKey } from "./ipc-channels";
+export type { GodotEngineConfig, GodotEngineMutation, GodotEngineMutationResult } from "./godot-engines";
 export {
   SESSION_TYPES,
   SESSION_TYPE_LABELS,

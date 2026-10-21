@@ -94,4 +94,21 @@ describe("Godot engine discovery", () => {
     expect(godotProjectFromCommandLine('"C:\\Godot.exe" --path "D:\\game"')).toBeUndefined();
     expect(godotProjectFromCommandLine('"C:\\Godot.exe" --editor --path relative')).toBeUndefined();
   });
+  it("discovers registered versions outside common installation locations", async () => {
+    const path = project('"4.7"');
+    const result = await discoverGodotEngine(path, { ...DEFAULT_PREFS, godotEngines: [
+      { path: "legacy", name: "Legacy", version: "4.6.2.stable" },
+      { path: "current", name: "Current", version: "4.7.2.stable" },
+    ] }, [], { candidates: [], probe: probe({ legacy: "4.6.2.stable", current: "4.7.2.stable" }) });
+    expect(result.engine?.path).toBe("current");
+  });
+  it("does not silently replace a project's unavailable or incompatible pinned engine", async () => {
+    const path = project('"4.7", "C#"');
+    const options = { candidates: ["dotnet"], probe: probe({ standard: "4.7.2.stable", dotnet: "4.7.2.stable.mono" }) };
+    for (const selected of ["missing", "standard"]) {
+      const result = await discoverGodotEngine(path, { ...DEFAULT_PREFS, godotProjectEditors: { [normalizeProjectKey(path)]: selected } }, [], options);
+      expect(result.engine).toBeUndefined();
+      expect(result.message).toContain(selected === "missing" ? "不可用" : "C#");
+    }
+  });
 });

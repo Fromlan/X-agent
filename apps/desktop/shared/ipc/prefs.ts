@@ -17,6 +17,7 @@
  */
 import { Type } from "typebox";
 import { AVAILABLE_TOOLS } from "../tools/available";
+import { GodotEngineConfigSchema, type GodotEngineConfig } from "../godot-engines";
 import {
   DEFAULT_GOAL_MAX_TOKENS,
   DEFAULT_GOAL_MAX_TURNS,
@@ -107,9 +108,11 @@ export interface ClientPrefs {
   disabledSkills: string[];
   /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
   godotEditorPath: string | null;
+  /** Managed local editor installations; path is the stable identity on Windows. */
+  godotEngines: GodotEngineConfig[];
   /** Prepare and connect the Godot editor when opening a project. */
   godotAutoConnect: boolean;
-  /** Explicit or successfully connected engine paths, keyed by normalized project path. */
+  /** Explicit project engine choices, keyed by normalized project path; absence follows the default/discovery. */
   godotProjectEditors: Record<string, string>;
   /**
    * godot-docs git branch to clone/search (e.g. stable, master, 3.6).
@@ -198,6 +201,7 @@ export const DEFAULT_PREFS: ClientPrefs = {
   deepseekWebProviderId: null,
   disabledSkills: [],
   godotEditorPath: null,
+  godotEngines: [],
   godotAutoConnect: true,
   godotProjectEditors: {},
   rightPanelOpen: false,
@@ -245,6 +249,7 @@ export const ClientPrefsSchema = Type.Object({
   deepseekWebProviderId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 256 })]),
   disabledSkills: Type.Array(Type.String()),
   godotEditorPath: Type.Union([Type.Null(), Type.String()]),
+  godotEngines: Type.Array(GodotEngineConfigSchema, { maxItems: 128 }),
   godotAutoConnect: Type.Boolean(),
   godotProjectEditors: Type.Record(Type.String(), Type.String({ minLength: 1, maxLength: 4096 })),
   rightPanelOpen: Type.Boolean(),
@@ -270,6 +275,6 @@ export const ClientPrefsSchema = Type.Object({
   // lets new presets/customs flow through without schema bumps.
 });
 
-export const ClientPrefsPatchSchema = Type.Partial(ClientPrefsSchema, {
+export const ClientPrefsPatchSchema = Type.Partial(Type.Omit(ClientPrefsSchema, ["godotEngines"]), {
   additionalProperties: false,
 });
