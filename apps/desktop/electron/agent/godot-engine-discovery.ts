@@ -123,7 +123,7 @@ export async function discoverGodotEngine(
   const seen = new Set<string>();
   const compatible = (engine: GodotEngine): boolean => !needsDotnet || /mono|dotnet/i.test(engine.version);
   const explicit = [prefs.godotProjectEditors[key],
-    ...running.filter((editor) => editor.projectPath && normalizeProjectKey(editor.projectPath) === key).map((editor) => editor.executablePath), prefs.godotEditorPath];
+    ...running.filter((editor) => editor.projectPath && normalizeProjectKey(editor.projectPath) === key).map((editor) => editor.executablePath)];
   for (const path of explicit) {
     options.signal?.throwIfAborted();
     if (!path || seen.has(normalizeProjectKey(path))) continue;
@@ -132,6 +132,17 @@ export async function discoverGodotEngine(
     if (engine && compatible(engine)) return { engine, candidates: [engine] };
   }
   const candidates: GodotEngine[] = [];
+  const global = prefs.godotEditorPath;
+  if (global && !seen.has(normalizeProjectKey(global))) {
+    options.signal?.throwIfAborted();
+    seen.add(normalizeProjectKey(global));
+    const engine = await probe(global, options.signal);
+    if (engine && compatible(engine)) {
+      // A global preference is not permission to open every project with a different minor version.
+      if (!projectVersion || engine.version.startsWith(`${projectVersion}.`)) return { engine, candidates: [engine] };
+      candidates.push(engine);
+    }
+  }
   const deadline = Date.now() + 15_000;
   for (const path of options.candidates ?? localGodotCandidates()) {
     options.signal?.throwIfAborted();

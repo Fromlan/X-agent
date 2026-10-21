@@ -46,6 +46,28 @@ describe("Godot engine discovery", () => {
     });
     expect(result.engine?.path).toBe("match");
   });
+  it("does not let an older global default bypass the project's declared version", async () => {
+    const path = project('"4.7"');
+    const result = await discoverGodotEngine(path, { ...DEFAULT_PREFS, godotEditorPath: "global" }, [], {
+      candidates: ["match"], probe: probe({ global: "4.6.2.stable", match: "4.7.0.stable" }),
+    });
+    expect(result.engine?.path).toBe("match");
+  });
+  it("keeps a mismatched global default available for manual selection without opening it", async () => {
+    const path = project('"4.7"');
+    const result = await discoverGodotEngine(path, { ...DEFAULT_PREFS, godotEditorPath: "global" }, [], {
+      candidates: [], probe: probe({ global: "4.6.2.stable" }),
+    });
+    expect(result.engine).toBeUndefined();
+    expect(result.candidates).toEqual([{ path: "global", version: "4.6.2.stable" }]);
+  });
+  it("prefers a compatible global default and respects explicit project overrides", async () => {
+    const path = project();
+    const prefs = { ...DEFAULT_PREFS, godotEditorPath: "global" };
+    const options = { candidates: ["other"], probe: probe({ global: "4.6.2.stable", other: "4.6.1.stable", project: "4.5.2.stable" }) };
+    expect((await discoverGodotEngine(path, prefs, [], options)).engine?.path).toBe("global");
+    expect((await discoverGodotEngine(path, { ...prefs, godotProjectEditors: { [normalizeProjectKey(path)]: "project" } }, [], options)).engine?.path).toBe("project");
+  });
   it("requires .NET for C# projects", async () => {
     const path = project('"4.6", "C#"');
     const result = await discoverGodotEngine(path, DEFAULT_PREFS, [], {

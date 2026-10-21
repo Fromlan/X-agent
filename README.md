@@ -45,6 +45,8 @@ X-agent 让你在同一个会话里修改 Godot 项目的脚本和场景、调�
 3. 如果 Godot 已打开但尚未加载插件，按提示启用 **X-agent RPC** 或保存后重新打开项目。确认状态为「已连接」；可在设置中关闭自动连接或手动重试。
 4. 在「设置 → 工具」勾选需要使用的 **Godot 编辑器工具**。这些工具默认关闭。
 
+![Godot 自动连接设置](docs/screenshots/godot-auto-connect.png)
+
 具体工具和连接排查见 [Godot 插件文档](packages/godot-editor-rpc/README.md)。
 
 ## 功能

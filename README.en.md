@@ -45,6 +45,8 @@ Once connected, the agent can inspect the current scene, run the project, and re
 3. If Godot was already open without the addon loaded, enable **X-agent RPC** or save and reopen the project as prompted. Wait for the connected status; automatic connection can be disabled or retried in Settings.
 4. Enable the **Godot editor tools** you need in Settings → Tools. They are off by default.
 
+![Godot automatic connection settings](docs/screenshots/godot-auto-connect.png)
+
 See the [Godot addon documentation](packages/godot-editor-rpc/README.md) for available tools and connection troubleshooting.
 
 ## Features

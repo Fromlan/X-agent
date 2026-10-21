@@ -52,6 +52,7 @@ test("Godot attaches automatically and never reports another project's editor as
     await main.locator(".settings-nav").getByRole("button", { name: "Godot", exact: true }).click();
     const automatic = main.getByRole("checkbox", { name: "打开项目时自动连接 Godot" });
     await expect(automatic).toBeChecked();
+    await main.screenshot({ path: testInfo.outputPath("godot-auto-connect-default.png") });
     await automatic.click();
     await expect(automatic).not.toBeChecked();
     expect(JSON.parse(readFileSync(join(home, ".pi", "agent", "x-agent.json"), "utf8")).godotAutoConnect).toBe(false);
