@@ -25,6 +25,8 @@ test("theme cards apply readable dark and light palettes and survive reload", as
         await expect(main.locator("body")).toHaveAttribute("data-theme", `${id}-${mode}`);
         const ratios = await main.evaluate(() => {
           const probe = document.createElement("span");
+          // Reduced-motion CSS still has a short transition; sample final colors within the same frame.
+          probe.style.setProperty("transition", "none", "important");
           document.body.append(probe);
           /** Resolve aliases in the active theme rather than reading unresolved CSS variable strings. */
           function luminance(token: string) {
