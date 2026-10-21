@@ -94,6 +94,17 @@ describe("GodotConnectionManager", () => {
     expect(context.deps.launch).not.toHaveBeenCalled();
   });
 
+  it("does not duplicate an authenticated editor when health checks fail and process discovery misses it", async () => {
+    const context = await fixture();
+    await context.attach("D:/game");
+    vi.spyOn(context.bridge, "request").mockImplementation(async (call) => ({ id: call.id, ok: false, error: "simulated ping timeout" }));
+    context.bridge.setCurrentCwd("D:/game");
+    expect(await context.manager.connect()).toMatchObject({ ok: false });
+    expect(context.deps.launch).not.toHaveBeenCalled();
+    expect(context.deps.discover).not.toHaveBeenCalled();
+    expect(context.manager.getStatus().connection?.phase).toBe("needs_reload");
+  });
+
   it("deduplicates simultaneous connection requests", async () => {
     const context = await fixture();
     context.bridge.setCurrentCwd("D:/game");

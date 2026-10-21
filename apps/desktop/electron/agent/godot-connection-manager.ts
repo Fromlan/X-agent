@@ -229,7 +229,8 @@ export class GodotConnectionManager {
     let addon = this.deps.inspect(project);
     this.publish({ addon });
 
-    if (existing || live) {
+    const authenticated = projectGodotClients(project, this.bridge.getStatus());
+    if (existing || live || authenticated.length > 0) {
       this.publish({ phase: "connecting", message: "正在等待已打开的 Godot 编辑器连接", enginePath: existing?.executablePath ?? live?.engine });
       if (await this.waitForEditor(project, signal, this.deps.attachGraceMs ?? 1800, existing?.pid ?? live?.pid)) {
         return this.connected(project, signal, existing?.executablePath ?? live?.engine);
