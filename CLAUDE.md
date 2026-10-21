@@ -52,7 +52,7 @@ PR 标题遵循 Conventional Commits。描述包含问题与结果、关联 Issu
 
 ### 6. CI 自动化
 
-`ci.yml` 监听 `main` / `master` push 和 PR，actionlint 成功后其余四个 Windows job 并行；同一 ref 的旧运行会取消。依赖更新由 [Dependabot](.github/dependabot.yml) 发起。
+`ci.yml` 监听 `main` / `master` push 和 PR，actionlint 成功后其余四个 Windows job 并行；同一 ref 的旧运行会取消。依赖更新由 [Dependabot](.github/dependabot.yml) 发起；`dependabot-review.yml` 仅发布审阅提醒，patch 更新同样须五项 CI 全绿、至少一个有效 approve 后由维护者按依赖顺序 squash 合并。
 
 `test:godot` 要求 PowerShell 的 `$env:GODOT_BIN` 指向真实 Godot 4.6.2 console 可执行文件；缺少环境明确失败。CI 的 `scripts/setup-godot.ps1` 下载固定版本并校验 SHA-256。测试使用隔离目录，不读写维护者真实的 Pi 偏好、会话或认证数据。
 

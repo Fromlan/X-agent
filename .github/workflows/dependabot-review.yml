@@ -1,0 +1,27 @@
+name: dependabot-review
+
+# Dependency updates follow the same CI and approval gates as feature PRs.
+# A reminder must never receive repository contents write permission.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: dependabot-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-reminder:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain dependency review and merge gates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR_URL" --body "Dependency updates require all five CI jobs (desktop, unit-test, e2e, godot-integration, actionlint) to pass and at least one valid approve. A maintainer then squash-merges them in dependency order. This workflow only posts reminders; patch updates follow the same review process."
