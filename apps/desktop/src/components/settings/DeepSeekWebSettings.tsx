@@ -69,13 +69,11 @@ export function DeepSeekWebSettings({ prefs, onToggleTool, onPrefsChanged, onOpe
         <h4 className="settings-block-title">DeepSeek 网络</h4>
         <button type="button" className="btn btn-ghost btn-sm settings-link-btn" onClick={onOpenProviders}>管理供应商</button>
       </div>
-      <p className="modal-hint">复用 DeepSeek 官方供应商的 API Key，可供任意聊天模型使用。默认关闭，调研与计划模式也可使用。</p>
       <div className="settings-row">
         <span className="settings-row-label">网络供应商</span>
         <SelectMenu aria-label="DeepSeek 网络供应商" value={selectedId} options={options}
           disabled={loading || saving} onChange={(id) => { void selectProvider(id); }} />
       </div>
-      {!loading && !ready && <p className="modal-hint">请先在“供应商”中添加并启用 DeepSeek 官方配置，再在此选择。</p>}
       <div className="tool-grid">
         {WEB_TOOLS.map((tool) => (
           <label key={tool} className="tool-check">
@@ -86,7 +84,6 @@ export function DeepSeekWebSettings({ prefs, onToggleTool, onPrefsChanged, onOpe
           </label>
         ))}
       </div>
-      <p className="modal-hint">搜索与抓取由 DeepSeek 按请求单独计费，未计入当前模型的 Token 费用统计。搜索词和目标网址会发送给 DeepSeek。</p>
       {error && <SettingsNotice text={error} tone="error" onDismiss={() => setError(null)} />}
     </div>
   );

@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { SelectMenu } from "../SelectMenu";
 import { SettingsNotice, useAutoClearNotice } from "../SettingsNotice";
-import { LogoPicker } from "./LogoPicker";
 import { DiagnosticsSettings } from "./DiagnosticsSettings";
+import { ThemePicker } from "./ThemePicker";
 import {
-  THEME_IDS,
-  THEME_LABELS,
   THINKING_LEVELS,
   type BashCheckResult,
   type BashLivenessResult,
@@ -13,7 +11,6 @@ import {
   type ColorMode,
   type GitCheckResult,
   type PiCliStatus,
-  type ThemeId,
   type ThinkingLevel,
 } from "@shared/ipc";
 import {
@@ -21,12 +18,10 @@ import {
   NODE_JS_DOWNLOAD_URL,
 } from "@shared/runtime-deps";
 import { useAppUpdate } from "../../hooks/useAppUpdate";
-import type { UseLogoResult } from "../../hooks/useLogo";
 
 type Props = {
   open: boolean;
   prefs: ClientPrefs;
-  logo: UseLogoResult;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
   onBashChanged?: (bash: BashCheckResult) => void;
   onGitChanged?: (git: GitCheckResult) => void;
@@ -37,7 +32,6 @@ type Props = {
 export function GeneralSettingsPage({
   open,
   prefs,
-  logo,
   onPrefsChanged,
   onBashChanged,
   onGitChanged,
@@ -127,32 +121,9 @@ export function GeneralSettingsPage({
                 <div className="settings-page-head">
                   <h3>通用</h3>
                 </div>
-                <DiagnosticsSettings open={open} />
-
                 <div className="settings-block">
-                  <h4 className="settings-block-title">外观</h4>
-                  <div className="settings-row">
-                    <span className="settings-row-label">主题</span>
-                    <SelectMenu
-                      variant="control"
-                      value={prefs.themeId}
-                      options={THEME_IDS.map((id) => ({
-                        value: id,
-                        label: THEME_LABELS[id],
-                      }))}
-                      onChange={(v) => {
-                        void (async () => {
-                          const next = await window.xAgent.prefs.set({
-                            themeId: v as ThemeId,
-                          });
-                          onPrefsChanged?.(next);
-                        })();
-                      }}
-                      aria-label="主题"
-                    />
-                  </div>
-                  <div className="settings-row">
-                    <span className="settings-row-label">外观模式</span>
+                  <div className="theme-picker-head">
+                    <h4 className="settings-block-title">外观</h4>
                     <SelectMenu
                       variant="control"
                       value={prefs.colorMode}
@@ -171,22 +142,10 @@ export function GeneralSettingsPage({
                       aria-label="外观模式"
                     />
                   </div>
+                  <ThemePicker prefs={prefs} onPrefsChanged={onPrefsChanged} />
                 </div>
 
-                <div className="settings-block">
-                  <h4 className="settings-block-title">品牌</h4>
-                  <p className="modal-hint">
-                    切换窗口图标、favicon；可上传自己的图片（PNG / JPG，
-                    ≤ 4 MB，64–4096 px）。
-                  </p>
-                  <LogoPicker
-                    list={logo.list}
-                    activeId={logo.activeId}
-                    busy={logo.loading}
-                    controller={logo}
-                    onError={setGeneralMsg}
-                  />
-                </div>
+                <DiagnosticsSettings open={open} />
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">对话</h4>
@@ -287,11 +246,6 @@ export function GeneralSettingsPage({
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">Shell</h4>
-                  <p className="modal-hint">
-                    bash 路径写入 ~/.pi/agent/settings.json（Windows 常用 Git Bash）。
-                    文件工具受项目 cwd 沙箱约束；调研/Plan 的 bash 也会拦截目录外路径。
-                    Agent 模式下 bash 仍可能访问 cwd 外，请谨慎授权。
-                  </p>
                   <div className="settings-inline-row">
                     <input
                       type="text"
@@ -348,7 +302,7 @@ export function GeneralSettingsPage({
                       type="button"
                       className="btn btn-secondary btn-sm"
                       disabled={!bash?.shellPath || bashLivenessBusy}
-                      title="跑一个 2 秒探针，区分 live / half-dead / full-dead / no-bash"
+                      title="检查 Shell 可用性"
                       onClick={async () => {
                         setBashLivenessBusy(true);
                         try {
@@ -389,24 +343,12 @@ export function GeneralSettingsPage({
                         </span>
                       </strong>
                       <span className="bash-liveness-detail">{bashLiveness.message}</span>
-                      {bashLiveness.kind === "half_dead" && (
-                        <span className="bash-liveness-detail">
-                          半死状态可继续用：写文件、git commit 这类有副作用的命令仍能成功。
-                          AI 看不到输出时，请用「文件副作用」验证（命令写文件 → read 工具读文件确认）。
-                        </span>
-                      )}
-                      {bashLiveness.kind === "full_dead" && (
-                        <span className="bash-liveness-detail">
-                          建议：重启 X-agent，或重新指定 bash 路径。
-                        </span>
-                      )}
                     </div>
                   )}
                 </div>
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">Git</h4>
-                  <p className="modal-hint">工作区检查点需要 git。</p>
                   <div className="settings-inline-row">
                     <input
                       type="text"
@@ -444,14 +386,6 @@ export function GeneralSettingsPage({
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">认证</h4>
-                  <p className="modal-hint">
-                    Pi CLI /login，或在「供应商」配置 API Key。
-                    {piCli && !piCli.ok
-                      ? piCli.canInstall
-                        ? " 未检测到 Pi CLI，可一键安装。"
-                        : " 需先安装 Node.js 22+（含 npm）。"
-                      : null}
-                  </p>
                   <div className="settings-inline-row">
                     {piCli && !piCli.ok && !piCli.canInstall && (
                       <button
@@ -527,9 +461,8 @@ export function GeneralSettingsPage({
 
                 <div className="settings-block">
                   <h4 className="settings-block-title">更新</h4>
-                  <p className="modal-hint">
-                    {updateStatus?.message ??
-                      "安装版会静默检查更新；失败可打开 Releases。"}
+                  {updateStatus && <p className="modal-hint" role="status">
+                    {updateStatus.message}
                     {updateStatus?.version
                       ? `（当前目标：${updateStatus.version}）`
                       : ""}
@@ -537,7 +470,7 @@ export function GeneralSettingsPage({
                     updateStatus.downloading
                       ? ` ${updateStatus.progress}%`
                       : ""}
-                  </p>
+                  </p>}
                   <div className="settings-inline-row">
                     <button
                       type="button"

@@ -21,7 +21,6 @@ import { GeneralSettingsPage } from "./settings/GeneralSettingsPage";
 import { ToolsSettingsPage } from "./settings/ToolsSettingsPage";
 import { GodotSettingsPage } from "./settings/GodotSettingsPage";
 import { ProvidersSettingsPage } from "./settings/ProvidersSettingsPage";
-import type { UseLogoResult } from "../hooks/useLogo";
 
 export type SettingsTab =
   | "general"
@@ -35,7 +34,6 @@ interface Props {
   open: boolean;
   prefs: ClientPrefs;
   cwd: string | null;
-  logo: UseLogoResult;
   onClose: () => void;
   onToggleTool: (tool: string) => void;
   /** When true, tool whitelist changes warn about prefix-cache invalidation. */
@@ -53,7 +51,6 @@ export function SettingsPanel({
   open,
   prefs,
   cwd,
-  logo,
   onClose,
   onToggleTool,
   hasActiveSession = false,
@@ -118,7 +115,7 @@ export function SettingsPanel({
       >
         <div className="modal-head">
           <h2>设置</h2>
-          <button type="button" className="btn btn-ghost btn-icon" onClick={onClose}>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="关闭设置" title="关闭设置" onClick={onClose}>
             <X size={14} />
           </button>
         </div>
@@ -156,7 +153,6 @@ export function SettingsPanel({
               <GeneralSettingsPage
                 open={open && tab === "general"}
                 prefs={prefs}
-                logo={logo}
                 onPrefsChanged={onPrefsChanged}
                 onBashChanged={onBashChanged}
                 onGitChanged={onGitChanged}

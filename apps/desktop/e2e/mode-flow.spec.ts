@@ -1,64 +1,30 @@
-/**
- * E2E 契约 —— 打开临时项目后 Plan 模式被启用 + 状态切换可由用户操作。
- * 这是 mode-switch.spec.ts 的扩展：先打开项目，再确认模式切换 + restore cwd 关闭。
- */
+/** Project lifecycle enables the picker and preserves Plan / Ask state across the IPC boundary. */
 import { test, expect } from "@playwright/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchApp } from "./helpers";
 
-test.describe.configure({ mode: "serial" });
-
-test("打开项目后模式药丸 enable/disabled 状态切换", async () => {
-  const tmp = mkdtempSync(join(tmpdir(), "xagent-e2e-proj-"));
+test("打开与关闭项目时模式菜单禁用状态保持一致", async () => {
+  const project = mkdtempSync(join(tmpdir(), "xagent-e2e-proj-"));
   const { app, main } = await launchApp();
   try {
-    await expect(main.locator('[data-mode="plan"]')).toBeDisabled();
-
-    await main.evaluate(async (cwd) => {
-      const res = await window.xAgent.workspace.open(cwd, "new");
-      if (!res.ok) throw new Error(res.error ?? "openProject failed");
-    }, tmp);
-
-    await expect(main.locator('[data-mode="plan"]')).toBeEnabled();
-
-    // 默认是 agent 模式
-    await expect(main.locator('[data-mode="agent"]')).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-
-    // 切到 plan
-    await main.locator('[data-mode="plan"]').click();
-    await expect(main.locator('[data-mode="plan"]')).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect(main.locator('[data-mode="agent"]')).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-
-    // 切到 ask
-    await main.locator('[data-mode="ask"]').click();
-    await expect(main.locator('[data-mode="ask"]')).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect(main.locator('[data-mode="plan"]')).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-
-    // 切换后通过 IPC 读 mode 状态与 UI 一致
-    const mode = await main.evaluate(async () => {
-      return window.xAgent.plan.getMode();
-    });
-    expect(mode.mode).toBe("ask");
+    const picker = main.getByRole("button", { name: "会话模式", exact: true });
+    await expect(picker).toBeDisabled();
+    expect((await main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new"), project)).ok).toBe(true);
+    await expect(picker).toBeEnabled();
+    await expect(main.locator(".composer-mode-select")).toHaveAttribute("data-mode", "agent");
+    for (const [label, mode] of [["计划", "plan"], ["调研", "ask"]]) {
+      await picker.click();
+      await main.getByRole("option", { name: label, exact: true }).click();
+      await expect(main.locator(".composer-mode-select")).toHaveAttribute("data-mode", mode);
+      await expect.poll(() => main.evaluate(async () => (await window.xAgent.plan.getMode()).mode)).toBe(mode);
+    }
+    await main.evaluate(() => window.xAgent.workspace.close());
+    await expect(picker).toBeDisabled();
   } finally {
     await main.evaluate(() => window.xAgent.workspace.close()).catch(() => {});
     await app.close();
-    rmSync(tmp, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
   }
 });

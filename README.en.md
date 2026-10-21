@@ -104,7 +104,6 @@ Switch to **Goal mode** → set a completion condition (e.g. "add combo counter 
 |---|---|---|
 | **🎯 Design session type** | 0.5.5 | Writes hard-confined to `<cwd>/game-design/`, warm theme UI |
 | **🛠 5 preinstalled design skills** | 0.5.5 | Initiation / process / systems / numerical / core loop, ready to use |
-| **🎨 8 built-in logos + custom upload** | 0.5.5 | Settings → General → Brand (Neon Cyber / Lava Burn / …) |
 | **🎨 v1.1 elevation design language** | 0.5.4 | Composer as the single main element; chrome steps back |
 | **⚡ Diff display** | 0.5.3 | `+/-`-colored diff before rewind, with `+N` / `-N` stats |
 | **🔮 thinking-orbs status animation** | 0.5.2 | Particle-orbit animation while running, not a spinner |
@@ -136,7 +135,7 @@ Full changelog: [`CHANGELOG.md`](CHANGELOG.md).
 
 | Section | Contents |
 |---|---|
-| General | Theme, default Thinking, bash path, Pi login, auto-update, **Brand (logo selector)** |
+| General | Graphite / Mist / Dusk / Sand / Sage / High Contrast theme previews and dark/light modes, default Thinking, bash path, Pi login, auto-update |
 | Providers | Model profiles, import Pi / cc-switch configs, Thinking clamp |
 | Usage | Local per-day / per-model usage summary |
 | Tools | Built-in / Godot editor / Godot docs tool allowlist; active in Agent / Goal modes |
@@ -155,7 +154,6 @@ App data lives under `~/.pi/agent/`; **shared** with Pi CLI: `auth.json` / `mode
 | `x-agent/sessions/` | App sessions (separate from Pi CLI's) |
 | `x-agent/checkpoints/` | Shadow Git checkpoints (per project, **does not touch your `.git`**) |
 | `x-agent/plans/` / `x-agent/goals/` | Plan files / Goal journals |
-| `x-agent-logos/` | Custom brand logos (UUID filenames, **do not edit outside the app**) |
 | `x-agent-{providers,packages,usage,godot-rpc}.json` | Profiles / install records / usage / RPC endpoint |
 
 Full list: [`CLAUDE.md` §持久化与隔离](CLAUDE.md)

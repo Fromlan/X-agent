@@ -171,7 +171,7 @@ export function ToolsTab({
       <div className="rp-section-label rp-tools-calls-label">本回合调用</div>
       {tools.length === 0 ? (
         <div className="rp-empty">
-          还没有工具调用。Agent 运行后会出现在这里。
+          暂无工具调用
         </div>
       ) : (
         <div className="rp-tools-calls">

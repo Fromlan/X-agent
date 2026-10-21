@@ -1,22 +1,19 @@
 /**
  * Thin entry: Electron app lifecycle only. 主题 E #62 收口.
  *
- * 7 个 module 接管原 388 行 god:
+ * 启动逻辑由以下模块承担:
  * - main-debug: AUMID + app icon + DevTools 快捷键
  * - main-splash: splash 窗口生命周期
- * - main-protocol: x-agent-logos:// 自定义协议
  * - main-nav-guard: 窗口导航守卫 + openExternalHttpUrl
  * - boot/main-window: BrowserWindow 构造 + nav/debug/focus 三件副作用
- * - boot/app-init: bootApp (动态 import app-runtime + apply startup logo)
+ * - boot/app-init: bootApp (动态 import app-runtime + create main window)
  *
  * 本文件只剩单实例锁 + app event handlers + 6 段 wiring, < 100 行.
  */
 import { app, BrowserWindow, Menu, dialog } from "electron";
 import { installProcessDiagnostics, recordDiagnostic } from "./boot/diagnostics";
-import { getCachedPrefs } from "./agent/prefs";
 import { appIcon, hasDebugArgument, enableDebugMode, setWindowsAumidIfNeeded } from "./main-debug";
 import { createRevealMain, createSplash, destroySplashImmediate } from "./main-splash";
-import { registerLogoProtocolHandler, registerLogoProtocolPrivileges } from "./main-protocol";
 import { openExternalHttpUrl } from "./main-nav-guard";
 import { createMainWindow } from "./boot/main-window";
 import { bootApp, getRuntime } from "./boot/app-init";
@@ -49,7 +46,6 @@ function bootDeps() {
     getMainWindow: () => mainWindow,
     revealMain,
     openExternalHttpUrl,
-    getCachedPrefs,
     createMainWindow: (opts: {
       getMainWindow: () => BrowserWindow | null;
       revealMain: () => void;
@@ -63,11 +59,8 @@ function bootDeps() {
   };
 }
 
-// Windows taskbar 用 AUMID 识别应用并缓存图标. 设置稳定 AUMID 之后,
-// 运行时 BrowserWindow.setIcon 才会被 taskbar 接受, 否则系统会一直用
-// 打包时的 .ico (electron-builder 烘焙的那张).
+// Keep the stable application identity associated with the default packaged icon.
 setWindowsAumidIfNeeded();
-registerLogoProtocolPrivileges();
 
 app.whenReady().then(() => {
   const gotLock = app.requestSingleInstanceLock();
@@ -88,7 +81,6 @@ app.whenReady().then(() => {
   });
 
   Menu.setApplicationMenu(null);
-  registerLogoProtocolHandler();
 
   createSplash(appIcon);
   setImmediate(() => void bootApp(bootDeps()));

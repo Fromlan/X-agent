@@ -75,16 +75,6 @@ const onUpdateStatus = (handler: (status: AppUpdateStatus) => void) => {
   };
 };
 
-const onLogoChanged = (handler: (payload: { id: string }) => void) => {
-  const listener = (_: Electron.IpcRendererEvent, payload: { id: string }) => {
-    handler(payload);
-  };
-  ipcRenderer.on(IPC_EVENTS.logoChanged, listener);
-  return () => {
-    ipcRenderer.removeListener(IPC_EVENTS.logoChanged, listener);
-  };
-};
-
 const exposed: XAgentApi = {
   workspace: {
     open: api.openProject,
@@ -96,6 +86,8 @@ const exposed: XAgentApi = {
     deleteProjectSessions: api.deleteProjectSessions,
     renameSession: api.renameSession,
     getStatus: api.getStatus,
+    getWindowInfo: api.getWindowInfo,
+    controlWindow: api.controlWindow,
   },
   turn: {
     prompt: api.prompt,
@@ -168,12 +160,6 @@ const exposed: XAgentApi = {
     download: api.downloadUpdate,
     install: api.installUpdate,
     onStatus: onUpdateStatus,
-  },
-  logo: {
-    listPresets: api.logoListPresets,
-    uploadCustom: api.logoUploadCustom,
-    clearCustom: api.logoClearCustom,
-    onChanged: onLogoChanged,
   },
   files: {
     list: api.listProjectDir,

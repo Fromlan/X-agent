@@ -688,7 +688,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
           <div className="provider-list">
             {profiles.length === 0 && (
               <div className="session-empty">
-                暂无订阅档案。可点击「导入已有」从 Pi / cc-switch 同步，或新建 / 从预设添加。
+                暂无供应商
               </div>
             )}
             {profiles.map((p) => {
@@ -861,10 +861,6 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                 </button>
               </div>
             </div>
-            <p className="modal-hint">
-              写入 models.json 的 contextWindow；留空默认 128k。输入 chip 决定
-              是否支持 image —— 未勾 image 时 composer 会挡住截图附件。
-            </p>
             <div className="models-table-wrap">
               <table className="models-table">
                 <thead>

@@ -14,7 +14,7 @@
  *     → ./ipc/{protocol,facades,registries}.ts
  *
  * 2026-09-08 (issue #2 flat-API 收尾): 删 XAgentApiFlat / FlatInvokeApi /
- * DELETED_FLAT_KEYS / DeletedFlatKey re-export. XAgentApi 接口只剩 14 个
+ * DELETED_FLAT_KEYS / DeletedFlatKey re-export. XAgentApi 接口只剩 13 个
  * facade + onEvent + notifyAppReady. 加 5 个新 facade: FilesApi / ProviderApi /
  * PluginApi / PackageApi / UsageApi.
  *
@@ -62,7 +62,6 @@ export type {
   SessionApi,
   PrefsApi,
   AppReportApi,
-  LogoApi,
   GodotApi,
   UpdatesApi,
   FilesApi,
@@ -100,6 +99,8 @@ export type {
   UsageDayBucket,
   UsageSummary,
   SessionInfo,
+  AppWindowAction,
+  AppWindowInfo,
   BashCheckResult,
   BashLivenessKind,
   BashLivenessResult,
@@ -166,14 +167,6 @@ export type {
   PrefsRecoveryNotice,
   StartupIssueStage,
   StartupIssue,
-  ClientLogoId,
-  LogoPreset,
-  CustomLogo,
-  LogoList,
-  LogoUploadError,
-  LogoUploadSuccess,
-  LogoUploadResult,
-  LogoClearResult,
   OpenProjectMode,
 } from "./ipc/types";
 export {

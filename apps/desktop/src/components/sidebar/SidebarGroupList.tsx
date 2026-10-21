@@ -1,10 +1,12 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { sidebarSessionGroups } from "../../lib/sidebar-sessions";
+import type { SessionType } from "@shared/session-type";
 import type { SessionInfo } from "@shared/ipc";
 import { SidebarItem } from "./SidebarItem";
 import type { SidebarState } from "./useSidebarState";
 
 interface Props {
   state: SidebarState;
+  selectedType: SessionType;
   activeSessionId: string | null;
   agentStatus: import("@shared/ipc").AgentStatus;
   locked: boolean;
@@ -24,6 +26,7 @@ interface Group {
 
 export function SidebarGroupList({
   state,
+  selectedType,
   activeSessionId,
   agentStatus,
   locked,
@@ -33,8 +36,6 @@ export function SidebarGroupList({
 }: Props) {
   const {
     groups,
-    collapsed,
-    toggleGroup,
     editingPath,
     draftName,
     setDraftName,
@@ -43,7 +44,6 @@ export function SidebarGroupList({
     menu,
     activeKey,
     openSessionMenu,
-    openProjectMenu,
     commitEdit,
     cancelEdit,
     onEditKeyDown,
@@ -110,87 +110,56 @@ export function SidebarGroupList({
     );
   }
 
+  const dateGroups = sidebarSessionGroups(groups.flatMap((group) => group.sessions), activeKey || null, selectedType);
+
+  /** Keep rename and context-menu behavior shared across calendar groups. */
+  const renderSession = (s: SessionInfo) => {
+    const active = s.id === activeSessionId;
+    const editing = editingPath === s.path;
+    const sessionMenuTarget =
+      menu?.kind === "session" && menu.session.path === s.path;
+    return (
+      <SidebarItem
+        key={s.path}
+        session={s}
+        active={active}
+        editing={editing}
+        sessionMenuTarget={Boolean(sessionMenuTarget)}
+        agentStatus={active ? agentStatus : "idle"}
+        renaming={renaming}
+        draftName={draftName}
+        setDraftName={setDraftName}
+        locked={locked}
+        inputRef={inputRef}
+        onCommit={() => void commitEdit(s.path)}
+        onCancel={cancelEdit}
+        onResume={onResume}
+        onContextMenu={(e) => openSessionMenu(s, e)}
+        onEditKeyDown={(e) => onEditKeyDown(e, s.path)}
+        onBlur={(e) => {
+          // 焦点移到列表内（如点击其他会话项）会触发 onResume 切换，
+          // 此处跳过提交避免 120ms 后提交过期编辑；焦点离开列表才提交。
+          const t = e.relatedTarget as HTMLElement | null;
+          if (t && t.closest(".session-list")) return;
+          window.setTimeout(() => {
+            if (editingPath === s.path && !renaming) {
+              void commitEdit(s.path);
+            }
+          }, 120);
+        }}
+      />
+    );
+  };
+
   return (
     <ul className="session-list" ref={listRef}>
-      {groups.map((group: Group) => {
-        const expanded = !collapsed.has(group.key);
-        const isActiveProject = group.key === activeKey && activeKey !== "";
-        const projectMenuTarget =
-          menu?.kind === "project" && menu.key === group.key;
-        return (
-          <li key={group.key || "__unknown__"} className="project-group">
-            <div
-              className={[
-                "project-group-header",
-                isActiveProject ? "is-active-project" : "",
-                projectMenuTarget ? "is-menu-target" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onContextMenu={(e) => openProjectMenu(group, e)}
-            >
-              <button
-                type="button"
-                className="project-group-toggle"
-                onClick={() => toggleGroup(group.key)}
-                title={group.cwd || "未知项目"}
-                aria-expanded={expanded}
-              >
-                {expanded ? (
-                  <ChevronDown size={13} />
-                ) : (
-                  <ChevronRight size={13} />
-                )}
-                <span className="project-group-label">{group.label}</span>
-                <span className="project-group-count tabular">
-                  {group.sessions.length}
-                </span>
-              </button>
-            </div>
-            {expanded && (
-              <ul className="project-group-sessions">
-                {group.sessions.map((s) => {
-                  const active = s.id === activeSessionId;
-                  const editing = editingPath === s.path;
-                  const sessionMenuTarget =
-                    menu?.kind === "session" && menu.session.path === s.path;
-                  return (
-                    <SidebarItem
-                      key={s.path}
-                      session={s}
-                      active={active}
-                      editing={editing}
-                      sessionMenuTarget={Boolean(sessionMenuTarget)}
-                      agentStatus={active ? agentStatus : "idle"}
-                      renaming={renaming}
-                      draftName={draftName}
-                      setDraftName={setDraftName}
-                      locked={locked}
-                      inputRef={inputRef}
-                      onCommit={() => void commitEdit(s.path)}
-                      onCancel={cancelEdit}
-                      onResume={onResume}
-                      onContextMenu={(e) => openSessionMenu(s, e)}
-                      onEditKeyDown={(e) => onEditKeyDown(e, s.path)}
-                      onBlur={(e) => {
-                        // 焦点移到列表内（如点击其他会话项）会触发 onResume 切换，
-                        // 此处跳过提交避免 120ms 后提交过期编辑；焦点离开列表才提交。
-                        const t = e.relatedTarget as HTMLElement | null;
-                        if (t && t.closest(".session-list")) return;
-                        window.setTimeout(() => {
-                          if (editingPath === s.path && !renaming) {
-                            void commitEdit(s.path);
-                          }
-                        }, 120);
-                      }}
-                    />
-                  );
-                })}
-              </ul>
-            )}
-          </li>
-        );
-      })}
+      {dateGroups.length === 0 && <li className="session-empty">暂无{selectedType === "code" ? "代码" : "策划"}会话</li>}
+      {dateGroups.map((group) => (
+        <li key={group.label} className="session-date-group">
+          <div className="session-date-label">{group.label}</div>
+          <ul className="date-session-list">{group.sessions.map(renderSession)}</ul>
+        </li>
+      ))}
     </ul>
   );
 }

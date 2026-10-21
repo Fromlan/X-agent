@@ -14,7 +14,7 @@
 | **会话自动标题** | 首轮结束后确保会话有标题（模型摘要或本地截断） | `session-title.ts`（`ensureSessionTitle`） |
 | **项目侧栏身份** | 按项目 key 分组 / 隐藏 / 显示名 / 删除后回退会话 | `shared/project-path.ts`、`group-sessions.ts`、`useWorkspaceSession.ts` |
 | **Cwd 路径沙箱** | 路径段与真实目标双重检查；未创建文件解析最近存在父目录；拒绝链接越界，但不提供校验后替换的原子保证 | `electron/agent/cwd-sandbox.ts` |
-| **工作区 / 回合门面** | `window.xAgent` 暴露 14 个分面，调用按功能归属；扁平 IPC 方法已移除。具体方法由 `shared/ipc-invoke-map.ts` 定义，preload 负责映射 | `shared/ipc-invoke-map.ts`、`preload.ts`；handler 由 `register-ipc-handlers.ts` 组合 |
+| **工作区 / 回合门面** | `window.xAgent` 暴露 13 个分面，调用按功能归属；扁平 IPC 方法已移除。具体方法由 `shared/ipc-invoke-map.ts` 定义，preload 负责映射 | `shared/ipc-invoke-map.ts`、`preload.ts`；handler 由 `register-ipc-handlers.ts` 组合 |
 | **工作区生命周期** | open / resume / dispose / createSession 编排 | `session-lifecycle.ts`；`SessionHost` 组合壳转发 |
 | **计划会话** | 右栏计划 CRUD、脏保存、执行计划、自动打开 Plan 页 | `usePlanSession.ts`、`PlanTab.tsx` |
 | **应用更新 UX** | 打包版检查 / 下载 / 安装 / 横幅 dismiss | `useAppUpdate.ts`；主进程 `auto-updater.ts` + `update-feed.ts`；IPC `register-update-ipc.ts` |

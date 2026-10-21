@@ -98,7 +98,10 @@ export function ToolCard({
 
   const stateText = done ? (isError ? "失败" : "完成") : "执行中…";
   const hasBody = Boolean(argsText || result || skill);
-  const titleLabel = skill ? `技能 · ${skill.skillName}` : toolName;
+  const labels: Record<string, string> = { read: "读取", edit: "更新", write: "写入", bash: "执行命令" };
+  const titleLabel = skill ? `技能 · ${skill.skillName}` : labels[toolName] ?? toolName;
+  const record = args && typeof args === "object" ? args as Record<string, unknown> : null;
+  const target = record?.path ?? record?.file_path ?? (toolName === "bash" ? record?.command : null);
   const Icon = skill ? BookOpen : Wrench;
 
   return (
@@ -122,6 +125,7 @@ export function ToolCard({
           )}
           <Icon size={12} />
           {titleLabel}
+          {!skill && typeof target === "string" && <span className="tool-target" title={target}>{target}</span>}
         </span>
         <span className="tool-state" title={stateText}>
           {onOpenInPanel && (

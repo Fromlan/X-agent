@@ -42,7 +42,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 ## 架构约束（改代码前必读）
 
 - 三进程边界：Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索**全在主进程**；renderer 只能经 `window.xAgent.*` 调用，**禁止直接访问 Node API**（`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**——preload 构建为 CJS 单文件，`electron.vite.config.ts` 中关闭 externalizeDeps，仅依赖 electron 受限 API；改 preload 依赖时不得引入需运行时 require 的包）。
-- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 注册表）+ `shared/ipc-invoke-map.ts`（签名与分面，DTO 经 `shared/ipc.ts` 导出）+ `electron/ipc/register-*-ipc.ts`（handler，由 `register-ipc-handlers.ts` 组合）+ `electron/preload.ts`（bridge）。`window.xAgent` 暴露 14 个分面：`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `logo` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`；扁平 IPC 方法已移除，新增调用必须归入分面。`onEvent` / `notifyAppReady` 是事件订阅与启动通知。
+- **新增/改名 IPC 必须同步四处**：`shared/ipc-channels.ts`（channel 注册表）+ `shared/ipc-invoke-map.ts`（签名与分面，DTO 经 `shared/ipc.ts` 导出）+ `electron/ipc/register-*-ipc.ts`（handler，由 `register-ipc-handlers.ts` 组合）+ `electron/preload.ts`（bridge）。`window.xAgent` 暴露 13 个分面：`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`；扁平 IPC 方法已移除，新增调用必须归入分面。`onEvent` / `notifyAppReady` 是事件订阅与启动通知。
 - **全部 IPC handler 经统一 sender 校验**（`electron/ipc/register-ipc.ts` 的 `handle()` 包装器：主窗口 webContents + frame origin 匹配），新增 handler 无需额外处理；主进程对外发起的网络请求（模型探测等）须过 `external-url.ts` 的 URL 校验（仅公网 http(s)）。
 - 上下文组装由 Pi SDK（`@earendil-works/pi-coding-agent`）完成，**不要手写 system prompt**。
 - 别名：renderer 用 `@/` → `src`、`@shared/` → `shared`；Node 侧仅 `@shared/`。`main.ts` 是薄入口，重逻辑动态 import `app-runtime`。

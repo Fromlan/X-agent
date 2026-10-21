@@ -314,6 +314,7 @@ export const AssistantBubble = memo(function AssistantBubble(
     <div
       className={`bubble bubble-text${props.item.isError ? " is-error" : ""}`}
     >
+      <div className="assistant-identity">X-agent</div>
       {props.canAct && props.item.done && userEntryId && (
         <div className="bubble-head">
           <div className="bubble-actions">

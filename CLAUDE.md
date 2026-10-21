@@ -188,7 +188,7 @@ Electron 三进程边界：
 
 - `electron/main.ts`：薄启动入口，动态加载 `app-runtime.ts`；runtime 持有 `SessionHost`、`GodotRpcBridge`、`AppAutoUpdater`，经 `register-ipc-handlers.ts` 注册 IPC。Pi SDK / 文件系统 / 会话 / 模型 / 供应商 / 插件 / 用量 / 文档检索均在主进程。
 - `electron/preload.ts`：`contextBridge` 暴露 `window.xAgent`。`contextIsolation` 开、`nodeIntegration` 关、主窗口 **`sandbox: true`**（preload 为 CJS 单文件，仅依赖 electron 受限 API）；新增能力需同步改 `shared/ipc-channels.ts`、`shared/ipc-invoke-map.ts` / DTO、对应 IPC handler 与 preload。
-- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。所有 IPC 调用走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `logo` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`）；扁平 IPC 方法已移除。
+- `src/`：React renderer。`App.tsx` 组合顶栏、侧栏、聊天、可选右栏、设置弹窗、撤回确认。不直接依赖 Pi SDK。所有 IPC 调用走分面（`workspace` / `turn` / `plan` / `session` / `prefs` / `appReport` / `godot` / `updates` / `files` / `provider` / `plugin` / `package` / `usage`）；扁平 IPC 方法已移除。
 - `shared/ipc.ts`：跨进程协议源；`shared/godot-rpc.ts`：Godot TCP 协议。
 
 ### UI 壳层
@@ -285,7 +285,7 @@ Electron 三进程边界：
 
 - 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 切换主题族与明暗模式
 - Surface / Card / Card-elev / Chrome + Board 与语义色 token；组件与 JS 不硬编码色值
-- Inter + JetBrains Mono，约 13px；1px Board 边框；主元素与交互阴影走主题 token，`contrast` 禁用阴影
+- Inter + JetBrains Mono，全局 14px，助手正文和输入文字 15px；1px Board 边框；主元素与交互阴影走主题 token，`contrast` 禁用阴影
 - Pill 交互几何（按钮 / chip / 单行 input）；容器 12px；多行 8px
 - 图标用 `lucide-react`，不用 emoji 充当 UI 图标
 - focus 用 `--focus-ring-soft`；尊重 `prefers-reduced-motion`

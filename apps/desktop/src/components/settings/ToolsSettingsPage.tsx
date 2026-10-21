@@ -129,7 +129,6 @@ export function ToolsSettingsPage({
             </button>
           </div>
         </div>
-        <p className="modal-hint">需 RPC 已连接；默认关</p>
         <div className="tool-grid">
           {GODOT_TOOLS.map((tool) => {
             const checked = prefs.tools.includes(tool);
