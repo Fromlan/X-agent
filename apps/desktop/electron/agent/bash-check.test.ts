@@ -8,10 +8,10 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 const io = vi.hoisted(() => ({ execute: vi.fn() }));
 vi.mock("node:child_process", async (original) => ({ ...await original<typeof import("node:child_process")>(), execFile: io.execute }));
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyBashShellPath, checkBash } from "./bash-check";
+import { applyBashShellPath, checkBash, ensureBashConfigured, findSuggestedBash } from "./bash-check";
 import { setAgentDirOverrideForTests } from "./prefs";
 import { readPiSettingsSync } from "./pi-settings";
 
@@ -22,6 +22,9 @@ beforeEach(() => {
   io.execute.mockReset();
   io.execute.mockImplementation((_target, _args, _opts, callback) => callback(null, { stdout: "not bash", stderr: "" }));
   agentHome = mkdtempSync(join(tmpdir(), "xagent-bash-test-"));
+  vi.stubEnv("ProgramFiles", join(agentHome, "program-files"));
+  vi.stubEnv("ProgramFiles(x86)", join(agentHome, "program-files-x86"));
+  vi.stubEnv("LOCALAPPDATA", join(agentHome, "local-app-data"));
   setAgentDirOverrideForTests(agentHome);
 });
 
@@ -131,7 +134,136 @@ function isInTrustedDir(absPath: string): boolean {
   );
 }
 
+/** Reproduce Git installed outside Program Files with only its cmd directory on PATH. */
+function makePortableGit(): { cmd: string; bash: string } {
+  const root = join(agentHome, "portable-git");
+  const cmd = join(root, "cmd");
+  const bin = join(root, "bin");
+  mkdirSync(cmd, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(cmd, "git.exe"), "git fixture");
+  const bash = join(bin, "bash.exe");
+  writeFileSync(bash, "bash fixture");
+  io.execute.mockImplementation((target, _args, _opts, callback) => callback(null, {
+    stdout: target === bash ? "GNU bash, version 5.2" : "not bash",
+    stderr: "",
+  }));
+  vi.stubEnv("PATH", cmd);
+  return { cmd, bash };
+}
+
+describe("Windows Bash discovery", () => {
+  it.skipIf(process.platform !== "win32")("finds Git Bash beside git.exe when bash itself is absent from PATH", async () => {
+    const git = makePortableGit();
+    expect(await findSuggestedBash()).toBe(git.bash);
+  });
+
+  it.skipIf(process.platform !== "win32")("rejects a broken default installation and keeps looking for a working Bash", async () => {
+    const git = makePortableGit();
+    const brokenBin = join(process.env.ProgramFiles!, "Git", "bin");
+    mkdirSync(brokenBin, { recursive: true });
+    writeFileSync(join(brokenBin, "bash.exe"), "not executable Bash");
+    expect(await findSuggestedBash()).toBe(git.bash);
+  });
+
+  it.skipIf(process.platform !== "win32")("finds registered Git installations even when Git is absent from PATH", async () => {
+    const git = makePortableGit();
+    vi.stubEnv("PATH", "");
+    io.execute.mockImplementation((target, args, _opts, callback) => callback(null, {
+      stdout: args[0] === "query"
+        ? `\r\nHKEY_CURRENT_USER\\Software\\GitForWindows\r\n    InstallPath    REG_SZ    ${join(git.cmd, "..")}\r\n`
+        : target === git.bash ? "GNU bash, version 5.2" : "not bash",
+      stderr: "",
+    }));
+    expect(await findSuggestedBash()).toBe(git.bash);
+  });
+});
+
+describe("startup Bash configuration", () => {
+  it.skipIf(process.platform !== "win32")("configures discovered Git Bash and preserves other Pi settings", async () => {
+    const git = makePortableGit();
+    const settings = { defaultProvider: "keep", packages: ["npm:existing"] };
+    writeFileSync(join(agentHome, "settings.json"), JSON.stringify(settings));
+    expect(await ensureBashConfigured()).toMatchObject({ ok: true, shellPath: git.bash });
+    expect(readPiSettingsSync()).toEqual({ ...settings, shellPath: git.bash });
+    expect((await checkBash()).message).not.toContain("可写入");
+  });
+
+  it.skipIf(process.platform !== "win32")("creates settings on first launch and repairs broken or deleted configured paths", async () => {
+    const git = makePortableGit();
+    expect((await ensureBashConfigured()).ok).toBe(true);
+    expect(readPiSettingsSync().shellPath).toBe(git.bash);
+    for (const shellPath of [makeFakeBash("not bash"), join(agentHome, "removed.exe")]) {
+      writeFileSync(join(agentHome, "settings.json"), JSON.stringify({ shellPath, preserved: true }));
+      expect((await ensureBashConfigured()).ok).toBe(true);
+      expect(readPiSettingsSync()).toEqual({ shellPath: git.bash, preserved: true });
+    }
+  });
+
+  it.skipIf(process.platform !== "win32")("keeps an existing valid custom shell and never rewrites its settings", async () => {
+    const git = makePortableGit();
+    const configured = makeFakeBash("GNU bash, version 5.2");
+    io.execute.mockImplementation((_target, _args, _opts, callback) => callback(null, { stdout: "GNU bash, version 5.2", stderr: "" }));
+    const raw = `${JSON.stringify({ shellPath: configured, preserved: true })}\n`;
+    writeFileSync(join(agentHome, "settings.json"), raw);
+    expect(await ensureBashConfigured()).toMatchObject({ ok: true, shellPath: configured });
+    expect(await ensureBashConfigured()).toMatchObject({ ok: true, shellPath: configured });
+    expect(readFileSync(join(agentHome, "settings.json"), "utf8")).toBe(raw);
+    expect(configured).not.toBe(git.bash);
+  });
+
+  it("does not create settings if no executable passes verification", async () => {
+    expect(await ensureBashConfigured()).toMatchObject({ ok: false, suggestedShellPath: null });
+    expect(existsSync(join(agentHome, "settings.json"))).toBe(false);
+  });
+
+  it.each(['{"shellPath":', '[]', 'null'])("preserves malformed settings: %s", async (raw) => {
+    writeFileSync(join(agentHome, "settings.json"), raw);
+    await expect(ensureBashConfigured()).rejects.toThrow(/配置/);
+    expect(readFileSync(join(agentHome, "settings.json"), "utf8")).toBe(raw);
+    expect(await checkBash()).toMatchObject({ ok: false, suggestedShellPath: null });
+  });
+});
+
 describe("checkBash", () => {
+  it.skipIf(process.platform !== "win32")("suggests a working replacement for a broken configured shell without rewriting settings", async () => {
+    const git = makePortableGit();
+    const broken = makeFakeBash("not bash");
+    const settings = { shellPath: broken, preserved: "keep" };
+    writeFileSync(join(agentHome, "settings.json"), JSON.stringify(settings));
+
+    const status = await checkBash();
+    // Pi still uses the configured shell until the user applies the replacement.
+    expect(status.ok).toBe(false);
+    expect(status.shellPath).toBeNull();
+    expect(status.suggestedShellPath).toBe(git.bash);
+    expect(readPiSettingsSync()).toEqual(settings);
+
+    expect((await applyBashShellPath(status.suggestedShellPath!)).ok).toBe(true);
+    expect(await checkBash()).toMatchObject({ ok: true, shellPath: git.bash });
+    expect(readPiSettingsSync()).toEqual({ ...settings, shellPath: git.bash });
+  });
+
+  it.skipIf(process.platform !== "win32")("does not report a deleted configured shell as ready before replacement is applied", async () => {
+    const git = makePortableGit();
+    writeFileSync(join(agentHome, "settings.json"), JSON.stringify({ shellPath: join(agentHome, "removed.exe") }));
+    expect(await checkBash()).toMatchObject({ ok: false, shellPath: null, suggestedShellPath: git.bash });
+  });
+
+  it("does not suggest reapplying the same invalid executable when no replacement exists", async () => {
+    const broken = makeFakeBash("not bash");
+    writeFileSync(join(agentHome, "settings.json"), JSON.stringify({ shellPath: broken }));
+    expect(await checkBash()).toMatchObject({ ok: false, suggestedShellPath: null });
+  });
+
+  it.skipIf(process.platform !== "win32")("keeps a valid explicitly configured Bash ahead of discovered installations", async () => {
+    makePortableGit();
+    const configured = makeFakeBash("GNU bash, version 5.2");
+    io.execute.mockImplementation((_target, _args, _opts, callback) => callback(null, { stdout: "GNU bash, version 5.2", stderr: "" }));
+    writeFileSync(join(agentHome, "settings.json"), JSON.stringify({ shellPath: configured }));
+    expect(await checkBash()).toMatchObject({ ok: true, shellPath: configured, suggestedShellPath: configured });
+  });
+
   it("未配置时 ok=true（如果 PATH/Git 上有 bash）且 ok=false 否则", async () => {
     const r = await checkBash();
     if (r.ok) {

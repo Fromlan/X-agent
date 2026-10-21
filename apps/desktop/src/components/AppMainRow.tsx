@@ -26,7 +26,7 @@ import { ChatHeader } from "./ChatHeader";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 import { RightPanel } from "./RightPanel";
 import type { ChatItem } from "../stores/chat-store";
-import { allGodotEditorToolsEnabled } from "../lib/ready-checklist";
+import { hasGodotEditorToolsEnabled } from "../lib/ready-checklist";
 import { startersForProject, type ChatStarter } from "../lib/chat-starters";
 import { modelSupportsImage } from "../lib/model-capability";
 import { useAppLayout } from "../hooks/useAppLayout";
@@ -192,7 +192,7 @@ export function AppMainRow(props: AppMainRowProps) {
     useMemo(() => {
       if (!activeCwd) return undefined;
       const list: { label: string; onClick: () => void }[] = [];
-      if (isGodotProject && !allGodotEditorToolsEnabled(prefs)) {
+      if (isGodotProject && !hasGodotEditorToolsEnabled(prefs)) {
         list.push({
           label: "启用 Godot 工具",
           onClick: () => {

@@ -20,6 +20,8 @@
  * gating (白名单 + tool 开关映射) 在 ./gating.ts, policy (clamp +
  * timeout) 在 ./policy.ts.
  */
+import type { GodotConnectionStatus } from "../godot-connection";
+
 export const GODOT_RPC_DEFAULT_PORT = 8765;
 
 /**
@@ -235,6 +237,8 @@ export type GodotRpcEvent =
 export type GodotRpcHandshakeFailure = "missing_token" | "bad_token";
 
 export interface GodotRpcBridgeStatus {
+  /** Main-process connection lifecycle for the active workspace, independent of tool permissions. */
+  connection?: GodotConnectionStatus;
   running: boolean;
   port: number;
   /**

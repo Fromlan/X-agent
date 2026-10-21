@@ -127,6 +127,36 @@ describe("GodotRpcBridge", () => {
     expect(endpoint.port).toBe(status.port);
   });
 
+  it("restarting the same bridge restores RPC calls and retains project routing", async () => {
+    isolateEndpoint();
+    bridge = new GodotRpcBridge();
+    bridge.setCurrentCwd("D:/proj");
+    await bridge.start(0);
+    await bridge.stop();
+    const restarted = await bridge.start(0);
+    const mock = await connectMockClient(restarted.port, (line, write) => {
+      const request = JSON.parse(line) as { id: string };
+      write({ id: request.id, ok: true, result: "pong" });
+    });
+    try {
+      await authenticate(bridge, mock.socket);
+      expect(await bridge.request({ id: "restart-ping", method: "ping" })).toMatchObject({ ok: true });
+      expect(bridge.getCurrentCwd()?.replace(/\\/g, "/").toLowerCase()).toBe("d:/proj");
+      bridge.setCurrentCwd("D:/other");
+      expect(await bridge.request({ id: "cross-project", method: "ping" })).toMatchObject({ ok: false });
+    } finally {
+      mock.close();
+    }
+  });
+
+  it("coalesces concurrent starts into one listening endpoint", async () => {
+    isolateEndpoint();
+    bridge = new GodotRpcBridge();
+    const [first, second] = await Promise.all([bridge.start(0), bridge.start(0)]);
+    expect(first.running).toBe(true);
+    expect(second.port).toBe(first.port);
+  });
+
   it("editor_ready 握手 + ping 请求响应 + 超时", async () => {
     isolateEndpoint();
     bridge = new GodotRpcBridge();

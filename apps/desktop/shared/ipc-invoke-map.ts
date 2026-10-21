@@ -189,6 +189,7 @@ export type AppReportApi = {
 
 /** Godot editor RPC + addon lifecycle facade. */
 export type GodotApi = {
+  onStatus: (handler: (status: GodotRpcStatusDto) => void) => () => void;
   status: IpcInvokeMap["godotRpcStatus"];
   start: IpcInvokeMap["godotRpcStart"];
   stop: IpcInvokeMap["godotRpcStop"];
@@ -365,7 +366,7 @@ export type IpcInvokeMap = {
   godotRpcSetActiveClient: (
     clientId: string | null,
   ) => Promise<{ ok: boolean; status: GodotRpcStatusDto }>;
-  pickGodotEditor: () => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
+  pickGodotEditor: (candidatePath?: string) => Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }>;
   launchGodotEditor: () => Promise<{
     ok: boolean;
     error?: string;

@@ -7,6 +7,10 @@ import { tmpdir } from "node:os";
 import { setAgentDirOverrideForTests } from "../electron/agent/prefs";
 import { setGodotRpcEndpointPathForTests, GodotRpcBridge } from "../electron/agent/godot-rpc-bridge";
 import { installGodotRpcAddon } from "../electron/agent/godot-addon-install";
+import { inspectGodotRpcAddon } from "../electron/agent/godot-addon-install";
+import { GodotConnectionManager } from "../electron/agent/godot-connection-manager";
+import { discoverGodotEngine } from "../electron/agent/godot-engine-discovery";
+import { DEFAULT_PREFS } from "../shared/ipc";
 import { createGodotTools } from "../electron/agent/godot-tools";
 import { requestGuardedGodotRpc } from "../electron/agent/godot-rpc-request";
 
@@ -30,24 +34,44 @@ mkdirSync(project); mkdirSync(agentDir, { recursive: true });
 setAgentDirOverrideForTests(agentDir);
 setGodotRpcEndpointPathForTests(join(agentDir, "x-agent-godot-rpc.json"));
 const bridge = new GodotRpcBridge(); let editor: ChildProcess | undefined; let editorClosed: Promise<void> | undefined; let log = "";
+let connection: GodotConnectionManager | undefined;
 try {
   writeFileSync(join(project, "project.godot"), 'config_version=5\n[application]\nconfig/name="RPC integration fixture"\n[rendering]\nrenderer/rendering_method="gl_compatibility"\n');
   writeFileSync(join(project, "main.gd"), 'extends Node\nfunc verified() -> int:\n\treturn 42\n');
   writeFileSync(join(project, "main.tscn"), '[gd_scene load_steps=2 format=3]\n[ext_resource type="Script" path="res://main.gd" id="1"]\n[node name="Main" type="Node"]\nscript = ExtResource("1")\n');
-  assert.equal(installGodotRpcAddon(project).ok, true);
-  bridge.setCurrentCwd(project);
   const started = await bridge.start(0);
   assert.equal(started.running, true); assert.ok(started.port > 0, "endpoint must advertise the assigned port");
-  editor = spawn(binary, ["--headless", "--editor", "--path", project], {
-    windowsHide: true, env: { ...process.env, USERPROFILE: root, HOME: root }, stdio: ["ignore", "pipe", "pipe"],
+  const prefs = { ...DEFAULT_PREFS, godotEditorPath: binary };
+  let launches = 0;
+  connection = new GodotConnectionManager(bridge, {
+    prefs: () => prefs, isProject: () => true,
+    inspect: inspectGodotRpcAddon, install: installGodotRpcAddon,
+    running: async () => [],
+    discover: (path, config, running, signal) => discoverGodotEngine(path, config, running, { candidates: [], signal }),
+    launch: async (engine, path) => {
+      launches += 1;
+      editor = spawn(engine, ["--headless", "--editor", "--path", path], {
+        windowsHide: true, env: { ...process.env, USERPROFILE: root, HOME: root }, stdio: ["ignore", "pipe", "pipe"],
+      });
+      // `exit` precedes stream/handle closure on Windows; cleanup must wait for `close` instead.
+      editorClosed = new Promise<void>((resolve) => editor!.once("close", () => resolve()));
+      editor.on("error", (error) => { log += error.message; });
+      const collect = (data: Buffer): void => { log = (log + data.toString()).slice(-20_000); };
+      editor.stdout?.on("data", collect); editor.stderr?.on("data", collect);
+      await new Promise<void>((resolve, reject) => { editor!.once("spawn", resolve); editor!.once("error", reject); });
+      return editor.pid!;
+    },
+    isAlive: () => Boolean(editor && editor.exitCode === null && editor.signalCode === null),
+    remember: async () => {},
   });
-  // `exit` precedes stream/handle closure on Windows; cleanup must wait for `close` instead.
-  editorClosed = new Promise<void>((resolve) => editor!.once("close", () => resolve()));
-  editor.on("error", (error) => { log += error.message; });
-  const collect = (data: Buffer) => { log = (log + data.toString()).slice(-20_000); };
-  editor.stdout?.on("data", collect); editor.stderr?.on("data", collect);
-  await waitFor(editor, () => (bridge.getStatus().authenticatedClients ?? 0) > 0);
-  console.log(`Godot ${version}: authenticated addon loaded`);
+  bridge.setCurrentCwd(project);
+  const connected = await connection.connect();
+  assert.equal(connected.ok, true, connected.error);
+  assert.equal(connection.getStatus().connection?.phase, "connected");
+  assert.equal(inspectGodotRpcAddon(project).current, true);
+  assert.equal(launches, 1);
+  assert.ok(editor, "the manager must launch the real editor");
+  console.log(`Godot ${version}: project open automatically installed the addon, launched once, authenticated and passed health check`);
   const info = await bridge.request({ id: "info", method: "get_editor_info" }); assert.equal(info.ok, true);
   // Exercise the real tool -> shared guard -> authenticated bridge -> editor -> project.godot chain.
   const setSetting = createGodotTools(bridge).find((tool) => tool.name === "godot_set_project_setting");
@@ -87,11 +111,19 @@ try {
   const invalid = await bridge.request({ id: "lint-bad", method: "lint_scripts", paths: ["res://broken.gd"] }, 30_000); assert.equal(invalid.ok, true);
   assert.match(JSON.stringify(invalid), /"ok":false/);
   assert.match(JSON.stringify(invalid), /"line":[1-9]/);
+  await connection.stop();
+  const reconnected = await connection.connect();
+  assert.equal(reconnected.ok, true, reconnected.error);
+  assert.equal(launches, 1, "bridge restart must reuse the existing editor");
+  assert.equal((await bridge.request({ id: "after-restart", method: "get_editor_info" })).ok, true);
+  assert.ok(bridge.getCurrentCwd(), "bridge restart must retain project isolation");
+  console.log("Godot connection restart passed: same editor, healthy RPC and preserved project routing");
   console.log("Godot integration passed: editor info, scene open/readback, valid and invalid script lint with line evidence");
 } catch (error) {
   console.error("Godot integration failed", error, log);
   process.exitCode = 1;
 } finally {
+  connection?.dispose();
   if (editor && editor.exitCode === null) {
     editor.kill();
   }

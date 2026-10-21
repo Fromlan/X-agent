@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppUpdateStatus, PromptPayload, UiAgentEvent, XAgentApi } from "../shared/ipc";
+import type { AppUpdateStatus, GodotRpcStatusDto, PromptPayload, UiAgentEvent, XAgentApi } from "../shared/ipc";
 import { IPC_CHANNELS, IPC_EVENTS } from "../shared/ipc-channels";
 import { dbgLog, dbgTimer } from "../shared/debug-log";
 import { mountXAgentPath } from "./preload-path-helper";
@@ -143,6 +143,11 @@ const exposed: XAgentApi = {
     reportRendererFailure: api.reportRendererFailure,
   },
   godot: {
+    onStatus: (handler) => {
+      const listener = (_: Electron.IpcRendererEvent, status: GodotRpcStatusDto): void => handler(status);
+      ipcRenderer.on(IPC_EVENTS.godotStatus, listener);
+      return () => ipcRenderer.removeListener(IPC_EVENTS.godotStatus, listener);
+    },
     status: api.godotRpcStatus,
     start: api.godotRpcStart,
     stop: api.godotRpcStop,

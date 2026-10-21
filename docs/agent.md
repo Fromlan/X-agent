@@ -45,6 +45,8 @@
 | `npm run release:notes -- X.Y.Z` | 预览 GitHub Release 正文 |
 | `npm run release:test-changelog` | 校验更新说明抽取 |
 
+`dev` / `debug` 启动前会调用 Electron 官方安装程序，检查当前依赖版本的运行时；缺少二进制或路径文件时自动下载并校验，完整安装则直接通过。首次下载需要网络。
+
 本地产物用于验证；正式发布源是 CI 的 GitHub Release。不提交 `apps/desktop/release/`、`out/`、测试产物或本机认证数据。
 
 ## 按问题查阅

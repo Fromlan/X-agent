@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { createStore, type Store } from "./lib/store";
 import { writeJsonAtomicSync } from "./lib/atomic-write";
+import { normalizeProjectKey } from "../../shared/project-path";
 import {
   ClientPrefs,
   DEFAULT_PREFS,
@@ -151,6 +152,9 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     goalEvaluatorModel,
     deepseekWebProviderId: typeof rest.deepseekWebProviderId === "string" && rest.deepseekWebProviderId.trim()
       ? rest.deepseekWebProviderId.trim() : null,
+    godotAutoConnect: typeof rest.godotAutoConnect === "boolean" ? rest.godotAutoConnect : true,
+    godotProjectEditors: rest.godotProjectEditors && typeof rest.godotProjectEditors === "object" && !Array.isArray(rest.godotProjectEditors)
+      ? Object.fromEntries(Object.entries(rest.godotProjectEditors).filter(([key, value]) => key.length > 0 && typeof value === "string" && value.length > 0 && value.length <= 4096)) : {},
   };
 }
 
@@ -354,4 +358,18 @@ export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPre
 
 export function getAgentDirPath(): string {
   return ensureAgentDir();
+}
+
+/** Merge project engine choices inside the store lock so rapid project switches cannot lose earlier choices. */
+export async function rememberGodotEditor(project: string, engine: string, options: { setDefault?: boolean; onlyIfUnset?: boolean } = {}): Promise<ClientPrefs> {
+  ensureAgentDir();
+  const key = normalizeProjectKey(project);
+  return store.mutate((previous) => ({
+    ...previous,
+    ...(options.setDefault ? { godotEditorPath: engine } : {}),
+    godotProjectEditors: {
+      ...previous.godotProjectEditors,
+      [key]: options.onlyIfUnset ? previous.godotProjectEditors[key] ?? engine : engine,
+    },
+  }));
 }

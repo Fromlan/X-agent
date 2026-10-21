@@ -1,22 +1,21 @@
-import { access, readFile } from "node:fs/promises";
+/** Discover Bash, configure it before sessions start, and keep ordinary readiness checks read-only. */
+import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { BashCheckResult } from "../../shared/ipc";
 import { mutatePiSettingsSync, piSettingsPath } from "./pi-settings";
+import { readJsonStrict, requireJsonObject } from "./lib/atomic-write";
 
 const execFileAsync = promisify(execFile);
 
-const CANDIDATES = [
-  "C:\\Program Files\\Git\\bin\\bash.exe",
-  "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
-];
-
+/** Resolve the shared Pi settings file for this application profile. */
 function settingsPath(): string {
   return piSettingsPath();
 }
 
+/** Ignore missing or inaccessible discovery candidates. */
 async function fileExists(path: string): Promise<boolean> {
   try {
     await access(path, fsConstants.X_OK);
@@ -26,37 +25,65 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-async function readSettings(): Promise<{ shellPath?: string }> {
-  try {
-    const raw = await readFile(settingsPath(), "utf8");
-    return JSON.parse(raw) as { shellPath?: string };
-  } catch {
-    return {};
-  }
+/** Read shell configuration without mutating the shared Pi settings. */
+async function readSettings(): Promise<Record<string, unknown>> {
+  return requireJsonObject(await readJsonStrict<unknown>(settingsPath(), {}));
 }
 
-async function whichBashOnPath(): Promise<string | null> {
-  const pathEnv = process.env.PATH ?? "";
-  const sep = process.platform === "win32" ? ";" : ":";
-  const exeName = process.platform === "win32" ? "bash.exe" : "bash";
-  for (const part of pathEnv.split(sep)) {
-    const candidate = join(part.trim(), exeName);
-    if (!(await fileExists(candidate))) continue;
-    // 不仅是文件存在：必须真的输出 GNU bash banner，避免被 nvm-symlinked
-    // 之类把 `bash.exe` 借成 node shim 的目录误抓（#24 PR 提到的 pre-existing
-    // bash-check flake 多数是这种 PATH shim 导致）。CANDIDATES 那批已知是真
-    // bash，不用再 probe；这里是 PATH 兜底路径才需要。
-    const probe = await probeBash(candidate);
-    if (probe.ok) return candidate;
+/** Keep quoted Windows PATH entries usable and avoid searching the current directory for empty entries. */
+function pathDirectories(): string[] {
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path");
+  return (pathKey ? process.env[pathKey] ?? "" : "")
+    .split(delimiter)
+    .map((entry) => entry.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean);
+}
+
+/** Read Git's installation registration only after faster directory discovery fails. */
+async function registeredGitRoots(): Promise<string[]> {
+  const registry = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe");
+  const keys = ["HKCU\\SOFTWARE\\GitForWindows", "HKLM\\SOFTWARE\\GitForWindows", "HKLM\\SOFTWARE\\WOW6432Node\\GitForWindows"];
+  const results = await Promise.allSettled(keys.map((key) => execFileAsync(
+    registry, ["query", key, "/v", "InstallPath"], { timeout: 1500, windowsHide: true },
+  )));
+  return results.flatMap((result) => {
+    if (result.status !== "fulfilled") return [];
+    const root = /^\s*InstallPath\s+REG_SZ\s+(.+?)\s*$/im.exec(result.value.stdout)?.[1];
+    return root ? [root] : [];
+  });
+}
+
+/** Find working Bash installations, including portable Git whose cmd directory alone is on PATH. */
+export async function findSuggestedBash(): Promise<string | null> {
+  const directories = pathDirectories();
+  const candidates: string[] = [];
+  if (process.platform === "win32") {
+    const programRoots = [
+      process.env.ProgramFiles ?? "C:\\Program Files",
+      process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
+      ...(process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, "Programs")] : []),
+    ];
+    for (const root of programRoots) candidates.push(join(root, "Git", "bin", "bash.exe"));
+    // Git installers normally add cmd/ rather than bin/ to PATH, regardless of the installation drive.
+    for (const directory of directories) {
+      if (!(await fileExists(join(directory, "git.exe")))) continue;
+      let gitRoot = dirname(directory);
+      if (/^mingw(?:32|64)$/i.test(basename(gitRoot))) gitRoot = dirname(gitRoot);
+      candidates.push(join(gitRoot, "bin", "bash.exe"), join(gitRoot, "usr", "bin", "bash.exe"));
+    }
+  }
+  candidates.push(...directories.map((directory) => join(directory, process.platform === "win32" ? "bash.exe" : "bash")));
+  for (const candidate of new Set(candidates)) {
+    if ((await fileExists(candidate)) && (await probeBash(candidate)).ok) return candidate;
+  }
+  if (process.platform === "win32") {
+    for (const root of await registeredGitRoots()) {
+      for (const candidate of [join(root, "bin", "bash.exe"), join(root, "usr", "bin", "bash.exe")]) {
+        if ((await fileExists(candidate)) && (await probeBash(candidate)).ok) return candidate;
+      }
+    }
   }
   return null;
-}
-
-export async function findSuggestedBash(): Promise<string | null> {
-  for (const candidate of CANDIDATES) {
-    if (await fileExists(candidate)) return candidate;
-  }
-  return whichBashOnPath();
 }
 
 /**
@@ -76,13 +103,14 @@ const BASH_BANNER_PATTERNS: readonly RegExp[] = [
   /bash-\d+\.\d+/,
 ];
 
+/** Require a successful GNU Bash banner even for known installation directories. */
 async function probeBash(target: string): Promise<ProbeResult> {
   let stdout = "";
   try {
     // timeout 留到 5s:Windows 11 自带的 C:\Windows\system32\bash.exe 是 WSL
     // 转发器,cold start 一次需要 ~2.2s (WSL infrastructure 初始化),2s 不够。
-    // CANDIDATES 那批 (Git for Windows) 不会触发 cold start,生产路径无影响。
-    const result = await execFileAsync(target, ["--version"], { timeout: 5000 });
+    // Git for Windows does not need WSL infrastructure initialization.
+    const result = await execFileAsync(target, ["--version"], { timeout: 5000, windowsHide: true });
     stdout = result.stdout ?? "";
   } catch (err) {
     const code = (err as { code?: unknown })?.code;
@@ -127,25 +155,42 @@ function warningForUntrustedPath(target: string): string | null {
   return `bash 可执行不在常见可信目录（Windows: Git for Windows / System32 / WSL；macOS/Linux: /bin /usr/bin /usr/local/bin /opt），请确认该路径来源可信。`;
 }
 
+/** Validate the configured shell first; offer a verified replacement while keeping detection read-only. */
 export async function checkBash(): Promise<BashCheckResult> {
-  const settings = await readSettings();
-  if (settings.shellPath && (await fileExists(settings.shellPath))) {
-    const probe = await probeBash(settings.shellPath);
-    if (!probe.ok) {
+  try {
+    return await inspectBashSettings(await readSettings());
+  } catch (error) {
+    return {
+      ok: false,
+      shellPath: null,
+      suggestedShellPath: null,
+      message: `无法读取 Bash 配置：${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** Share validation between startup configuration and read-only checks without writing implicitly. */
+async function inspectBashSettings(settings: Record<string, unknown>): Promise<BashCheckResult> {
+  if (typeof settings.shellPath === "string" && settings.shellPath) {
+    const exists = await fileExists(settings.shellPath);
+    const probe = exists ? await probeBash(settings.shellPath) : null;
+    if (probe?.ok) {
+      const warning = warningForUntrustedPath(settings.shellPath);
       return {
-        ok: false,
-        shellPath: null,
+        ok: true,
+        shellPath: settings.shellPath,
+        message: `已配置 shellPath: ${settings.shellPath}`,
         suggestedShellPath: settings.shellPath,
-        message: `已配置的 shellPath 不能作为 bash 执行：${settings.shellPath}（${probeReasonLabel(probe.reason)}）`,
-        warning: `请重新选择或点击「检查 bash」；不要让 Pi 用一个非 Bash 的可执行执行命令。`,
+        ...(warning ? { warning } : {}),
       };
     }
-    const warning = warningForUntrustedPath(settings.shellPath);
+    const suggested = await findSuggestedBash();
+    const warning = suggested ? warningForUntrustedPath(suggested) : null;
     return {
-      ok: true,
-      shellPath: settings.shellPath,
-      message: `已配置 shellPath: ${settings.shellPath}`,
-      suggestedShellPath: settings.shellPath,
+      ok: false,
+      shellPath: null,
+      suggestedShellPath: suggested,
+      message: `已配置的 shellPath 不能作为 bash 执行：${settings.shellPath}（${probe ? probeReasonLabel(probe.reason) : "文件不存在或不可访问"}）。${suggested ? `已找到可用的 Bash，请写入建议路径：${suggested}` : "未找到其他可用的 bash，请在设置中重新选择。"}`,
       ...(warning ? { warning } : {}),
     };
   }
@@ -171,6 +216,16 @@ export async function checkBash(): Promise<BashCheckResult> {
   };
 }
 
+/** Configure a verified fallback once at startup, preserving valid user choices and unrelated Pi settings. */
+export async function ensureBashConfigured(): Promise<BashCheckResult> {
+  const settings = await readSettings();
+  const status = await inspectBashSettings(settings);
+  if (status.ok && typeof settings.shellPath === "string" && settings.shellPath) return status;
+  if (!status.suggestedShellPath) return status;
+  return applyBashShellPath(status.suggestedShellPath);
+}
+
+/** Translate probe failures using the actual timeout duration. */
 function probeReasonLabel(reason: ProbeFailureReason): string {
   switch (reason) {
     case "spawn_failed":
@@ -178,7 +233,7 @@ function probeReasonLabel(reason: ProbeFailureReason): string {
     case "no_banner":
       return "输出不是 GNU bash 的 banner";
     case "timeout":
-      return "--version 超过 2 秒未返回";
+      return "--version 超过 5 秒未返回";
   }
   return "unknown";
 }

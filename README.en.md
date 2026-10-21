@@ -33,17 +33,19 @@ Have Godot 4 and [Git for Windows](https://gitforwindows.org/) installed. Git su
 
 1. **Open a project**: select the root folder containing `project.godot`.
 2. **Configure a model**: add and enable a profile in Settings → Providers, or open Pi login from Settings → General to reuse local credentials.
-3. **Check Bash**: confirm Bash is available in Settings → General. When Git Bash is detected, you can save its path from there.
+3. **Bash is configured automatically**: on startup, the app discovers and configures installed Git Bash while preserving valid custom paths. It only prompts when Bash is missing or configuration fails.
 4. **Start a conversation**: select a model and working mode in the input area, then describe the task.
 
 ### Connect the Godot editor
 
 Once connected, the agent can inspect the current scene, run the project, and retrieve errors.
 
-1. Select the Godot executable in Settings → Godot, then click Install/update plugin under Editor connection.
-2. Enable **X-agent RPC** in Godot's Project → Project Settings → Plugins, and keep that project's editor open. Reload the project or restart Godot after updating the addon.
-3. Check that X-agent reports a connected editor. Start the bridge if it is not running.
+1. Open a Godot project. X-agent automatically attaches to its editor, or discovers an engine, installs and enables the addon, and opens the project.
+2. If the engine is missing or several suitable versions are found, choose one in Settings → Godot. The choice is remembered per project.
+3. If Godot was already open without the addon loaded, enable **X-agent RPC** or save and reopen the project as prompted. Wait for the connected status; automatic connection can be disabled or retried in Settings.
 4. Enable the **Godot editor tools** you need in Settings → Tools. They are off by default.
+
+![Godot automatic connection settings](docs/screenshots/godot-auto-connect.png)
 
 See the [Godot addon documentation](packages/godot-editor-rpc/README.md) for available tools and connection troubleshooting.
 

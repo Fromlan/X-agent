@@ -2,7 +2,7 @@
 import type { CSSProperties } from "react";
 import { Box } from "lucide-react";
 import type { GodotRpcStatusDto, SessionUsageSnapshot } from "@shared/ipc";
-import { isProjectGodotConnected } from "../../lib/godot-connection";
+import { godotConnectionLabel, isProjectGodotConnected } from "../../lib/godot-connection";
 
 interface Props {
   cwd: string | null;
@@ -27,6 +27,6 @@ export function WorkspaceSummary({ cwd, usage, isGodotProject, rpcStatus }: Prop
       <span style={{ "--context-fill": `${Math.max(0, Math.min(100, percent ?? 0))}%` } as CSSProperties} />
     </div>
     <div className="workspace-context-tokens">{context?.tokens == null ? "暂无统计" : `${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)}`}</div>
-    {isGodotProject && <div className="workspace-editor"><Box size={22} aria-hidden /><span>Godot 编辑器</span><span className={`workspace-editor-status${connected ? " is-connected" : ""}`}><i />{connected ? "已连接" : "未连接"}</span></div>}
+    {isGodotProject && <div className="workspace-editor"><Box size={22} aria-hidden /><span>Godot 编辑器</span><span className={`workspace-editor-status${connected ? " is-connected" : ""}`}><i />{godotConnectionLabel(cwd, rpcStatus)}</span></div>}
   </div>;
 }

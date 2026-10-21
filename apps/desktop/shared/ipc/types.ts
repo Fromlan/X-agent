@@ -1030,8 +1030,9 @@ export interface PrefsRecoveryNotice {
   error: string;
 }
 
-/** 1.3 启动期失误员件（recover / bridge / package install）。*/
+/** Startup failures from shell setup, recovery, bridge or package installation. */
 export type StartupIssueStage =
+  | "bash_setup"
   | "shadow_recover"
   | "godot_rpc"
   | "godot_pi_install";

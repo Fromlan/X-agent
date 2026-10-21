@@ -1,17 +1,15 @@
 /**
  * 启动期失败摘要 (主题 E #62 拆分, 2026-09-08).
  *
- * 启动期几个 best-effort 阶段 (shadow_recover / godot_rpc / godot_pi_install)
+ * 启动期几个 best-effort 阶段 (bash_setup / shadow_recover / godot_rpc / godot_pi_install)
  * 失败时记一条到 `startupIssues`, renderer 通过 IPC `getStartupReport` 一次性
  * 拉取, 在 ReadyChecklist 提示用户「上次启动有 X 失败」.
  *
  * 与 prefs recovery notice 同属启动期一次性队列, 抽取为独立 module 便于
  * 独立 vitest.
  */
-export type StartupIssue = {
-  stage: "shadow_recover" | "godot_rpc" | "godot_pi_install";
-  message: string;
-};
+import type { StartupIssue } from "../../shared/ipc";
+export type { StartupIssue } from "../../shared/ipc";
 
 const MAX_KEPT = 32;
 

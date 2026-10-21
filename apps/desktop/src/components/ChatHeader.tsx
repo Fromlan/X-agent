@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { SessionType } from "@shared/session-type";
 import { SESSION_TYPE_LABELS } from "@shared/session-type";
 import { projectDisplayName } from "../lib/group-sessions";
-import { isProjectGodotConnected } from "../lib/godot-connection";
+import { godotConnectionLabel, isProjectGodotConnected, projectGodotConnection } from "../lib/godot-connection";
 import type { GodotRpcStatusDto } from "@shared/ipc";
 
 interface Props {
@@ -32,9 +32,9 @@ export function ChatHeader({ cwd, title, sessionType, isGodotProject, rpcStatus,
         </div>
       </div>
       {isGodotProject && (
-        <span className={`chat-header-connection${connected ? " is-connected" : ""}`} role="status">
+        <span className={`chat-header-connection${connected ? " is-connected" : ""}`} role="status" title={projectGodotConnection(cwd, rpcStatus)?.message}>
           <span aria-hidden />
-          {connected ? "Godot 已连接" : "等待 Godot 连接"}
+          {godotConnectionLabel(cwd, rpcStatus)}
         </span>
       )}
       {actions}
