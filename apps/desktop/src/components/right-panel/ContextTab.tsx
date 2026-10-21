@@ -145,10 +145,6 @@ export function ContextTab({
             style={{ width: percent != null ? `${fill}%` : "0%" }}
           />
         </div>
-
-        {percent == null && (
-          <p className="rp-context-hint">压缩后下一轮更新</p>
-        )}
       </section>
 
       <section className="rp-context-section">
@@ -198,7 +194,7 @@ export function ContextTab({
             </ul>
           </>
         ) : (
-          <p className="rp-context-empty">打开会话后显示占用拆解</p>
+          <p className="rp-context-empty">暂无数据</p>
         )}
       </section>
 
@@ -269,7 +265,7 @@ export function ContextTab({
             </div>
           </>
         ) : (
-          <p className="rp-context-empty">完成一轮对话后更新</p>
+          <p className="rp-context-empty">暂无用量</p>
         )}
       </section>
 

@@ -1,274 +1,141 @@
 <h1 align="center">X-agent</h1>
 
+<p align="center">面向 Godot 4 的桌面 AI 开发助手</p>
+
 <p align="center">
-  <img src="docs/screenshots/main-window.png" alt="X-agent 主界面" width="480"/>
+  <a href="https://github.com/Fromlan/X-agent/releases/latest"><img src="https://img.shields.io/github/v/release/Fromlan/X-agent?label=latest" alt="最新版本"/></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-blueviolet" alt="Windows 10/11"/>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Fromlan/X-agent" alt="MIT License"/></a>
 </p>
 
 <p align="center">
-  <strong>Godot 4 项目的桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。</strong>
+  <a href="https://github.com/Fromlan/X-agent/releases/latest">下载</a> ·
+  <a href="#开始使用">开始使用</a> ·
+  <a href="#功能">功能</a> ·
+  <a href="#从源码运行">开发</a> ·
+  <a href="https://github.com/Fromlan/X-agent/issues">反馈</a> ·
+  <a href="README.en.md">English</a>
 </p>
+
+X-agent 让你在同一个会话里修改 Godot 项目的脚本和场景、调用编辑器、查看运行报错。动手前可以先调研和制定计划，也可以单独开一个策划会话，整理玩法、系统和数值文档。
+
+客户端基于 [Pi SDK](https://pi.dev) 构建，使用你配置的模型和认证。项目仍处于 Beta 阶段，目前提供 Windows 安装包，界面语言为中文。
 
 <p align="center">
-  <a href="https://github.com/Fromlan/X-agent/releases/latest"><img src="https://img.shields.io/github/v/release/Fromlan/X-agent?label=latest" alt="Latest Release"/></a>
-  <img src="https://img.shields.io/badge/status-Early%20Beta-orange" alt="Status: Early Beta"/>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Fromlan/X-agent" alt="License: MIT"/></a>
-  <a href="https://github.com/Fromlan/X-agent/stargazers"><img src="https://img.shields.io/github/stars/Fromlan/X-agent?style=flat" alt="GitHub Stars"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-blueviolet" alt="Platform: Windows 10/11"/>
-  <img src="https://img.shields.io/badge/Godot-4.x-478cbf" alt="Godot 4.x"/>
+  <img src="docs/screenshots/main-window.png" alt="X-agent 工作台：左侧项目与会话，中间对话与工具操作，右侧执行计划" width="1000"/>
 </p>
 
-<p align="center">
-  <a href="#install">安装</a> ·
-  <a href="#what-is-x-agent">三大支柱</a> ·
-  <a href="#x-agent-vs">对比</a> ·
-  <a href="docs/agent.md">开发文档</a> ·
-  <a href="docs/roadmap.md">路线图</a> ·
-  <a href="CHANGELOG.md">更新日志</a> ·
-  <a href="https://github.com/Fromlan/X-agent/issues">反馈</a>
-</p>
+## 开始使用
 
-<p align="center">
-  <a href="README.md">🇨🇳 简体中文</a> | <a href="README.en.md">🇺🇸 English</a>
-</p>
+从 [GitHub Releases](https://github.com/Fromlan/X-agent/releases/latest) 下载 `X-agent-Setup-<版本>-<架构>.exe`，按安装向导操作。安装版会在启动后检查更新，下载和安装由你确认。
 
----
+准备好 Godot 4 和 [Git for Windows](https://gitforwindows.org/)。Git 提供命令执行所需的 Bash，也用于保存工作区检查点。Pi 登录和技能包安装还需要 Node.js 24+ 与 Pi CLI，可按应用内的就绪检查提示安装。
 
-> **Early Beta**：活跃开发中，体验可能粗糙。
+1. **打开项目**：选择包含 `project.godot` 的工程根目录。
+2. **配置模型**：在「设置 → 供应商」添加并启用供应商配置；也可以在「设置 → 通用」打开 Pi 登录，复用本机已有认证。
+3. **检查终端**：在「设置 → 通用」确认 Bash 可用。应用检测到 Git Bash 后，可直接写入路径配置。
+4. **开始对话**：在输入区选择模型和工作模式，描述要完成的事情。
 
-> 不是 AGI，但是是 Godot 桌面 Agent 这个细分里**差异化最强**的一个：Godot 编辑器 RPC 联动 + Shadow Git 撤回 + 4 模式 2 类型硬闸。
+### 连接 Godot 编辑器
 
-## Install
+连接后，Agent 可以读取当前场景、运行项目并获取报错。
 
-**Windows**（当前唯一支持的桌面平台）：
+1. 在「设置 → Godot」选择 Godot 可执行文件，点击「编辑器连接 → 安装/更新插件」。
+2. 在 Godot 的「项目 → 项目设置 → 插件」中启用 **X-agent RPC**，保持该项目的编辑器打开；更新插件后重载项目或重启编辑器。
+3. 回到 X-agent，确认连接状态为「已连接」；桥接未启动时，点击「启动桥接」。
+4. 在「设置 → 工具」勾选需要使用的 **Godot 编辑器工具**。这些工具默认关闭。
 
-- **下载安装包**：[GitHub Releases](https://github.com/Fromlan/X-agent/releases/latest) — 选 `X-agent-Setup-x.y.z.exe` 下载双击安装
-- **应用内更新**：装好之后启动会自动静默检查新版本（在设置 → 通用手动 / 顶栏入口也能检查）
+具体工具和连接排查见 [Godot 插件文档](packages/godot-editor-rpc/README.md)。
 
-**macOS / Linux**：等发版——见 [ROADMAP §1.3](docs/roadmap.md)。开发者可从源码跑（见下方"从源码开发"）。
+## 功能
 
-## 30 秒上手
+### 在对话里操作 Godot
 
-1. **打开应用**，**打开项目**选你的 Godot 工程根目录
-2. **登录认证**：设置 → 通用 → "打开 Pi 登录"（或本机 `pi login` 已登录即可）
-3. （可选）**接 Godot 编辑器**：设置 → Godot → 编辑器连接 → 安装 **X-agent RPC** 插件 → 编辑器内启用 `x_agent_rpc`
-4. 输入框写 prompt，按 Enter
+目前提供 **27 个 Godot 工具**，覆盖场景与节点查询、场景打开与重载、运行与报错收集、脚本检查、资源导入和导出等操作。连接多个编辑器时，可以在设置中选择活动编辑器。
 
-更深入：[角色场景](#你要用-x-agent-做什么) / [设置总览](#设置) / [键盘快捷键](#键盘快捷键)。
+原生技能包包含 `godot-docs-4-7` 文档知识库，在 Godot 项目中按需加载。技能包内容与安装方式见 [godot-pi](packages/godot-pi/README.md)。
 
-## What is X-agent?
+### 先调研、做计划，再执行
 
-X-agent 做三件其他 Agent 没做好的事：**Godot 深度联动**、**可信任的撤回**、**模式硬闸**。每条都链到 [docs/agent.md](docs/agent.md) 详细机制。
+代码会话提供四种工作模式，在输入区切换，也可以按 `Shift+Tab` 轮换。
 
-### 🎮 Godot 深度联动
-
-- **编辑器 RPC（TCP）** — Agent 直接驱动当前 Godot 编辑器：开/重载场景、运行当前或主场景、跑完收集报错回传。默认端口 `8765`（回退 `8765–8774`），多编辑器显式选路。详见 [docs/agent.md §七](docs/agent.md)
-- **27 个 Godot 工具** — 场景内省（节点树 / 属性 / 当前场景 / 已打开场景）/ 调试器（断点 / 状态）/ 资源治理（unused / lint / 导入 / 等待导入完成 / UID 解析）/ 导出（headless 子进程 / 模板 / 预设列表）/ 配置读写（`project.godot`）/ 只读内省（全局类 / 冲突检查 / export 模板 / 脚本检视 / 项目文件列表 / 编辑器信息）
-- **godot-docs-4-7 技能** — Pi 自动发现并入 `<available_skills>`；按需 `read` 加载 SKILL.md，**0 token 浪费在"用不上的方法论"上**
-- **就绪清单** — 首次开 Godot 项目时一键引导（认证 / bash / RPC 插件 / Godot 工具 / 文档）
-
-### ↩️ 可信任的撤回
-
-- **Shadow Git 检查点**（每轮 prompt 前打独立检查点，独立于你项目里的 `.git`）→ 撤回 / 编辑重发 / 重新生成时按 diff 路径还原，**不会吞掉你回合期间的手动编辑**。无 Git 时降级为 `write` / `edit` 字节基线
-- **Diff 预览**（0.5.3+）—— 每轮结束在回复下方展示 `+/-` 着色 diff（带文件数与 `+N` / `-N` 统计）；撤回确认弹窗额外显示"将被还原的内容" diff，逐行确认
-- **断点不重写**：会话跨恢复不丢 Shadow 状态
-
-### 🔀 4 模式 + 2 类型硬闸
-
-- **会话模式（互斥切换）**：
-  - **Agent** —— 常规编码（默认白名单内）
-  - **Ask / 调研** —— 只读问答；硬闸关 `write` / `edit` / `write_plan`；`bash` 仅放行只读命令且路径须在项目 cwd 内
-  - **Plan** —— 只读研究 + `write_plan`；右栏可编辑 / 保存到项目 / 「执行计划」切回 Agent
-  - **Goal** —— 写完成条件 + 独立评估；轮次 + token 双预算，未达标自动续轮
-- **会话类型（与模式正交）**：
-  - **`code`**（默认，写入无限制）
-  - **`design`** —— 写操作**硬约束**到 `<cwd>/game-design/`，UI 切暖色主题；预装 5 个内置 skill：`design-initiation` / `design-process` / `design-systems` / `design-numerical` / `design-core-loop`
-
-## 你要用 X-agent 做什么？
-
-四个常见场景，按"我是什么角色"选：
-
-### 🎮 Godot 开发者 · 改代码 + 跑场景
-打开项目 → Agent 模式 → 选模型 → 问"在 `Player.gd` 加冲刺功能，跑一下当前场景" → Agent 改文件、编辑器 RPC 重载、跑场景、报错回传，**都在同一会话**。
-
-### ✍️ 独立策划 · 写设计文档（不污染 game/）
-新会话选 **design 类型** → 写只允许落到 `<cwd>/game-design/` → 预装 5 个内置 design skill 帮你做立项 / 数值 / 核心循环 → UI 切暖色主题与代码会话区分。
-
-### 🔬 研究只读 · 问 API、查文档
-切 **调研 (Ask) 模式** → 工具集硬闸关 `write` / `edit` → `bash` 仅放行只读命令且路径须在项目 cwd 内 → 适合"先摸清 GDScript 单例怎么写再动手"。
-
-### 🎯 目标驱动 · 让 Agent 自己跑到完成
-切 **目标 (Goal) 模式** → 写完成条件（如"在 `ScoreManager.gd` 加 combo 计数 + HUD 显示"） → 评估未达自动续轮（轮次 + token 双预算）。
-
-## 关键能力一览
-
-| 能力 | 版本 | 用户能看到什么 |
-|---|---|---|
-| **🎯 策划会话 design 类型** | 0.5.5 | 写只允许落到 `<cwd>/game-design/`，UI 暖色主题 |
-| **🛠 5 个内置 design skill** | 0.5.5 | 立项 / 流程 / 系统 / 数值 / 核心循环懒写即用 |
-| **🎨 8 套品牌 logo + 自定义** | 0.5.5 | 设置 → 通用 → 品牌（霓虹赛博 / 熔岩灼烧 / …） |
-| **🎨 v1.1 elevation 设计语言** | 0.5.4 | Composer 唯一主元素，三栏降为低调 chrome |
-| **⚡ Diff 显示** | 0.5.3 | 撤回前 `+/-` 着色 diff，带 `+N` / `-N` 统计 |
-| **🔮 thinking-orbs 状态行动画** | 0.5.2 | 运行中粒子轨道而非转圈 |
-| **📜 godot-docs-4-7** | 0.4.x | 引擎惯例技能，按需 `read` |
-| **↩️ Shadow Git 撤回** | 0.4.x | 每轮检查点，按 diff 路径还原 |
-| **📎 Composer 附件** | 0.6.1 | 粘贴/拖放图片与文件，cwd 内文件内联展开 |
-| **🎯 4 模式 + 2 类型硬闸** | 0.3.6+ | Agent / Ask / Plan / Goal × code / design |
-| **🧠 Thinking 档位 + 模型钳制** | 0.2.5+ | DeepSeek 等自动钳制，编辑器实时反馈 |
-
-完整 CHANGELOG：[`CHANGELOG.md`](CHANGELOG.md)。
-
-## 三个必知概念
-
-- **会话模式**（互斥）：Agent / Ask / Plan / Goal —— 决定**能用什么工具**
-- **会话类型**（独立）：`code` / `design` —— 决定**写操作的作用域**
-- **撤回源**：Shadow Git 检查点（独立于你的 `.git`），按 diff 路径还原
-
-## 键盘快捷键
-
-| 快捷键 | 作用 |
+| 模式 | 工作方式 |
 |---|---|
-| `Shift+Tab` | 循环切换模式 |
-| `F12` / `Ctrl+Shift+I` | DevTools（需 `--x-agent-debug` / `X_AGENT_DEBUG=1`） |
-| `Esc` | 关闭当前弹窗 |
-| `Ctrl+,` | 打开设置 |
-| `Ctrl+Enter` | 多行输入时发送消息 |
+| 智能体（Agent） | 读取和修改项目文件，调用已启用的工具，执行开发任务。 |
+| 调研（Ask） | 只读查看项目、查询资料和回答问题，禁止文件写入，终端仅允许项目内的只读命令。 |
+| 计划（Plan） | 只读研究并生成计划，在右栏查看、编辑或保存；点击「执行计划」后进入智能体模式。 |
+| 目标（Goal） | 按完成条件执行，由独立评估判断是否继续，受轮次和 Token 预算约束。 |
 
-## 设置
+目标模式的预算用于控制续轮，包含评估开销；单次请求可能超出预算。是否完成仍需结合测试和实际运行结果判断。
 
-| 分页 | 内容 |
-|---|---|
-| 通用 | 主题、Thinking 默认、bash 路径、Pi 登录、自动更新、**品牌（logo 选择）** |
-| 供应商 | 模型档案、导入 Pi / cc-switch 配置、Thinking 钳制 |
-| 用量 | 本地按日 / 按模型汇总 |
-| 工具 | 内置 / Godot 编辑器 / Godot 文档 工具白名单；Agent / Goal 模式生效 |
-| 插件 | Prompt / Skill / Extension / Theme / Packages（Pi 五类） |
-| Godot | **编辑器连接**（RPC 桥 + 插件安装/更新） |
+### 查看改动与撤回
 
-完整配置项：[`docs/agent.md` §四](docs/agent.md) / [`docs/context.md`](docs/context.md)
+每轮结束后可以查看文件 Diff，也可以撤回、编辑原消息后重发，或重新生成回复。撤回前会展示将被还原的内容。
 
-## 数据位置
+有 Git 时，应用使用独立的 Shadow Git 仓库保存检查点，不改动项目的 Git 历史；没有 Git 时，降级记录 `write` / `edit` 工具的文件基线。撤回只还原相关变更路径，保留 Agent 未触碰的文件。同一文件里的人工修改仍可能受还原影响，撤回前请检查 Diff。
 
-应用数据在 `~/.pi/agent/` 下；与 Pi CLI **共用** `auth.json` / `models.json`，其余**隔离**：
+### 单独整理游戏策划
 
-| 路径 | 用途 |
-|---|---|
-| `x-agent.json` | 客户端偏好（含 theme / Thinking 默认 / sidebar 宽度等） |
-| `x-agent/sessions/` | 本应用会话（与 Pi CLI 分开） |
-| `x-agent/checkpoints/` | Shadow Git 检查点（按项目隔离，**不写你的 .git**） |
-| `x-agent/plans/` / `x-agent/goals/` | Plan 文件 / Goal 日记 |
-| `x-agent-logos/` | 自定义品牌 logo（UUID 文件名，**应用外勿编辑**） |
-| `x-agent-{providers,packages,usage,godot-rpc}.json` | 档案 / 安装记录 / 用量 / RPC endpoint |
+在侧栏选择「策划」并新建会话，可以参考项目代码编写设计文档，写入范围限定在项目的 `game-design/` 目录。内置技能涵盖立项、设计流程、系统、数值和核心循环；切换工作模式不会解除策划目录的写入限制。
 
-完整清单：[`CLAUDE.md` §持久化与隔离](CLAUDE.md)
+### 引用文件、图片和网页
 
-## 更新 & 安装
+输入 `@` 可引用项目文件，输入 `/` 可选择技能、提示词和命令；图片与文件支持粘贴或拖放，图片输入需要所选模型支持。
 
-- **自动更新**：安装版启动后静默检查 [GitHub Releases](https://github.com/Fromlan/X-agent/releases)（不自动下载）。有新版本时应用内提示「立即更新 / 稍后」。
-- **代码签名**：可选 `CSC_LINK` + `CSC_KEY_PASSWORD`（缓解 SmartScreen 拦截）。未配置仍可装。
+网页搜索与抓取使用 DeepSeek 官方接口，可供不同聊天模型调用：先在「设置 → 供应商」配置并启用 DeepSeek 官方供应商，再到「设置 → 工具 → DeepSeek 网络」选择该配置，开启网页搜索或网页抓取。两项默认关闭，搜索词和目标网址会发送给 DeepSeek，请求单独计费，暂不计入应用的模型 Token 费用统计。
+
+### 模型、扩展与工作台
+
+供应商配置支持导入本机 Pi 和 cc-switch 配置，可切换模型、调整思考档位，并按日、按模型查看用量。设置内可以管理 Pi 的技能、提示词、扩展、主题和 Packages。
+
+右侧面板提供上下文占用与压缩、计划、工具和文件浏览。外观可在石墨、雾蓝、暮紫、暖砂、松绿和高对比主题之间选择，支持深浅模式。
 
 ## 安全与隐私
 
-编码 Agent 默认具备较强本机能力，请按需收紧。
+会话、偏好、用量和检查点保存在本机 `%USERPROFILE%\.pi\agent\` 下。`auth.json`、`models.json`、`settings.json` 与 Pi CLI 共用；X-agent 会话和检查点分别放在 `x-agent/sessions/`、`x-agent/checkpoints/`。
 
-### API Key
-- `x-agent-providers.json` 默认用 Electron `safeStorage` 加密；激活时明文写入 Pi `auth.json`（与 Pi CLI 共用）
-- 解密失败（换机器 / keyring 重置）时**保留盘上密文** `encryptedKey`，不覆盖——避免密钥永久丢失
-- ⚠️ 不要把 `~/.pi/agent/` 同步到不可信位置
+模型请求会把对话和需要的项目上下文发送给你选择的供应商。供应商档案中的 API Key 尽量使用系统加密存储，启用后也会以明文写入 Pi 的 `auth.json`。
 
-### 工具
-- 默认开 `bash` / `write` / `edit`（**Agent / Goal 模式**）
-- **调研 / Plan 模式**硬闸关 `write` / `edit`；`bash` 仅放行只读命令且路径须在项目 cwd 内
-- `read` / `grep` / `find` / `ls` 路径参数强制 cwd 内
-- Godot 工具开关在 IPC 层校验（被攻陷 UI 也无法绕过默认关闭项）
+智能体和目标模式可以写文件、运行命令。内置文件工具限制在项目目录内，但 Bash 仍可能访问更广的本机路径，不能把这些限制视为操作系统级沙箱。Godot 连接仅监听本机 `127.0.0.1`，并校验连接令牌。
 
-### 网络 / 进程
-- Godot RPC 仅监听 `127.0.0.1`，endpoint 含共享 token（握手失败 → 更新并重启 X-agent RPC 插件）
-- Provider baseUrl 拒绝私网 / `*.nip.io` / `localtest.me`（防 SSRF）
-- `pi install` 跳过 npm lifecycle scripts
+配置和实现细节见 [开发参考](docs/agent.md) 与 [上下文说明](docs/agent-context.md)；报告安全问题请阅读 [SECURITY.md](SECURITY.md)。
 
-## 常见问题
+## 从源码运行
 
-**Q: 在线 / 离线能用吗？**
-A: 模型调用走 API（在线）；本地用量 / 检查点 / 会话 / 撤回全部离线。Godot 文档技能 `godot-docs-4-7` 在 Godot 项目内自动索引。
+开发和 CI 目前均以 Windows 为准，需要 Node.js 24+ 和 Git for Windows。依赖与锁文件位于 `apps/desktop`，在 PowerShell 中运行：
 
-**Q: 为什么不用 VS Code + Copilot？**
-A: 1) Godot 编辑器 RPC 联动（场景内省 / 调试器 / 资源治理）VS Code 插件做不到；2) Shadow Git 撤回独立于你的 `.git`（VS Code 不会按 diff 路径还原）；3) 4 模式 + 2 类型硬闸（VS Code 插件是建议，X-agent 是 IPC 层强制）。
-
-**Q: 可以用在非 Godot 项目吗？**
-A: 可以（IDE 本身是 Electron + Pi SDK 通用），但 Godot 工具全部关掉就退化成普通 Agent，**没有差异化价值**。
-
-**Q: 数据会同步到云吗？**
-A: 不会。本机持久化（见 [数据位置](#数据位置)）。仅模型调用走你配置的 provider。
-
-**Q: 升级会丢数据吗？**
-A: 不会。升级保留 `~/.pi/agent/` 下所有内容。如需回滚到旧版，直接装旧 installer 覆盖。
-
-## 从源码开发
-
-开发需要 Node.js 24+。设置 → 通用 → 诊断与反馈可预览并导出本地 JSON，包含版本、系统、最近最多 100 条操作或异常记录、操作耗时及最近失败时的状态；失败现场在重启后仍保留。不包含异常正文、密钥、认证文件、对话、项目源码或路径，不自动上传。反馈问题时可复制摘要、打开 Bug 表单，补充复现步骤并附上诊断文件或截图。主进程异常会停止运行并退出；渲染器异常提供重启或退出入口。
-
-目标模式的 token 预算包含独立评估开销，是请求结束后停止续轮的阈值，单次请求仍可能超额。评估结合工具结果，仍不能替代人工或确定性验收。撤回回滚分支预算，但实际费用不会退回。
-
-项目文件访问检查 junction/symlink 的真实目标；检查后由其他进程替换路径仍存在竞态。模型列表探测拒绝重定向并检查实际连接地址；此保护不统一覆盖 Pi SDK 的会话、OAuth、压缩、扩展及 WebSocket 请求。
-
-开发者文档：[`docs/agent.md`](docs/agent.md) / [`CLAUDE.md`](CLAUDE.md)
-
-```bash
+```powershell
 git clone https://github.com/Fromlan/X-agent.git
-cd X-agent
-cd apps/desktop
-npm install
-npm run dev          # Electron 开发
-npm test             # 离线断言链
-npm run test:unit    # vitest
-npm run typecheck    # tsc 两个 tsconfig
-npm run lint         # AST 静态规则 + 发布门禁检查
-npm run test:coverage # 配置范围内的覆盖率门槛
-npm run build
-npm run test:e2e      # 实际 Electron 业务与界面回归
+cd X-agent/apps/desktop
+npm ci
+npm run dev
 ```
 
-真实 Godot 集成在 PowerShell 中设置 `$env:GODOT_BIN` 为 Godot 4.6.2 console 可执行文件的绝对路径，再在 `apps/desktop` 执行 `npm run test:godot`。缺少该环境时命令失败；CI 自动安装并校验官方文件摘要。测试使用隔离临时工程，覆盖插件加载、鉴权 RPC、场景操作和脚本错误行号。覆盖率仅代表 `vitest.config.ts` 的统计范围。
+在 `apps/desktop` 目录执行检查：
 
-发版流程：见 [`CLAUDE.md` §7](CLAUDE.md#7-发版流程)。
+```powershell
+npm run typecheck
+npm run lint
+npm test
+npm run test:coverage
+npm run build
+npm run test:e2e
+```
 
-## 路线图
+真实 Godot 集成测试需要将 `$env:GODOT_BIN` 设为 Godot 4.6.2 console 可执行文件的绝对路径，再运行 `npm run test:godot`。文档修改还需在仓库根目录运行 `npm run doc:drift` 和 `npm run test:doc-drift`。
 
-22 个里程碑 / 4 个 Phase。当前阶段：
-
-- ✅ **Phase 1** 工程质量 + Godot 深化（1.1 Vitest+Playwright / 1.2 7 个 Godot 工具 / 1.4 Lint / 1.5 @ 补全 / 1.6 E2E 契约锁）
-- 🛑 **1.3 i18n 基础** —— 已废弃（单兵项目，英文文档由 README.en.md 承担，UI 仍中文 only）
-- ⏳ **Phase 2** UX 打磨：会话导出 / 开发者诊断 / Plan 模板 / A11y
-- ⏳ **Phase 3** 差异化：主题编辑器 / 快捷键中心 / 多项目工作区
-- ⏳ **Phase 3.4** macOS / Linux 安装包
-
-完整路线图：[`docs/roadmap.md`](docs/roadmap.md)
+仓库中的 `apps/desktop` 是 Electron 客户端，`packages/godot-editor-rpc` 是 Godot 插件，`packages/godot-pi` 是原生技能包。架构与开发约定见 [CLAUDE.md](CLAUDE.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 反馈与贡献
 
-- **Bug / 功能请求**：[Issues](https://github.com/Fromlan/X-agent/issues)（Bug / Feature / Question 3 类模板）
-- **安全漏洞**：[`SECURITY.md`](SECURITY.md) — **不要**在公开 Issue 贴复现
-- **参与开发**：[`CONTRIBUTING.md`](CONTRIBUTING.md) / [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)
-- **行为准则**：[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
-- **协议**：[`LICENSE`](LICENSE) (MIT)
-- **维护节奏**：[`docs/maintenance.md`](docs/maintenance.md)
+遇到问题或有功能建议，可以提交 [Issue](https://github.com/Fromlan/X-agent/issues)。请附上版本、Godot 版本、所用模型与复现步骤。「设置 → 通用 → 诊断与反馈」可以预览、导出本地诊断信息或复制反馈摘要；诊断不包含对话、源码、路径和密钥，也不会自动上传。
 
-## 致谢
+欢迎提交 PR。较大的改动请先开 Issue 讨论，参与前请阅读 [贡献指南](CONTRIBUTING.md) 和 [行为准则](CODE_OF_CONDUCT.md)。版本变化见 [更新日志](CHANGELOG.md)，后续计划见 [路线图](docs/roadmap.md)。
 
-- 基于 [Pi SDK](https://pi.dev) — 上下文组装 / 会话 / compaction 的核心
-- 状态行动画：[thinking-orbs](https://github.com/JakubAntalik/thinking-orbs) (MIT © Jakub Antalik)
-- Godot 文档：[godot-docs-4-7](https://godotengine.org/) 索引
-- 灵感来源：[Karpathy 关于 LLM Knowledgebase 的思考](https://x.com/karpathy/status/2039805659525644595)
+联系：[fromlan@qq.com](mailto:fromlan@qq.com) · QQ 群：`1074500101`
 
-## 联系
+## 致谢与许可
 
-| 渠道 | 联系方式 |
-|---|---|
-| 邮箱 | [fromlan@qq.com](mailto:fromlan@qq.com) |
-| QQ 群 | `1074500101` |
+X-agent 基于 [Pi SDK](https://pi.dev) 构建，使用 [thinking-orbs](https://github.com/JakubAntalik/thinking-orbs) 状态动画，Godot 知识库整理自 [Godot 官方文档](https://docs.godotengine.org/)。
 
----
-
-<p align="center">
-  <sub>如果 X-agent 帮到你，<a href="https://github.com/Fromlan/X-agent">点个 ⭐ Star</a> 让更多人看到。</sub>
-</p>
+本项目采用 [MIT License](LICENSE)。

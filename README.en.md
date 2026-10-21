@@ -1,273 +1,141 @@
 <h1 align="center">X-agent</h1>
 
+<p align="center">A desktop AI development assistant for Godot 4</p>
+
 <p align="center">
-  <img src="docs/screenshots/main-window.png" alt="X-agent main window" width="480"/>
+  <a href="https://github.com/Fromlan/X-agent/releases/latest"><img src="https://img.shields.io/github/v/release/Fromlan/X-agent?label=latest" alt="Latest release"/></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-blueviolet" alt="Windows 10/11"/>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Fromlan/X-agent" alt="MIT License"/></a>
 </p>
 
 <p align="center">
-  <strong>A desktop coding agent for Godot 4: edit code, run scenes, and rewind to any step—all in the same session.</strong>
+  <a href="https://github.com/Fromlan/X-agent/releases/latest">Download</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#development">Development</a> ·
+  <a href="https://github.com/Fromlan/X-agent/issues">Issues</a> ·
+  <a href="README.md">简体中文</a>
 </p>
+
+X-agent lets you edit scripts and scenes, call the Godot editor, and inspect runtime errors in the same conversation. You can research a change and prepare a plan before implementing it, or open a design session to work on gameplay, systems, and balancing documents.
+
+Built on [Pi SDK](https://pi.dev), it uses the models and credentials you configure. The project is in beta. Installers are currently available for Windows, and the interface is in Chinese.
 
 <p align="center">
-  <a href="https://github.com/Fromlan/X-agent/releases/latest"><img src="https://img.shields.io/github/v/release/Fromlan/X-agent?label=latest" alt="Latest Release"/></a>
-  <img src="https://img.shields.io/badge/status-Early%20Beta-orange" alt="Status: Early Beta"/>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Fromlan/X-agent" alt="License: MIT"/></a>
-  <a href="https://github.com/Fromlan/X-agent/stargazers"><img src="https://img.shields.io/github/stars/Fromlan/X-agent?style=flat" alt="GitHub Stars"/></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-blueviolet" alt="Platform: Windows 10/11"/>
-  <img src="https://img.shields.io/badge/Godot-4.x-478cbf" alt="Godot 4.x"/>
+  <img src="docs/screenshots/main-window.png" alt="X-agent workbench with projects and sessions, conversation and tool activity, and an execution plan" width="1000"/>
 </p>
 
-<p align="center">
-  <a href="#install">Install</a> ·
-  <a href="#what-is-x-agent">Three pillars</a> ·
-  <a href="docs/agent.md">Dev docs</a> ·
-  <a href="docs/roadmap.md">Roadmap</a> ·
-  <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="https://github.com/Fromlan/X-agent/issues">Issues</a>
-</p>
+## Getting started
 
-<p align="center">
-  <a href="README.md">🇨🇳 简体中文</a> | <a href="README.en.md">🇺🇸 English</a>
-</p>
+Download `X-agent-Setup-<version>-<arch>.exe` from [GitHub Releases](https://github.com/Fromlan/X-agent/releases/latest) and follow the installer. Packaged builds check for updates on launch; downloading and installing require your confirmation.
 
----
+Have Godot 4 and [Git for Windows](https://gitforwindows.org/) installed. Git supplies Bash for command execution and supports workspace checkpoints. Pi login and package installation also need Node.js 24+ and Pi CLI; the in-app readiness checklist provides setup actions.
 
-> **Early Beta**: under active development; expect rough edges.
+1. **Open a project**: select the root folder containing `project.godot`.
+2. **Configure a model**: add and enable a profile in Settings → Providers, or open Pi login from Settings → General to reuse local credentials.
+3. **Check Bash**: confirm Bash is available in Settings → General. When Git Bash is detected, you can save its path from there.
+4. **Start a conversation**: select a model and working mode in the input area, then describe the task.
 
-> Not AGI, but the most differentiated desktop agent in the Godot niche: editor RPC integration + Shadow Git rollback + 4 modes / 2 types hard-gated.
+### Connect the Godot editor
 
-## Install
+Once connected, the agent can inspect the current scene, run the project, and retrieve errors.
 
-**Windows** (the only currently supported desktop platform):
+1. Select the Godot executable in Settings → Godot, then click Install/update plugin under Editor connection.
+2. Enable **X-agent RPC** in Godot's Project → Project Settings → Plugins, and keep that project's editor open. Reload the project or restart Godot after updating the addon.
+3. Check that X-agent reports a connected editor. Start the bridge if it is not running.
+4. Enable the **Godot editor tools** you need in Settings → Tools. They are off by default.
 
-- **Installer**: [GitHub Releases](https://github.com/Fromlan/X-agent/releases/latest) — pick `X-agent-Setup-x.y.z.exe` and double-click
-- **In-app updates**: after install, launch silently checks for new versions (Settings → General, or the TopBar entry, can trigger manual checks)
+See the [Godot addon documentation](packages/godot-editor-rpc/README.md) for available tools and connection troubleshooting.
 
-**macOS / Linux**: wait for the release—see [ROADMAP §1.3](docs/roadmap.md). Developers can run from source (see "From source" below).
+## Features
 
-## 30-second start
+### Work with Godot from a conversation
 
-1. Open the app and **Open project** to pick your Godot project root
-2. **Authenticate**: Settings → General → "Open Pi login" (or `pi login` already signed in locally)
-3. (Optional) **Bridge the Godot editor**: Settings → Godot → Editor connection → install the **X-agent RPC** addon → enable `x_agent_rpc` inside Godot
-4. Type a prompt, press Enter
+The app provides **27 Godot tools** covering scene and node inspection, opening and reloading scenes, running scenes and collecting errors, checking scripts, importing resources, and exporting projects. If several editors are connected, select the active editor in Settings.
 
-Going deeper: [role-based scenarios](#what-do-you-want-to-do-with-x-agent) / [settings overview](#settings) / [keyboard shortcuts](#keyboard-shortcuts).
+The native skill package includes the `godot-docs-4-7` knowledge base, loaded on demand in Godot projects. See [godot-pi](packages/godot-pi/README.md) for package contents and installation.
 
-## What is X-agent?
+### Research, plan, and implement
 
-X-agent does three things other agents don't: **deep Godot integration**, **trustworthy rollback**, **hard mode gates**. Each pillar links to the deeper mechanism in [docs/agent.md](docs/agent.md).
+Code sessions offer four working modes. Select one in the input area or cycle through them with `Shift+Tab`.
 
-### 🎮 Deep Godot integration
-
-- **Editor RPC (TCP)** — the agent drives your running Godot editor: open / reload scenes, run current or main scene, capture play errors and stream them back. Default port `8765` (fallback `8765–8774`), with explicit multi-editor routing. See [docs/agent.md §七](docs/agent.md)
-- **27 Godot tools** — scene introspection (node tree / properties / current scene / open scenes) / debugger (breakpoints / state) / resource hygiene (unused / lint / import / wait-for-import / UID resolve) / export (headless sub-process / templates / preset list) / config R/W (`project.godot`) / read-only introspection (global classes / conflict check / export templates / script inspect / project file list / editor info)
-- **`godot-docs-4-7` skill** — auto-discovered by Pi and surfaced in `<available_skills>`; load the full SKILL.md on demand via `read`—**0 tokens wasted on methodology you don't need**
-- **Ready checklist** — first-time setup wizard for Godot projects (auth / bash / RPC addon / Godot tools / docs)
-
-### ↩️ Trustworthy rollback
-
-- **Shadow Git checkpoints** (an independent checkpoint per prompt, isolated from your project's `.git`) → rewind / edit-resend / regenerate restores by diff path, **won't clobber edits you made during the turn**. Without Git, falls back to `write` / `edit` byte baselines
-- **Diff preview** (0.5.3+) — every turn shows `+/-`-colored diffs below the reply (with file count and `+N` / `-N` stats); the rewind confirmation dialog also shows a "what will be restored" diff so you can verify line-by-line
-- **Resumes survive restarts**: Shadow state persists across session restore
-
-### 🔀 4 modes + 2 types, hard-gated
-
-- **Session modes (mutually exclusive)**:
-  - **Agent** — normal coding (default allowlist)
-  - **Ask / Research** — read-only Q&A; hard-closes `write` / `edit` / `write_plan`; `bash` only allows read-only commands and paths must stay inside the project cwd
-  - **Plan** — read-only research + `write_plan`; editable plan in the right panel, save to project, **Build plan** switches back to Agent to implement
-  - **Goal** — set a completion condition; independent evaluator auto-continues while unmet (turn + token double budget)
-- **Session types (orthogonal to mode)**:
-  - **`code`** (default, writes unrestricted)
-  - **`design`** — writes are **hard-confined** to `<cwd>/game-design/`, UI flips to a warm theme; 5 preinstalled skills: `design-initiation` / `design-process` / `design-systems` / `design-numerical` / `design-core-loop`
-
-## What do you want to do with X-agent?
-
-Four common scenarios, choose by role:
-
-### 🎮 Godot developer · edit code + run scenes
-Open project → Agent mode → pick model → ask "add a dash to `Player.gd` and run the current scene" → Agent edits the file, editor RPC reloads, runs the scene, error messages stream back—**all in the same session**.
-
-### ✍️ Solo game designer · write design docs (keep `game/` clean)
-Pick **design session type** when creating a session → writes are hard-confined to `<cwd>/game-design/` → 5 preinstalled design skills help with project initiation / numbers / core loop → UI flips to a warm theme to distinguish from code sessions.
-
-### 🔬 Read-only research · ask API, look up docs
-Switch to **Ask mode** → tool allowlist hard-closes `write` / `edit` → `bash` only allows read-only commands and paths must stay inside the project cwd → perfect for "find out how GDScript singletons work before I touch the code".
-
-### 🎯 Goal-driven · let the agent run until the goal is met
-Switch to **Goal mode** → set a completion condition (e.g. "add combo counter to `ScoreManager.gd` + show on HUD") → evaluator auto-continues while the goal is unmet (turn + token double budget).
-
-## Key capabilities
-
-| Capability | Version | What you see |
-|---|---|---|
-| **🎯 Design session type** | 0.5.5 | Writes hard-confined to `<cwd>/game-design/`, warm theme UI |
-| **🛠 5 preinstalled design skills** | 0.5.5 | Initiation / process / systems / numerical / core loop, ready to use |
-| **🎨 8 built-in logos + custom upload** | 0.5.5 | Settings → General → Brand (Neon Cyber / Lava Burn / …) |
-| **🎨 v1.1 elevation design language** | 0.5.4 | Composer as the single main element; chrome steps back |
-| **⚡ Diff display** | 0.5.3 | `+/-`-colored diff before rewind, with `+N` / `-N` stats |
-| **🔮 thinking-orbs status animation** | 0.5.2 | Particle-orbit animation while running, not a spinner |
-| **📜 godot-docs-4-7** | 0.4.x | Engine-conventions skill, loaded on demand |
-| **↩️ Shadow Git rollback** | 0.4.x | Per-turn checkpoints, restore by diff path |
-| **📎 Composer attachments** | 0.6.1 | Paste/drag images & files, cwd-internal files expand inline |
-| **🎯 4 modes + 2 types hard-gate** | 0.3.6+ | Agent / Ask / Plan / Goal × code / design |
-| **🧠 Thinking levels + model clamp** | 0.2.5+ | Auto-clamp for DeepSeek etc., live editor feedback |
-
-Full changelog: [`CHANGELOG.md`](CHANGELOG.md).
-
-## Three concepts you must know
-
-- **Session mode** (mutually exclusive): Agent / Ask / Plan / Goal—decides **which tools are available**
-- **Session type** (orthogonal): `code` / `design`—decides the **scope of writes**
-- **Rollback source**: Shadow Git checkpoints (isolated from your `.git`); restores by diff path
-
-## Keyboard shortcuts
-
-| Shortcut | Action |
+| Mode | Behavior |
 |---|---|
-| `Shift+Tab` | Cycle through modes |
-| `F12` / `Ctrl+Shift+I` | DevTools (requires `--x-agent-debug` / `X_AGENT_DEBUG=1`) |
-| `Esc` | Close the current modal |
-| `Ctrl+,` | Open Settings |
-| `Ctrl+Enter` | Send message (when input is multiline) |
+| Agent | Read and edit project files, call enabled tools, and carry out development tasks. |
+| Ask | Inspect the project, research, and answer questions without file writes. Terminal commands are restricted to read-only operations within the project. |
+| Plan | Research without changing project files and produce a plan. Review, edit, or save it in the right panel; executing it switches to Agent mode. |
+| Goal | Work toward completion criteria, with a separate evaluator deciding whether to continue, subject to turn and token budgets. |
 
-## Settings
+Goal budgets control continuation and include evaluator usage. A single request can exceed the budget. Use tests and actual runtime results to verify completion.
 
-| Section | Contents |
-|---|---|
-| General | Theme, default Thinking, bash path, Pi login, auto-update, **Brand (logo selector)** |
-| Providers | Model profiles, import Pi / cc-switch configs, Thinking clamp |
-| Usage | Local per-day / per-model usage summary |
-| Tools | Built-in / Godot editor / Godot docs tool allowlist; active in Agent / Goal modes |
-| Plugins | Prompts / Skills / Extensions / Themes / Packages (Pi's five kinds) |
-| Godot | **Editor connection** (RPC bridge + addon install / update) |
+### Review changes and roll back
 
-Full config reference: [`docs/agent.md` §四](docs/agent.md) / [`docs/context.md`](docs/context.md)
+Review file diffs after each turn, retract a turn, edit and resend a message, or regenerate a response. The retraction dialog previews what will be restored.
 
-## Data locations
+With Git available, checkpoints use a separate Shadow Git repository without changing your project's Git history. Without Git, the app falls back to file baselines for the `write` and `edit` tools. Retraction restores affected paths and preserves files the agent did not touch. Manual edits within the same file may still be affected, so inspect the diff before retracting.
 
-App data lives under `~/.pi/agent/`; **shared** with Pi CLI: `auth.json` / `models.json`; everything else is **isolated**:
+### Write game design documents
 
-| Path | Purpose |
-|---|---|
-| `x-agent.json` | Client preferences (theme / default Thinking / sidebar width / etc.) |
-| `x-agent/sessions/` | App sessions (separate from Pi CLI's) |
-| `x-agent/checkpoints/` | Shadow Git checkpoints (per project, **does not touch your `.git`**) |
-| `x-agent/plans/` / `x-agent/goals/` | Plan files / Goal journals |
-| `x-agent-logos/` | Custom brand logos (UUID filenames, **do not edit outside the app**) |
-| `x-agent-{providers,packages,usage,godot-rpc}.json` | Profiles / install records / usage / RPC endpoint |
+Select the design session type in the sidebar before creating a session. The agent can use project code as reference, with writes confined to the project's `game-design/` directory. Built-in skills cover project initiation, design process, systems, balancing, and the core loop. Switching working modes does not remove the directory restriction.
 
-Full list: [`CLAUDE.md` §持久化与隔离](CLAUDE.md)
+### Include files, images, and web sources
 
-## Updates & installation
+Use `@` to reference project files and `/` to select skills, prompts, or commands. Paste or drag in images and files; image input requires a model that supports it.
 
-- **Auto-update**: packaged builds silently check [GitHub Releases](https://github.com/Fromlan/X-agent/releases) on launch (no auto-download). When a new version is found, an in-app prompt offers **Update now** / **Later**.
-- **Code signing**: optional `CSC_LINK` + `CSC_KEY_PASSWORD` to sign Windows installers (helps with SmartScreen). Builds still succeed without a certificate (unsigned).
+Web search and page fetching use DeepSeek's official API and can be called by different chat models. Add and enable an official DeepSeek provider profile, then select it under Settings → Tools → DeepSeek Web and enable search or fetching. Both are off by default. Queries and target URLs are sent to DeepSeek. Requests are billed separately and are not currently included in the app's model token cost totals.
 
-## Security & privacy
+### Choose models and extensions
 
-A coding agent comes with substantial local power—tighten as needed.
+Import provider profiles from local Pi or cc-switch configuration, switch models, adjust thinking levels, and inspect usage by day or model. Manage Pi skills, prompts, extensions, themes, and packages in Settings.
 
-### API keys
-- `x-agent-providers.json` is encrypted at rest with Electron `safeStorage` when available; on activation the key is also written in plaintext to Pi's `auth.json` (shared with Pi CLI)
-- On decryption failure (machine migration / keyring reset) the **on-disk ciphertext (`encryptedKey`) is preserved**—subsequent saves won't overwrite it with an empty string and lose the key
-- ⚠️ Don't sync `~/.pi/agent/` to untrusted locations
+The right panel includes context usage and compaction, plans, tools, and a file browser. Graphite, Mist, Dusk, Sand, Sage, and High Contrast themes support light and dark modes.
 
-### Tools
-- Defaults: `bash` / `write` / `edit` are on (active in **Agent / Goal modes**)
-- **Ask / Plan modes** hard-close `write` / `edit`; `bash` only allows read-only commands and paths must stay inside the project cwd
-- `read` / `grep` / `find` / `ls` path parameters are forced inside the project cwd
-- Godot tool toggles are validated at the IPC layer (a compromised UI cannot bypass a tool that's off by default)
+## Security and privacy
 
-### Network / processes
-- Godot RPC only listens on `127.0.0.1`; endpoints carry a shared token validated on `editor_ready` (handshake failure → update and restart the X-agent RPC addon)
-- Provider baseUrl rejects private networks / `*.nip.io` / `localtest.me` (SSRF guard)
-- `pi install` skips npm lifecycle scripts
+Sessions, preferences, usage, and checkpoints are stored locally under `%USERPROFILE%\.pi\agent\`. The app shares `auth.json`, `models.json`, and `settings.json` with Pi CLI. X-agent sessions and checkpoints live in `x-agent/sessions/` and `x-agent/checkpoints/`.
 
-## FAQ
+Model requests send conversation content and relevant project context to your chosen provider. Provider profiles use OS-backed encryption for API keys when available; enabling a profile also writes its key to Pi's `auth.json` in plaintext.
 
-**Q: Does it work offline?**
-A: Model calls need API (online); local usage / checkpoints / sessions / rollback are fully offline. The Godot docs skill `godot-docs-4-7` is auto-indexed inside Godot projects.
+Agent and Goal modes can write files and execute commands. Built-in file tools are confined to the project directory, but Bash may access other local paths. These restrictions are not an operating-system sandbox. The Godot bridge listens only on `127.0.0.1` and authenticates connections with a token.
 
-**Q: Why not just VS Code + Copilot?**
-A: 1) Godot editor RPC integration (scene introspection / debugger / resource hygiene) is out of reach for VS Code plugins. 2) Shadow Git rollback is isolated from your `.git` (VS Code doesn't restore by diff path). 3) 4 modes + 2 types are enforced at the IPC layer, not just suggested.
+See the [developer reference](docs/agent.md) and [context documentation](docs/agent-context.md) for details. For security reports, follow [SECURITY.md](SECURITY.md).
 
-**Q: Can I use it for non-Godot projects?**
-A: Technically yes (the IDE is Electron + Pi SDK, generic), but with all Godot tools off it degrades to a plain agent—**no differentiation value**.
+## Development
 
-**Q: Does my data sync to the cloud?**
-A: No. Everything is local (see [Data locations](#data-locations)). Only model calls go through your configured provider.
+Development and CI currently target Windows. Install Node.js 24+ and Git for Windows. Dependencies and the lockfile live in `apps/desktop`. In PowerShell:
 
-**Q: Will upgrades wipe my data?**
-A: No. Upgrades preserve everything under `~/.pi/agent/`. To roll back, install an older installer over the current one.
-
-## From source
-
-Development requires Node.js 24+. Settings → General → Diagnostics and feedback previews and exports local JSON with versions, system/runtime state, up to 100 operation or exception records, operation durations and the latest failure-time state, retained across restarts. It excludes raw errors, credentials, conversations, project source and paths; nothing is uploaded automatically. Copy the feedback summary and open the Bug form to add reproduction steps and attach the diagnostic file or screenshots. Main-process failures stop execution and exit; renderer failures offer restart or exit.
-
-Goal token accounting includes evaluator usage. The budget stops continuation after a request completes and can be exceeded by a single request. Tool evidence improves evaluation but cannot replace deterministic acceptance. Retracting rolls back branch budget, not incurred fees.
-
-File boundaries check junction/symlink targets, with a remaining check/use race if another process replaces paths. Model-list probes reject redirects and validate connection addresses; this policy does not uniformly cover Pi SDK sessions, OAuth, compaction, extensions or WebSockets.
-
-Developer docs: [`docs/agent.md`](docs/agent.md) / [`CLAUDE.md`](CLAUDE.md)
-
-```bash
+```powershell
 git clone https://github.com/Fromlan/X-agent.git
-cd X-agent
-cd apps/desktop
-npm install
-npm run dev          # Electron dev
-npm test             # offline assertion chain
-npm run test:unit    # vitest
-npm run typecheck    # tsc (two tsconfigs)
-npm run lint         # AST rules and release workflow gates
-npm run test:coverage # coverage over the configured include scope
-npm run build
-npm run test:e2e      # real Electron business and UI flows
+cd X-agent/apps/desktop
+npm ci
+npm run dev
 ```
 
-For real Godot integration, set PowerShell `$env:GODOT_BIN` to the absolute path of a Godot 4.6.2 console executable, then run `npm run test:godot` in `apps/desktop`. Missing configuration fails explicitly. CI downloads and verifies the official artifact. The isolated temporary project tests addon loading, authenticated RPC, scene operations and script error line numbers. Coverage represents only the scope in `vitest.config.ts`.
+Run checks from `apps/desktop`:
 
-Release flow: see [`CLAUDE.md` §7](CLAUDE.md#7-发版流程).
+```powershell
+npm run typecheck
+npm run lint
+npm test
+npm run test:coverage
+npm run build
+npm run test:e2e
+```
 
-## Roadmap
+For real Godot integration tests, set `$env:GODOT_BIN` to the absolute path of a Godot 4.6.2 console executable, then run `npm run test:godot`. For documentation changes, also run `npm run doc:drift` and `npm run test:doc-drift` from the repository root.
 
-22 milestones / 4 phases. Current state:
+`apps/desktop` contains the Electron client, `packages/godot-editor-rpc` the Godot addon, and `packages/godot-pi` the native skill package. Read [CLAUDE.md](CLAUDE.md) for architecture and engineering conventions, and [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
-- ✅ **Phase 1** Engineering quality + Godot deepening (1.1 Vitest+Playwright / 1.2 seven new Godot tools / 1.4 lint / 1.5 @-completion / 1.6 E2E contract locks)
-- 🛑 **1.3 i18n basics** — deprecated (single-maintainer; English docs via `README.en.md`, UI stays Chinese-only for now)
-- ⏳ **Phase 2** UX polish: session export / dev diagnostics / Plan templates / A11y
-- ⏳ **Phase 3** Differentiation: theme editor / shortcut center / multi-project workspace
-- ⏳ **Phase 3.4** macOS / Linux installers
+## Feedback and contributions
 
-Full roadmap: [`docs/roadmap.md`](docs/roadmap.md)
+Report bugs or suggest features in [Issues](https://github.com/Fromlan/X-agent/issues). Include the app version, Godot version, model, and reproduction steps. Settings → General → Diagnostics and feedback lets you preview or export local diagnostics and copy a feedback summary. Diagnostics exclude conversations, source code, paths, and credentials, and are not uploaded automatically.
 
-## Feedback & contributing
+PRs are welcome. Discuss larger changes in an issue first, and read the [contributing guide](CONTRIBUTING.md) and [code of conduct](CODE_OF_CONDUCT.md). See the [changelog](CHANGELOG.md) for version history and the [roadmap](docs/roadmap.md) for future plans.
 
-- **Bug / feature requests**: [Issues](https://github.com/Fromlan/X-agent/issues) (three templates: Bug / Feature / Question)
-- **Security**: [`SECURITY.md`](SECURITY.md) — **do not** post reproduction details in a public issue
-- **Contributing**: [`CONTRIBUTING.md`](CONTRIBUTING.md) / [PR template](.github/PULL_REQUEST_TEMPLATE.md)
-- **Code of conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
-- **License**: [`LICENSE`](LICENSE) (MIT)
-- **Maintenance cadence**: [`docs/maintenance.md`](docs/maintenance.md)
+Contact: [fromlan@qq.com](mailto:fromlan@qq.com) · QQ group: `1074500101`
 
-## Credits
+## Credits and license
 
-- Built on [Pi SDK](https://pi.dev) — the core for context assembly / sessions / compaction
-- Status animations: [thinking-orbs](https://github.com/JakubAntalik/thinking-orbs) (MIT © Jakub Antalik)
-- Godot docs: indexed [godot-docs-4-7](https://godotengine.org/) skill
-- Inspired by [Karpathy on LLM Knowledgebases](https://x.com/karpathy/status/2039805659525644595)
+X-agent is built on [Pi SDK](https://pi.dev), uses [thinking-orbs](https://github.com/JakubAntalik/thinking-orbs) for status animations, and draws its Godot knowledge base from the [official Godot documentation](https://docs.godotengine.org/).
 
-## Contact
-
-| Channel | Details |
-|---|---|
-| Email | [fromlan@qq.com](mailto:fromlan@qq.com) |
-| QQ group | `1074500101` |
-
----
-
-<p align="center">
-  <sub>If X-agent helps you, <a href="https://github.com/Fromlan/X-agent">drop a ⭐ Star</a> so others can find it.</sub>
-</p>
+Licensed under the [MIT License](LICENSE).

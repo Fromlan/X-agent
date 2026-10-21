@@ -4,7 +4,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
-import { Check, X } from "lucide-react";
+import { Check, X, MessageSquare, MoreHorizontal } from "lucide-react";
 import type { AgentStatus, SessionInfo } from "@shared/ipc";
 import { SESSION_TYPE_LABELS } from "@shared/session-type";
 import { StatusIcon } from "../StatusIcon";
@@ -95,6 +95,7 @@ export function SidebarItem({
             </div>
           </div>
         ) : (
+          <>
           <button
             type="button"
             className="session-card-main"
@@ -104,12 +105,9 @@ export function SidebarItem({
             title={session.name}
             data-session-type={session.sessionType}
           >
-            <StatusIcon status={active ? agentStatus : "idle"} />
+            {active && agentStatus !== "idle" ? <StatusIcon status={agentStatus} /> : <MessageSquare size={16} aria-hidden />}
             <div className="session-card-text">
               <div className="session-card-title">{session.name}</div>
-              <div className="session-card-meta tabular">
-                {new Date(session.updatedAt).toLocaleString()}
-              </div>
             </div>
             {session.sessionType === "design" && (
               <span
@@ -122,6 +120,17 @@ export function SidebarItem({
               </span>
             )}
           </button>
+          <button
+            type="button"
+            className="session-card-more"
+            title="会话菜单"
+            aria-label={`会话菜单：${session.name}`}
+            disabled={locked}
+            onClick={onContextMenu}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          </>
         )}
       </div>
     </li>

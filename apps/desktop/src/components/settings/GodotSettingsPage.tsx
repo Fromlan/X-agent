@@ -7,6 +7,7 @@ import {
   type GodotRpcStatusDto,
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
+import { godotConnectionWarning } from "../../lib/godot-connection";
 
 /** Kept for API compat; Godot settings is editor-only (no docs sub-section). */
 export type GodotSettingsSection = "editor";
@@ -82,6 +83,7 @@ export function GodotSettingsPage({
   };
 
   const rpcTone = rpcStatusLabel(rpc);
+  const rpcWarning = godotConnectionWarning(rpc?.warning);
 
   return (
     <section className="settings-page">
@@ -112,7 +114,7 @@ export function GodotSettingsPage({
               }
               const next = await window.xAgent.prefs.get();
               onPrefsChanged?.(next);
-              setRpcMsg(`已选择引擎：${res.path}`);
+              setRpcMsg("引擎已更新");
             }}
           >
             浏览…
@@ -124,7 +126,7 @@ export function GodotSettingsPage({
               const res = await window.xAgent.godot.launchEditor();
               setRpcMsg(
                 res.ok
-                  ? res.hint ?? "已启动 Godot 编辑器"
+                  ? "已打开 Godot 编辑器"
                   : res.error ?? "启动失败",
               );
               await refreshRpc();
@@ -137,7 +139,7 @@ export function GodotSettingsPage({
 
       <div className="settings-block">
         <div className="settings-block-head">
-          <h4 className="settings-block-title">RPC 桥接</h4>
+          <h4 className="settings-block-title">编辑器连接</h4>
           <span
             className={`settings-status ${rpcTone.tone}`}
             title={rpc?.error ?? undefined}
@@ -145,13 +147,6 @@ export function GodotSettingsPage({
             {rpcTone.text}
           </span>
         </div>
-        <p className="modal-hint">
-          端口 {rpc?.port ?? 8765}。X-agent 启动时会优先复用上次的 token 与端口，
-          已运行的 Godot 插件通常无需重启即可连上。
-          安装并启用 X-agent RPC 插件（非 godot_agent）。
-          桥接写入 endpoint 含共享 token；插件握手校验后才接受调用。
-          握手失败时点「安装/更新 RPC 插件」覆盖后再启动 Godot。
-        </p>
         {(rpc?.clientInfos?.length ?? 0) > 0 && (
           <div className="field">
             <span>活动编辑器客户端</span>
@@ -170,8 +165,8 @@ export function GodotSettingsPage({
                   setRpc(res.status);
                   setRpcMsg(
                     id
-                      ? `已切换活动客户端：${id.slice(0, 8)}…`
-                      : "已清除活动客户端（将使用首个连接）",
+                      ? "已切换编辑器"
+                      : "已自动选择编辑器",
                   );
                 })();
               }}
@@ -187,7 +182,7 @@ export function GodotSettingsPage({
               const res = await window.xAgent.godot.installAddon();
               setRpcMsg(
                 res.ok
-                  ? res.hint ?? "插件安装完成"
+                  ? "插件已安装"
                   : res.error ?? "插件安装失败",
               );
               await refreshRpc();
@@ -202,13 +197,8 @@ export function GodotSettingsPage({
               const status = await window.xAgent.godot.start();
               setRpc(status);
               setRpcMsg(
-                status.error
-                  ? status.error
-                  : status.warning
-                    ? status.warning
-                    : status.running
-                      ? `桥接已启动（端口 ${status.port}），等待 Godot 插件连入`
-                      : null,
+                status.error ?? godotConnectionWarning(status.warning) ??
+                  (status.running ? "连接服务已启动" : null),
               );
             }}
           >
@@ -233,7 +223,7 @@ export function GodotSettingsPage({
                 method: "ping",
               });
               if (res.ok) {
-                setRpcMsg("ping ok — Godot 已连接");
+                setRpcMsg("Godot 已连接");
               } else {
                 setRpcMsg(
                   res.error === "no Godot editor connected"
@@ -247,42 +237,31 @@ export function GodotSettingsPage({
             Ping
           </button>
         </div>
-        {rpc?.running && rpc.clients === 0 && (
-          <p className="modal-hint">
-            桥接已运行，等待客户端。请启用 X-agent RPC 后重启 Godot。
-          </p>
-        )}
-        {rpc?.warning && <p className="modal-hint">{rpc.warning}</p>}
+        {rpcWarning && <p className="modal-hint">{rpcWarning}</p>}
         {rpc?.error && (
           <p className="modal-hint settings-error">{rpc.error}</p>
         )}
-        {rpc?.lastEvent && (
-          <p className="modal-hint">
-            最近事件：{JSON.stringify(rpc.lastEvent)}
-          </p>
-        )}
-        <p className="modal-hint">调试</p>
         <div className="settings-toolbar">
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => runRpc({ method: "get_editor_info" })}
           >
-            Info
+            编辑器信息
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => runRpc({ method: "get_open_scenes" })}
           >
-            Open scenes
+            已打开场景
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => runRpc({ method: "get_edited_scene" })}
           >
-            Edited
+            当前场景
           </button>
           <button
             type="button"
@@ -294,7 +273,7 @@ export function GodotSettingsPage({
               })
             }
           >
-            Run
+            运行场景
           </button>
           <button
             type="button"
@@ -306,21 +285,21 @@ export function GodotSettingsPage({
               })
             }
           >
-            Run main
+            运行项目
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => runRpc({ method: "get_play_errors" })}
           >
-            Errors
+            运行错误
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => runRpc({ method: "stop_scene" })}
           >
-            Stop
+            停止运行
           </button>
         </div>
       </div>
@@ -404,10 +383,7 @@ export function GodotSettingsPage({
       </div>
 
       <div className="settings-block">
-        <h4 className="settings-block-title">项目内省（只读 1.3）</h4>
-        <p className="modal-hint">
-          这些 RPC 只读取编辑器状态，不修改文件 / 不启动子进程，适合手动验证扩展工具。
-        </p>
+        <h4 className="settings-block-title">项目信息</h4>
         <div className="settings-toolbar">
           <button
             type="button"

@@ -228,7 +228,7 @@ export function UsageSettingsPage({ active }: Props) {
             <p className="usage-empty">
               {loading
                 ? "加载中…"
-                : "近 30 天暂无记录 — 完成对话后会自动累计"}
+                : "近 30 天暂无记录"}
             </p>
           ))}
 
@@ -283,7 +283,7 @@ export function UsageSettingsPage({ active }: Props) {
             <p className="usage-empty">
               {loading
                 ? "加载中…"
-                : "近 30 天暂无记录 — 完成对话后会自动累计"}
+                : "近 30 天暂无记录"}
             </p>
           ))}
       </div>
@@ -291,7 +291,6 @@ export function UsageSettingsPage({ active }: Props) {
       <div className="usage-danger">
         <div className="usage-danger-copy">
           <span className="usage-danger-title">清空统计</span>
-          <span className="usage-danger-hint">仅清本地汇总，不影响会话</span>
         </div>
         <button
           type="button"

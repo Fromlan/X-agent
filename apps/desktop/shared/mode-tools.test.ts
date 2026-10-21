@@ -3,6 +3,7 @@
  * 锁住 Ask / Plan 模式的只读工具集与 write_plan 归属，防误删。
  */
 import { describe, it, expect } from "vitest";
+import { WEB_TOOLS } from "./tools/web";
 import {
   WRITE_PLAN_TOOL,
   READONLY_CORE_TOOLS,
@@ -32,9 +33,9 @@ describe("mode-tools allowlists", () => {
     ]);
   });
 
-  it("可选用 Godot 只读工具均为 godot_ 前缀且不含写型工具", () => {
+  it("可选只读工具只包含网络与 Godot 读取工具", () => {
     for (const t of PLAN_MODE_OPTIONAL_READONLY_TOOLS) {
-      expect(t).toMatch(/^godot_/);
+      expect(t.startsWith("godot_") || (WEB_TOOLS as readonly string[]).includes(t)).toBe(true);
     }
     expect(PLAN_MODE_OPTIONAL_READONLY_TOOLS).not.toContain("godot_set_project_setting");
     expect(PLAN_MODE_OPTIONAL_READONLY_TOOLS).not.toContain("godot_set_breakpoint");

@@ -32,6 +32,7 @@ import { branchEntriesToHistory } from "../../shared/transcript";
 import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { displaySessionName } from "./session-title";
 import { createGodotTools } from "./godot-tools";
+import { createDeepSeekWebTools } from "./deepseek-web-tools";
 import { dbgLog } from "../../shared/debug-log";
 import {
   createDesktopExtensionUi,
@@ -316,6 +317,7 @@ export class SessionLifecycle {
       // and would otherwise drop custom tools from the registry entirely.
       tools: [...SESSION_TOOL_REGISTRY],
       customTools: [
+        ...createDeepSeekWebTools(),
         ...((rpc) => (rpc ? createGodotTools(rpc) : []))(this.a().godotRpc),
         ...createWritePlanTools(
           (path) => {

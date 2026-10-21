@@ -7,7 +7,7 @@
  *   - IpcInvokeResult — 协议层 "Result | SenderUntrustedError" 派生契约
  *     (issue #65 主题 H, 2026-08-31)
  *
- * 真正的协议 + 14 facade 在 ./../ipc-invoke-map.ts (已经 2026-08-31 拆出).
+ * 真正的协议 + 13 facade 在 ./../ipc-invoke-map.ts (已经 2026-08-31 拆出).
  * 这里只是为了"shared/ipc 子目录有协议层"这个 layout — 老的
  * `import ... from "@shared/ipc"` 走 ./ipc.ts barrel 仍能找到.
  *

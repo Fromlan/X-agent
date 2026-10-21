@@ -1,6 +1,6 @@
 /**
  * register-prefs-ipc (主题 E #62 主题 E-3) — 显式 deps 注入, schema 校验,
- * 工具白名单, logo 变更走 notifyLogoChange. 不依赖 ~/.pi/agent 真实读写.
+ * 工具白名单与技能重载。 不依赖 ~/.pi/agent 真实读写.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { registerPrefsIpc } from "./register-prefs-ipc";
@@ -27,31 +27,26 @@ function getHandler(channel: string): (...args: unknown[]) => unknown {
 function makeDeps(overrides?: {
   loadPrefs?: () => typeof DEFAULT_PREFS;
   patchPrefs?: (patch: unknown) => Promise<typeof DEFAULT_PREFS>;
-  getCachedPrefs?: () => typeof DEFAULT_PREFS;
   applyTools?: (tools: string[]) => Promise<{ ok: boolean; error?: string }>;
   reloadResources?: () => Promise<unknown>;
-  notifyLogoChange?: (id: string, win: unknown) => void;
 }) {
   return {
-    loadPrefs: overrides?.loadPrefs ?? (() => ({ ...DEFAULT_PREFS, clientLogoId: "default" })),
-    patchPrefs: overrides?.patchPrefs ?? (async () => ({ ...DEFAULT_PREFS, clientLogoId: "default" })),
-    getCachedPrefs: overrides?.getCachedPrefs ?? (() => ({ ...DEFAULT_PREFS, clientLogoId: "default" })),
+    loadPrefs: overrides?.loadPrefs ?? (() => ({ ...DEFAULT_PREFS })),
+    patchPrefs: overrides?.patchPrefs ?? (async () => ({ ...DEFAULT_PREFS })),
     applyTools: overrides?.applyTools ?? (async () => ({ ok: true })),
     reloadResources: overrides?.reloadResources ?? (async () => undefined),
-    notifyLogoChange: overrides?.notifyLogoChange ?? (() => {}),
-    getMainWindow: () => null,
   };
 }
 
 describe("register-prefs-ipc / getPrefs", () => {
   it("通过 deps.loadPrefs 同步读 prefs", async () => {
     const deps = makeDeps({
-      loadPrefs: () => ({ ...DEFAULT_PREFS, clientLogoId: "preset:01-neon-cyber" }),
+      loadPrefs: () => ({ ...DEFAULT_PREFS, goalMaxTurns: 42 }),
     });
     registerPrefsIpc(ipcMain as never, deps);
     const handler = getHandler(IPC_CHANNELS.getPrefs);
-    const result = (await handler({})) as { clientLogoId: string };
-    expect(result.clientLogoId).toBe("preset:01-neon-cyber");
+    const result = (await handler({})) as { goalMaxTurns: number };
+    expect(result.goalMaxTurns).toBe(42);
   });
 });
 
@@ -71,6 +66,7 @@ describe("register-prefs-ipc / setPrefs schema 校验 (S4)", () => {
     const deps = makeDeps();
     registerPrefsIpc(ipcMain as never, deps);
     const handler = getHandler(IPC_CHANNELS.setPrefs);
+    await expect(handler({}, { clientLogoId: "preset:01-neon-cyber" })).rejects.toThrow(/prefs patch 校验失败/);
     await expect(handler({}, { language: "zh" })).rejects.toThrow(
       /prefs patch 校验失败/,
     );
@@ -82,7 +78,6 @@ describe("register-prefs-ipc / setPrefs schema 校验 (S4)", () => {
   it("接受合法字段, 走 patchPrefs 写回", async () => {
     const patchSpy = vi.fn(async () => ({
       ...DEFAULT_PREFS,
-      clientLogoId: "default",
       goalMaxTurns: 100,
     }));
     const deps = makeDeps({ patchPrefs: patchSpy });
@@ -106,7 +101,6 @@ describe("register-prefs-ipc / setPrefs 工具白名单", () => {
     const applyTools = vi.fn(async () => ({ ok: true }));
     const patchSpy = vi.fn(async () => ({
       ...DEFAULT_PREFS,
-      clientLogoId: "default",
     }));
     const deps = makeDeps({ applyTools, patchPrefs: patchSpy });
     registerPrefsIpc(ipcMain as never, deps);
@@ -141,39 +135,5 @@ describe("register-prefs-ipc / setPrefs disabledSkills 触发 reloadResources", 
     const handler = getHandler(IPC_CHANNELS.setPrefs);
     await handler({}, { goalMaxTurns: 50 });
     expect(reload).not.toHaveBeenCalled();
-  });
-});
-
-describe("register-prefs-ipc / setPrefs logo 变更走 notifyLogoChange (C-405 seam)", () => {
-  it("clientLogoId 从 default 切到 preset 时通知 renderer", async () => {
-    const notify = vi.fn();
-    const deps = makeDeps({
-      getCachedPrefs: () => ({ ...DEFAULT_PREFS, clientLogoId: "default" }),
-      patchPrefs: async () => ({
-        ...DEFAULT_PREFS,
-        clientLogoId: "preset:01-neon-cyber",
-      }),
-      notifyLogoChange: notify,
-    });
-    registerPrefsIpc(ipcMain as never, deps);
-    const handler = getHandler(IPC_CHANNELS.setPrefs);
-    await handler({}, { clientLogoId: "preset:01-neon-cyber" });
-    expect(notify).toHaveBeenCalledWith(
-      "preset:01-neon-cyber",
-      null,
-    );
-  });
-
-  it("clientLogoId 不变时不重复通知", async () => {
-    const notify = vi.fn();
-    const deps = makeDeps({
-      getCachedPrefs: () => ({ ...DEFAULT_PREFS, clientLogoId: "default" }),
-      patchPrefs: async () => ({ ...DEFAULT_PREFS, clientLogoId: "default" }),
-      notifyLogoChange: notify,
-    });
-    registerPrefsIpc(ipcMain as never, deps);
-    const handler = getHandler(IPC_CHANNELS.setPrefs);
-    await handler({}, { clientLogoId: "default" });
-    expect(notify).not.toHaveBeenCalled();
   });
 });

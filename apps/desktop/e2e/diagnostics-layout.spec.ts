@@ -1,8 +1,30 @@
 /** Validate actual diagnostics export, crash metadata and small-window controls in Electron. */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { readFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { launchApp } from "./helpers";
+import { launchApp, toggleToolPanel } from "./helpers";
+
+/** Visibility alone misses title-bar occlusion; check layout bounds and the actual close-button hit target. */
+async function expectSettingsHeaderAccessible(main: Page): Promise<void> {
+  const geometry = await main.locator(".settings-modal").evaluate((panel) => {
+    const header = panel.querySelector(".modal-head")!;
+    const close = header.querySelector("button")!;
+    const chrome = document.querySelector(".topbar")!.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const closeRect = close.getBoundingClientRect();
+    const hitPoints = [closeRect.top + 2, closeRect.top + closeRect.height / 2, closeRect.bottom - 2];
+    return {
+      chromeBottom: chrome.bottom,
+      headerTop: headerRect.top,
+      panelBottom: panel.getBoundingClientRect().bottom,
+      viewportHeight: window.innerHeight,
+      closeUncovered: hitPoints.every((y) => close.contains(document.elementFromPoint(closeRect.left + closeRect.width / 2, y))),
+    };
+  });
+  expect(geometry.headerTop, "Settings header must clear the native title-bar drag region").toBeGreaterThanOrEqual(geometry.chromeBottom + 8);
+  expect(geometry.panelBottom).toBeLessThanOrEqual(geometry.viewportHeight - 8);
+  expect(geometry.closeUncovered, "Every sampled point on the close button must belong to the dialog").toBe(true);
+}
 
 for (const scale of [1, 1.25, 1.5]) {
   test(`small window at Windows scale ${scale} keeps composer/settings reachable`, async ({}, testInfo) => {
@@ -13,13 +35,14 @@ for (const scale of [1, 1.25, 1.5]) {
         window.setContentSize(900, 600);
       });
       await expect(main.locator(".composer-send")).toBeInViewport();
-      await expect(main.locator('[data-mode="plan"]')).toBeInViewport();
-      await main.locator('[title="打开工具面板"]').click();
+      await expect(main.getByRole("button", { name: "会话模式", exact: true })).toBeInViewport();
+      await toggleToolPanel(main);
       await expect(main.locator(".right-panel")).toBeInViewport();
-      await main.locator('.topbar [title="收起工具面板"]').click();
+      await toggleToolPanel(main);
       await main.screenshot({ path: testInfo.outputPath(`chat-${scale}.png`) });
       await main.locator('[title="设置（Ctrl+,）"]').click();
       await expect(main.locator(".settings-content")).toBeVisible();
+      await expectSettingsHeaderAccessible(main);
       await main.locator(".settings-nav").getByRole("button", { name: "通用" }).click();
       const destination = join(home, "diagnostics-export.json");
       const originalClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
@@ -39,6 +62,15 @@ for (const scale of [1, 1.25, 1.5]) {
         await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain(snapshot.reportId);
       } finally { await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), originalClipboard); }
       await main.screenshot({ path: testInfo.outputPath(`settings-${scale}.png`) });
+      await main.getByRole("button", { name: "关闭设置", exact: true }).click();
+      await expect(main.getByRole("dialog", { name: "设置", exact: true })).toBeHidden();
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows().find((window) => window.webContents.getURL().includes("renderer/index.html"))!.setContentSize(1280, 840);
+      });
+      await main.locator('[title="设置（Ctrl+,）"]').click();
+      await expect(main.getByRole("heading", { name: "设置", exact: true })).toBeInViewport();
+      await expectSettingsHeaderAccessible(main);
+      await main.screenshot({ path: testInfo.outputPath(`settings-regular-${scale}.png`) });
       await main.keyboard.press("Escape");
       await expect(main.locator(".composer-send")).toBeInViewport();
     } finally { await app.close(); }

@@ -1,33 +1,23 @@
 /**
- * bootApp wiring (主题 E #62) — 验证 deps 注入与启动期 logo 应用:
+ * bootApp wiring (主题 E #62) — 验证 deps 注入:
  * 1) 首次调用 → 动态 import app-runtime, 跑 bootRuntime (mock)
  * 2) 重复调用 → runtime 已存在, 不重新 import
- * 3) 启动期 logo: 走 notifyLogoChange (C-405 seam), 失败仅 dbgWarn 不抛
- * 4) mainWindow 已存在 / 未销毁 → createMainWindow 不被调, 返回 null
+ * 3) mainWindow 已存在 / 未销毁 → createMainWindow 不被调, 返回 null
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const bootRuntimeMock = vi.fn();
 const shutdownRuntimeMock = vi.fn();
-const notifyLogoChangeMock = vi.fn();
 const createMainWindowMock = vi.fn(() => null);
 const openExternalHttpUrlMock = vi.fn(async () => ({ ok: true }));
-const getCachedPrefsMock = vi.fn(() => ({ clientLogoId: "preset:01-neon-cyber" }));
 const revealMainMock = vi.fn();
-const dbgWarnMock = vi.fn();
 
 let mockMainWindow: { isDestroyed: () => boolean } | null = null;
 const getMainWindowMock = vi.fn(() => mockMainWindow);
 
-vi.mock("../../shared/debug-log", () => ({
-  dbgWarn: (...args: unknown[]) => dbgWarnMock(...args),
-  dbgLog: () => {},
-}));
-
 vi.mock("../app-runtime", () => ({
   bootRuntime: (...args: unknown[]) => bootRuntimeMock(...args),
   shutdownRuntime: () => shutdownRuntimeMock(),
-  notifyLogoChange: (...args: unknown[]) => notifyLogoChangeMock(...args),
 }));
 
 import { bootApp, getRuntime, _resetRuntimeForTests } from "./app-init";
@@ -40,7 +30,7 @@ beforeEach(() => {
 });
 
 describe("boot/app-init / bootApp", () => {
-  it("首次调用: 走 bootRuntime, createMainWindow, 启动期 logo notifyLogoChange", async () => {
+  it("首次调用: 走 bootRuntime, createMainWindow", async () => {
     const win = { id: "win-1", isDestroyed: () => false };
     // createMainWindow 模拟 main.ts 把 BrowserWindow 写回 module-scope ref
     createMainWindowMock.mockImplementation(() => {
@@ -52,7 +42,6 @@ describe("boot/app-init / bootApp", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
 
@@ -66,10 +55,6 @@ describe("boot/app-init / bootApp", () => {
     expect(deps.openExternalHttpUrl).toBe(openExternalHttpUrlMock);
     expect(typeof deps.getMainWindow).toBe("function");
     expect(createMainWindowMock).toHaveBeenCalledTimes(1);
-    expect(notifyLogoChangeMock).toHaveBeenCalledWith(
-      "preset:01-neon-cyber",
-      win,
-    );
     expect(created).toBe(win);
   });
 
@@ -80,7 +65,6 @@ describe("boot/app-init / bootApp", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
     // 模拟 mainWindow 已存在
@@ -90,7 +74,6 @@ describe("boot/app-init / bootApp", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
     expect(createMainWindowMock).toHaveBeenCalledTimes(1); // 只调一次
@@ -110,16 +93,11 @@ describe("boot/app-init / bootApp", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
 
     expect(createMainWindowMock).toHaveBeenCalledTimes(1);
     expect(created).toBe(fresh);
-    expect(notifyLogoChangeMock).toHaveBeenCalledWith(
-      "preset:01-neon-cyber",
-      fresh,
-    );
   });
 
   it("重复 bootApp (都从无 mainWindow 开始): bootRuntime 只跑一次", async () => {
@@ -132,7 +110,6 @@ describe("boot/app-init / bootApp", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
     // 模拟 win-A 关闭, win-B 是新创建; 第二次 bootApp 会重建
@@ -141,7 +118,6 @@ describe("boot/app-init / bootApp", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
 
@@ -149,29 +125,6 @@ describe("boot/app-init / bootApp", () => {
     expect(createMainWindowMock).toHaveBeenCalledTimes(2);
   });
 
-  it("getCachedPrefs 抛错: dbgWarn, 不阻断主窗口创建", async () => {
-    const win = { id: "win-x", isDestroyed: () => false };
-    createMainWindowMock.mockReturnValue(win);
-    getCachedPrefsMock.mockImplementationOnce(() => {
-      throw new Error("prefs cache 损坏");
-    });
-
-    const created = await bootApp({
-      getMainWindow: getMainWindowMock,
-      revealMain: revealMainMock,
-      openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
-      createMainWindow: createMainWindowMock,
-    });
-
-    expect(dbgWarnMock).toHaveBeenCalledWith(
-      "boot",
-      "apply startup logo failed",
-      expect.stringContaining("prefs cache 损坏"),
-    );
-    expect(notifyLogoChangeMock).not.toHaveBeenCalled();
-    expect(created).toBe(win);
-  });
 });
 
 describe("boot/app-init / runtime accessors", () => {
@@ -186,12 +139,10 @@ describe("boot/app-init / runtime accessors", () => {
       getMainWindow: getMainWindowMock,
       revealMain: revealMainMock,
       openExternalHttpUrl: openExternalHttpUrlMock,
-      getCachedPrefs: getCachedPrefsMock,
       createMainWindow: createMainWindowMock,
     });
     const rt = getRuntime();
     expect(rt).not.toBeNull();
     expect(typeof rt!.bootRuntime).toBe("function");
-    expect(typeof rt!.notifyLogoChange).toBe("function");
   });
 });

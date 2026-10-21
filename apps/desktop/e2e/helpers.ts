@@ -44,3 +44,14 @@ export async function launchApp(options: { env?: Record<string, string>; args?: 
   await main.waitForLoadState("domcontentloaded");
   return { app, main, home };
 }
+
+/** Secondary commands are reached through the visible workspace disclosure. */
+export async function toggleToolPanel(main: Page): Promise<void> {
+  if (await main.locator(".right-panel").isVisible()) {
+    // In narrow windows the panel overlays the chat header; its own close command remains visible.
+    await main.locator(".rp-nav").getByRole("button", { name: "收起工具面板", exact: true }).click();
+    return;
+  }
+  await main.getByLabel("工作区选项", { exact: true }).click();
+  await main.getByRole("button", { name: "切换工具面板", exact: true }).click();
+}

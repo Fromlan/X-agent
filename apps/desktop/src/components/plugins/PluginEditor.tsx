@@ -86,16 +86,13 @@ export function PluginEditor({ state, prefs }: Props) {
       </div>
       {isSkillTab && !skillOn && (
         <div className="banner warn">
-          已关闭：此技能不会出现在会话技能索引与 /skill 菜单中。
+          技能已关闭
         </div>
       )}
       {!selected.editable && (
         <div className="banner warn">
           只读：来自已安装 Package
           {selected.packageName ? `（${selected.packageName}）` : ""}。
-          {isSkillTab && !skillOn
-            ? "已关闭时不会进入会话索引；卸载请到本页 Packages。"
-            : "Agent 会加载这些资源；卸载请到本页 Packages 进行。"}
         </div>
       )}
       {warnings.length > 0 && (

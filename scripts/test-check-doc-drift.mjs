@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { findLine, checkLine, checkText, checkDependencyVersion, getTestChainSummary, checkTestChainSummary, RULES, runChecks } from './check-doc-drift.mjs';
+import { readText, findLine, checkLine, checkText, checkDependencyVersion, getTestChainSummary, checkTestChainSummary, RULES, runChecks } from './check-doc-drift.mjs';
 
 test('runChecks: source failures fail the check and preserve remaining diagnostics', () => {
   const rules = [
@@ -73,9 +73,14 @@ test('checkLine: value 命中但 keyword 不命中', () => {
 });
 
 test('checkText: 全文命中任意位置', () => {
-  const r = checkText({ file: 'README.md', valuePattern: /27\s*个\s*Godot\s*工具/ });
+  // Verify the reported location and content without tying checks to the README layout.
+  const pattern = /27\s*个\s*Godot\s*工具/;
+  const r = checkText({ file: 'README.md', valuePattern: pattern });
   assert.equal(r.ok, true);
-  assert.ok(r.line >= 60 && r.line <= 80, `line ${r.line} should be in 关键能力一览 area`);
+  assert.ok(typeof r.line === 'number' && r.line >= 1);
+  assert.equal(r.snippet, readText('README.md').split(/\r?\n/)[r.line - 1].trim());
+  assert.equal(typeof r.snippet, 'string');
+  assert.match(r.snippet, pattern);
 });
 
 test('RULES 结构合法:每条都有 id / label / fetch / docs', () => {

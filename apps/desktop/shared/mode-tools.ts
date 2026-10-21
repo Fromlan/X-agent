@@ -1,6 +1,8 @@
 /**
  * Ask / Plan mode tool allowlists (shared with renderer prefs UI).
  */
+import { WEB_TOOLS } from "./tools/web";
+
 export const WRITE_PLAN_TOOL = "write_plan" as const;
 
 /** Shared read-only builtins for Ask / Plan modes. */
@@ -12,8 +14,9 @@ export const PLAN_MODE_CORE_TOOLS = [
   WRITE_PLAN_TOOL,
 ] as const;
 
-/** Read-only Godot tools allowed in Ask/Plan when already enabled in prefs. */
+/** Read-only web and Godot tools allowed in Ask/Plan when already enabled in prefs. */
 export const PLAN_MODE_OPTIONAL_READONLY_TOOLS = [
+  ...WEB_TOOLS,
   "godot_editor_info",
   // 1.0：纯只读内省
   "godot_open_scenes",

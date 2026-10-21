@@ -33,6 +33,19 @@ export function createPublicLookup(resolveHost: PublicResolver = (host) => looku
 
 /** GET a public endpoint; preserve TLS hostname checks, reject all redirects, bound bytes and total time. */
 export function publicHttpGet(url: string, headers: Record<string, string>, timeoutMs: number): Promise<{ ok: boolean; status: number; body: string }> {
+  return publicHttpRequest(url, headers, timeoutMs);
+}
+
+/** POST JSON through the same public-only transport, including caller cancellation. */
+export function publicHttpPost(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<{ ok: boolean; status: number; body: string }> {
+  const payload = JSON.stringify(body);
+  return publicHttpRequest(url, {
+    ...headers, "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength(payload)),
+  }, timeoutMs, payload, signal);
+}
+
+/** Pin DNS at connection time and bound the entire response for either HTTP method. */
+function publicHttpRequest(url: string, headers: Record<string, string>, timeoutMs: number, payload?: string, signal?: AbortSignal): Promise<{ ok: boolean; status: number; body: string }> {
   const checked = validateExternalHttpUrl(url);
   if (!checked.ok) return Promise.reject(new Error(checked.error));
   const target = new URL(checked.href);
@@ -40,24 +53,24 @@ export function publicHttpGet(url: string, headers: Record<string, string>, time
   return new Promise((resolve, reject) => {
     const request = target.protocol === "https:" ? httpsRequest : httpRequest;
     const req = request(target, {
-      method: "GET", headers, agent: false,
+      method: payload === undefined ? "GET" : "POST", headers, agent: false,
       lookup: createPublicLookup(),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     }, (res) => {
       const status = res.statusCode ?? 0;
       if (status >= 300 && status < 400) {
-        res.destroy(); reject(new Error("模型探测不允许 HTTP 重定向，请填写最终公网 URL")); return;
+        res.destroy(); reject(new Error("外部请求不允许 HTTP 重定向，请填写最终公网 URL")); return;
       }
       const chunks: Buffer[] = []; let bytes = 0;
       res.on("data", (chunk: Buffer) => {
         bytes += chunk.length;
-        if (bytes > 2 * 1024 * 1024) { res.destroy(new Error("模型列表响应超过 2 MiB")); return; }
+        if (bytes > 2 * 1024 * 1024) { res.destroy(new Error("接口响应超过 2 MiB")); return; }
         chunks.push(chunk);
       });
       res.on("error", reject);
       res.on("end", () => resolve({ ok: status >= 200 && status < 300, status, body: Buffer.concat(chunks).toString("utf8") }));
     });
     req.on("error", reject);
-    req.end();
+    req.end(payload);
   });
 }

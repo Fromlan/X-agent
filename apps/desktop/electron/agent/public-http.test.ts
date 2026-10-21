@@ -5,7 +5,7 @@ import type { LookupFunction } from "node:net";
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("node:http", () => ({ request: transport.request }));
 vi.mock("node:https", () => ({ request: transport.request }));
-import { createPublicLookup, publicHttpGet } from "./public-http";
+import { createPublicLookup, publicHttpGet, publicHttpPost } from "./public-http";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -64,4 +64,46 @@ it("returns normal JSON and rejects responses larger than the byte budget", asyn
   await expect(publicHttpGet("https://provider.example/models", {}, 1000)).resolves.toEqual({ ok: true, status: 200, body: '{"data":[]}' });
   oversized = true;
   await expect(publicHttpGet("https://provider.example/models", {}, 1000)).rejects.toThrow(/2 MiB/);
+});
+
+it("POSTs UTF-8 JSON with a bounded cancellable request and pinned DNS", async () => {
+  const controller = new AbortController();
+  let combined: AbortSignal | undefined;
+  transport.request.mockImplementation((_url, options, callback) => {
+    expect(options.method).toBe("POST");
+    expect(options.agent).toBe(false);
+    expect(typeof options.lookup).toBe("function");
+    expect(options.headers).toMatchObject({ "Content-Type": "application/json", "Content-Length": String(Buffer.byteLength('{"query":"搜索"}')) });
+    combined = options.signal;
+    return Object.assign(new EventEmitter(), { end: (payload: string) => {
+      expect(payload).toBe('{"query":"搜索"}');
+      const response = Object.assign(new EventEmitter(), { statusCode: 200 });
+      callback(response);
+      response.emit("data", Buffer.from('{"results":[]}'));
+      response.emit("end");
+    } });
+  });
+  await expect(publicHttpPost("https://provider.example/search", {}, { query: "搜索" }, 1000, controller.signal))
+    .resolves.toMatchObject({ ok: true, body: '{"results":[]}' });
+  expect(combined?.aborted).toBe(false);
+  controller.abort();
+  expect(combined?.aborted).toBe(true);
+});
+
+it("never follows POST redirects or opens a connection to a private endpoint", async () => {
+  const response = Object.assign(new EventEmitter(), { statusCode: 307, headers: { location: "https://evil.example" }, destroy: vi.fn() });
+  transport.request.mockImplementation((_url, _options, callback) => Object.assign(new EventEmitter(), { end: () => callback(response) }));
+  await expect(publicHttpPost("https://provider.example/search", { Authorization: "Bearer fixture" }, {}, 1000)).rejects.toThrow("重定向");
+  expect(transport.request).toHaveBeenCalledOnce();
+  await expect(publicHttpPost("http://127.0.0.1/search", {}, {}, 1000)).rejects.toThrow();
+  expect(transport.request).toHaveBeenCalledOnce();
+});
+
+it("uses the timeout signal to abort an unfinished POST", async () => {
+  transport.request.mockImplementation((_url, options) => {
+    const request = Object.assign(new EventEmitter(), { end: vi.fn() });
+    options.signal.addEventListener("abort", () => request.emit("error", options.signal.reason), { once: true });
+    return request;
+  });
+  await expect(publicHttpPost("https://provider.example/search", {}, {}, 10)).rejects.toThrow();
 });

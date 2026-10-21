@@ -1,114 +1,97 @@
 # Godot Editor RPC（X-agent）
 
-Godot **4.x** 编辑器插件：以 TCP JSON-lines 客户端连入 X-agent 桌面桥，供 Agent 与 **设置 → Godot → 编辑器连接** 驱动编辑器（开/重载/运行场景、资源导入、收集运行期报错）。
+Godot 4.x 编辑器插件，通过本机 TCP JSON-lines 连接 X-agent 主进程。Agent 可在同一会话中修改项目文件、调用编辑器查询或运行，并读取诊断结果。当前 addon 版本为 **0.6.4**，CI 使用 Godot 4.6.2 验证。
 
-| 层 | 路径 |
-|---|---|
-| 本包 Addon | `addons/x_agent_rpc/` |
-| 协议类型 | [`apps/desktop/shared/godot-rpc.ts`](../../apps/desktop/shared/godot-rpc.ts) |
-| 桌面桥接 | [`apps/desktop/electron/agent/godot-rpc-bridge.ts`](../../apps/desktop/electron/agent/godot-rpc-bridge.ts) |
-| Agent 工具 | [`apps/desktop/electron/agent/godot-tools.ts`](../../apps/desktop/electron/agent/godot-tools.ts) |
-| 安装助手 | [`apps/desktop/electron/agent/godot-addon-install.ts`](../../apps/desktop/electron/agent/godot-addon-install.ts) |
+## 安装与连接
 
-> 引擎惯例参考见 godot-pi 包内技能 `godot-docs-4-7`（不经过本 addon）。
+1. 在 X-agent 打开 Godot 项目，在「设置 → Godot」选择引擎可执行文件，点击「安装/更新插件」。
+2. 在 Godot 的「项目 → 项目设置 → 插件」启用 **X-agent RPC**，保持该项目的编辑器打开。更新插件后重载项目或重启编辑器。
+3. 在 X-agent 的「设置 → Godot → 编辑器连接」查看连接状态，必要时点击「启动桥接」并使用 Ping 检查。
+4. 在「设置 → 工具」勾选需要的 Godot 工具；它们默认关闭。
 
-## 安装
+插件安装到项目的 `addons/x_agent_rpc/`。桌面桥只监听 `127.0.0.1`，默认端口为 `8765`，占用时在 `8765–8774` 中回退。
 
-1. X-agent：**设置 → Godot → 编辑器连接 → 安装/更新 RPC 插件到当前项目**  
-   （或手动拷贝 `addons/x_agent_rpc` 到项目 `addons/`）
-2. Godot → 项目设置 → 插件 → 启用 **X-agent RPC**（不要启用其它同名替代插件）
-3. 启动 X-agent；桥接监听 `127.0.0.1:8765`（占用时回退 `8765–8774`）
-4. Endpoint 写入 `~/.pi/agent/x-agent-godot-rpc.json`，插件会自动重连
-5. 设置页显示「已连接 Godot」；Godot 输出可见 `X-agent RPC: connected to …`
-
-升级插件后请重新安装/拷贝，并 **重载项目或重启 Godot**。
-
-### 握手 token
-
-桌面桥 `start` 时优先 **复用上次 endpoint** 的 token 与端口，使「先启动 Godot、后启动 X-agent」也能在 ~1s 内自动握手成功，无需重装插件。
-
-- endpoint 文件格式（`x-agent-godot-rpc.json`）：
-
-  ```json
-  {
-    "host": "127.0.0.1",
-    "port": 8765,
-    "token": "<32 位 hex>",
-    "version": 1,
-    "updatedAt": "2026-08-03T..."
-  }
-  ```
-
-  `host` 仅接受回环地址；`token` 必须是 32 位 hex；任一校验失败回退到新生成。
-- 0.3.0+ 插件 `editor_ready` 会附 `addonVersion`，让桌面端能明确判断「插件过旧 / 协议不匹配」。
-- 握手失败的细分原因会通过 `lastHandshakeFailure`（`missing_token` / `bad_token`）回传到设置页与就绪清单。
+Endpoint 位于 `%USERPROFILE%\.pi\agent\x-agent-godot-rpc.json`，包含 host、port 和共享令牌。桥接启动优先复用有效记录，插件监测 endpoint 变化并自动重连；正常停止桥接不删除记录，已打开的编辑器可在下次启动后恢复连接。不要将 endpoint 文件或令牌提交到项目仓库。
 
 ## Agent 工具
 
-在 **设置 → 工具** 中勾选 **Godot 编辑器** 相关项（默认关闭）：
+当前提供 **27 个 Godot 工具**，另有不进入 Agent 工具列表的 `ping` 健康检查。
 
-| 工具 | RPC 方法 |
+| 工具 | RPC 方法 | 作用 |
+|---|---|---|
+| `godot_editor_info` | `get_editor_info` | 编辑器版本、项目路径、当前场景和播放状态 |
+| `godot_open_scenes` | `get_open_scenes` | 已打开场景 |
+| `godot_edited_scene` | `get_edited_scene` | 当前编辑场景 |
+| `godot_open_scene` | `open_scene` | 打开场景 |
+| `godot_reload_scene` | `reload_scene` | 文件编辑后重载场景 |
+| `godot_run_scene` | `run_current_scene` | 运行当前场景并短时收集报错 |
+| `godot_run_main_scene` | `play_main_scene` | 运行主场景并短时收集报错 |
+| `godot_import_resources` | `import_resources` | 扫描或按路径重新导入资源 |
+| `godot_play_errors` | `get_play_errors` | 读取运行错误缓冲，可清空 |
+| `godot_stop_scene` | `stop_scene` | 停止运行 |
+| `godot_get_scene_tree` | `get_scene_tree` | 读取场景节点树 |
+| `godot_get_node_properties` | `get_node_properties` | 读取节点属性描述 |
+| `godot_get_debugger_state` | `get_debugger_state` | 调试器与运行状态 |
+| `godot_set_breakpoint` | `set_breakpoint` | 添加或移除断点 |
+| `godot_find_unused_resources` | `find_unused_resources` | 扫描未使用资源 |
+| `godot_export_project` | `export_project` | 按已有导出预设构建项目 |
+| `godot_get_project_setting` | `get_project_setting` | 查询项目设置 |
+| `godot_set_project_setting` | `set_project_setting` | 经安全校验后修改项目设置 |
+| `godot_lint_scripts` | `lint_scripts` | 检查 GDScript，失败时补充行号诊断 |
+| `godot_list_project_files` | `list_project_files` | 按类型和模式分页列出文件 |
+| `godot_resolve_uid` | `resolve_uid` | 查询 UID 与资源路径 |
+| `godot_wait_for_import_done` | `wait_for_import_done` | 等待资源导入完成 |
+| `godot_list_global_classes` | `list_global_classes` | 列出全局脚本类 |
+| `godot_find_class_name_conflicts` | `find_class_name_conflicts` | 查找全局类名冲突 |
+| `godot_inspect_script` | `inspect_script` | 读取脚本反射信息 |
+| `godot_list_export_presets` | `list_export_presets` | 列出导出预设 |
+| `godot_check_export_templates` | `check_export_templates` | 检查导出模板 |
+
+工具名以 [工具注册表](../../apps/desktop/shared/tools/godot.ts) 为准；RPC 方法与类型见 [protocol.ts](../../apps/desktop/shared/godot-rpc/protocol.ts)，开关映射见 [gating.ts](../../apps/desktop/shared/godot-rpc/gating.ts)。
+
+## 行为与限制
+
+- 场景和脚本主要由 Agent 文件工具修改，再通过 RPC 重载、导入和验证；本插件未提供节点创建、节点属性写入、材质或动画编辑工具。
+- 场景读取优先使用当前同名编辑场景的内存状态，否则加载副本，查询时不切换编辑页签。节点属性查询返回名称、类型和 hint 描述，不返回实际属性值。
+- Godot 4 的断点不支持条件表达式；`condition` 参数被接受但忽略。
+- 项目设置写入经过桌面端共享校验，拒绝 autoload、输入映射、设置覆盖等敏感配置；完整规则见 [godot-project-setting.ts](../../apps/desktop/shared/godot-project-setting.ts)。
+- Ask / Plan 仅放行已启用且登记为只读的 Godot 工具。设置页 IPC 同样校验工具开关。
+- 对话撤回可以恢复受追踪的磁盘文件，不能完整恢复 Godot 编辑器内存状态；运行和导出等副作用也不能视为可完整撤销。
+
+## 运行报错与等待
+
+`godot_run_scene` / `godot_run_main_scene` 会清空错误缓冲、启动播放并等待收集结果。桌面 Agent 工具默认等待 **1500 ms**，最大 **8000 ms**；直接调用 addon 且省略 `wait_ms` 时，插件自身默认值为 **3000 ms**，上限为 **15000 ms**。桌面调用参数与超时以 [protocol.ts](../../apps/desktop/shared/godot-rpc/protocol.ts) 和 [policy.ts](../../apps/desktop/shared/godot-rpc/policy.ts) 为准。
+
+错误来源包括 Output 的 ERROR/WARN、调试器 Errors 页和断点原因。插件不会因为检测到报错而自动停止播放；长时间运行后继续调用 `godot_play_errors` 获取缓冲。
+
+## 多编辑器与协议
+
+每个 TCP 连接分配客户端 ID；`editor_ready` 上报项目路径、Godot 版本、addon 版本和握手令牌。只有鉴权成功的客户端可接收请求。
+
+设置页可选择活动客户端；调用也可指定 `clientId`。桥接绑定当前会话的 cwd 后，只接受同项目编辑器作为目标；显式目标不存在、未鉴权或属于其他项目时直接失败。默认路由发生回退时，响应通过 `routedTo` 告知实际目标。
+
+每行一个 JSON 对象：请求携带 `id` 和 `method`，响应携带同一 `id` 与成功结果或错误；事件使用 `type`。编辑器会发送就绪、场景变化和运行错误事件。完整契约以共享协议类型与 [plugin.gd](addons/x_agent_rpc/plugin.gd) 为准。
+
+## 连接排查
+
+| 状态 | 核对项 |
 |---|---|
-| `godot_editor_info` | `get_editor_info` |
-| `godot_open_scenes` | `get_open_scenes` |
-| `godot_edited_scene` | `get_edited_scene` |
-| `godot_open_scene` | `open_scene` |
-| `godot_reload_scene` | `reload_scene` |
-| `godot_run_scene` | `run_current_scene`（+ `wait_ms`） |
-| `godot_run_main_scene` | `play_main_scene`（+ `wait_ms`，等同 F5） |
-| `godot_import_resources` | `import_resources`（可选 `paths`） |
-| `godot_play_errors` | `get_play_errors` |
-| `godot_stop_scene` | `stop_scene` |
+| 桥接未启动 | 在设置页启动；检查端口占用和启动错误 |
+| 等待编辑器连接 | 确认项目装有插件、插件已启用、编辑器仍打开 |
+| 握手失败 | 查看 `missing_token` / `bad_token` 提示，安装配套插件后重启编辑器 |
+| 已连接但工具不可用 | 检查「设置 → 工具」开关及当前会话模式 |
+| 客户端与项目不匹配 | 确认 X-agent 当前项目和 Godot 打开的项目一致 |
+| 修改未出现在编辑器中 | 场景修改后重载，资源修改后重新导入；先处理用户尚未保存的编辑 |
 
-## 运行报错收集
+## 开发入口
 
-`run_current_scene` / `play_main_scene`（及对应工具）会清空缓冲、开始播放、等待（默认约 3s，最大 15s）后返回：
-
-```json
-{
-  "started": true,
-  "playing": true,
-  "waitMs": 3000,
-  "playMethod": "play_current_scene",
-  "errors": [{ "severity": "error", "message": "…" }]
-}
-```
-
-来源（`rpc_debugger.gd`）：Output 的 ERROR/WARN、调试器 Errors 页、断点原因。更长会话用 `get_play_errors`。插件**不会**因报错自动停止播放。
-
-## 协议
-
-每行一个 JSON。类型与超时见 [`godot-rpc.ts`](../../apps/desktop/shared/godot-rpc.ts)。
-
-### 方法
-
-| 方法 | 说明 |
+| 位置 | 职责 |
 |---|---|
-| `ping` | 健康检查 |
-| `get_editor_info` | 版本、项目路径、编辑中场景、播放状态 |
-| `get_open_scenes` | 已打开场景页签 |
-| `get_edited_scene` | 当前编辑场景 + 播放状态 |
-| `open_scene` | 打开 `res://…` |
-| `reload_scene` | 必要时先打开再重载 |
-| `run_current_scene` | 运行当前场景（F6）；可选 `wait_ms` |
-| `play_main_scene` | 运行项目主场景（F5）；可选 `wait_ms` |
-| `import_resources` | `paths` 为空则全量 scan；否则 update + reimport |
-| `get_play_errors` | 读取缓冲；可选 `clear: true` |
-| `stop_scene` | 停止播放 |
+| `addons/x_agent_rpc/plugin.gd` | TCP 客户端、RPC 分派和编辑器操作 |
+| `addons/x_agent_rpc/rpc_debugger.gd` | 运行期错误与调试器信息 |
+| `apps/desktop/electron/agent/godot-rpc-bridge.ts` | 桌面 TCP 服务与路由 |
+| `apps/desktop/electron/agent/godot-tools.ts` | Pi 工具定义 |
+| `apps/desktop/electron/agent/godot-addon-install.ts` | 插件安装 |
+| `apps/desktop/scripts/test-godot-integration.ts` | 隔离项目中的真实编辑器检查 |
 
-**多编辑器**：桥接为每个 TCP 连接分配 id，用 `editor_ready` 记录 `projectPath`；请求发往**活动客户端**（设置 → Godot → 编辑器连接下拉）或显式 `clientId`。
-
-### 事件（编辑器 → 桌面）
-
-- `editor_ready` — 连接成功
-- `scene_changed` — 编辑场景变化
-- `play_error` — `{ severity, message }`
-
-## Addon 结构
-
-```
-addons/x_agent_rpc/
-  plugin.cfg
-  plugin.gd       # TCP 客户端、RPC、错误缓冲
-  rpc_debugger.gd # EditorDebuggerPlugin
-```
+Godot 文档知识库由 [godot-pi](../godot-pi/README.md) 提供，不经过 RPC。插件版本历史见 [CHANGELOG.md](addons/x_agent_rpc/CHANGELOG.md)。
