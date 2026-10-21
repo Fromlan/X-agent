@@ -1,226 +1,62 @@
-# agent.md
+# 开发与验证速查
 
-> 通用编码 Agent 在本仓库工作时的参考文档，需按需读取。Pi 按目录选择上下文入口，本仓库根目录默认选择 `AGENTS.md`；不会自动同时加载本文、`context.md` 和 `CLAUDE.md`，详见 `agent-context.md` 的上下文分层。
->
-> 本文不重复 `CLAUDE.md`（开发者向）和 `agent-context.md`（模型上下文原理）的细节，只点出 Agent 工作中**反复需要用到**的事实。
->
-> 维护原则：对外约定请写在本文件、`context.md`、`CLAUDE.md` 或 `AGENTS.md`；`docs/` 是**公开文档目录**（已在 git 跟踪，CI 可见），个人草稿 / ADR / 调研请走 `.scratch/notes/`（已 gitignored，**不入** git）。
+本页只维护技术栈、验证命令和查阅入口。编码边界见 [AGENTS.md](../AGENTS.md)，协作与发布流程见 [CLAUDE.md](../CLAUDE.md)，模型上下文规则见 [agent-context.md](agent-context.md)。本页不会自动进入模型上下文。
 
----
+## 技术栈
 
-## 一、项目是什么
+依赖声明以 [apps/desktop/package.json](../apps/desktop/package.json) 为准，实际安装版本由同目录锁文件确定；以下声明由 `npm run doc:drift` 核对。
 
-**X-agent**：基于 [Pi SDK](https://pi.dev) 的 Electron 桌面编码 Agent，当前定位是 **Godot 4** 专用——同一会话里改场景/脚本、通过编辑器 RPC（重载/运行/导入）驱动 Godot、并查 `godot-docs-4-7` 知识库。
+- electron-vite ^6.0.0
+- Vite ^8.3.4
+- @earendil-works/pi-coding-agent ^0.99.2
+- Electron 43、React 19、TypeScript 7；开发环境 Node.js 24+。
+- 当前开发与发布平台为 Windows；真实编辑器集成检查固定 Godot 4.6.2。
 
-- 不是通用多语言 IDE 替代品；Godot 不是"一个插件"，是**核心工作面**。
-- 运行时复用 Pi 的认证与模型（`~/.pi/agent/auth.json`、`models.json`），会话与 Pi CLI **隔离**（写到 `~/.pi/agent/x-agent/sessions/`）。
-- 当前版本见 `apps/desktop/package.json`；版本号以该文件为权威源。
+## 验证命令
 
-## 二、目录速览
+安装、类型检查与应用测试均在 `apps/desktop` 运行。根目录仅提供转发脚本，没有 `test` 脚本。
 
-仓库只有一个实际应用 `apps/desktop`，根 `package.json` 仅转发脚本：
+| 命令 | 验证内容 | 条件 |
+|---|---|---|
+| `npm install` | 安装应用依赖 | 锁文件位于当前目录；CI 使用 `npm ci` |
+| `npm run typecheck` | 主进程与 renderer 两套 TypeScript 检查，含未使用声明检查 | 无需模型认证 |
+| `npm run lint` | Babel AST 规则与发布工作流门禁 | 无需模型认证 |
+| `npm test` | 离线断言、上下文基线与技能目录校验 | 无需模型认证 |
+| `npm run test:unit` | Vitest 单元测试 | 与离线断言脚本分开执行 |
+| `npm run test:coverage` | Vitest 与覆盖率门槛 | CI 必跑 |
+| `npm run build` | 构建 Electron 应用 | E2E 的前置步骤 |
+| `npm run test:e2e` | Playwright Electron 业务与界面回归 | 先构建 |
+| `npm run test:godot` | 真实 Godot 插件、RPC、场景和脚本检查 | PowerShell 的 `$env:GODOT_BIN` 指向 Godot 4.6.2 console 可执行文件；缺少环境明确失败 |
 
-| 路径 | 角色 |
+`npm test` 当前为 60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联。完整顺序只维护在 `package.json:scripts.test`。
+
+测试文件分两类：`scripts/test-*.ts` 是独立离线断言脚本；`*.test.ts` 属于 Vitest。单独运行 renderer 相关离线脚本时，沿用 `scripts.test` 中的 `--tsconfig=tsconfig.web.json` 参数。
+
+文档修改在仓库根目录执行 `npm run doc:drift` 与 `npm run test:doc-drift`。真实模型冒烟通过根目录 `npm run desktop:smoke` 运行，需要本机 Pi 认证，不属于离线检查。
+
+## 运行与打包
+
+| 根目录命令 | 用途 |
 |---|---|
-| `apps/desktop/` | Electron 主应用（main / preload / renderer / shared） |
-| `apps/desktop/electron/agent/` | 主进程 agent 模块：会话、模型、供应商、Godot、撤回、检查点等 |
-| `apps/desktop/electron/agent/session-mode/` | **会话模式实现**：Ask / Plan / Goal / Bash 只读闸门 |
-| `apps/desktop/electron/ipc/` | 按模块拆分的 `register-*-ipc.ts`，由 `register-ipc-handlers.ts` 组合 |
-| `apps/desktop/shared/` | main / renderer 共享类型与 `mode-tools`、`mode-prompt`、`transcript/` 等 |
-| `apps/desktop/src/` | React 19 renderer：组件、hooks、stores、lib、styles |
-| `packages/godot-editor-rpc` | Godot 4.x 编辑器插件（TCP JSON-lines 客户端） |
-| `packages/godot-pi` | **X-agent 原生 Pi Package**：Core 技能 + Godot 4.7 文档技能 + prompts + 轻量 extension |
-| `scripts/` | 发版与工具脚本（`prepare-release` / `extract-changelog` 等） |
-| `.github/workflows/` | `ci.yml`（typecheck + test + build）、`release.yml`（tag 触发 → GitHub Release） |
+| `npm run desktop:dev` | 启动开发应用，renderer 固定使用 `127.0.0.1:5173` |
+| `npm run desktop:debug` | 启动开发应用并启用调试日志 |
+| `npm run desktop:dist` | 生成 Windows NSIS 安装包 |
+| `npm run release:prepare -- X.Y.Z` | 准备版本与更新说明 |
+| `npm run release:notes -- X.Y.Z` | 预览 GitHub Release 正文 |
+| `npm run release:test-changelog` | 校验更新说明抽取 |
 
-## 三、技术栈与版本下限
+本地产物用于验证；正式发布源是 CI 的 GitHub Release。不提交 `apps/desktop/release/`、`out/`、测试产物或本机认证数据。
 
-- **Electron** ^43 + **electron-vite** ^6.0.0 + **electron-builder** ^26（仅 NSIS 安装包，不产便携版）
-- **React** 19 + **TypeScript** ^7.0 + **Vite** ^8.3.4；UI 库为 `@tanstack/react-virtual` / `lucide-react` / `react-markdown` / `remark-gfm`
-- **@earendil-works/pi-coding-agent** ^0.99.2（实际承担 LLM 上下文组装、会话管理、compaction；X-agent **不**手写 system prompt，详见 `agent-context.md`）
-- 字体：`@fontsource/inter` + `@fontsource/jetbrains-mono`
-- **Node.js 24+**（开发时需要；运行时 Electron 自带）
-- Windows + Godot 4.x 为当前发布平台；macOS / Linux 不在 CI 矩阵内
+## 按问题查阅
 
-## 四、常用命令
-
-锁文件在 `apps/desktop/package-lock.json`，安装在该目录执行：
-
-```bash
-cd apps/desktop
-npm install
-```
-
-根目录便捷脚本（`package.json` 转发）：
-
-```bash
-npm run desktop:dev            # Electron 开发（electron-vite dev）
-npm run desktop:build          # 仅打包 out/
-npm run desktop:typecheck      # tsc -p tsconfig.node.json && tsc -p tsconfig.web.json
-npm run desktop:test           # 离线断言脚本（60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联，见 apps/desktop/package.json:scripts.test）
-npm run desktop:smoke          # 真实模型冒烟（需本机认证）
-npm run desktop:dist           # electron-builder --win --publish never（仅 NSIS 安装包）
-npm run desktop:reset-tutorial # 重置教程环境（Windows 脚本）
-npm run release:prepare -- x.y.z     # 改版本号 + 校验 CHANGELOG
-npm run release:notes -- x.y.z        # 预览 GitHub Release 正文（minor 线起点会汇总上一线全部 patch）
-npm run release:test-changelog       # 校验 CHANGELOG 抽取/汇总
-npm run release:dist                 # 本机 typecheck + test + 打 Windows exe（**冒烟用**；发布源是 CI GitHub Release）
-```
-
-冒烟（需本机认证）：
-
-```bash
-npm exec --prefix apps/desktop -- tsx scripts/smoke-session.ts "D:\\path\\to\\project"
-```
-
-## 五、架构：进程边界与 IPC
-
-三进程模型，**不要越界**：
-
-- **`electron/main.ts`** — 薄启动入口，动态加载 `app-runtime.ts`，由 runtime 持有 `SessionHost` / `GodotRpcBridge` / `AppAutoUpdater`。Pi SDK、文件系统、会话、模型、供应商、插件、用量、文档检索**全部在主进程**。
-- **`electron/preload.ts`** — `contextBridge` 暴露 `window.xAgent`；`contextIsolation` 开、`nodeIntegration` 关、主窗口 `sandbox: true`。**新增 IPC 必须同步** channel 注册表、`shared/ipc-invoke-map.ts` / DTO、对应 handler 与 preload；13 个分面见 `AGENTS.md`，扁平 IPC 方法已移除。
-- **`src/...`** — 纯 React renderer；通过 `window.xAgent.*` 调用主进程；**禁止**直接访问 Node API。
-
-`apps/desktop/shared/` 是 main / renderer 共享类型与逻辑（`ipc.ts` 工具名、`mode-tools.ts` 模式白名单、`transcript/` 流式映射）。
-
-## 六、关键不变量（Agent 改动前必须先确认）
-
-这些是产品契约，破坏会让用户数据丢、安全模型失效或性能退化：
-
-### 6.1 持久化与隔离
-
-所有 X-agent 数据落在 `~/.pi/agent/` 下；与 Pi CLI **共用** `auth.json` / `models.json` / `settings.json`，其余**隔离**：
-
-| 路径 | 用途 |
+| 内容 | 入口 |
 |---|---|
-| `x-agent.json` | 客户端偏好 |
-| `x-agent-providers.json` | 供应商档案（API Key 尽量 `safeStorage` 加密；启用时明文写入 Pi `auth.json`） |
-| `x-agent-godot-rpc.json` | Godot RPC endpoint（含握手 token；插件需配套更新） |
-| `x-agent-packages.json` | Packages 安装记录 |
-| `x-agent-usage.json` | 用量汇总 |
-| `x-agent/sessions/` | 本应用会话（与 Pi CLI `sessions/` 分开） |
-| `x-agent/checkpoints/` | Shadow Git 工作区检查点（按项目隔离，**不写用户 `.git`**） |
-| `x-agent/plans/` | Plan Mode 默认计划文件（可"保存到项目"迁至 `<cwd>/.pi/plans/`） |
-| `x-agent/goals/` | Goal Mode 跨恢复日记（按 session 路径哈希；删会话时清理） |
-
-prefs / usage / provider / auth / godot-rpc **必须原子写**（`lib/atomic-write.ts` 的 tmp + rename）；prefs 与 usage 走 `withStoreLock(path, ...)` 串行化（与 provider 同模式）。safeStorage 不可用时启动一次 probe，UI 横幅告知"密钥以明文存储"。
-
-### 6.2 撤回 / Shadow Git
-
-撤回走 `retract-orchestrator.ts`（abort → scan → navigate → 文件还原 → 剪枝 → history replace）。**优先**用 Shadow Git 检查点（`shadow-checkpoints.ts`，独立 `GIT_DIR=` 到 `~/.pi/agent/x-agent/checkpoints/`，**不污染用户** `.git`）；无 Git 时降级为 `TurnFileTracker` 还原 `write` / `edit` 字节基线。
-
-关键时序：Pi 在 `message_end` 之后才 `appendMessage`，active user / Shadow pre **必须在 append 之后绑定**（`tool_execution_start` / `queueMicrotask`），不能在 `message_start` 取 leaf。
-
-### 6.3 会话模式硬闸
-
-会话模式（`apps/desktop/electron/agent/session-mode/`）互斥切换，**用户切换模式时硬闸重排工具集**：
-
-- **Agent** — 默认工具白名单（bash/write/edit 等）
-- **Ask（调研）** — 只读 + read-only bash；硬闸关 `write` / `edit` / `write_plan`；bash 仅放行只读命令且路径须落在项目 cwd 内（**不写回设置**）
-- **Plan** — Ask 集 + `write_plan`；todo 勾选 / `<clarify>` 多题点选后"发送所选" / Shift+Tab 循环模式
-- **Goal** — 完成条件 + 独立评估；轮次 + token 双预算（`goalMaxTurns` / `goalMaxTokens`）、暂停/继续、评估失败自动暂停。评估输入包含关联工具调用/结果/错误；可执行目标无有效证据或有未解决工具失败时拒绝完成。评估 usage 纳入账本与总用量；token 是请求结束后停止续轮的软阈值，暂停不退款，撤回回滚分支预算但不撤销实际费用
-
-工具名常量见 `shared/mode-tools.ts`、模式提示见 `shared/mode-prompt.ts`、撤回前的确认与风险提示在 `RetractConfirmModal.tsx`。
-
-### 6.4 CWD 沙箱
-
-`electron/agent/cwd-sandbox.ts` 同时检查路径段和真实目标，拒绝 junction/symlink 指向授权根之外；新文件检查最近存在父目录，项目根本身为 junction 时以其真实目标为边界。检查与使用之间仍可能发生路径替换，不是句柄级原子沙箱。`plan-tools` 与 `bash-readonly` 也走同一沙箱（Windows 大小写归一化）。Agent 模式下 Pi `bash` 仍可能访问更广路径——这是已知边界，不要无脑承诺安全。
-
-### 6.5 安全
-
-- API Key：`safeStorage` 加密优先；启用时明文同步 Pi `auth.json`
-- 工具：默认开启 `bash` / `write` / `edit`；Ask / Plan 模式硬闸关 write/edit
-- 外链：`external-url.ts` 拒绝 IPv4-mapped IPv6 / link-local / ULA / zone-id；`will-navigate` 拒绝非本应用 `file:`
-- Godot RPC：仅监听 `127.0.0.1`；endpoint 含共享 token，插件 `editor_ready` 握手校验后才接受调用；method allowlist
-- Packages：`pi install` 跳过 npm lifecycle scripts；注意供应链
-- 单实例锁
-
-## 七、Godot 集成
-
-- **RPC 桥**：`apps/desktop/electron/agent/godot-rpc-bridge.ts` 多客户端 id / 活动选路；默认端口 `8765`，回退 `8765–8774`
-- **协议**：`apps/desktop/shared/godot-rpc.ts`；**Addon**：`packages/godot-editor-rpc/addons/x_agent_rpc/`
-- **错误缓冲**：`run_current_scene` / `play_main_scene` 短时收集（Output ERROR/WARN、调试器 Errors）；插件**不**因报错自动停止
-- **工具**：`GODOT_TOOLS` 默认**关闭**，需在 设置 → 工具 勾选；调用通过 `godot-tools.ts` 转发到桥
-- **文档**：`packages/godot-pi/skills/godot-docs-4-7`（仅 Godot 项目自动索引）；不经过 RPC
-- **多编辑器**：每个 TCP 连接分配 `clientId`，请求发往活动客户端或在调用时显式 `clientId`
-- **握手 token**：桥启动优先复用 endpoint JSON 的 token / 端口，无有效记录时新建；`stop()` 保留记录；旧版插件（无 token 字段）会被拒绝——需要应用内"安装/更新 RPC 插件"覆盖
-
-UI 入口：**设置 → Godot → 编辑器连接**（侧栏 Godot 标签只读状态，完整控制在设置页）。
-
-## 八、技能（Skills）与扩展（Extensions）发现
-
-- **资源发现**由 Pi `DefaultResourceLoader` 完成（X-agent 不手写 system prompt）
-- `skillsOverride` **故意排除** `~/.agents/skills`（避免无关技能膨胀索引）；仅用 `~/.pi/agent/skills`、项目 `.pi/skills`、已安装 Packages
-- `packages/godot-pi` 是 **X-agent 原生 Pi Package**：Core 技能（`x-grill` / `x-diagnose` / `x-tdd` / `x-change-brief` / `x-handoff` / `x-glossary` / `x-review` / `x-safe-edit`）+ Godot 4.7 文档技能 + prompts + `godot_detect_project` 工具 + `/godot-rpc-status` 命令
-- **Prompt 模板**（`/name`）**不**预装到 system，调用时展开为用户消息
-- **技能可见**：`read` 加载 `SKILL.md` 时显示为"技能 · 名称"卡片
-- 改完技能 / 插件后必须 `session.reload()` 重新发现
-
-## 九、用量与前缀缓存
-
-- **本地用量**：`~/.pi/agent/x-agent-usage.json`，右栏「上下文」与设置「用量」展示
-- **命中率** = `cacheRead / (input + cacheRead)`（DeepSeek 等供应商对**完全一致请求前缀**计为 cache hit）
-- **会破坏前缀缓存的操作**：改工具白名单、压缩、撤回/分支、流式 steer、中途改 Thinking / 模型
-- **DeepSeek 代理**：经 SiliconFlow / OpenRouter / 自建 openai-compatible 中转时，激活档案会为模型 id 含 `deepseek` 的条目写入 `reasoning` + `compat.thinkingFormat: "deepseek"`；官方 `api.deepseek.com` 走 Pi 自动检测
-
-## 十、UI 约束（主题 token 与层次）
-
-完整规范见 `design.md`。要点：
-
-- 深色默认；`body[data-theme="{themeId}-{colorMode}"]` 覆盖 token；主题族：`default`（石墨，默认）/ `nord`（雾蓝）/ `tokyo`（暮紫）/ `paper`（暖砂）/ `sage`（松绿）/ `contrast`（高对比）。设置中的缩略预览复用主题 token。
-- **层次**：Surface / Card / Card-elev / Chrome + 1px Board 边；主元素与交互阴影走主题 token，`contrast` 禁用阴影
-- **Pill 优先**：按钮 / chip / 单行 input / tab 用 `9999px`；容器 `12px`；多行 `8px`
-- 颜色 / 圆角 / 阴影全部走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**
-- 字体：Inter 400/500 + JetBrains Mono；全局 14px / 1.5；助手正文和输入文字 15px，历史会话标题 14px
-- 图标用 `lucide-react`，**不用 emoji** 充当 UI 图标
-- 字重仅 400 / 500；不用 600+
-- 设置：左侧分页 + 可滚动内容区（`min-height: 0` + `overflow-y: auto`）
-- 尊重 `prefers-reduced-motion`；功能态过渡 ≤150ms
-
-布局壳：`TopBar → [banners] → main-row`（`Sidebar` / `Chat` / `RightPanel`，≤1100px 右栏覆盖显示，≤960px 侧栏强制展开）。右栏五页签：**上下文 / 计划 / 工具 / 文件 / Godot**。
-
-## 十一、发版流程
-
-完整流程见 [`CLAUDE.md` §7 开发流程](../CLAUDE.md#7-发版流程)。本仓库采用 **GitHub Flow**——改动走 feature 分支 + PR 合并，发版时 maintainer 在 master 上打 tag → CI 自动构建并上传 GitHub Release。
-
-**Agent 约定**:不直接 push `master`、不主动打 tag、不提交 `apps/desktop/release/`（`.gitignore` 已排除；权威发布源是 CI 的 GitHub Release）。
-
-## 十二、排障速查
-
-| 现象 | 去哪里看 |
-|---|---|
-| "模型怎么会知道 / 不知道 X？" | `agent-context.md` 第 7 节（按层排查：AGENTS.md → 技能 → 工具 → 会话 → Packages） |
-| Plan / Ask bash 被拒 | `session-mode/bash-readonly.ts`；按换行切段；拒 `$()` / 反引号 / `{}`；`godot` / `dotnet` 不视为只读 |
-| 撤回后文件没还原 | `shadow-checkpoints.ts` 是否生效；无 Git 时 `turn-file-tracker.ts`；检查时序绑定 |
-| 供应商密钥报错 | `provider-store` 同步；DeepSeek 代理看 `deepseekProxyModelExtras`；safeStorage probe 横幅 |
-| 模型不支持图片（warning chip 出现） | 用户在「设置 → 供应商 → 编辑」给该模型行勾上 `image` chip；落 `x-agent-providers.json` + 透传 Pi `models.json` 的 `input` 字段后 `modelSupportsImage` 放行。OpenAI 兼容 `/v1/models` 不返回该字段，需手动勾。 |
-| 流式卡顿 / 无法浏览历史 | 见 0.3.11 CHANGELOG；`MarkdownBody` 流式降级 `<pre>`；`IntersectionObserver` pinned 才 follow |
-| Godot 桥未连接 | 端口 `8765–8774`；插件 `editor_ready` token；`x-agent-godot-rpc.json` |
-| CI build 失败 | 仅 Windows；`npm run typecheck` + `npm test` 在 `apps/desktop` 内 |
-
-## 十三、必读索引
-
-| 想了解… | 看哪里 |
-|---|---|
-| 给开发者的仓库指引 | `CLAUDE.md` |
-| 模型实际看到的上下文如何组装 | `agent-context.md` |
-| 领域词表 / 模块边界 | `context.md` |
-| 设计系统（颜色 / 圆角 / 字体 / 动效） | `design.md` |
-| 用户面功能与使用流程 | `README.md`（中文） / `README.en.md`（英文） |
-| 变更与升级说明 | `CHANGELOG.md`（发版前需整理 `Unreleased`） |
-| Godot 插件协议与工具表 | `packages/godot-editor-rpc/README.md` |
-| 原生 Pi Package（Core + Godot 4.7 文档） | `packages/godot-pi/README.md` |
-| Pi 插件类型 | `pi-plugin-guide.md` |
-
-## 十四、编码风格
-
-- TypeScript 严格模式（`tsconfig.node.json` + `tsconfig.web.json` 双套）
-- 主进程 / preload / renderer / shared 四层别名：`@/`、`@shared/`（Node 侧仅 `@shared/`）
-- 函数级注释 / 关键决策注释保留；新模块头部补一句"做什么 + 为什么"
-- 中文用户面文案以 `README.md` / 设置页为准；注释 / 标识符英文为主
-- **不要**在 `docs/` 下写**个人**草稿（个人草稿走 `.scratch/notes/`，已 gitignored）；`docs/` 是公开目录，CI 可见
-- 提交前：在 `apps/desktop` 执行 `npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`，在根目录执行 `npm run doc:drift`；然后按 [CLAUDE.md §5 PR 流程](../CLAUDE.md#5-pull-request-流程) 提交 PR，CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿后合并
-
----
-
-最后更新：与 `apps/desktop/package.json` 版本同步维护；新增对外约定（模式 / 工具 / 持久化 / 安全）请同步更新本文、`context.md` 与 `CHANGELOG.md`。
+| 产品能力与使用步骤 | [中文 README](../README.md)、[English README](../README.en.md) |
+| 编码前必须知道的边界 | [AGENTS.md](../AGENTS.md) |
+| 分支、提交、PR 与发布 | [CLAUDE.md](../CLAUDE.md)、[贡献指南](../CONTRIBUTING.md) |
+| 会话、模式、供应商等概念 | [领域词表](context.md) |
+| 上下文加载、技能与压缩 | [Agent 上下文说明](agent-context.md) |
+| Godot 安装、连接与工具 | [Godot 插件说明](../packages/godot-editor-rpc/README.md) |
+| Pi 扩展与内置技能包 | [Pi 扩展指南](pi-plugin-guide.md)、[godot-pi](../packages/godot-pi/README.md) |
+| UI 主题与布局 | [设计系统](design.md) |
+| 日常维护与分支清理 | [维护说明](maintenance.md) |
