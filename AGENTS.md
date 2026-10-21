@@ -102,5 +102,5 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 - 配置只有 ENOENT 可初始化，损坏/权限/结构失败保留原文件；工具设置等保存和应用成功后才返回。Goal 实际请求与评估费用入账，预算为续轮阈值；Pi `agent_settled` 后等待 checkpoint flush 和 snip-first 维护，再更新用量、发布 idle 并评估 Goal。空恢复路径不全量 reset。
 
 - 在 `apps/desktop` 内：`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:coverage`（CI 会再跑一遍 + E2E）。
-- 然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR：CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿、≥1 approve 后 squash merge 回 `master`。
+- 然后按 [CLAUDE.md §5 PR 流程](CLAUDE.md#5-pull-request-流程) 提交 PR：CI 五个 job（`desktop` / `unit-test` / `e2e` / `godot-integration` / `actionlint`）全绿并完成审阅后 squash merge 回 `master`；单维护者可自审并在 PR 记录结论和验证依据，多人协作需至少一个有效 approve。
 - 不要提交：未经任务要求的个人文档、`.scratch/`、`apps/desktop/release/`、`out/`、`node_modules.broken-*/`。
