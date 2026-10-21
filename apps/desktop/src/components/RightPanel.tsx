@@ -4,7 +4,7 @@ import {
   Box,
   ClipboardList,
   FolderTree,
-  X,
+  PanelRightClose,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -134,7 +134,7 @@ export function RightPanel({
           title="收起工具面板"
           aria-label="收起工具面板"
         >
-          <X size={14} />
+          <PanelRightClose size={16} aria-hidden />
         </button>
       </nav>
       <div className="right-panel-body">

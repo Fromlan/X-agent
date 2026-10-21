@@ -1,5 +1,5 @@
 /** Keep the project switcher and actions in the sidebar, matching the approved reference's hierarchy. */
-import { Folder, FolderOpen, Plus, Settings } from "lucide-react";
+import { Folder, FolderOpen, Plus } from "lucide-react";
 import type { SessionType } from "@shared/ipc";
 import { projectDisplayName, normalizeProjectKey } from "../../lib/group-sessions";
 import { SelectMenu } from "../SelectMenu";
@@ -15,7 +15,6 @@ interface Props {
   selectedType: SessionType;
   onOpen: () => void;
   onNew: (type: SessionType) => void;
-  onSettings: () => void;
   onResume: (path: string) => void;
 }
 
@@ -59,7 +58,6 @@ export function SidebarWorkspace(props: Props) {
         <button type="button" className="btn btn-secondary" aria-label="新会话" title={props.selectedType === "design" ? "新策划会话" : "新代码会话"} disabled={locked || !cwd} data-session-type={props.selectedType} onClick={() => props.onNew(props.selectedType)}>
           <Plus size={16} aria-hidden />{!collapsed && <span>新会话</span>}
         </button>
-        <button type="button" className="btn btn-secondary btn-icon" aria-label="项目设置" title="项目设置" onClick={props.onSettings}><Settings size={17} aria-hidden /></button>
       </div>
     </div>
   );
