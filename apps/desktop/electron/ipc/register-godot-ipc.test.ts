@@ -6,10 +6,13 @@ import { configureIpcSenderGuard, resetIpcSenderGuard } from "./register-ipc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
 import { probeGodotEngine } from "../agent/godot-engine-discovery";
 import { rememberGodotEditor } from "../agent/prefs";
+import { registerGodotEngine, updateGodotEngine } from "../agent/prefs";
+import { dialog } from "electron";
+import { DEFAULT_PREFS } from "../../shared/ipc";
 
-const prefs = vi.hoisted(() => ({ tools: ["godot_set_project_setting", "godot_get_project_setting"] }));
-vi.mock("electron", () => ({ dialog: {} }));
-vi.mock("../agent/prefs", () => ({ getCachedPrefs: () => prefs, patchPrefs: vi.fn(), rememberGodotEditor: vi.fn(async () => {}) }));
+const prefs = vi.hoisted(() => ({ tools: ["godot_set_project_setting", "godot_get_project_setting"], godotEngines: [{ path: "C:/saved.exe", name: "Saved", version: "4.7.2.stable" }] }));
+vi.mock("electron", () => ({ dialog: { showOpenDialog: vi.fn() } }));
+vi.mock("../agent/prefs", () => ({ getCachedPrefs: () => prefs, patchPrefs: vi.fn(), rememberGodotEditor: vi.fn(async () => {}), registerGodotEngine: vi.fn(), updateGodotEngine: vi.fn() }));
 vi.mock("../agent/godot-engine-discovery", () => ({ probeGodotEngine: vi.fn(async () => ({ path: "C:/Godot.exe", version: "4.6.2.stable" })) }));
 
 /** Register real handlers with a trusted sender, avoiding a live Electron profile. */
@@ -21,6 +24,7 @@ function fixture() {
   const connection = {
     getStatus: () => ({ connection: { candidates: [{ path: "C:/Godot.exe", version: "4.6.2.stable" }] } }),
     engineSelected: vi.fn(),
+    engineSettingsChanged: vi.fn(),
   };
   const sender = {};
   const event = { sender, senderFrame: { url: "file:///app/index.html" } };
@@ -32,6 +36,7 @@ function fixture() {
     connection,
     switchProject: () => { cwd = "D:/other"; },
     pickEngine: (path: unknown) => handlers.get(IPC_CHANNELS.pickGodotEditor)!(event, path),
+    manageEngine: (input: unknown, inputEvent = event) => handlers.get(IPC_CHANNELS.manageGodotEngine)!(inputEvent, input),
     ipc: (call: unknown, inputEvent = event) => handlers.get(IPC_CHANNELS.godotRpcRequest)!(inputEvent, call),
     tool: (payload: unknown) => tool.execute("setting", payload as never, undefined as never, undefined as never, undefined as never),
   };
@@ -91,7 +96,7 @@ it("rejects engine paths outside the current discovered list before executing or
 it("records a validated discovered engine for the current project and resumes connection", async () => {
   const context = fixture();
   expect(await context.pickEngine("c:\\godot.exe")).toMatchObject({ ok: true, path: "C:/Godot.exe" });
-  expect(rememberGodotEditor).toHaveBeenCalledWith("D:/game", "C:/Godot.exe", { setDefault: true });
+  expect(rememberGodotEditor).toHaveBeenCalledWith("D:/game", "C:/Godot.exe");
   expect(context.connection.engineSelected).toHaveBeenCalledWith("C:/Godot.exe");
 });
 
@@ -103,4 +108,51 @@ it("a project switch during engine validation cannot save the selection into ano
   });
   expect(await context.pickEngine("C:/Godot.exe")).toMatchObject({ ok: false, error: expect.stringContaining("项目已切换") });
   expect(rememberGodotEditor).not.toHaveBeenCalled();
+});
+
+it("adds a probed engine through the native picker without changing defaults or launching", async () => {
+  const context = fixture();
+  vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ["C:/Godot.exe"] });
+  vi.mocked(registerGodotEngine).mockResolvedValueOnce(DEFAULT_PREFS);
+  expect(await context.manageEngine({ action: "add" })).toMatchObject({ ok: true, prefs: DEFAULT_PREFS });
+  expect(registerGodotEngine).toHaveBeenCalledWith(expect.objectContaining({ path: "C:/Godot.exe", version: "4.6.2.stable" }));
+  expect(rememberGodotEditor).not.toHaveBeenCalled();
+  expect(context.connection.engineSelected).not.toHaveBeenCalled();
+});
+
+it("does not execute arbitrary paths or accept malformed registry commands", async () => {
+  const context = fixture();
+  for (const input of [null, { action: "default", path: "C:/arbitrary.exe" }, { action: "add", path: "C:/arbitrary.exe" }, { action: "rename", path: "C:/saved.exe", name: "" }]) {
+    expect(await context.manageEngine(input)).toMatchObject({ ok: false });
+  }
+  expect(probeGodotEngine).not.toHaveBeenCalled();
+  expect(updateGodotEngine).not.toHaveBeenCalled();
+});
+
+it("binds a registered engine to the active project without changing the default", async () => {
+  const context = fixture();
+  vi.mocked(updateGodotEngine).mockResolvedValueOnce(DEFAULT_PREFS);
+  expect(await context.manageEngine({ action: "project", path: "C:/saved.exe", projectPath: "D:/game" })).toMatchObject({ ok: true });
+  expect(updateGodotEngine).toHaveBeenCalledWith({ action: "project", path: "C:/saved.exe", projectPath: "D:/game" });
+  expect(context.connection.engineSelected).toHaveBeenCalledWith("C:/saved.exe");
+});
+
+it("rejects a stale project selection before and after executable validation", async () => {
+  const context = fixture();
+  expect(await context.manageEngine({ action: "project", path: null, projectPath: "D:/old" })).toMatchObject({ ok: false });
+  vi.mocked(probeGodotEngine).mockImplementationOnce(async () => {
+    context.switchProject();
+    return { path: "C:/saved.exe", version: "4.7.2.stable" };
+  });
+  expect(await context.manageEngine({ action: "project", path: "C:/saved.exe", projectPath: "D:/game" })).toMatchObject({ ok: false });
+  expect(updateGodotEngine).not.toHaveBeenCalled();
+});
+
+it("returns cancellation and persistence errors without losing current settings", async () => {
+  const context = fixture();
+  vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
+  expect(await context.manageEngine({ action: "add" })).toMatchObject({ canceled: true });
+  vi.mocked(updateGodotEngine).mockRejectedValueOnce(new Error("disk unavailable"));
+  expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: false, error: "disk unavailable" });
+  await expect(context.manageEngine({ action: "add" }, { sender: {}, senderFrame: { url: "file:///app/index.html" } })).rejects.toMatchObject({ __senderUntrusted: true });
 });

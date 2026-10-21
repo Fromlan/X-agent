@@ -157,6 +157,7 @@ const exposed: XAgentApi = {
     installAddon: api.installGodotRpcAddon,
     launchEditor: api.launchGodotEditor,
     pickEditor: api.pickGodotEditor,
+    manageEngine: api.manageGodotEngine,
     pickScene: api.pickGodotScene,
   },
   updates: {

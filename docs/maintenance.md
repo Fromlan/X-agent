@@ -21,7 +21,7 @@
 
 `npm test` 的离线断言串行执行，完整命令以 `package.json:scripts.test` 为准；Vitest 单独由 `test:unit` / `test:coverage` 执行。测试须使用临时目录，不能读写维护者真实的 Pi 偏好或会话数据。
 
-构建与界面检查执行 `npm run build`、`npm run test:e2e`。真实 Godot 集成执行 `npm run test:godot`，PowerShell 的 `$env:GODOT_BIN` 必须指向 Godot 4.6.2 console 可执行文件；缺少环境时检查明确失败。真实模型冒烟另需 Pi 认证，不属于离线检查。
+构建与界面检查执行 `npm run build`、`npm run test:e2e`。真实 Godot 集成执行 `npm run test:godot`，PowerShell 的 `$env:GODOT_BIN` 必须指向 Godot 4.7.2 console 可执行文件；缺少环境时检查明确失败。真实模型冒烟另需 Pi 认证，不属于离线检查。
 
 ## 文档对齐
 

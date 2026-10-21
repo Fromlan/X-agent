@@ -23,6 +23,8 @@ import type {
   AppWindowInfo,
   AppUpdateStatus,
   ClientPrefs,
+  GodotEngineMutation,
+  GodotEngineMutationResult,
   CompactSessionResult,
   GoalInfo,
   GoalResult,
@@ -199,6 +201,7 @@ export type GodotApi = {
   installAddon: IpcInvokeMap["installGodotRpcAddon"];
   launchEditor: IpcInvokeMap["launchGodotEditor"];
   pickEditor: IpcInvokeMap["pickGodotEditor"];
+  manageEngine: IpcInvokeMap["manageGodotEngine"];
   pickScene: IpcInvokeMap["pickGodotScene"];
 };
 
@@ -367,6 +370,7 @@ export type IpcInvokeMap = {
     clientId: string | null,
   ) => Promise<{ ok: boolean; status: GodotRpcStatusDto }>;
   pickGodotEditor: (candidatePath?: string) => Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }>;
+  manageGodotEngine: (input: GodotEngineMutation) => Promise<GodotEngineMutationResult>;
   launchGodotEditor: () => Promise<{
     ok: boolean;
     error?: string;

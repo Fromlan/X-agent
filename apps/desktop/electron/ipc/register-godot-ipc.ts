@@ -1,15 +1,17 @@
 import { dialog, type IpcMain } from "electron";
 import { relative, isAbsolute, sep } from "node:path";
 import { randomUUID } from "node:crypto";
+import { Value } from "typebox/value";
 import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { SessionHost } from "../agent/session-host";
-import { getCachedPrefs, patchPrefs, rememberGodotEditor } from "../agent/prefs";
+import { getCachedPrefs, patchPrefs, rememberGodotEditor, registerGodotEngine, updateGodotEngine } from "../agent/prefs";
 import type { GodotConnectionManager } from "../agent/godot-connection-manager";
 import { probeGodotEngine } from "../agent/godot-engine-discovery";
 import { normalizeProjectKey } from "../../shared/project-path";
 import { requestGuardedGodotRpc } from "../agent/godot-rpc-request";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
+import { GodotEngineMutationSchema, godotEngineName, type GodotEngineMutation } from "../../shared/godot-engines";
 import {
   GODOT_RPC_DEFAULT_PORT,
   godotRpcMethodTool,
@@ -38,6 +40,16 @@ function validateGodotRpcCallParams(call: GodotRpcCallDto): string | null {
     }
   }
   return null;
+}
+
+/** Only the native file dialog may introduce a new executable into the managed registry. */
+async function browseGodotEditor() {
+  return dialog.showOpenDialog({
+    title: "选择 Godot 引擎可执行文件",
+    defaultPath: getCachedPrefs().godotEditorPath ?? undefined,
+    properties: ["openFile"],
+    filters: [{ name: "Godot", extensions: process.platform === "win32" ? ["exe"] : ["*"] }],
+  });
 }
 
 /** Godot RPC bridge + editor launch IPC. */
@@ -120,37 +132,60 @@ export function registerGodotIpc(
     const project = sessionHost.getStatus().cwd;
     let path: string;
     if (candidatePath !== undefined) {
-      const candidates = connection.getStatus().connection?.candidates ?? [];
+      const candidates = [...(connection.getStatus().connection?.candidates ?? []), ...prefs.godotEngines];
       const candidate = candidates.find((item) => typeof candidatePath === "string" && normalizeProjectKey(item.path) === normalizeProjectKey(candidatePath));
       if (!candidate) return { ok: false, error: "所选引擎不在当前发现列表中，请重新检测或浏览选择" };
       path = candidate.path;
     } else {
-      const result = await dialog.showOpenDialog({
-        title: "选择 Godot 引擎可执行文件",
-        defaultPath: prefs.godotEditorPath ?? undefined,
-        properties: ["openFile"],
-        filters:
-          process.platform === "win32"
-            ? [
-                { name: "Godot", extensions: ["exe"] },
-                { name: "所有文件", extensions: ["*"] },
-              ]
-            : [
-                { name: "Godot", extensions: ["*"] },
-                { name: "应用程序", extensions: ["app"] },
-              ],
-      });
+      const result = await browseGodotEditor();
       if (result.canceled || result.filePaths.length === 0) {
         return { ok: false, canceled: true };
       }
       path = result.filePaths[0]!;
     }
-    if (!await probeGodotEngine(path)) return { ok: false, error: "所选文件不是可用的 Godot 4 引擎" };
+    const engine = await probeGodotEngine(path);
+    if (!engine) return { ok: false, error: "所选文件不是可用的 Godot 4 引擎" };
     if (normalizeProjectKey(project ?? "") !== normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) return { ok: false, error: "项目已切换，请为当前项目重新选择引擎" };
-    if (project) await rememberGodotEditor(project, path, { setDefault: true });
+    await registerGodotEngine({ ...engine, name: godotEngineName(engine.version) });
+    if (project) await rememberGodotEditor(project, path);
     else await patchPrefs({ godotEditorPath: path });
     if (normalizeProjectKey(project ?? "") === normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) connection.engineSelected(path);
     return { ok: true, path };
+  });
+
+  handle(ipcMain, IPC_CHANNELS.manageGodotEngine, async (_e, raw: unknown) => {
+    if (!Value.Check(GodotEngineMutationSchema, raw)) return { ok: false, error: "引擎配置参数不合法" };
+    const input = raw as GodotEngineMutation;
+    try {
+      if (input.action === "add") {
+        const result = await browseGodotEditor();
+        if (result.canceled || !result.filePaths.length) return { ok: false, canceled: true };
+        const engine = await probeGodotEngine(result.filePaths[0]!);
+        if (!engine) return { ok: false, error: "所选文件不是可用的 Godot 4 引擎" };
+        const prefs = await registerGodotEngine({ ...engine, name: godotEngineName(engine.version) });
+        return { ok: true, prefs };
+      }
+      const project = sessionHost.getStatus().cwd;
+      if (input.action === "project" && (!project || normalizeProjectKey(project) !== normalizeProjectKey(input.projectPath))) {
+        return { ok: false, error: "项目已切换，请为当前项目重新选择引擎" };
+      }
+      if ((input.action === "default" || input.action === "project") && input.path !== null) {
+        const engine = getCachedPrefs().godotEngines.find((entry) => normalizeProjectKey(entry.path) === normalizeProjectKey(input.path!));
+        if (!engine) return { ok: false, error: "所选引擎不在已保存的配置中" };
+        if (!await probeGodotEngine(engine.path)) return { ok: false, error: "所选 Godot 4 引擎不可用，请检查路径或重新添加" };
+      }
+      if (input.action === "project" && normalizeProjectKey(project ?? "") !== normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) {
+        return { ok: false, error: "项目已切换，请为当前项目重新选择引擎" };
+      }
+      const prefs = await updateGodotEngine(input);
+      if (input.action === "remove" || input.action === "default") connection.engineSettingsChanged();
+      if (input.action === "project" && normalizeProjectKey(project ?? "") === normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) {
+        connection.engineSelected(input.path ?? undefined);
+      }
+      return { ok: true, prefs };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   handle(ipcMain, IPC_CHANNELS.launchGodotEditor, async () => connection.connect());

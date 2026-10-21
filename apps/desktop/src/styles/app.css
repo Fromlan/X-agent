@@ -3572,6 +3572,32 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   align-self: center;
 }
 
+.godot-engine-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.godot-engine-row {
+  padding: 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-card);
+  min-width: 0;
+}
+
+.godot-engine-version,
+.godot-engine-path {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.godot-engine-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .settings-toolbar {
   display: flex;
   flex-wrap: wrap;

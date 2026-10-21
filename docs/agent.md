@@ -10,7 +10,7 @@
 - Vite ^8.3.4
 - @earendil-works/pi-coding-agent ^0.99.2
 - Electron 43、React 19、TypeScript 7；开发环境 Node.js 24+。
-- 当前开发与发布平台为 Windows；真实编辑器集成检查固定 Godot 4.6.2。
+- 当前开发与发布平台为 Windows；真实编辑器集成检查固定 Godot 4.7.2。
 
 ## 验证命令
 
@@ -26,7 +26,7 @@
 | `npm run test:coverage` | Vitest 与覆盖率门槛 | CI 必跑 |
 | `npm run build` | 构建 Electron 应用 | E2E 的前置步骤 |
 | `npm run test:e2e` | Playwright Electron 业务与界面回归 | 先构建 |
-| `npm run test:godot` | 真实 Godot 插件、RPC、场景和脚本检查 | PowerShell 的 `$env:GODOT_BIN` 指向 Godot 4.6.2 console 可执行文件；缺少环境明确失败 |
+| `npm run test:godot` | 真实 Godot 插件、RPC、场景和脚本检查 | PowerShell 的 `$env:GODOT_BIN` 指向 Godot 4.7.2 console 可执行文件；缺少环境明确失败 |
 
 `npm test` 当前为 60 个 test-* + 1 个 measure-context-baseline + 1 个 godot-pi/scripts/check-skills.mjs = 62 步串联。完整顺序只维护在 `package.json:scripts.test`。
 

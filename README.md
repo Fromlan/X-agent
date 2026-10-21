@@ -41,11 +41,11 @@ X-agent 让你在同一个会话里修改 Godot 项目的脚本和场景、调�
 连接后，Agent 可以读取当前场景、运行项目并获取报错。
 
 1. 打开 Godot 项目后，X-agent 默认自动连接已有编辑器，或自动查找引擎、安装并启用插件后打开项目。
-2. 找不到引擎或检测到多个合适版本时，在「设置 → Godot」选择一次，之后按项目记忆。
+2. 在「设置 → Godot → 引擎管理」添加多个版本、设置默认引擎，并为当前项目选择专用版本。项目选择独立保存，旧引擎路径会自动迁移；默认及自动检测会检查项目版本与 C# 支持。
 3. 如果 Godot 已打开但尚未加载插件，按提示启用 **X-agent RPC** 或保存后重新打开项目。确认状态为「已连接」；可在设置中关闭自动连接或手动重试。
 4. 在「设置 → 工具」勾选需要使用的 **Godot 编辑器工具**。这些工具默认关闭。
 
-![Godot 自动连接设置](docs/screenshots/godot-auto-connect.png)
+![Godot 多版本引擎管理](docs/screenshots/godot-engine-management.png)
 
 具体工具和连接排查见 [Godot 插件文档](packages/godot-editor-rpc/README.md)。
 
@@ -124,7 +124,7 @@ npm run build
 npm run test:e2e
 ```
 
-真实 Godot 集成测试需要将 `$env:GODOT_BIN` 设为 Godot 4.6.2 console 可执行文件的绝对路径，再运行 `npm run test:godot`。文档修改还需在仓库根目录运行 `npm run doc:drift` 和 `npm run test:doc-drift`。
+真实 Godot 集成测试需要将 `$env:GODOT_BIN` 设为 Godot 4.7.2 console 可执行文件的绝对路径，再运行 `npm run test:godot`。文档修改还需在仓库根目录运行 `npm run doc:drift` 和 `npm run test:doc-drift`。
 
 仓库中的 `apps/desktop` 是 Electron 客户端，`packages/godot-editor-rpc` 是 Godot 插件，`packages/godot-pi` 是原生技能包。架构与开发约定见 [CLAUDE.md](CLAUDE.md)，贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 

@@ -10,6 +10,8 @@ import {
 import { createStore, type Store } from "./lib/store";
 import { writeJsonAtomicSync } from "./lib/atomic-write";
 import { normalizeProjectKey } from "../../shared/project-path";
+import { GodotEngineConfigSchema, type GodotEngineConfig, type GodotEngineMutation } from "../../shared/godot-engines";
+import { Value } from "typebox/value";
 import {
   ClientPrefs,
   DEFAULT_PREFS,
@@ -134,6 +136,17 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
       ? rawGoalEvaluatorModel.trim()
       : null;
   const { themeId, colorMode } = normalizeThemePrefs(raw);
+  const godotEditorPath = typeof rest.godotEditorPath === "string" && rest.godotEditorPath.trim() ? rest.godotEditorPath.trim() : null;
+  const godotProjectEditors = rest.godotProjectEditors && typeof rest.godotProjectEditors === "object" && !Array.isArray(rest.godotProjectEditors)
+    ? Object.fromEntries(Object.entries(rest.godotProjectEditors)
+      .filter(([key, value]) => key.trim().length > 0 && typeof value === "string" && value.trim().length > 0 && value.length <= 4096)
+      .map(([key, value]) => [normalizeProjectKey(key), value.trim()])) : {};
+  // Migrate old path choices without executing binaries while loading preferences.
+  const engines: GodotEngineConfig[] = Array.isArray(rest.godotEngines)
+    ? rest.godotEngines.filter((engine) => Value.Check(GodotEngineConfigSchema, engine) && engine.name.trim() && engine.path.trim())
+    : [...new Set([godotEditorPath, ...Object.values(godotProjectEditors)].filter((path): path is string => Boolean(path)))]
+      .map((path) => ({ path, name: "Godot", version: "" }));
+  const godotEngines = [...new Map(engines.map((engine) => [normalizeProjectKey(engine.path), { ...engine, name: engine.name.trim(), path: engine.path.trim() }])).values()].slice(0, 128);
   return {
     ...DEFAULT_PREFS,
     ...rest,
@@ -153,8 +166,9 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     deepseekWebProviderId: typeof rest.deepseekWebProviderId === "string" && rest.deepseekWebProviderId.trim()
       ? rest.deepseekWebProviderId.trim() : null,
     godotAutoConnect: typeof rest.godotAutoConnect === "boolean" ? rest.godotAutoConnect : true,
-    godotProjectEditors: rest.godotProjectEditors && typeof rest.godotProjectEditors === "object" && !Array.isArray(rest.godotProjectEditors)
-      ? Object.fromEntries(Object.entries(rest.godotProjectEditors).filter(([key, value]) => key.length > 0 && typeof value === "string" && value.length > 0 && value.length <= 4096)) : {},
+    godotEditorPath,
+    godotProjectEditors,
+    godotEngines,
   };
 }
 
@@ -358,6 +372,51 @@ export async function patchPrefs(patch: Partial<ClientPrefs>): Promise<ClientPre
 
 export function getAgentDirPath(): string {
   return ensureAgentDir();
+}
+
+/** Register a probed installation atomically, preserving its user-assigned name on repeated selection. */
+export async function registerGodotEngine(engine: GodotEngineConfig, signal?: AbortSignal): Promise<ClientPrefs> {
+  ensureAgentDir();
+  return store.mutate((previous) => {
+    signal?.throwIfAborted();
+    const key = normalizeProjectKey(engine.path);
+    const existing = previous.godotEngines.find((entry) => normalizeProjectKey(entry.path) === key);
+    if (!existing && previous.godotEngines.length >= 128) throw new Error("最多保存 128 个 Godot 引擎，请先移除不再使用的配置");
+    return { ...previous, godotEngines: [
+      ...previous.godotEngines.filter((entry) => normalizeProjectKey(entry.path) !== key),
+      { ...engine, name: existing?.name ?? engine.name },
+    ] };
+  });
+}
+
+/** Update the engine registry and every affected binding in one store transaction. */
+export async function updateGodotEngine(input: Exclude<GodotEngineMutation, { action: "add" }>): Promise<ClientPrefs> {
+  ensureAgentDir();
+  return store.mutate((previous) => {
+    const key = input.path === null ? null : normalizeProjectKey(input.path);
+    const engine = previous.godotEngines.find((entry) => normalizeProjectKey(entry.path) === key);
+    if (key !== null && !engine) throw new Error("引擎配置已移除，请刷新后重试");
+    if (input.action === "rename") {
+      const name = input.name.trim();
+      if (!name) throw new Error("引擎名称不能为空");
+      return { ...previous, godotEngines: previous.godotEngines.map((entry) => entry === engine ? { ...entry, name } : entry) };
+    }
+    if (input.action === "default") return { ...previous, godotEditorPath: engine?.path ?? null };
+    const godotProjectEditors = { ...previous.godotProjectEditors };
+    if (input.action === "project") {
+      const projectKey = normalizeProjectKey(input.projectPath);
+      if (engine) godotProjectEditors[projectKey] = engine.path;
+      else delete godotProjectEditors[projectKey];
+      return { ...previous, godotProjectEditors };
+    }
+    for (const [project, path] of Object.entries(godotProjectEditors)) {
+      if (normalizeProjectKey(path) === key) delete godotProjectEditors[project];
+    }
+    return { ...previous, godotProjectEditors,
+      godotEngines: previous.godotEngines.filter((entry) => entry !== engine),
+      godotEditorPath: normalizeProjectKey(previous.godotEditorPath ?? "") === key ? null : previous.godotEditorPath,
+    };
+  });
 }
 
 /** Merge project engine choices inside the store lock so rapid project switches cannot lose earlier choices. */

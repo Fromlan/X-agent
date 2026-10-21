@@ -41,11 +41,11 @@ Have Godot 4 and [Git for Windows](https://gitforwindows.org/) installed. Git su
 Once connected, the agent can inspect the current scene, run the project, and retrieve errors.
 
 1. Open a Godot project. X-agent automatically attaches to its editor, or discovers an engine, installs and enables the addon, and opens the project.
-2. If the engine is missing or several suitable versions are found, choose one in Settings → Godot. The choice is remembered per project.
+2. Add multiple versions under Settings → Godot → Engine management, set a default, and select an engine for each project. Project choices are stored independently and existing paths are migrated; default and automatic discovery check the project's version and C# requirements.
 3. If Godot was already open without the addon loaded, enable **X-agent RPC** or save and reopen the project as prompted. Wait for the connected status; automatic connection can be disabled or retried in Settings.
 4. Enable the **Godot editor tools** you need in Settings → Tools. They are off by default.
 
-![Godot automatic connection settings](docs/screenshots/godot-auto-connect.png)
+![Godot multi-version engine management](docs/screenshots/godot-engine-management.png)
 
 See the [Godot addon documentation](packages/godot-editor-rpc/README.md) for available tools and connection troubleshooting.
 
@@ -124,7 +124,7 @@ npm run build
 npm run test:e2e
 ```
 
-For real Godot integration tests, set `$env:GODOT_BIN` to the absolute path of a Godot 4.6.2 console executable, then run `npm run test:godot`. For documentation changes, also run `npm run doc:drift` and `npm run test:doc-drift` from the repository root.
+For real Godot integration tests, set `$env:GODOT_BIN` to the absolute path of a Godot 4.7.2 console executable, then run `npm run test:godot`. For documentation changes, also run `npm run doc:drift` and `npm run test:doc-drift` from the repository root.
 
 `apps/desktop` contains the Electron client, `packages/godot-editor-rpc` the Godot addon, and `packages/godot-pi` the native skill package. Read [CLAUDE.md](CLAUDE.md) for architecture and engineering conventions, and [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
