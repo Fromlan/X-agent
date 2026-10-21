@@ -48,11 +48,11 @@ PR 标题遵循 Conventional Commits。描述包含问题与结果、关联 Issu
 | `godot-integration` | 真实 Godot 4.6.2 插件、RPC、场景与脚本检查 |
 | `actionlint` | 工作流语法与表达式 |
 
-至少完成一次 review；单维护者项目执行自审，多人协作时显式邀请 reviewer。合并前检查实际 CI 状态，不能带失败检查合并。默认 squash merge，合并后清理已完成分支。
+至少完成一次 review；单维护者可自审，并在 PR 记录结论和验证依据，无需对自己的 PR 提交 GitHub approve；多人协作需至少一个有效 approve。合并前检查实际 CI 状态，不能带失败检查合并。默认 squash merge，合并后清理已完成分支。
 
 ### 6. CI 自动化
 
-`ci.yml` 监听 `main` / `master` push 和 PR，actionlint 成功后其余四个 Windows job 并行；同一 ref 的旧运行会取消。依赖更新由 [Dependabot](.github/dependabot.yml) 发起；`dependabot-review.yml` 仅发布审阅提醒，patch 更新同样须五项 CI 全绿、至少一个有效 approve 后由维护者按依赖顺序 squash 合并。
+`ci.yml` 监听 `main` / `master` push 和 PR，actionlint 成功后其余四个 Windows job 并行；同一 ref 的旧运行会取消。依赖更新由 [Dependabot](.github/dependabot.yml) 发起；`dependabot-review.yml` 仅发布审阅提醒，patch 更新同样须五项 CI 全绿并按上述规则完成审阅后，由维护者按依赖顺序 squash 合并。
 
 `test:godot` 要求 PowerShell 的 `$env:GODOT_BIN` 指向真实 Godot 4.6.2 console 可执行文件；缺少环境明确失败。CI 的 `scripts/setup-godot.ps1` 下载固定版本并校验 SHA-256。测试使用隔离目录，不读写维护者真实的 Pi 偏好、会话或认证数据。
 

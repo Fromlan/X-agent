@@ -24,4 +24,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr comment "$PR_URL" --body "Dependency updates require all five CI jobs (desktop, unit-test, e2e, godot-integration, actionlint) to pass and at least one valid approve. A maintainer then squash-merges them in dependency order. This workflow only posts reminders; patch updates follow the same review process."
+          gh pr comment "$PR_URL" --body "Dependency updates require all five CI jobs (desktop, unit-test, e2e, godot-integration, actionlint) to pass and a completed review. A sole maintainer may record a self-review with validation evidence; collaborative changes require at least one valid approve. A maintainer then squash-merges them in dependency order. This workflow only posts reminders; patch updates follow the same review process."
