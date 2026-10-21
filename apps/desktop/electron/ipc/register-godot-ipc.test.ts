@@ -216,3 +216,15 @@ it("uses the committed project binding after a queued clear and default change",
   expect(await context.manageEngine({ action: "default", path: "C:/saved.exe" })).toMatchObject({ ok: true });
   expect(context.connection.engineSettingsChanged).toHaveBeenCalledOnce();
 });
+
+it("preserves the new project engine when a queued removal targets its previous binding", async () => {
+  const state = { projectPath: "D:/game", enginePath: "C:/saved.exe" };
+  const context = fixture(state);
+  prefs.godotProjectEditors = { "d:/game": "C:/saved.exe" };
+  vi.mocked(updateGodotEngine).mockImplementationOnce(async () => {
+    state.enginePath = "C:/new.exe";
+    return { ...DEFAULT_PREFS, godotProjectEditors: { "d:/game": "C:/new.exe" } };
+  });
+  expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).not.toHaveBeenCalled();
+});
