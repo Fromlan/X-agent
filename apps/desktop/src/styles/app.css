@@ -6582,7 +6582,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 .sidebar-actions {
   display: grid;
-  grid-template-columns: 1.15fr 1fr 34px;
+  grid-template-columns: 1.15fr 1fr;
   gap: 6px;
   margin-top: 18px;
 }
