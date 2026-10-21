@@ -107,6 +107,10 @@ export interface ClientPrefs {
   disabledSkills: string[];
   /** Absolute path to Godot editor executable (Godot_*.exe / godot). */
   godotEditorPath: string | null;
+  /** Prepare and connect the Godot editor when opening a project. */
+  godotAutoConnect: boolean;
+  /** Explicit or successfully connected engine paths, keyed by normalized project path. */
+  godotProjectEditors: Record<string, string>;
   /**
    * godot-docs git branch to clone/search (e.g. stable, master, 3.6).
    * Cached under ~/.pi/agent/x-agent/godot-docs/<branch>/.
@@ -194,6 +198,8 @@ export const DEFAULT_PREFS: ClientPrefs = {
   deepseekWebProviderId: null,
   disabledSkills: [],
   godotEditorPath: null,
+  godotAutoConnect: true,
+  godotProjectEditors: {},
   rightPanelOpen: false,
   sidebarWidth: 260,
   sidebarCollapsed: false,
@@ -239,6 +245,8 @@ export const ClientPrefsSchema = Type.Object({
   deepseekWebProviderId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 256 })]),
   disabledSkills: Type.Array(Type.String()),
   godotEditorPath: Type.Union([Type.Null(), Type.String()]),
+  godotAutoConnect: Type.Boolean(),
+  godotProjectEditors: Type.Record(Type.String(), Type.String({ minLength: 1, maxLength: 4096 })),
   rightPanelOpen: Type.Boolean(),
   sidebarWidth: Type.Number(),
   sidebarCollapsed: Type.Optional(Type.Boolean()),

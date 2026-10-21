@@ -1,13 +1,16 @@
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
+  readdirSync,
+  unlinkSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeFileAtomicSync } from "./lib/atomic-write";
+import { isPhysicallyInside } from "./lib/path-boundary";
+import type { GodotConnectionStatus } from "../../shared/godot-connection";
 
 export type InstallGodotRpcAddonResult = {
   ok: boolean;
@@ -99,7 +102,7 @@ function readProjectGodot(projectPath: string): string {
 }
 
 function writeProjectGodot(projectPath: string, content: string): void {
-  writeFileSync(join(projectPath, "project.godot"), content, "utf8");
+  writeFileAtomicSync(join(projectPath, "project.godot"), content);
 }
 
 function parseQuotedStrings(raw: string): string[] {
@@ -163,6 +166,23 @@ function ensureEditorPluginsEnabled(
   };
 }
 
+/** Inspect actual bundled files and the enabled list, rather than trusting a directory name. */
+export function inspectGodotRpcAddon(projectPath: string): NonNullable<GodotConnectionStatus["addon"]> {
+  const target = join(projectPath, "addons", "x_agent_rpc");
+  const source = findSourceAddonDir();
+  const installed = ["plugin.cfg", "plugin.gd", "rpc_debugger.gd"].every((name) => existsSync(join(target, name)));
+  const config = installed ? readFileSync(join(target, "plugin.cfg"), "utf8") : "";
+  const version = config.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+  const project = readProjectGodot(projectPath);
+  const section = project.match(/\[editor_plugins\]([\s\S]*?)(?=\n\[|$)/)?.[1] ?? "";
+  const enabled = parseQuotedStrings(section.match(/enabled\s*=\s*PackedStringArray\s*\(([^)]*)\)/)?.[1] ?? "")
+    .includes("res://addons/x_agent_rpc/plugin.cfg");
+  const current = Boolean(installed && source && readdirSync(source).filter((name) => /\.(gd|cfg)$/.test(name)).every((name) =>
+    existsSync(join(target, name)) && readFileSync(join(source, name)).equals(readFileSync(join(target, name)))));
+  return { installed, enabled, current, ...(version ? { version } : {}) };
+}
+
+/** Install only changed files and atomically enable the addon without rewriting unrelated settings. */
 export function installGodotRpcAddon(
   projectPath: string,
 ): InstallGodotRpcAddonResult {
@@ -188,38 +208,47 @@ export function installGodotRpcAddon(
 
   const targetAddonDir = join(projectPath, "addons", "x_agent_rpc");
   const targetAddonsRoot = join(projectPath, "addons");
-  if (!existsSync(targetAddonsRoot)) {
-    mkdirSync(targetAddonsRoot, { recursive: true });
-  }
-
+  const previous = new Map<string, Buffer | null>();
   try {
-    cpSync(sourceAddon, targetAddonDir, {
-      recursive: true,
-      force: true,
-    });
+    const files = readdirSync(sourceAddon);
+    for (const target of [join(projectPath, "project.godot"), targetAddonsRoot, targetAddonDir, ...files.map((name) => join(targetAddonDir, name))]) {
+      if (!isPhysicallyInside(projectPath, target)) throw new Error("插件安装路径通过链接指向项目外部，已拒绝写入");
+    }
+    const prev = readProjectGodot(projectPath);
+    const { next, enabled } = ensureEditorPluginsEnabled(prev, desiredEnabled);
+    mkdirSync(targetAddonDir, { recursive: true });
+    for (const name of files) {
+      const bytes = readFileSync(join(sourceAddon, name));
+      const target = join(targetAddonDir, name);
+      const before = existsSync(target) ? readFileSync(target) : null;
+      if (!before?.equals(bytes)) {
+        previous.set(target, before);
+        writeFileAtomicSync(target, bytes);
+      }
+    }
+    if (next !== prev) {
+      previous.set(projectGodotPath, Buffer.from(prev));
+      writeProjectGodot(projectPath, next);
+    }
+    return {
+      ok: true, projectPath, installed: true, enabled, addonPath: targetAddonDir,
+      hint: "插件已准备；已打开的编辑器如未加载插件，需要启用插件或重新打开项目。",
+    };
   } catch (e) {
+    let restoreFailed = false;
+    for (const [target, bytes] of [...previous].reverse()) {
+      try {
+        if (!isPhysicallyInside(projectPath, target)) throw new Error("安装路径已变化");
+        if (bytes) writeFileAtomicSync(target, bytes);
+        else if (existsSync(target)) unlinkSync(target);
+      } catch { restoreFailed = true; }
+    }
     return {
       ok: false,
       projectPath,
       addonPath: targetAddonDir,
-      error: e instanceof Error ? e.message : `拷贝失败：${String(e)}`,
+      error: `${e instanceof Error ? e.message : `拷贝失败：${String(e)}`}${restoreFailed ? "；部分插件文件未能回滚，请检查文件权限后重新安装" : ""}`,
     };
   }
 
-  const prev = readProjectGodot(projectPath);
-  const { next, enabled } = ensureEditorPluginsEnabled(prev, desiredEnabled);
-  if (next !== prev) {
-    writeProjectGodot(projectPath, next);
-  }
-
-  return {
-    ok: true,
-    projectPath,
-    installed: true,
-    enabled,
-    addonPath: targetAddonDir,
-    hint: enabled
-      ? "已拷贝并启用 X-agent RPC 插件。需要重启 Godot 编辑器以生效。"
-      : "已拷贝 X-agent RPC 插件（enabled 未变化）。如未生效请重启编辑器。",
-  };
 }

@@ -19,6 +19,7 @@ export type PrefsIpcDeps = {
   patchPrefs: (patch: Partial<ClientPrefs>) => Promise<ClientPrefs>;
   applyTools: (tools: string[]) => Promise<{ ok: boolean; error?: string }>;
   reloadResources: () => Promise<unknown>;
+  onGodotPreferencesChanged?: () => void;
 };
 
 export function registerPrefsIpc(ipcMain: IpcMain, deps: PrefsIpcDeps): void {
@@ -47,12 +48,14 @@ export function registerPrefsIpc(ipcMain: IpcMain, deps: PrefsIpcDeps): void {
       const { tools: _drop, ...rest } = typedPatch;
       if (Object.keys(rest).length === 0) return await deps.loadPrefs();
       const next = await deps.patchPrefs(rest);
+      if (rest.godotAutoConnect !== undefined) deps.onGodotPreferencesChanged?.();
       if (rest.disabledSkills !== undefined) {
         await deps.reloadResources();
       }
       return next;
     }
     const next = await deps.patchPrefs(typedPatch);
+    if (typedPatch.godotAutoConnect !== undefined) deps.onGodotPreferencesChanged?.();
     if (typedPatch.disabledSkills !== undefined) {
       await deps.reloadResources();
     }

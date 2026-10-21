@@ -1,12 +1,12 @@
 import { dialog, type IpcMain } from "electron";
-import { existsSync, statSync } from "node:fs";
 import { relative, isAbsolute, sep } from "node:path";
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
 import type { SessionHost } from "../agent/session-host";
-import { getCachedPrefs, patchPrefs } from "../agent/prefs";
-import { installGodotRpcAddon } from "../agent/godot-addon-install";
+import { getCachedPrefs, patchPrefs, rememberGodotEditor } from "../agent/prefs";
+import type { GodotConnectionManager } from "../agent/godot-connection-manager";
+import { probeGodotEngine } from "../agent/godot-engine-discovery";
+import { normalizeProjectKey } from "../../shared/project-path";
 import { requestGuardedGodotRpc } from "../agent/godot-rpc-request";
 import type { GodotRpcCallDto } from "../../shared/ipc";
 import type { GodotRpcCall } from "../../shared/godot-rpc";
@@ -45,11 +45,14 @@ export function registerGodotIpc(
   ipcMain: IpcMain,
   sessionHost: SessionHost,
   godotRpc: GodotRpcBridge,
+  connection: GodotConnectionManager,
 ): void {
-  handle(ipcMain, IPC_CHANNELS.godotRpcStatus, async () => godotRpc.getStatus());
+  handle(ipcMain, IPC_CHANNELS.godotRpcStatus, async () => connection.getStatus());
   handle(ipcMain, IPC_CHANNELS.godotRpcStart, async () => {
     try {
-      return await godotRpc.start();
+      await godotRpc.start();
+      void connection.connect();
+      return connection.getStatus();
     } catch (err) {
       return {
         running: false,
@@ -63,7 +66,7 @@ export function registerGodotIpc(
   });
   handle(ipcMain, IPC_CHANNELS.godotRpcStop, async () => {
     try {
-      await godotRpc.stop();
+      await connection.stop();
       return { ok: true };
     } catch (err) {
       // E3: stop 异常（如 socket 关闭竞态）不应让 IPC reject 挂起 UI。
@@ -109,121 +112,50 @@ export function registerGodotIpc(
   );
   handle(ipcMain, IPC_CHANNELS.godotRpcSetActiveClient, async (_e, clientId: string | null) => ({
     ok: godotRpc.setActiveClient(clientId),
-    status: godotRpc.getStatus(),
+    status: connection.getStatus(),
   }));
 
-  handle(ipcMain, IPC_CHANNELS.pickGodotEditor, async () => {
+  handle(ipcMain, IPC_CHANNELS.pickGodotEditor, async (_e, candidatePath?: unknown) => {
     const prefs = getCachedPrefs();
-    const result = await dialog.showOpenDialog({
-      title: "选择 Godot 引擎可执行文件",
-      defaultPath: prefs.godotEditorPath ?? undefined,
-      properties: ["openFile"],
-      filters:
-        process.platform === "win32"
-          ? [
-              { name: "Godot", extensions: ["exe"] },
-              { name: "所有文件", extensions: ["*"] },
-            ]
-          : [
-              { name: "Godot", extensions: ["*"] },
-              { name: "应用程序", extensions: ["app"] },
-            ],
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { ok: false, canceled: true };
+    const project = sessionHost.getStatus().cwd;
+    let path: string;
+    if (candidatePath !== undefined) {
+      const candidates = connection.getStatus().connection?.candidates ?? [];
+      const candidate = candidates.find((item) => typeof candidatePath === "string" && normalizeProjectKey(item.path) === normalizeProjectKey(candidatePath));
+      if (!candidate) return { ok: false, error: "所选引擎不在当前发现列表中，请重新检测或浏览选择" };
+      path = candidate.path;
+    } else {
+      const result = await dialog.showOpenDialog({
+        title: "选择 Godot 引擎可执行文件",
+        defaultPath: prefs.godotEditorPath ?? undefined,
+        properties: ["openFile"],
+        filters:
+          process.platform === "win32"
+            ? [
+                { name: "Godot", extensions: ["exe"] },
+                { name: "所有文件", extensions: ["*"] },
+              ]
+            : [
+                { name: "Godot", extensions: ["*"] },
+                { name: "应用程序", extensions: ["app"] },
+              ],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: false, canceled: true };
+      }
+      path = result.filePaths[0]!;
     }
-    const path = result.filePaths[0]!;
-    await patchPrefs({ godotEditorPath: path });
+    if (!await probeGodotEngine(path)) return { ok: false, error: "所选文件不是可用的 Godot 4 引擎" };
+    if (normalizeProjectKey(project ?? "") !== normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) return { ok: false, error: "项目已切换，请为当前项目重新选择引擎" };
+    if (project) await rememberGodotEditor(project, path, { setDefault: true });
+    else await patchPrefs({ godotEditorPath: path });
+    if (normalizeProjectKey(project ?? "") === normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) connection.engineSelected(path);
     return { ok: true, path };
   });
 
-  handle(ipcMain, IPC_CHANNELS.launchGodotEditor, async () => {
-    const prefs = getCachedPrefs();
-    const editor = prefs.godotEditorPath;
-    if (!editor) {
-      return { ok: false, error: "请先选择 Godot 引擎路径" };
-    }
-    if (!existsSync(editor)) {
-      return { ok: false, error: `引擎不存在：${editor}` };
-    }
-    const bridgeStatus = await godotRpc.start();
-    if (!bridgeStatus.running) {
-      return {
-        ok: false,
-        error: bridgeStatus.error ?? "无法启动 RPC 桥接",
-      };
-    }
-    const project =
-      sessionHost.getStatus().cwd || prefs.lastProjectPath || undefined;
+  handle(ipcMain, IPC_CHANNELS.launchGodotEditor, async () => connection.connect());
 
-    if (project) {
-      // 二次确认：路径必须真实存在且为目录（prefs 侧已校验，防御纵深）。
-      if (!existsSync(project) || !statSync(project).isDirectory()) {
-        return { ok: false, error: `项目路径无效或不存在：${project}` };
-      }
-      const install = installGodotRpcAddon(project);
-      if (!install.ok) {
-        return { ok: false, error: install.error ?? "插件安装失败" };
-      }
-    }
-    const args: string[] = [];
-    if (project) {
-      args.push("--path", project, "--editor");
-    } else {
-      args.push("--editor");
-    }
-    try {
-      // C9: spawn 的 error 是异步事件（ENOENT 之外 EACCES / 损坏 exe 等），
-      // 同步 try/catch 抓不到。等 'spawn' 事件确认启动成功，失败时返回错误。
-      await new Promise<ReturnType<typeof spawn>>(
-        (resolvePromise, rejectPromise) => {
-          const child = spawn(editor, args, {
-            detached: true,
-            stdio: "ignore",
-            windowsHide: false,
-          });
-          child.once("error", (err) => {
-            // 失败路径也要 unref，避免被拒后 child 句柄挂住事件循环。
-            try {
-              child.unref();
-            } catch {
-              // ignore
-            }
-            rejectPromise(err);
-          });
-          child.once("spawn", () => {
-            child.unref();
-            resolvePromise(child);
-          });
-        },
-      );
-      return {
-        ok: true,
-        port: bridgeStatus.port,
-        hint: project
-          ? `已安装并启用 X-agent RPC 插件并用项目启动。需要在 Godot 中重启/确认插件启用后再 Ping（桥接端口 ${bridgeStatus.port}）。`
-          : `已启动编辑器。请打开含 X-agent RPC 插件的项目（桥接端口 ${bridgeStatus.port}）。`,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        ok: false,
-        error: `无法启动 Godot 编辑器：${message}`,
-      };
-    }
-  });
-
-  handle(ipcMain, IPC_CHANNELS.installGodotRpcAddon, async () => {
-    const prefs = getCachedPrefs();
-    const project = sessionHost.getStatus().cwd || prefs.lastProjectPath;
-    if (!project) {
-      return { ok: false, error: "请先打开项目或设置 lastProjectPath" };
-    }
-    if (!existsSync(project) || !statSync(project).isDirectory()) {
-      return { ok: false, error: `项目路径无效或不存在：${project}` };
-    }
-    return installGodotRpcAddon(project);
-  });
+  handle(ipcMain, IPC_CHANNELS.installGodotRpcAddon, async () => connection.prepareAddon());
 
   handle(ipcMain, IPC_CHANNELS.pickGodotScene, async () => {
     const prefs = getCachedPrefs();

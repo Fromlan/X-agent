@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AuthStatus,
   BashCheckResult,
@@ -9,9 +9,10 @@ import type {
 } from "@shared/ipc";
 import { normalizeProjectKey } from "../lib/group-sessions";
 import {
-  allGodotEditorToolsEnabled,
+  hasGodotEditorToolsEnabled,
   buildReadyItems,
 } from "../lib/ready-checklist";
+import { isProjectGodotConnected, projectGodotConnection } from "@shared/godot-connection";
 
 /** Project Godot / auth readiness state extracted from App. */
 export function useProjectReadiness(options: {
@@ -28,6 +29,8 @@ export function useProjectReadiness(options: {
   const [rpcStatus, setRpcStatus] = useState<GodotRpcStatusDto | null>(null);
   const [addonInstalled, setAddonInstalled] = useState<boolean | null>(null);
   const [readyChecklistHidden, setReadyChecklistHidden] = useState(false);
+  const activeCwd = useRef(cwd);
+  activeCwd.current = cwd;
 
   const refreshProjectReadiness = useCallback(
     async (projectCwd: string | null) => {
@@ -39,6 +42,7 @@ export function useProjectReadiness(options: {
       }
       try {
         const listed = await window.xAgent.files.list("");
+        if (activeCwd.current !== projectCwd) return;
         const godot = Boolean(
           listed.ok &&
             listed.entries?.some(
@@ -51,19 +55,13 @@ export function useProjectReadiness(options: {
           setRpcStatus(null);
           return;
         }
-        const [rpc, addonDir] = await Promise.all([
-          window.xAgent.godot.status(),
-          window.xAgent.files.list("addons"),
-        ]);
+        const rpc = await window.xAgent.godot.status();
+        if (activeCwd.current !== projectCwd) return;
         setRpcStatus(rpc);
-        const hasAddon = Boolean(
-          addonDir.ok &&
-            addonDir.entries?.some(
-              (e) => e.isDir && e.name.toLowerCase() === "x_agent_rpc",
-            ),
-        );
-        setAddonInstalled(hasAddon);
+        const addon = projectGodotConnection(projectCwd, rpc)?.addon;
+        setAddonInstalled(isProjectGodotConnected(projectCwd, rpc) || Boolean(addon?.installed && addon.enabled && addon.current));
       } catch {
+        if (activeCwd.current !== projectCwd) return;
         setIsGodotProject(false);
         setAddonInstalled(null);
       }
@@ -77,10 +75,17 @@ export function useProjectReadiness(options: {
 
   useEffect(() => {
     if (!cwd || !isGodotProject) return;
+    const applyStatus = (status: GodotRpcStatusDto): void => {
+      if (activeCwd.current !== cwd) return;
+      setRpcStatus(status);
+      const addon = projectGodotConnection(cwd, status)?.addon;
+      setAddonInstalled(isProjectGodotConnected(cwd, status) || Boolean(addon?.installed && addon.enabled && addon.current));
+    };
+    const unsubscribe = window.xAgent.godot.onStatus(applyStatus);
     const timer = window.setInterval(() => {
-      void window.xAgent.godot.status().then(setRpcStatus);
+      void window.xAgent.godot.status().then(applyStatus).catch(() => {});
     }, 4000);
-    return () => window.clearInterval(timer);
+    return () => { unsubscribe(); window.clearInterval(timer); };
   }, [cwd, isGodotProject]);
 
   const projectKey = useMemo(
@@ -95,6 +100,7 @@ export function useProjectReadiness(options: {
   const readyItems = useMemo(
     () =>
       buildReadyItems({
+        cwd,
         piCli,
         auth,
         modelCount,
@@ -106,6 +112,7 @@ export function useProjectReadiness(options: {
         addonInstalled,
       }),
     [
+      cwd,
       piCli,
       auth,
       modelCount,
@@ -134,7 +141,7 @@ export function useProjectReadiness(options: {
   );
   const projectReadyPending = readyItems.some(
     (i) =>
-      !i.done &&
+      !i.done && !i.optional &&
       (i.id === "rpcAddon" || i.id === "rpcBridge" || i.id === "godotTools"),
   );
   const showReadyChecklist =
@@ -147,9 +154,8 @@ export function useProjectReadiness(options: {
   const showGodotToolsNudge =
     isGodotProject &&
     !godotToolsNudgeDismissed &&
-    Boolean(rpcStatus?.running) &&
-    (rpcStatus?.clients ?? 0) > 0 &&
-    !allGodotEditorToolsEnabled(prefs) &&
+    isProjectGodotConnected(cwd, rpcStatus) &&
+    !hasGodotEditorToolsEnabled(prefs) &&
     !showReadyChecklist;
 
   return {

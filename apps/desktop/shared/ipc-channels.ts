@@ -128,4 +128,5 @@ export type IpcChannelKey = keyof typeof IPC_CHANNELS;
 export const IPC_EVENTS = {
   agentEvent: "agent:event",
   updateStatus: "update:status",
+  godotStatus: "godot:status",
 } as const;

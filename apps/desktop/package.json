@@ -19,8 +19,9 @@
     "email": "fromlan@qq.com"
   },
   "scripts": {
-    "predev": "tsx scripts/inject-splash-version.ts",
+    "predev": "node node_modules/electron/install.js && tsx scripts/inject-splash-version.ts",
     "dev": "electron-vite dev",
+    "predebug": "node node_modules/electron/install.js && tsx scripts/inject-splash-version.ts",
     "debug": "set X_AGENT_DEBUG=1&& electron-vite dev",
     "prebuild": "tsx scripts/inject-splash-version.ts",
     "build": "electron-vite build",

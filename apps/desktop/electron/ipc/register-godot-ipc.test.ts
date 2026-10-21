@@ -4,29 +4,40 @@ import { registerGodotIpc } from "./register-godot-ipc";
 import { createGodotTools } from "../agent/godot-tools";
 import { configureIpcSenderGuard, resetIpcSenderGuard } from "./register-ipc";
 import { IPC_CHANNELS } from "../../shared/ipc-channels";
+import { probeGodotEngine } from "../agent/godot-engine-discovery";
+import { rememberGodotEditor } from "../agent/prefs";
 
 const prefs = vi.hoisted(() => ({ tools: ["godot_set_project_setting", "godot_get_project_setting"] }));
 vi.mock("electron", () => ({ dialog: {} }));
-vi.mock("../agent/prefs", () => ({ getCachedPrefs: () => prefs, patchPrefs: vi.fn() }));
+vi.mock("../agent/prefs", () => ({ getCachedPrefs: () => prefs, patchPrefs: vi.fn(), rememberGodotEditor: vi.fn(async () => {}) }));
+vi.mock("../agent/godot-engine-discovery", () => ({ probeGodotEngine: vi.fn(async () => ({ path: "C:/Godot.exe", version: "4.6.2.stable" })) }));
 
 /** Register real handlers with a trusted sender, avoiding a live Electron profile. */
 function fixture() {
   const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
   const request = vi.fn(async () => ({ id: "reply", ok: true, result: { saved: true } }));
   const bridge = { request };
+  let cwd = "D:/game";
+  const connection = {
+    getStatus: () => ({ connection: { candidates: [{ path: "C:/Godot.exe", version: "4.6.2.stable" }] } }),
+    engineSelected: vi.fn(),
+  };
   const sender = {};
   const event = { sender, senderFrame: { url: "file:///app/index.html" } };
   configureIpcSenderGuard(() => ({ webContents: sender, isDestroyed: () => false }) as never, null);
-  registerGodotIpc({ handle: (channel: string, handler: (...args: unknown[]) => Promise<unknown>) => handlers.set(channel, handler) } as never, {} as never, bridge as never);
+  registerGodotIpc({ handle: (channel: string, handler: (...args: unknown[]) => Promise<unknown>) => handlers.set(channel, handler) } as never, { getStatus: () => ({ cwd }) } as never, bridge as never, connection as never);
   const tool = createGodotTools(bridge as never).find((entry) => entry.name === "godot_set_project_setting")!;
   return {
     request,
+    connection,
+    switchProject: () => { cwd = "D:/other"; },
+    pickEngine: (path: unknown) => handlers.get(IPC_CHANNELS.pickGodotEditor)!(event, path),
     ipc: (call: unknown, inputEvent = event) => handlers.get(IPC_CHANNELS.godotRpcRequest)!(inputEvent, call),
     tool: (payload: unknown) => tool.execute("setting", payload as never, undefined as never, undefined as never, undefined as never),
   };
 }
 
-beforeEach(() => { prefs.tools = ["godot_set_project_setting", "godot_get_project_setting"]; });
+beforeEach(() => { vi.clearAllMocks(); prefs.tools = ["godot_set_project_setting", "godot_get_project_setting"]; });
 afterEach(() => resetIpcSenderGuard());
 
 describe.each(["ipc", "tool"] as const)("%s ProjectSettings ingress", (ingress) => {
@@ -68,4 +79,28 @@ it("retains sender validation before the shared setting boundary", async () => {
   const context = fixture();
   await expect(context.ipc({ method: "set_project_setting", key: "application/config/name", value: "Game" }, { sender: {}, senderFrame: { url: "file:///app/index.html" } })).rejects.toMatchObject({ __senderUntrusted: true });
   expect(context.request).not.toHaveBeenCalled();
+});
+
+it("rejects engine paths outside the current discovered list before executing or persisting them", async () => {
+  const context = fixture();
+  expect(await context.pickEngine("C:/arbitrary.exe")).toMatchObject({ ok: false });
+  expect(probeGodotEngine).not.toHaveBeenCalled();
+  expect(rememberGodotEditor).not.toHaveBeenCalled();
+});
+
+it("records a validated discovered engine for the current project and resumes connection", async () => {
+  const context = fixture();
+  expect(await context.pickEngine("c:\\godot.exe")).toMatchObject({ ok: true, path: "C:/Godot.exe" });
+  expect(rememberGodotEditor).toHaveBeenCalledWith("D:/game", "C:/Godot.exe", { setDefault: true });
+  expect(context.connection.engineSelected).toHaveBeenCalledWith("C:/Godot.exe");
+});
+
+it("a project switch during engine validation cannot save the selection into another project", async () => {
+  const context = fixture();
+  vi.mocked(probeGodotEngine).mockImplementationOnce(async () => {
+    context.switchProject();
+    return { path: "C:/Godot.exe", version: "4.6.2.stable" };
+  });
+  expect(await context.pickEngine("C:/Godot.exe")).toMatchObject({ ok: false, error: expect.stringContaining("项目已切换") });
+  expect(rememberGodotEditor).not.toHaveBeenCalled();
 });

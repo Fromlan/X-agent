@@ -15,7 +15,10 @@
 import type { BrowserWindow } from "electron";
 import { ipcMain } from "electron";
 import { ensureBuiltinDesignSkillsInstalledSync } from "./agent/builtin-skills-installer";
+import { ensureBashConfigured } from "./agent/bash-check";
 import { GodotRpcBridge } from "./agent/godot-rpc-bridge";
+import { createGodotConnectionManager, type GodotConnectionManager } from "./agent/godot-connection-manager";
+import { IPC_EVENTS } from "../shared/ipc-channels";
 import {
   loadPrefs,
   loadPrefsWithRecovery,
@@ -47,6 +50,7 @@ export type RuntimeHooks = {
 };
 
 let godotRpc: GodotRpcBridge | null = null;
+let godotConnection: GodotConnectionManager | null = null;
 let sessionHost: SessionHost | null = null;
 let updater: AppAutoUpdater | null = null;
 
@@ -56,16 +60,29 @@ const prefsPort = {
   patchPrefs: (patch: Partial<ClientPrefs>) => patchPrefs(patch),
 };
 
-/** Call only after splash is visible. */
-export function bootRuntime(hooks: RuntimeHooks): void {
+/** Prepare Bash before exposing sessions or IPC; call only after splash is visible. */
+export async function bootRuntime(hooks: RuntimeHooks): Promise<void> {
   applyStartupPrefsLoad(loadPrefsWithRecovery());
+  try {
+    await ensureBashConfigured();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    pushStartupIssue({ stage: "bash_setup", message });
+    dbgWarn("boot", "bash_setup failed", message);
+  }
   godotRpc = new GodotRpcBridge();
+  godotConnection = createGodotConnectionManager(godotRpc);
+  godotConnection.onStatus((status) => {
+    const window = hooks.getMainWindow();
+    if (window && !window.isDestroyed()) window.webContents.send(IPC_EVENTS.godotStatus, status);
+  });
   sessionHost = new SessionHost(hooks.getMainWindow, godotRpc);
   updater = new AppAutoUpdater(hooks.getMainWindow);
   registerIpcHandlers({
     ipcMain,
     sessionHost,
     godotRpc,
+    godotConnection,
     updater,
     getMainWindow: hooks.getMainWindow,
     revealMainWindow: hooks.revealMainWindow,
@@ -134,6 +151,7 @@ export function bootRuntime(hooks: RuntimeHooks): void {
 }
 
 export async function shutdownRuntime(): Promise<void> {
+  godotConnection?.dispose();
   await godotRpc?.stop();
   await sessionHost?.dispose();
 }

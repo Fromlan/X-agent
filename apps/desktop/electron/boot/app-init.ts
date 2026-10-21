@@ -29,6 +29,7 @@ export type BootAppDeps = {
 };
 
 let runtime: AppRuntimeModule | null = null;
+let runtimeReady: Promise<void> | null = null;
 
 export function getRuntime(): AppRuntimeModule | null {
   return runtime;
@@ -37,6 +38,7 @@ export function getRuntime(): AppRuntimeModule | null {
 /** 测试 / second-instance 路径需要清空, 防止多次 boot 共享 runtime 状态. */
 export function _resetRuntimeForTests(): void {
   runtime = null;
+  runtimeReady = null;
 }
 
 /**
@@ -52,14 +54,21 @@ export function _resetRuntimeForTests(): void {
  */
 export async function bootApp(deps: BootAppDeps): Promise<BrowserWindow | null> {
   let created: BrowserWindow | null = null;
-  if (!runtime) {
-    runtime = await import("../app-runtime");
-    runtime.bootRuntime({
-      getMainWindow: deps.getMainWindow,
-      revealMainWindow: deps.revealMain,
-      openExternalHttpUrl: deps.openExternalHttpUrl,
+  if (!runtimeReady) {
+    runtimeReady = (async () => {
+      const loaded = await import("../app-runtime");
+      await loaded.bootRuntime({
+        getMainWindow: deps.getMainWindow,
+        revealMainWindow: deps.revealMain,
+        openExternalHttpUrl: deps.openExternalHttpUrl,
+      });
+      runtime = loaded;
+    })().catch((error: unknown) => {
+      runtimeReady = null;
+      throw error;
     });
   }
+  await runtimeReady;
   // 幂等: 已有 mainWindow 时 (second-instance 路径), 不重建.
   if (deps.getMainWindow() && !deps.getMainWindow()!.isDestroyed()) {
     return null;

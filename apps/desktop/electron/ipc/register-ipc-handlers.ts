@@ -9,6 +9,7 @@
 import type { IpcMain, BrowserWindow } from "electron";
 import type { SessionHost } from "../agent/session-host";
 import type { GodotRpcBridge } from "../agent/godot-rpc-bridge";
+import type { GodotConnectionManager } from "../agent/godot-connection-manager";
 import type { AppAutoUpdater } from "../agent/auto-updater";
 import type { PrefsRecoveryNotice } from "../agent/prefs";
 import type { StartupIssue } from "../boot/startup-issues";
@@ -35,6 +36,7 @@ export type RegisterIpcDeps = {
   ipcMain: IpcMain;
   sessionHost: SessionHost;
   godotRpc: GodotRpcBridge;
+  godotConnection: GodotConnectionManager;
   updater: AppAutoUpdater;
   getMainWindow: () => BrowserWindow | null;
   revealMainWindow: () => void;
@@ -78,7 +80,7 @@ export function registerIpcHandlers(deps: RegisterIpcDeps): void {
   registerPlanIpc(ipcMain, sessionHost);
   registerSessionConfigIpc(ipcMain, sessionHost);
   registerProviderIpc(ipcMain, sessionHost);
-  registerGodotIpc(ipcMain, sessionHost, godotRpc);
+  registerGodotIpc(ipcMain, sessionHost, godotRpc, deps.godotConnection);
 
   // 主题 E #62 拆出的 8 类.
   registerCoreIpc(ipcMain, {
@@ -94,6 +96,7 @@ export function registerIpcHandlers(deps: RegisterIpcDeps): void {
     patchPrefs: deps.patchPrefs,
     applyTools: (tools) => sessionHost.applyTools(tools),
     reloadResources: () => sessionHost.reloadResources(),
+    onGodotPreferencesChanged: () => deps.godotConnection.preferencesChanged(),
   });
   registerBashIpc(ipcMain);
   registerEnvIpc(ipcMain);

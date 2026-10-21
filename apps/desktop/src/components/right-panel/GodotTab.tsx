@@ -38,9 +38,10 @@ export function GodotTab({ active, items }: Props) {
 
   useEffect(() => {
     if (!active) return;
+    const unsubscribe = window.xAgent.godot.onStatus(setStatus);
     void refresh();
     const id = window.setInterval(() => void refresh(), 2000);
-    return () => window.clearInterval(id);
+    return () => { unsubscribe(); window.clearInterval(id); };
   }, [active, refresh]);
 
   const lastGodotTool = useMemo(() => {

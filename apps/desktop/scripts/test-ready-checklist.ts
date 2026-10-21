@@ -14,7 +14,7 @@ import {
 // Inline the pure helpers by importing from the renderer lib via relative path.
 // The module has no React deps.
 import {
-  allGodotEditorToolsEnabled,
+  hasGodotEditorToolsEnabled,
   buildReadyItems,
   readyChecklistHasBlocking,
 } from "../src/lib/ready-checklist";
@@ -47,6 +47,7 @@ const gitBad: GitCheckResult = {
 };
 
 const itemsGlobal = buildReadyItems({
+  cwd: "D:/proj",
   piCli: null,
   auth: authBad,
   modelCount: 0,
@@ -68,6 +69,7 @@ assert.ok(!itemsGlobal.some((i) => i.id === "rpcAddon"), "no godot items");
 
 const prefsOff: ClientPrefs = { ...DEFAULT_PREFS, tools: [...DEFAULT_PREFS.tools] };
 const godotItems = buildReadyItems({
+  cwd: "D:/proj",
   piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
   auth: authOk,
   modelCount: 2,
@@ -80,19 +82,20 @@ const godotItems = buildReadyItems({
     port: 8765,
     clients: 1,
     authenticatedClients: 1,
-    clientInfos: [],
+    clientInfos: [{ id: "main", projectPath: "D:/proj", connectedAt: new Date().toISOString() }],
     activeClientId: null,
     startedAt: Date.now() - 10_000,
   },
   addonInstalled: false,
 });
-assert.ok(godotItems.some((i) => i.id === "rpcAddon" && !i.done));
+assert.ok(godotItems.some((i) => i.id === "rpcAddon" && i.done), "a working addon connection supersedes stale install state");
 assert.ok(godotItems.some((i) => i.id === "rpcBridge" && i.done));
 assert.ok(godotItems.some((i) => i.id === "godotTools" && !i.done));
 assert.ok(!godotItems.some((i) => (i.id as string) === "docs"), "no docs item");
-assert.ok(readyChecklistHasBlocking(godotItems));
+assert.equal(readyChecklistHasBlocking(godotItems), false, "tool permissions are independent from connection readiness");
 
 const waiting = buildReadyItems({
+  cwd: "D:/proj",
   piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
   auth: authOk,
   modelCount: 2,
@@ -118,6 +121,7 @@ assert.equal(waitingBridge?.actionKind, "launchEditor");
 assert.match(waitingBridge?.detail ?? "", /8765/);
 
 const offline = buildReadyItems({
+  cwd: "D:/proj",
   piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
   auth: authOk,
   modelCount: 2,
@@ -141,6 +145,7 @@ assert.equal(
 
 // 宽限期内：标记为可选，不出现 actionable
 const inGrace = buildReadyItems({
+  cwd: "D:/proj",
   piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
   auth: authOk,
   modelCount: 1,
@@ -167,6 +172,7 @@ assert.equal(graceBridge?.actionKind, undefined, "grace 期无按钮");
 
 // 握手失败：引导更新插件
 const handshakeFailed = buildReadyItems({
+  cwd: "D:/proj",
   piCli: { ok: true, message: "ok", canInstall: false, piPath: "pi" },
   auth: authOk,
   modelCount: 1,
@@ -196,15 +202,16 @@ assert.match(failBridge?.detail ?? "", /v0\.2\.0/, "detail 透出插件版本");
 assert.match(failBridge?.detail ?? "", /token/, "detail 透出 warning");
 assert.match(failBridge?.detail ?? "", /2 次/, "detail 透出失败次数");
 
-assert.equal(allGodotEditorToolsEnabled(prefsOff), false);
+assert.equal(hasGodotEditorToolsEnabled(prefsOff), false);
 const prefsOn: ClientPrefs = {
   ...DEFAULT_PREFS,
   tools: [...DEFAULT_PREFS.tools, ...GODOT_TOOLS],
 };
-assert.equal(allGodotEditorToolsEnabled(prefsOn), true);
+assert.equal(hasGodotEditorToolsEnabled(prefsOn), true);
 
 // Pi missing + no npm → Node download item (not installPi)
 const noNpm = buildReadyItems({
+  cwd: "D:/proj",
   piCli: {
     ok: false,
     piPath: null,
@@ -227,6 +234,7 @@ assert.ok(!noNpm.some((i) => i.id === "piCli"), "no piCli install when !canInsta
 
 // Pi missing + npm → install Pi
 const withNpm = buildReadyItems({
+  cwd: "D:/proj",
   piCli: {
     ok: false,
     piPath: null,
@@ -248,6 +256,7 @@ assert.equal(piItem?.actionKind, "installPi");
 
 // bash found but not written → applyBash
 const writeBash = buildReadyItems({
+  cwd: "D:/proj",
   piCli: null,
   auth: authOk,
   modelCount: 1,
@@ -265,6 +274,7 @@ assert.equal(
 
 // bash ok + git fail → only git item
 const gitOnly = buildReadyItems({
+  cwd: "D:/proj",
   piCli: null,
   auth: authOk,
   modelCount: 1,

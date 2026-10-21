@@ -194,7 +194,7 @@ export function useAppActions(opts: UseAppActionsOpts): UseAppActionsResult {
       setError(result.error ?? "无法打开 Git 下载页");
       return;
     }
-    setReadyNotice("安装 Git 后，请在设置 → 通用中点击「检测」刷新状态。");
+    setReadyNotice("安装 Git 后重新启动应用，即可自动配置终端。");
   }, [setError, setReadyNotice]);
 
   const openNodeDownload = useCallback(async () => {

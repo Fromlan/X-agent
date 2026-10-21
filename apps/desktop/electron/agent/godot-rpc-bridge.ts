@@ -174,7 +174,9 @@ export class GodotRpcBridge {
    * 1.4 桥接级 AbortController。stop() / abortAllPending() 调用 abort()，触发每个 pending
    * 请求的 signal 监听器提前 resolve，不再等 timeout。
    */
-  private readonly bridgeAbortController = new AbortController();
+  private bridgeAbortController = new AbortController();
+  private starting: Promise<GodotRpcBridgeStatus> | null = null;
+  private stopping: Promise<void> | null = null;
   private pending = new Map<
     string,
     {
@@ -284,7 +286,7 @@ export class GodotRpcBridge {
         : null;
       if (!active || !projectPathMatchesCwd(active.projectPath, this.currentCwd)) {
         const first = [...this.clients.values()].find((c) =>
-          projectPathMatchesCwd(c.projectPath, this.currentCwd!),
+          c.authenticated && projectPathMatchesCwd(c.projectPath, this.currentCwd!),
         );
         this.activeClientId = first?.id ?? null;
       }
@@ -414,10 +416,23 @@ export class GodotRpcBridge {
     preferredPort = GODOT_RPC_DEFAULT_PORT,
     options: GodotRpcStartOptions = {},
   ): Promise<GodotRpcBridgeStatus> {
+    if (this.stopping) await this.stopping;
+    if (this.starting) return this.starting;
+    this.starting = this.startInternal(preferredPort, options);
+    try { return await this.starting; }
+    finally { this.starting = null; }
+  }
+
+  /** Serialize startup so automatic and manual connection requests share one endpoint. */
+  private async startInternal(
+    preferredPort: number,
+    options: GodotRpcStartOptions,
+  ): Promise<GodotRpcBridgeStatus> {
     if (this.server?.listening) {
       this.lastError = undefined;
       return this.getStatus();
     }
+    if (this.bridgeAbortController.signal.aborted) this.bridgeAbortController = new AbortController();
 
     const fallbackPorts = options.fallbackPorts ?? 9;
     const attempts = Math.max(1, fallbackPorts + 1);
@@ -487,6 +502,17 @@ export class GodotRpcBridge {
   }
 
   async stop(): Promise<void> {
+    if (this.stopping) return this.stopping;
+    this.stopping = (async () => {
+      if (this.starting) await this.starting;
+      await this.stopInternal();
+    })();
+    try { await this.stopping; }
+    finally { this.stopping = null; }
+  }
+
+  /** Stop transport without losing the active workspace's routing boundary. */
+  private async stopInternal(): Promise<void> {
     // 1.4 桥接级 abort，让所有 pending 请求的 signal 监听器立刻 reject，
     // 不再等待各自 timeout。配合 for-loop 二次清理是为了让 caller 拿到的
     // error 字段保持 "bridge stopped" 兼容旧契约。
@@ -507,7 +533,6 @@ export class GodotRpcBridge {
     this.handshakeFailures = 0;
     this.lastHandshakeFailure = undefined;
     this.lastAddonVersion = undefined;
-    this.currentCwd = null;
     // 1.3 防御：server.close() 在仍有 keep-alive 连接时可能挂住，这里加
     // 1s 强制降级，避免 window-all-closed 后 Electron 进程被 socket 拖住。
     const server = this.server;
@@ -515,14 +540,13 @@ export class GodotRpcBridge {
     if (server) {
       server.removeAllListeners();
       try {
-        server.close();
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 1000);
+          server.close(() => { clearTimeout(timer); resolve(); });
+        });
       } catch {
-        // ignore
+        // Already closed.
       }
-      await Promise.race([
-        new Promise<void>((resolve) => server.close(() => resolve())),
-        new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-      ]);
       try {
         // 实在释放不掉就 unref，保持进程不挂。
         server.unref();

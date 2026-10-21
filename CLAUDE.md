@@ -106,6 +106,8 @@ Issue 模板位于 `.github/ISSUE_TEMPLATE/`；贡献、安全报告与社区约
 |---|---|
 | `apps/desktop/shared/godot-rpc/` | 协议类型、方法清单、工具开关映射与超时策略 |
 | `apps/desktop/electron/agent/godot-rpc-bridge.ts` | 本机 TCP JSON-lines、多客户端、握手与项目路由 |
+| `apps/desktop/electron/agent/godot-connection-manager.ts` | 跟随当前项目自动连接、复用编辑器、等待健康检查与取消旧任务 |
+| `apps/desktop/electron/agent/godot-engine-discovery.ts` | Windows 引擎发现、版本与 .NET 检查，优先使用项目选择 |
 | `apps/desktop/electron/agent/godot-tools.ts` | Pi 自定义 Godot 工具 |
 | `apps/desktop/electron/agent/godot-addon-install.ts` | 安装随应用分发的 addon |
 | `packages/godot-editor-rpc/` | Godot 编辑器插件与连接说明 |

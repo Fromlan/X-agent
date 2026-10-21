@@ -24,12 +24,34 @@ import { bootApp, getRuntime, _resetRuntimeForTests } from "./app-init";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  bootRuntimeMock.mockReset();
   _resetRuntimeForTests();
   // 默认场景: 还没有 mainWindow (splash 启动后第一次 boot)
   mockMainWindow = null;
 });
 
 describe("boot/app-init / bootApp", () => {
+  it("waits for shared runtime preparation before creating a window or accepting a concurrent boot", async () => {
+    let finish!: () => void;
+    bootRuntimeMock.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    const win = { id: "prepared", isDestroyed: () => false };
+    createMainWindowMock.mockImplementation(() => { mockMainWindow = win; return win; });
+    const deps = {
+      getMainWindow: getMainWindowMock,
+      revealMain: revealMainMock,
+      openExternalHttpUrl: openExternalHttpUrlMock,
+      createMainWindow: createMainWindowMock,
+    };
+    const first = bootApp(deps);
+    const concurrent = bootApp(deps);
+    await vi.waitFor(() => expect(bootRuntimeMock).toHaveBeenCalledTimes(1));
+    expect(createMainWindowMock).not.toHaveBeenCalled();
+    expect(getRuntime()).toBeNull();
+    finish();
+    expect(await Promise.all([first, concurrent])).toEqual([win, null]);
+    expect(createMainWindowMock).toHaveBeenCalledTimes(1);
+  });
+
   it("首次调用: 走 bootRuntime, createMainWindow", async () => {
     const win = { id: "win-1", isDestroyed: () => false };
     // createMainWindow 模拟 main.ts 把 BrowserWindow 写回 module-scope ref

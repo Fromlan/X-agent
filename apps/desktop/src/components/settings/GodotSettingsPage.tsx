@@ -7,21 +7,20 @@ import {
   type GodotRpcStatusDto,
 } from "@shared/ipc";
 import { GODOT_RPC_DEFAULT_WAIT_MS } from "@shared/godot-rpc";
-import { godotConnectionWarning } from "../../lib/godot-connection";
+import { godotConnectionLabel, godotConnectionWarning, isProjectGodotConnected, projectGodotConnection } from "../../lib/godot-connection";
+import { normalizeProjectKey } from "@shared/project-path";
 
 /** Kept for API compat; Godot settings is editor-only (no docs sub-section). */
 export type GodotSettingsSection = "editor";
 
-function rpcStatusLabel(rpc: GodotRpcStatusDto | null): {
+function rpcStatusLabel(cwd: string | null, rpc: GodotRpcStatusDto | null): {
   text: string;
   tone: "is-ok" | "is-warn" | "is-off" | "is-error";
 } {
   if (rpc?.error) return { text: "错误", tone: "is-error" };
   if (!rpc?.running) return { text: "桥接未启动", tone: "is-off" };
-  if ((rpc.authenticatedClients ?? 0) > 0) {
-    return { text: `已连接 · ${rpc.authenticatedClients}`, tone: "is-ok" };
-  }
-  return { text: "等待连接", tone: "is-warn" };
+  if (isProjectGodotConnected(cwd, rpc)) return { text: "已连接", tone: "is-ok" };
+  return { text: godotConnectionLabel(cwd, rpc), tone: "is-warn" };
 }
 
 type Props = {
@@ -41,6 +40,7 @@ export function GodotSettingsPage({
   const [rpcMsg, setRpcMsg] = useState<string | null>(null);
   const [scenePath, setScenePath] = useState("res://");
   const [importPaths, setImportPaths] = useState("res://");
+  const [connecting, setConnecting] = useState(false);
 
   const refreshRpc = useCallback(async () => {
     setRpc(await window.xAgent.godot.status());
@@ -48,6 +48,7 @@ export function GodotSettingsPage({
 
   useEffect(() => {
     if (!open) return;
+    const unsubscribe = window.xAgent.godot.onStatus(setRpc);
     let cancelled = false;
     void (async () => {
       const status = await window.xAgent.godot.status();
@@ -56,6 +57,7 @@ export function GodotSettingsPage({
     })();
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [open, cwd]);
 
@@ -82,8 +84,20 @@ export function GodotSettingsPage({
     await refreshRpc();
   };
 
-  const rpcTone = rpcStatusLabel(rpc);
+  const rpcTone = rpcStatusLabel(cwd, rpc);
   const rpcWarning = godotConnectionWarning(rpc?.warning);
+  const connection = projectGodotConnection(cwd, rpc);
+
+  /** Remember a discovered or manually browsed engine, then let the main process resume connection. */
+  const pickEditor = async (candidatePath?: string): Promise<void> => {
+    try {
+      const res = await window.xAgent.godot.pickEditor(candidatePath);
+      if (res.canceled) return;
+      if (!res.ok || !res.path) { setRpcMsg(res.error ?? "未选择引擎"); return; }
+      onPrefsChanged?.(await window.xAgent.prefs.get());
+      setRpcMsg("引擎已更新");
+    } catch (error) { setRpcMsg(error instanceof Error ? error.message : String(error)); }
+  };
 
   return (
     <section className="settings-page">
@@ -93,48 +107,55 @@ export function GodotSettingsPage({
 
       <div className="settings-block">
         <h4 className="settings-block-title">引擎</h4>
+        <label className="settings-row settings-row-check">
+          <span className="settings-row-label">打开项目时自动连接 Godot</span>
+          <input type="checkbox" checked={prefs.godotAutoConnect} onChange={async (event) => {
+            try {
+              const next = await window.xAgent.prefs.set({ godotAutoConnect: event.target.checked });
+              onPrefsChanged?.(next);
+              await refreshRpc();
+            } catch (error) { setRpcMsg(error instanceof Error ? error.message : String(error)); }
+          }} />
+        </label>
         <div className="settings-inline-row">
           <input
             type="text"
             className="input"
             readOnly
-            value={prefs.godotEditorPath ?? ""}
-            placeholder="尚未选择 Godot 可执行文件…"
+            value={connection?.enginePath ?? prefs.godotProjectEditors[normalizeProjectKey(cwd ?? "")] ?? prefs.godotEditorPath ?? ""}
+            placeholder="自动查找 Godot；也可手动选择…"
             aria-label="Godot editor path"
           />
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={async () => {
-              const res = await window.xAgent.godot.pickEditor();
-              if (res.canceled) return;
-              if (!res.ok || !res.path) {
-                setRpcMsg("未选择引擎");
-                return;
-              }
-              const next = await window.xAgent.prefs.get();
-              onPrefsChanged?.(next);
-              setRpcMsg("引擎已更新");
-            }}
+            onClick={() => void pickEditor()}
           >
             浏览…
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
+            disabled={connecting}
             onClick={async () => {
-              const res = await window.xAgent.godot.launchEditor();
-              setRpcMsg(
-                res.ok
-                  ? "已打开 Godot 编辑器"
-                  : res.error ?? "启动失败",
-              );
-              await refreshRpc();
+              setConnecting(true);
+              try {
+                const res = await window.xAgent.godot.launchEditor();
+                setRpcMsg(res.ok ? "Godot 已连接" : res.error ?? "连接失败");
+                await refreshRpc();
+              } catch (error) { setRpcMsg(error instanceof Error ? error.message : String(error)); }
+              finally { setConnecting(false); }
             }}
           >
-            启动编辑器
+            {connecting ? "正在连接…" : "连接 Godot"}
           </button>
         </div>
+        {connection?.phase === "needs_engine" && Boolean(connection.candidates?.length) && <SelectMenu
+          variant="control" value="" aria-label="发现的 Godot 引擎"
+          options={[{ value: "", label: "选择检测到的引擎…" }, ...connection.candidates!.map((engine) => ({ value: engine.path, label: `${engine.version} · ${engine.path}` }))]}
+          onChange={(path) => { if (path) void pickEditor(path); }}
+        />}
+        {connection && !["idle", "connected"].includes(connection.phase) && <p className="modal-hint">{connection.message}</p>}
       </div>
 
       <div className="settings-block">

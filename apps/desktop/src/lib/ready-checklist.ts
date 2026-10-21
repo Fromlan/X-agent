@@ -8,6 +8,7 @@ import {
   type PiCliStatus,
 } from "@shared/ipc";
 import { GODOT_RPC_GRACE_PERIOD_MS } from "@shared/godot-rpc";
+import { isProjectGodotConnected, projectGodotConnection } from "@shared/godot-connection";
 
 export type ReadyItemId =
   | "piCli"
@@ -46,6 +47,7 @@ export type ReadyItem = {
 };
 
 export type ReadyChecklistInput = {
+  cwd: string | null;
   piCli: PiCliStatus | null;
   auth: AuthStatus | null;
   modelCount: number;
@@ -139,15 +141,16 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
 
   if (!input.isGodotProject) return items;
 
-  const toolsEnabled =
-    input.prefs != null &&
-    GODOT_TOOLS.every((t) => input.prefs!.tools.includes(t));
+  const toolsEnabled = hasGodotEditorToolsEnabled(input.prefs);
+  const connection = projectGodotConnection(input.cwd, input.rpc);
+  const bridgeOk = isProjectGodotConnected(input.cwd, input.rpc);
 
   items.push({
     id: "rpcAddon",
     label: "安装 X-agent RPC 插件",
     detail: "复制插件到项目并启用 editor_plugins。",
-    done: input.addonInstalled === true,
+    done: bridgeOk || (connection?.addon ? connection.addon.installed && connection.addon.enabled && connection.addon.current : input.addonInstalled === true),
+    optional: Boolean(connection && ["discovering", "preparing", "launching", "connecting", "needs_engine"].includes(connection.phase)),
     settingsTab: "godot",
   });
 
@@ -162,7 +165,6 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
   const bridgeStartedAt = input.rpc?.startedAt ?? 0;
   const authenticatedClients = input.rpc?.authenticatedClients ?? 0;
   const totalClients = input.rpc?.clients ?? 0;
-  const bridgeOk = bridgeRunning && authenticatedClients > 0;
   const handshakeFailures = input.rpc?.handshakeFailures ?? 0;
   const lastHandshakeFailure = input.rpc?.lastHandshakeFailure;
   const lastAddonVersion = input.rpc?.lastAddonVersion;
@@ -180,6 +182,14 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
       done: true,
       settingsTab: "godot",
     });
+  } else if (connection && ["discovering", "preparing", "launching", "connecting"].includes(connection.phase)) {
+    items.push({ id: "rpcBridge", label: connection.message, done: false, optional: true, settingsTab: "godot" });
+  } else if (connection && ["needs_engine", "needs_reload", "error", "disabled"].includes(connection.phase)) {
+    items.push({
+      id: "rpcBridge", label: connection.phase === "needs_engine" ? "选择 Godot 引擎" : "连接 Godot 编辑器",
+      detail: connection.message, done: false, settingsTab: "godot",
+      actionKind: ["needs_engine", "needs_reload"].includes(connection.phase) ? "openSettings" : "launchEditor",
+    });
   } else if (bridgeInGrace) {
     items.push({
       id: "rpcBridge",
@@ -191,7 +201,7 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
       optional: true,
       settingsTab: "godot",
     });
-  } else if (bridgeRunning && totalClients > 0 && authenticatedClients === 0) {
+  } else if (bridgeRunning && (totalClients > 0 || handshakeFailures > 0) && authenticatedClients === 0) {
     // 状态三：有连接尝试但全部握手失败 → 引导更新插件
     const hintLines: string[] = [];
     if (handshakeFailures > 0) {
@@ -242,6 +252,7 @@ export function buildReadyItems(input: ReadyChecklistInput): ReadyItem[] {
     label: "启用 Godot 编辑器工具",
     detail: "默认关闭；启用后 Agent 才能控制场景与运行。",
     done: toolsEnabled,
+    optional: true,
     settingsTab: "tools",
   });
 
@@ -252,7 +263,8 @@ export function readyChecklistHasBlocking(items: ReadyItem[]): boolean {
   return items.some((i) => !i.done && !i.optional);
 }
 
-export function allGodotEditorToolsEnabled(prefs: ClientPrefs | null): boolean {
+/** Any explicitly enabled editor tool is enough; a partial selection is a valid user choice. */
+export function hasGodotEditorToolsEnabled(prefs: ClientPrefs | null): boolean {
   if (!prefs) return false;
-  return GODOT_TOOLS.every((t) => prefs.tools.includes(t));
+  return GODOT_TOOLS.some((t) => prefs.tools.includes(t));
 }
