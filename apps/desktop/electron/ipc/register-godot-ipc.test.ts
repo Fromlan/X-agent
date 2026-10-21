@@ -196,3 +196,23 @@ it("preserves an unpinned project's selected engine when another entry is remove
   expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: true });
   expect(context.connection.engineSettingsChanged).not.toHaveBeenCalled();
 });
+
+it("cancels removal of the engine selected by an earlier queued project mutation", async () => {
+  const state = { projectPath: "D:/game", enginePath: "C:/old.exe" };
+  const context = fixture(state);
+  prefs.godotProjectEditors = { "d:/game": "C:/old.exe" };
+  vi.mocked(updateGodotEngine).mockImplementationOnce(async () => {
+    state.enginePath = "C:/saved.exe";
+    return DEFAULT_PREFS;
+  });
+  expect(await context.manageEngine({ action: "remove", path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).toHaveBeenCalledOnce();
+});
+
+it("uses the committed project binding after a queued clear and default change", async () => {
+  const context = fixture();
+  prefs.godotProjectEditors = { "d:/game": "C:/old.exe" };
+  vi.mocked(updateGodotEngine).mockResolvedValueOnce({ ...DEFAULT_PREFS, godotEditorPath: "C:/saved.exe" });
+  expect(await context.manageEngine({ action: "default", path: "C:/saved.exe" })).toMatchObject({ ok: true });
+  expect(context.connection.engineSettingsChanged).toHaveBeenCalledOnce();
+});

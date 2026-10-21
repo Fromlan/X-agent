@@ -181,17 +181,18 @@ export function registerGodotIpc(
       const prefs = await updateGodotEngine(input);
       const currentProject = sessionHost.getStatus().cwd;
       if (currentProject && (input.action === "remove" || input.action === "default")) {
-        const pinned = previousPrefs.godotProjectEditors[normalizeProjectKey(currentProject)];
+        const projectKey = normalizeProjectKey(currentProject);
+        const pinned = previousPrefs.godotProjectEditors[projectKey];
         const status = connection.getStatus().connection;
         const selected = normalizeProjectKey(status?.projectPath ?? "") === normalizeProjectKey(currentProject)
           ? status?.enginePath
           : undefined;
         // Only invalidate configuration used by this project; unrelated registry edits must preserve its connection attempt.
         const affected = input.action === "default"
-          ? !pinned && normalizeProjectKey(previousPrefs.godotEditorPath ?? "") !== normalizeProjectKey(prefs.godotEditorPath ?? "")
-          : pinned
-            ? normalizeProjectKey(pinned) === normalizeProjectKey(input.path)
-            : !selected || normalizeProjectKey(selected) === normalizeProjectKey(input.path);
+          ? !prefs.godotProjectEditors[projectKey] && normalizeProjectKey(previousPrefs.godotEditorPath ?? "") !== normalizeProjectKey(prefs.godotEditorPath ?? "")
+          : normalizeProjectKey(pinned ?? "") === normalizeProjectKey(input.path)
+            || normalizeProjectKey(selected ?? "") === normalizeProjectKey(input.path)
+            || (!pinned && !selected);
         if (affected) connection.engineSettingsChanged();
       }
       if (input.action === "project" && normalizeProjectKey(project ?? "") === normalizeProjectKey(sessionHost.getStatus().cwd ?? "")) {
