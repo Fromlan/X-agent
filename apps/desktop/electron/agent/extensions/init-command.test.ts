@@ -112,6 +112,18 @@ describe("createInitCommandExtension", () => {
     expect(msg).toContain("Pre-write check");
     expect(msg).toContain("Multi-repo exception");
   });
+
+  it("保留命令参数中的补全授权与约束，让模型能区分单独 /init 和明确更新", async () => {
+    const { pi, getRegistered } = makeFakePi();
+    createInitCommandExtension()(pi as never);
+    const request = "补全现有 AGENTS.md\n保留发布流程，只更新 Godot 验证命令";
+    await getRegistered()!.handler(`  ${request}\n`, {
+      cwd: "D:/game", ui: { notify: () => undefined },
+    });
+    const msg = pi.sendUserMessage.mock.calls[0]?.[0];
+    expect(msg).toContain(`用户补充要求：\n${request}`);
+    expect(pi.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("wrapCommandSlashAsBlock", () => {

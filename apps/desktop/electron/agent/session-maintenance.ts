@@ -12,6 +12,7 @@ import { getCachedPrefs } from "./prefs";
 import { autoMaintain } from "./auto-maintain";
 import type { SessionBundle } from "./session-lifecycle";
 import type { NoticeReplaceKey } from "../../shared/ipc";
+import { buildCompactionInstructions } from "../../shared/agent-instructions";
 
 /** Snapshot deps for maintenance operations. */
 export interface MaintenanceDeps {
@@ -66,7 +67,7 @@ export async function compactSession(
       }
       try {
         const result = await session.compact(
-          customInstructions?.trim() || undefined,
+          buildCompactionInstructions(customInstructions),
         );
         if (deps.getBundle() === bundle) {
           deps.emitUsageUpdate();

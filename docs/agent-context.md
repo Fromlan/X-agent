@@ -4,6 +4,8 @@
 
 相关文档：[`CLAUDE.md`](../CLAUDE.md)（项目指引）、[`pi-plugin-guide.md`](pi-plugin-guide.md)（插件类型）、[Pi SDK](https://pi.dev/docs/latest/sdk)。
 
+实现以锁文件实际安装的 Pi SDK 为准；`latest` 在线文档可能领先本项目，不直接据此假定钩子或参数可用。
+
 ---
 
 ## 核心结论
@@ -57,7 +59,8 @@ flowchart TD
 
 ### 2. Append
 
-- `APPEND_SYSTEM.md`（项目与全局，有则追加）
+- 自动发现时优先使用已受信任项目的 `.pi/APPEND_SYSTEM.md`，否则使用全局 `~/.pi/agent/APPEND_SYSTEM.md`；同名文件不会自动合并。`SYSTEM.md` 的项目覆盖也受 Pi 项目信任控制。
+- X-agent 经 `appendSystemPromptOverride` 保留上述基础 append，再追加稳定的工作规则、工具节约、完成纪律、会话类型和模式说明；不替换 Pi 默认 system。
 
 ### 3. `<project_context>`
 
@@ -65,6 +68,7 @@ flowchart TD
 - 选中的文件**全文**进入 system；链接只提供查阅路径，不会自动展开正文。
 - X-agent 经 `agentsFilesOverride` 补充单数 `AGENT.md` / `agent.md` 及大小写变体（[`agents-md-context.ts`](../apps/desktop/electron/agent/agents-md-context.ts)）。目录已有 Pi 入口时不补充；补充文件追加到基础列表末尾，Windows 下按路径和目录忽略大小写去重。
 - 本仓库根目录有 `AGENTS.md`，因此同目录的 `CLAUDE.md` 不会同时自动注入；`docs/agent.md` 与 `docs/context.md` 需模型按需读取。
+- 只有 cwd 及其祖先目录参与自动发现；编辑子目录文件不会自动加载该目录的入口，模型需主动读取适用指引。
 
 ### 4. `<available_skills>`
 
@@ -124,6 +128,18 @@ flowchart TD
 **本应用已定制**：`skillsOverride` 过滤全局 agents-home 技能、Godot 项目技能、禁用技能与会话类型；`agentsFilesOverride` 补充单数上下文入口；`appendSystemPromptOverride` 合成模式与类型提示；`extensionFactories` 注册 Plan / Design 硬闸与 `/init` 命令。
 
 **未传入**：`systemPromptOverride`、`promptsOverride`、显式 `settingsManager`、`noTools` / `excludeTools` 等。更深行为以 Pi SDK 为准。
+
+### 常驻行为与按需细节
+
+[`agent-instructions.ts`](../apps/desktop/shared/agent-instructions.ts) 维护跨模式的工作约定：在当前权限内持续完成已授权任务、把后续消息作为任务转向、按需读取指引与技能、保留用户改动、区分工具证据和操作授权、用用户语言报告进展及实际验证。压缩或恢复后继续未完成工作，同时重查可能变化的状态。
+
+适配以 X-agent 的真实能力为边界：模式 / 会话类型与工具硬闸优先，技能惯例不能扩大权限；明确用户偏好优先于技能的可选惯例。同一任务范围内沿用已有授权，遇到新决策先完成可独立推进的工作；技能导致停顿时说明具体文件和指令。提示不会假定存在 Codex 的终端编排、子 Agent、审批或聊天管理工具，工具拒绝也不作为换通道绕过的理由。
+
+[`mode-prompt.ts`](../apps/desktop/shared/mode-prompt.ts) 负责工具节约、完成纪律与模式要求。分批读取和编辑用于限制上下文体积，不要求每批都等用户说“继续”；Ask / Plan 的交付仍由模式约束决定。策划会话只在需要时按当前游戏拆分文档，不注入其他项目的固定系统或九份文档清单。
+
+这些 append 保持稳定，不加入每轮时间、进度日志或重复历史；用户资源重载和模式切换时从基础 append 重新组合。`measure-context-baseline.ts` 经 Pi 实际构建器测量应用 append，代码 / 策划会话的估算上限分别为 1100 / 1900 tokens，不包含用户上下文、技能索引与工具 schema；这些是防膨胀门槛，不是供应商实际计费 token 数。
+
+`/init` 的生成流程保存在 [`extensions/init/SKILL.md`](../apps/desktop/electron/agent/extensions/init/SKILL.md)，只在命令调用时展开。流程先识别 Godot 项目，再核实运行目录、命令与约束；根入口保持简短，详细资料通过链接按需读取。明确授权的补全直接局部编辑，单独 `/init` 覆盖已有文件时先呈现候选改动并等待选择。
 
 偏好文件：[`prefs.ts`](../apps/desktop/electron/agent/prefs.ts) ↔ `~/.pi/agent/x-agent.json`。与上下文相关的字段：
 
@@ -203,6 +219,10 @@ flowchart TD
 
 Pi 的 `turn_end` 是一次模型和工具迭代结束，`agent_end` 后仍可能重试或执行 SDK 自动压缩。主进程在真正的 `agent_settled` 边界等待检查点落盘，再运行 snip-first 管线：先裁剪过大的工具结果，仍有压力时才请求摘要压缩。维护完成后先推送最新用量，再发布 idle 并进入 Goal 评估与续轮。
 
+右栏手动压缩与空闲 snip-first 压缩均通过 `buildCompactionInstructions` 给 `session.compact()` 追加摘要重点，保留 Pi 的结构化格式，并保留原始目标、最新转向、权限边界、已完成与未验证工作、错误、检查结果及下一步；Godot 任务另保留必要的版本、场景路径与编辑器验证状态。手动传入的摘要要求继续保留在末尾。Pi 自身的阈值 / 溢出恢复压缩仍走 SDK 默认摘要；当前版本的 `session_before_compact` 返回值不能仅追加摘要指令，本应用不为此接管整套摘要生成和用量统计。
+
+待用户决定的选项和已被拒绝的操作也需保留，不能在摘要里变成默认同意。空响应的输出截断恢复由 `truncation-recovery.ts` 处理：发送前读取实时启用工具，只提示可用的只读检查工具，不强迫编辑或启动游戏；会话已替换或用户新输入已重置重试次数时丢弃排队恢复。连续重试上限不变，失败后明确报告错误，不推荐假定存在的模型。
+
 主进程维护与手动压缩共用会话替换锁；结算和维护期间拒绝新 prompt、撤回与重复压缩。异步回调同时核对会话身份和运行代数，不能把旧会话或前一轮的完成状态发布到新会话。前端 `useAutoCompact` 仍按占用阈值工作，主进程在排队前拒绝维护期间到达的重复请求；Goal 评估期间也拒绝并发压缩。
 
 Goal 预算累计工具迭代、重试及压缩请求的实际返回用量，并另记评估费用。预算达到阈值后停止自动续轮，已经执行的请求可以完成；暂停保留实际费用，撤回仅回滚被放弃用户分支的预算，累计真实用量不退款。
@@ -234,6 +254,7 @@ DeepSeek 等供应商对**完全一致的请求前缀**计为 cache hit（Pi 记
 | 路径 | 角色 |
 |---|---|
 | [`session-host.ts`](../apps/desktop/electron/agent/session-host.ts) | 创建会话、prompt/steer、撤回/重发、compact、reload |
+| [`agent-instructions.ts`](../apps/desktop/shared/agent-instructions.ts) | 稳定的工作约定与应用压缩摘要重点 |
 | [`provider-store.ts`](../apps/desktop/electron/agent/provider-store.ts) | 供应商档案 → Pi auth/models；激活时写入 `contextWindow` |
 | [`model-context.ts`](../apps/desktop/shared/model-context.ts) | 已知模型上下文启发式 + API 字段解析 |
 | [`model-fetch.ts`](../apps/desktop/electron/agent/model-fetch.ts) | 拉取 `/v1/models`（含 context_length） |

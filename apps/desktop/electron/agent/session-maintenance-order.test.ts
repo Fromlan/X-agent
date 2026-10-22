@@ -9,6 +9,7 @@ import type { SessionBundle } from "./session-lifecycle";
 import { SessionHost } from "./session-host";
 import { patchPrefs, setAgentDirOverrideForTests } from "./prefs";
 import { __resetAutoMaintainState } from "./auto-maintain";
+import { COMPACTION_FOCUS_INSTRUCTIONS } from "../../shared/agent-instructions";
 
 vi.mock("electron", () => ({ safeStorage: { isEncryptionAvailable: () => false } }));
 
@@ -201,6 +202,30 @@ describe("checkpoint → maintenance → idle → Goal", () => {
     expect((await first).ok).toBe(true);
     expect(f.seam.status).toBe("idle");
     expect(f.session.compact).toHaveBeenCalledTimes(1);
+  });
+
+  it("manual compact preserves user focus after the shared continuation guidance", async () => {
+    const f = fixture();
+    const focus = "保留 res://levels/main.tscn 的未验证改动与用户的撤销决定";
+    expect((await f.host.compactSession(focus)).ok).toBe(true);
+    const args: unknown[][] = f.session.compact.mock.calls;
+    const instructions = args[0]?.[0];
+    expect(typeof instructions).toBe("string");
+    expect(instructions).toBe(`${COMPACTION_FOCUS_INSTRUCTIONS}\n\nUser summary instructions:\n${focus}`);
+  });
+
+  it.each([undefined, "   \n "])("manual compact without a focus (%j) keeps only shared guidance", async (focus) => {
+    const f = fixture();
+    expect((await f.host.compactSession(focus)).ok).toBe(true);
+    expect(f.session.compact).toHaveBeenCalledExactlyOnceWith(COMPACTION_FOCUS_INSTRUCTIONS);
+  });
+
+  it("automatic maintenance uses the same continuation guidance without another summary call", async () => {
+    const f = fixture();
+    f.runEnd();
+    f.settle();
+    await vi.waitFor(() => expect(f.goal).toHaveBeenCalledTimes(1));
+    expect(f.session.compact).toHaveBeenCalledExactlyOnceWith(COMPACTION_FOCUS_INSTRUCTIONS);
   });
 
   it("ignores a session switched while checkpoint flush is pending", async () => {

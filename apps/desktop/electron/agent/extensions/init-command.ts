@@ -23,8 +23,7 @@
  *
  * Side-effect free on the host side: the handler only sends a user message
  * containing cwd + date + procedure body. All file IO, prompt execution, and
- * user confirmation happen in the model turn that follows, matching the
- * existing Mavis `init` skill's behaviour (read → ask → write → tell).
+ * any required user choice happen in the model turn that follows.
  */
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import INIT_BODY from "./init/SKILL.md?raw";
@@ -36,13 +35,14 @@ export const INIT_COMMAND_DESCRIPTION = "为当前项目生成或补全根目录
  * Intro line(s) prepended to the procedure body. Tells the model the trigger
  * context (cwd + today) so it doesn't have to re-derive cwd.
  */
-function buildPromptIntro(cwd: string, today: string): string {
+function buildPromptIntro(cwd: string, today: string, args: string): string {
   return [
     `/init 在 cwd=${cwd} 触发（日期 ${today}）。`,
     "",
     "请严格按下面的流程为这个项目生成（或补全）根目录的 AGENTS.md。",
-    "在 pre-write check 阶段（AGENTS.md 已存在时）必须停下，等用户选择 skip / overwrite (with backup) / show diff。",
+    "已有 AGENTS.md 时保留用户约定；明确授权的补全直接局部编辑，单独 /init 的覆盖选择见 Pre-write check。",
     "不要做任何超出流程的事 —— 不要顺便修改其它文件、不要 commit、不要切到其它项目。",
+    ...(args.trim() ? ["", `用户补充要求：\n${args.trim()}`] : []),
     "",
     "----",
     "",
@@ -80,9 +80,9 @@ export function createInitCommandExtension(): InlineExtension {
   return (pi) => {
     pi.registerCommand(INIT_COMMAND_NAME, {
       description: INIT_COMMAND_DESCRIPTION,
-      handler: async (_args, ctx) => {
+      handler: async (args, ctx) => {
         const today = new Date().toISOString().slice(0, 10);
-        const intro = buildPromptIntro(ctx.cwd, today);
+        const intro = buildPromptIntro(ctx.cwd, today, args);
         const wrapped = wrapCommandSlashAsBlock(
           INIT_COMMAND_NAME,
           `${intro}${INIT_BODY}`,

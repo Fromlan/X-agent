@@ -1,140 +1,49 @@
 # X-agent `/init` — Bootstrap AGENTS.md for the current project
 
-X-agent 让你 `/init` 来 bootstrap 当前项目。**目标：在仓库根写一个 `AGENTS.md`，让 X-agent / 任何 AI agent 之后进来都能一眼读懂项目该怎么跑、约定是什么。**
+为当前项目生成或补全根目录 `AGENTS.md`，让后续 Agent 知道不查就会猜错的事实。只记录能从项目核实的约束、命令和查阅入口。
 
-> 一份文件、全 agent 通吃（X-agent / Claude Code / Codex / Cursor / Aider / Devin / Gemini CLI 等都消费 [agents.md](https://agents.md) 标准）。**最高杠杆。**
+## Inspect the workspace
 
----
+- 以命令消息中的 `cwd` 为工作区；读取现有上下文入口、README、关键清单和 CI，确认实际项目根与应用目录。有效的 Godot 项目不要求已经初始化 Git。
+- 优先检查 `project.godot`：确认 Godot 4 版本线、主场景、脚本语言、autoload、插件、测试和导出方式。只记录与开发有关的事实，不抄整份配置。C# 项目同时检查 `.csproj` / `.sln`；有 `package.json` 也不能据此把 Godot 项目当成 Node 应用。
+- 对其他生态，依据 `package.json` 的 scripts 与锁文件、`pyproject.toml`、`Cargo.toml`、`go.mod` 等确定命令；核对 CI 的真实工作目录与调用方式。没有证据的命令标为“未配置 / 待确认”，不要猜测默认命令或生成待填模板。
+- Windows 命令须注明运行目录、所需版本和环境变量；区分 PowerShell 命令与 Pi `bash` 工具使用的 Bash 语法。Godot 命令须基于已确认的可执行路径；未运行就不能声称已通过。
+- 若没有可识别的项目或代码，说明原因。只对影响入口内容的关键未知项提问，不为可直接核实的信息反复询问用户。
 
-## When to use
+## Context loading contract
 
-- 用户在 composer 输入 `/init` 并回车。
-- 系统 prompt 包含 `<bootstrap_check>` 冷启动标记。
-- 用户明确说 "init agents.md" / "bootstrap project" / "set up agents for this repo"。
+- Pi 从全局 agent 目录及文件系统根到 cwd 的祖先目录加载上下文；同目录只选一个入口：`AGENTS.override.md` → `AGENTS.md` / `AGENTS.MD` → `CLAUDE.md` / `CLAUDE.MD`。X-agent 仅在没有这些入口时补充单数 `AGENT.md` / `agent.md`。
+- 已选入口全文常驻；链接不会自动展开。根文件写高价值约束及“何时读哪个文档”，详细架构、领域手册和流程保留在已有文档中，按需读取。
+- 子目录入口只在该目录成为 cwd 或其祖先时自动加载；只编辑其下文件不会自动加载。进入子目录工作前需要主动读取适用指引。
+- `SKILL.md` 默认只进名称、描述、路径索引，正文在任务匹配时读取；prompt 模板仅在调用时展开。不要把技能全文或文档正文复制进 AGENTS。
+- 若已有 `AGENTS.override.md`，说明它会优先于新建的 AGENTS；若已有 CLAUDE 等入口，保留原有约定，避免创建相互冲突的规则。
 
-如果工作区不是有意义的 git 仓库、或者没有真实代码，**不要 bootstrap**。直接告诉用户原因。
+## Pre-write check
 
----
+- `AGENTS.md` 不存在：在用户授权的范围内创建。
+- 已存在且用户明确要求补全或优化：直接做有依据的局部编辑，保留用户内容，无需重复确认。
+- 仅输入 `/init` 且已有文件：先完成读取和候选内容，展示改动摘要或 diff，再提供 **Skip**、**Overwrite (with backup)**、**Show diff** 选项。等待用户选择后再覆盖；备份路径需告知用户。
+- 不修改其他项目文件，不执行 commit、push 或安装依赖。仍须遵守当前模式与会话类型的实际工具权限；工具被拒绝时说明限制，不尝试绕过。
 
-## Bootstrap procedure
+## Write the entry point
 
-### 1. Identify the workspace shape
+目标是简短、可维护的入口，通常不超过 80 行；必要的真实约束优先于行数。按项目需要组织以下内容，省略不适用项：
 
-- 单仓 / monorepo / 父目录包含多个独立 git 仓库。第三种走最末段「多仓异常」。
-- 当前 `cwd` 由 X-agent 的 `ExtensionContext.cwd` 给出（handler 已经在 user message 里拼好），**不要自己重新探测**。基于它往下走。
+- 项目定位与实际应用 / Godot 项目根、关键目录。
+- 已核实的安装、启动、检查、测试和构建命令，各自的运行目录与前置条件。
+- 容易误判的架构边界、编辑约束、生成文件和持久化规则。
+- Godot 场景 / 脚本 / 资源约定，以及编辑器 RPC 的启用与验证方式（项目适用时）。
+- 用户已有的协作、提交和发布边界，不额外强制某套流程。
+- 详细文档、技能与子目录入口的路径及读取时机。
 
-### 2. Inspect the codebase — evidence over guesses
-
-通过 manifest 文件识别生态（**首匹配胜出**）：
-
-| Ecosystem | Manifest | Install / Test / Build 命令 |
-|---|---|---|
-| Node.js | `package.json` | 读 `scripts.{dev,build,test,lint,typecheck}`；包管理器从 `packageManager` 字段或 `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` |
-| Python | `pyproject.toml` | 读 `[tool.poetry.scripts]` / `[project.scripts]`；或回退 `pytest` / `ruff` / `mypy` |
-| Rust | `Cargo.toml` | `cargo build` / `cargo test` / `cargo clippy` / `cargo fmt` |
-| Go | `go.mod` | `go build ./...` / `go test ./...` / `go vet ./...` |
-
-其他生态（Java/Maven、Ruby/Bundler、PHP/Composer、…）：用占位符写 AGENTS.md，提示用户填关键命令。
-
-并查看：
-
-- 顶层目录与各自用途
-- `.github/workflows/` / `.gitlab-ci.yml` / `.circleci/config.yml` 里的 canonical test invocation
-- `.eslintrc*` / `.prettierrc*` / `pyproject.toml [tool.ruff]` / `rustfmt.toml` 找代码风格
-- 默认分支：`git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || git config init.defaultBranch || echo main`（offline + 跨 locale 都能跑）
-
-### 3. Generate the root `AGENTS.md`
-
-路径：`<repo-root>/AGENTS.md`。**不要子目录、不要 symlink。** 唯一权威源。
-
-#### 3a. Pre-write check（**必做**）
-
-- **文件不存在** → 直接跳到 3b 写完整模板。
-- **文件已存在** → **必须停下，问用户选哪条路**：
-  1. **Skip**（默认）—— 保持原样不动。
-  2. **Overwrite (with backup)** —— 把当前内容复制到 `AGENTS.md.bak.<unix-ts>`，再写新模板。
-  3. **Show diff** —— 打印现有文件 vs 新模板的 unified diff，让用户手挑要保留的部分。
-
-  在用户明确选 1 / 2 / 3 之前，**绝对不要**写或改任何文件。「用户沉默 = 跳过」是兜底，**前提**是真的问过、且用户在同一回合持续沉默 —— 不是你懒得问就默认。
-
-不要发明第 4 条路。不要写「X-agent-managed」块 —— 这文件属于用户。
-
-#### 3b. Template
-
-按 step 2 检测结果填占位符；不适用的章节直接删（如无 TypeScript 就删 `Typecheck`）。**目标 < 80 行。**
-
-```md
-# AGENTS.md
-
-<one-line project description — 取自 package.json `description` / Cargo.toml `description` / pyproject `description`，或 README.md 首句>
-
-## Setup commands
-
-- Install deps: `<pnpm install | npm install | poetry install | cargo build | go mod download>`
-- Start dev:    `<pnpm dev | npm run dev | uvicorn ... | cargo run | go run ./...>`
-- Build:        `<pnpm build | cargo build --release | go build ./...>`
-- Test:         `<pnpm test | pytest | cargo test | go test ./...>`
-- Lint:         `<pnpm lint | ruff check | cargo clippy | go vet ./...>`
-- Typecheck:    `<pnpm typecheck | mypy . | …>`           # 没有就删
-
-## Project layout
-
-<auto-detected 顶层目录，每行一个 + 简短用途>
-- `packages/` — workspace packages
-- `apps/` — deployable apps
-- `scripts/` — repo utility scripts
-- `docs/` — long-form documentation
-
-## Code style
-
-<3-5 行总结推断出的约定>
-- TypeScript strict mode (`tsconfig.json: strict: true`)
-- Prettier: single quotes, 100-char width
-- ESLint config: `.eslintrc.js`
-- Run `<lint:fix command>` before committing
-
-## Testing instructions
-
-- Unit tests: `<test command>` (<framework, e.g. Vitest / pytest / cargo test>)
-- E2E tests:  `<e2e command>` (<Playwright / Cypress / …>)         # 没有就删
-- Add tests for every new behavior — see existing `*.test.<ext>` files in the same package
-- All tests must pass before opening a PR
-
-## PR & commit conventions
-
-- Branch from `<default-branch>`; never push to it directly
-- Commit message: conventional commits (`feat:` / `fix:` / `docs:` / `refactor:`)
-- Open PR via `<gh pr create | glab mr create>` once CI is green
-
-## Security
-
-- Never commit secrets — `.env` is in `.gitignore`
-- <add any security-policy hints inferred from `SECURITY.md`, `package.json` engines, etc.>
-```
-
-### 4. Tell the user
-
-在完成时打印：
-
-1. `AGENTS.md` 是创建、覆盖（附备份路径）、还是跳过。
-2. 提醒：**把 AGENTS.md commit 进去** —— 这份文件就是 agent 看到的项目定义。
-3. 后续怎么维护：约定 / 命令变更时同步更新；想加独立 helper agent 时用 `create-agent`。
-
----
+不写占位符、泛用编程常识、重复 README 全文、密钥或本机认证数据。用 `read` 检查内容，已有文件优先 `edit`；新建或用户明确选择整份覆盖才用 `write`。
 
 ## Multi-repo exception
 
-如果工作区是父目录，里面装多个独立 git 仓库：
+若 cwd 是多个独立项目的父目录，先说明项目边界。只有用户授权初始化这些项目时才分别创建入口；不要把每个子项目全文汇总到父目录，也不要默认批量改动子仓库。
 
-- 在父目录写一个 `AGENTS.md`，解释每个 repo 是什么、相互关系。
-- 每个真实子 repo 单独再 bootstrap 一份自己的本地 `AGENTS.md`。
+## Verify and report
 
----
+回读最终文件，检查命令、路径、加载优先级和重复规则。区分“从配置核实”与“实际执行验证”，不要为生成入口擅自安装或运行未知脚本。
 
-## Guardrails
-
-- AGENTS.md 内容必须**基于项目实际需要**，不是泛模板。
-- **不要在 bootstrap 流程里硬塞 `git commit`** —— 提交由用户自己决定时机。
-- **不要注入 X-agent-branded 章节**。这文件给所有 agent 看，X-agent 只是其中之一。
-- 用 `read` 工具读现有文件、用 `write` 工具写 AGENTS.md / 备份；**不要**用 `bash` 的 `cat > file` / `tee` 等命令直写（重定向在 Plan / Ask 模式会被守卫拦截，且容易误覆盖）。
-- 在 Plan / Ask / Goal 模式收到 `/init`：命令本身会触发（extension command 绕开 mode gate），但 `write` 工具会被 Plan guard 拒绝 —— 此时要明确告诉用户「当前模式不允许写文件，请先切到 Agent 模式，或把 `AGENTS.md` 写到允许的目录」。
+说明创建 / 补全 / 跳过了哪个文件、备份位置（如有）与仍待确认的信息。提示资源变更后使用重载资源或新会话生效；提交由用户决定。

@@ -19,6 +19,7 @@
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ClientPrefs } from "../../shared/ipc";
+import { buildCompactionInstructions } from "../../shared/agent-instructions";
 import {
   snipToolResultsInPlace,
   type SnipOptions,
@@ -204,7 +205,7 @@ export async function autoMaintain(
   let tokensBefore: number | undefined;
   let tokensAfter: number | undefined;
   try {
-    const result = await session.compact();
+    const result = await session.compact(buildCompactionInstructions());
     tokensBefore = result.tokensBefore;
     tokensAfter = result.estimatedTokensAfter;
   } catch (err) {
