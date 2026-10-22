@@ -42,6 +42,8 @@ export default defineConfig({
         "shared/godot-rpc.ts",
         "shared/mode-tools.ts",
         "shared/mode-prompt.ts",
+        "shared/agent-instructions.ts",
+        "electron/agent/truncation-recovery.ts",
         "electron/agent/lib/path-boundary.ts",
         "electron/agent/lib/atomic-write.ts",
         "electron/agent/lib/store.ts",

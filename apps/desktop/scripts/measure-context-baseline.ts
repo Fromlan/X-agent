@@ -21,6 +21,7 @@ import { createDeepSeekWebTools } from "../electron/agent/deepseek-web-tools";
 import type { GodotRpcBridge } from "../electron/agent/godot-rpc-bridge";
 
 import { estimateTextTokens } from "../electron/agent/context-breakdown";
+import { SessionModeController } from "../electron/agent/session-mode/controller";
 
 type ToolDefLike = {
   name: string;
@@ -80,6 +81,7 @@ function estimateSystemTokens(opts: {
   cwd: string;
   toolNames: readonly string[];
   defsByName: Record<string, ToolDefLike>;
+  appendSystemPrompt?: string;
 }): number {
   const { toolSnippets, promptGuidelines } =
     buildToolSnippetsAndGuidelines(opts.toolNames, opts.defsByName);
@@ -91,6 +93,7 @@ function estimateSystemTokens(opts: {
     cwd: opts.cwd,
     contextFiles: [],
     skills: [],
+    appendSystemPrompt: opts.appendSystemPrompt,
   });
   return estimateTextTokens(systemPrompt);
 }
@@ -137,6 +140,20 @@ async function main(): Promise<void> {
 
   const system7 = estimateSystemTokens({ cwd, toolNames: tools7, defsByName });
   const systemAll = estimateSystemTokens({ cwd, toolNames: toolsAll, defsByName });
+  // Exercise the real app composer without a live session or user resources.
+  const controller = new SessionModeController(() => {
+    throw new Error("baseline composition must not access a live session");
+  });
+  const codeAppend = controller.composeModeAppend([], "code", "agent").join("\n\n");
+  const designAppend = controller.composeModeAppend([], "design", "agent").join("\n\n");
+  const systemCode = estimateSystemTokens({ cwd, toolNames: tools7, defsByName, appendSystemPrompt: codeAppend });
+  const systemDesign = estimateSystemTokens({ cwd, toolNames: tools7, defsByName, appendSystemPrompt: designAppend });
+  const codeAppendTokens = systemCode - system7;
+  const designAppendTokens = systemDesign - system7;
+  assert(codeAppendTokens > 0 && codeAppendTokens <= 1_100,
+    `code session app append exceeds budget: ${codeAppendTokens}`);
+  assert(designAppendTokens >= codeAppendTokens && designAppendTokens <= 1_900,
+    `design session app append exceeds budget: ${designAppendTokens}`);
   // Schema estimation doesn't need the system prompt; keep it separate so deltas
   // explain whether the payload bloat comes from "tool schemas" vs "system".
   const schemaTokens7 = estimateSchemaTokens(tools7, defsByName);
@@ -167,6 +184,8 @@ async function main(): Promise<void> {
         totalTokensEst7: total7,
         totalTokensEstAll: totalAll,
         delta,
+        codeAppendTokensEst: codeAppendTokens,
+        designAppendTokensEst: designAppendTokens,
       },
       null,
       2,

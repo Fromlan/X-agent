@@ -50,6 +50,7 @@ import {
   buildToolEconomyAppend,
 } from "../../../shared/mode-prompt";
 import { dbgLog } from "../../../shared/debug-log";
+import { buildAgentWorkingAppend } from "../../../shared/agent-instructions";
 import type { SessionModeHost } from "../host-interfaces";
 
 /**
@@ -299,12 +300,11 @@ export class SessionModeController {
     if (typeAppend) {
       out.push(typeAppend);
     }
-    // GDD layout guide (策划会话 only). Anchors the standard 9-section
-    // GDD skeleton so "整理 / 写入 设计文档" 任务不再产出 summary/audit/
-    // integration-plan 这类自由发挥的副产物 (#40 follow-up).
+    // Design guidance follows the current project rather than a fixed genre.
     if (sessionType === "design") {
       out.push(buildGameDesignLayoutGuide());
     }
+    out.push(buildAgentWorkingAppend());
     // Tool economy — read with offset/limit, edit over write, batch
     // independent reads. Universal across session types.
     out.push(buildToolEconomyAppend());

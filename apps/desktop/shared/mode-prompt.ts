@@ -75,7 +75,7 @@ export const DESIGN_SESSION_TYPE_INSTRUCTIONS = [
   "Available tools in this session: `read`, `grep`, `find`, `ls`, `bash` (read-only commands only; path must stay inside project cwd), `write` (path must be inside `<cwd>/game-design/`), `edit` (same constraint), `godot_detect_project`.",
   "Disabled in this session: `write_plan` (策划文档直接写到 `<cwd>/game-design/`，不走 plan 流程); `godot_set_project_setting` and other unlisted Godot mutating tools are blocked by the design-write-guard. If the user wants code changes, tell them to open a Code session (新代码会话).",
   "Cross-project reference: 策划需要参考其他项目的设计资产时, 可以用 `read` / `grep` / `find` / `ls` 直接读**项目外任意路径** (这些 read 系列工具不受 design-write-guard 限制), 但**不要用 bash 访问项目外路径** — bash 的 cwd sandbox 会拦截.",
-  'Writing GDD: when the user says "整理 / 写入" 设计文档, follow the standard GDD skeleton (see layout guide below). Do NOT produce a summary.md / audit.md / integration-plan.md / engine-*.md unless the user explicitly asks.',
+  'Writing GDD: when the user says "整理 / 写入" 设计文档, follow the project\'s existing structure and requested scope (see layout guide below). Create only documents needed for the requested deliverable.',
 ].join("\n");
 
 export function buildDesignSessionTypeAppend(): string {
@@ -95,10 +95,10 @@ export function buildDesignSessionTypeAppend(): string {
  * key for every active session, so keep it short and durable.
  */
 export const TOOL_ECONOMY_INSTRUCTIONS = [
-  "Read with offset/limit. For files > 500 lines, pass `offset` and `limit` (e.g. `offset=1 limit=200`) to page through. Avoid reading entire 25KB files into context when you only need a section.",
-  "Independent reads in the same round. When several reads have no data dependency (multiple source files you will cross-reference), issue them together in one assistant turn so they execute in parallel.",
-  "Edit, don't rewrite. Use `edit` (search/replace) for existing files. Use `write` only for new files or full rewrites — and keep `content` small. Single-shot `write` of multi-thousand-char content is the most common way to blow the context window.",
-  "Multi-file work across turns. Don't read all source files then write all new files in one turn. Read 1–2 files, plan, write 1–2 files, let the user (or the next turn) review before continuing.",
+  "Search paths and symbols first with grep/find or rg when available. Read relevant sections with offset/limit; read an instruction file in full when required. Avoid repeated full-file reads and unbounded command output.",
+  "Batch independent reads when supported. Keep dependent edits and verification sequential; inspect results before choosing the next step.",
+  "Prefer edit for existing files and write for new files or intentional rewrites. Split large changes into coherent, complete patches; never replace required content with placeholders to save tokens.",
+  "Work in bounded batches, then verify and continue in the same task. Batching controls context size; it is not a reason to stop and wait for the user to say continue.",
 ].join("\n");
 
 export function buildToolEconomyAppend(): string {
@@ -106,23 +106,15 @@ export function buildToolEconomyAppend(): string {
 }
 
 /**
- * Completion discipline — when to stop, when to keep going. Injected for every
- * session type and every mode (Agent / Ask / Plan / Goal) because the
- * underlying issue is universal: MiniMax-M3 (and any LLM leaning concise)
- * ends the turn after a small edit without verifying the change actually
- * addressed the user's request. Goal mode has a stronger version of this
- * rule, but Ask / Agent / Plan need it too. Sits after `Tool economy` and
- * before the mode-specific append, so the order is "how to work" → "when to
- * stop" → "mode-specific shape". Keep this short and durable; updating the
- * string bumps the system-prompt cache key for every active session.
+ * Completion discipline is mode-aware so persistence does not imply writes
+ * during research or planning. Keep it stable and short for prompt caching.
  */
 export const COMPLETION_DISCIPLINE_INSTRUCTIONS = [
-  "Before ending the turn, verify the user's request is actually complete — not just plausible from reading code.",
-  "If you made changes, run a verification step (test, build, lint, simulation, or grep on the changed file) and report the actual output.",
-  "If the request has multiple parts (numbered list, several sub-asks), address each part and confirm each before saying 'done'.",
-  "If a step is blocked, name the blocker explicitly and what you tried — do not declare 'done' on a partial solution.",
-  "Default to continuing the same task in the same turn when more steps remain, instead of stopping for the user to say 'continue'.",
-  "Long unbroken thinking can exhaust your output budget (max_tokens), leaving the turn truncated with no text or tool call. If you have been reasoning for a while without emitting one, stop and emit a tool call (read / grep / edit / run) to checkpoint. The next turn continues from your tool results, not from your thoughts.",
+  "Before ending, verify every requested part is complete within the active mode. Agent implements and checks; Ask answers with evidence; Plan delivers a researched plan; Goal requires evidence for its condition.",
+  "After changes, run relevant verification (tests, build, lint, or runtime checks). Report what actually ran and passed or failed; a grep or code inspection alone does not prove runtime behavior.",
+  "If blocked, state the blocker, what you tried, and what remains. Never claim completion for a partial solution or an unrun check.",
+  "Continue the same task while authorized steps remain. Do not repeat successful checks unless new changes or unresolved concerns justify it.",
+  "Avoid exhausting the output budget (max_tokens) in unbroken reasoning. Take a useful tool step to checkpoint observable progress before the response is truncated.",
 ].join("\n");
 
 export function buildCompletionDisciplineAppend(): string {
@@ -130,66 +122,19 @@ export function buildCompletionDisciplineAppend(): string {
 }
 
 /**
- * GDD 布局引导 —— 给"整理/写入设计文档"任务列标准子模块。
+ * GDD layout guidance follows the current project's domain and requested scope.
  * 由 controller.composeModeAppend 在 design session 追加在 type append 之后。
  *
- * 设计取舍: 不强制 agent 全写 (不同策划阶段需要的 GDD 子集不同),
- * 但显式禁止 summary/audit/integration-plan 这 4 个变体 — 那是
- * #40 follow-up 对话里 agent 的实际错误路径。
+ * Keep game-specific templates out of the permanent append so a past project
+ * cannot dictate unrelated games' systems or create unnecessary documents.
  */
 export function buildGameDesignLayoutGuide(): string {
-  const sections = [
-    {
-      name: "01-主设计文档.md",
-      purpose: "游戏总纲: 一句话定位、核心循环、设计支柱、9 个核心系统 (棋子/羁绊/经济/爬塔/法宝/战斗/建筑/峰/难度)",
-    },
-    {
-      name: "02-棋子图鉴.md",
-      purpose: "每个棋子的属性、技能、定位、speed 档位 (如适用, 也叫'角色图鉴')",
-    },
-    {
-      name: "03-羁绊效果.md",
-      purpose: "羁绊/职业/种族的激活条件、数值、Combo 表",
-    },
-    {
-      name: "04-法宝图鉴.md",
-      purpose: "装备/法宝的触发、效果、合成 (如适用, 也叫'装备图鉴')",
-    },
-    {
-      name: "05-建筑数值.md",
-      purpose: "建筑/城池/基地的升级、产出、玩家等级",
-    },
-    {
-      name: "06-敌人阵容.md",
-      purpose: "敌方单位、阵容、难度梯度、Boss 列表",
-    },
-    {
-      name: "07-峰的选择.md",
-      purpose: "玩家初始身份/种族/职业的独特加成、初始棋子、克制链 (如适用, 也叫'职业选择'/'出身选择')",
-    },
-    {
-      name: "08-事件奇遇.md",
-      purpose: "随机/分支事件、道德/善恶系统、事件链",
-    },
-    {
-      name: "09-章节与Boss.md",
-      purpose: "主线/关卡流程、Boss 技能、章节奖励",
-    },
-  ];
-  const header = [
+  return [
     "# X-agent GDD layout guide (策划会话)",
-    "",
-    'When the user says "整理 / 写入" 设计文档 to `<cwd>/game-design/`, write one markdown file per row below. Use 1 行文件名 + 1 行问题说明 + 实际内容 (具体数值/列表/效果).',
-    "",
-    "如果项目已有自己的命名 (比如'角色'替代'棋子', '出身'替代'峰'), 沿用项目约定; 文件名里那一截也可以替换。",
-    "",
-    "Do NOT produce a summary.md / audit.md / integration-plan.md / engine-*.md unless the user explicitly asks. 不要把原始策划案**逐字复制**过来当成 game-design/ 的内容 — 整理的意思是按下面的骨架写。",
-    "",
+    "Write requested design documents inside `<cwd>/game-design/`. Inspect existing design files first; preserve their names, terminology, and organization. Update the relevant document instead of creating duplicate summaries or unrelated audit/integration documents.",
+    "For a new design, start with a 主设计文档 covering the experience goal, core loop, rules, and validation criteria. Split out systems only when the game's scope or the user requires it; do not assume a genre, fixed document count, or systems from another project.",
+    "Separate confirmed requirements, proposed rules, and open questions. Preserve concrete values and sources; label assumptions and missing data instead of inventing them. Organize source material into usable rules rather than copying it wholesale.",
   ].join("\n");
-  const body = sections
-    .map((s) => `- **${s.name}** — ${s.purpose}`)
-    .join("\n");
-  return header + body;
 }
 
 export function wrapWithModeBlock(

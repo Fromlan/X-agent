@@ -9,6 +9,7 @@ import {
   GOAL_MODE_INSTRUCTIONS,
   DESIGN_SESSION_TYPE_INSTRUCTIONS,
   COMPLETION_DISCIPLINE_INSTRUCTIONS,
+  TOOL_ECONOMY_INSTRUCTIONS,
   buildAskModeSystemAppend,
   buildPlanModeSystemAppend,
   buildGoalModeSystemAppend,
@@ -39,26 +40,27 @@ describe("mode-prompt instructions", () => {
     expect(GOAL_MODE_INSTRUCTIONS).toContain("verifiable evidence");
   });
 
-  it("Completion discipline 覆盖 6 条核心规则(verify / multi-part / blocked / continue / verification step / thinking-budget checkpoint)", () => {
-    // 锁住根因:Agent 模式原本空,导致模型改 1 处就 end_turn。
-    // 第 6 条 (2026-09-01 #user-report) 解决 M3 + thinking_level=max 把 output 配额
-    // 全部花在 thinking 上、留下空 response 的特定问题。
+  it("完成纪律要求按模式交付、验证、说明阻塞并保留输出预算", () => {
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/verify/i);
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
-      /multiple parts|numbered list|several sub-asks/i,
+      /every requested part/i,
     );
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/blocker|blocked/i);
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(/continu/i);
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
       /verification|test|build|lint|simulation|grep/i,
     );
-    // 第 6 条:thinking budget checkpoint
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
       /output budget|max_tokens|truncated/i,
     );
     expect(COMPLETION_DISCIPLINE_INSTRUCTIONS).toMatch(
       /emit(ing|s| a tool call)?|tool call|checkpoint/i,
     );
+  });
+
+  it("工具节约允许分批持续执行，不要求用户逐批确认", () => {
+    expect(TOOL_ECONOMY_INSTRUCTIONS).toContain("continue in the same task");
+    expect(TOOL_ECONOMY_INSTRUCTIONS).not.toContain("let the user (or the next turn) review");
   });
 });
 
@@ -74,12 +76,11 @@ describe("mode-prompt builders", () => {
     expect(out).toContain("GOAL CONDITION: all tests pass");
   });
 
-  it("buildCompletionDisciplineAppend 带标题 + 长度 < 1000 字符(防膨胀)", () => {
+  it("buildCompletionDisciplineAppend 带标题且不超过常驻预算", () => {
     const out = buildCompletionDisciplineAppend();
     expect(out.startsWith("# X-agent Completion discipline")).toBe(true);
     expect(out).toContain(COMPLETION_DISCIPLINE_INSTRUCTIONS);
-    // 1000 是缓存键稳定性预算:再长会让 system prompt 每次变更都重置缓存。
-    // 6 条规则完整后约 950 字符;新规则需要时可挤到 990 仍安全。
+    // Keep a size budget; cache stability depends on unchanged content, not length.
     expect(out.length).toBeLessThan(1000);
   });
 });
@@ -145,10 +146,10 @@ describe("buildGameDesignLayoutGuide", () => {
     expect(buildGameDesignLayoutGuide()).toMatch(/game-design\//);
   });
 
-  it("显式禁止 summary / audit / integration-plan 变体 (本次对话 agent 的实际错误路径)", () => {
+  it("按项目领域组织文档，不带入过去项目的固定九份清单", () => {
     const guide = buildGameDesignLayoutGuide();
-    expect(guide).toMatch(/summary\.md/);
-    expect(guide).toMatch(/audit\.md/);
-    expect(guide).toMatch(/integration-plan\.md/);
+    expect(guide).toContain("preserve their names, terminology, and organization");
+    expect(guide).not.toContain("09-章节与Boss.md");
+    expect(guide).not.toContain("棋子/羁绊/经济");
   });
 });
