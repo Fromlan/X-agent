@@ -8,7 +8,7 @@
 
 - electron-vite ^6.0.0
 - Vite ^8.3.4
-- @earendil-works/pi-coding-agent ^0.99.2
+- @earendil-works/pi-coding-agent ^1.4.0
 - Electron 43、React 19、TypeScript 7；开发环境 Node.js 24+。
 - 当前开发与发布平台为 Windows；真实编辑器集成检查固定 Godot 4.7.2。
 
