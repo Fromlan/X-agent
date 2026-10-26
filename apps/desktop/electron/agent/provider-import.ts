@@ -118,7 +118,8 @@ function inferApiForProviderId(providerId: string): ProviderApiKind {
     deepseek: "openai-completions",
     "deepseek-anthropic": "anthropic-messages",
     kimi: "anthropic-messages",
-    "kimi-coding": "anthropic-messages",
+    // Pi 1.3 switched the native provider to Chat Completions; explicit cfg.api still wins.
+    "kimi-coding": "openai-completions",
     zhipu: "anthropic-messages",
     "zhipu-en": "anthropic-messages",
     bailian: "anthropic-messages",
