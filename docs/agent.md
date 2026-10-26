@@ -7,7 +7,7 @@
 依赖声明以 [apps/desktop/package.json](../apps/desktop/package.json) 为准，实际安装版本由同目录锁文件确定；以下声明由 `npm run doc:drift` 核对。
 
 - electron-vite ^6.0.0
-- Vite ^8.3.4
+- Vite ^8.3.5
 - @earendil-works/pi-coding-agent ^1.4.0
 - Electron 43、React 19、TypeScript 7；开发环境 Node.js 24+。
 - 当前开发与发布平台为 Windows；真实编辑器集成检查固定 Godot 4.7.2。
