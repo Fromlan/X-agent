@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ConfirmProvider } from "./lib/app-confirm";
 import "./styles/app.css";
+import "./styles/workspace-layout.css";
 import { installRendererFailureHandlers } from "./lib/renderer-failures";
 
 installRendererFailureHandlers(window, (failure) => window.xAgent.appReport.reportRendererFailure(failure));

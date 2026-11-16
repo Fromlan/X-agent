@@ -1,19 +1,27 @@
-/**
- * DeepSeek-style prefix-cache hit ratio from prompt-side token counts.
- *
- * Pi maps `prompt_cache_hit_tokens` → `cacheRead` and stores non-cached prompt
- * tokens in `input`. Ratio = cacheRead / (input + cacheRead).
- * Returns null when there is no prompt-side usage yet.
- */
-export function cacheHitRatio(tokens: {
+/** Pi-normalized input buckets are disjoint; output is never part of a prompt. */
+export type PromptTokenUsage = {
   input: number;
   cacheRead: number;
-}): number | null {
-  const input = Math.max(0, Math.round(Number(tokens.input) || 0));
-  const cacheRead = Math.max(0, Math.round(Number(tokens.cacheRead) || 0));
-  const denom = input + cacheRead;
+  cacheWrite?: number;
+};
+
+/** Reject non-finite counters so malformed usage cannot poison ratios or UI. */
+function tokenCount(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.round(value))
+    : 0;
+}
+
+/** Restore complete input from Pi's uncached, cache-read and cache-write buckets. */
+export function promptInputTokens(tokens: PromptTokenUsage): number {
+  return tokenCount(tokens.input) + tokenCount(tokens.cacheRead) + tokenCount(tokens.cacheWrite);
+}
+
+/** Token-weighted cache-read ratio; cache writes consume input but are not hits. */
+export function cacheHitRatio(tokens: PromptTokenUsage): number | null {
+  const denom = promptInputTokens(tokens);
   if (denom <= 0) return null;
-  return cacheRead / denom;
+  return tokenCount(tokens.cacheRead) / denom;
 }
 
 /** Format a hit ratio as a percent string, or "—" when unknown. */

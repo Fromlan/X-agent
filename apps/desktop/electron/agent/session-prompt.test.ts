@@ -120,6 +120,14 @@ describe("runSessionPrompt", () => {
     expect(ctx.prepareShadowCheckpoint).not.toHaveBeenCalled();
   });
 
+  it("rejects a delayed attachment prompt owned by a different session before checkpoint or model work", async () => {
+    const result = await runSessionPrompt(ctx.host, { text: "旧会话附件", expectedSessionId: "previous-chat" });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("会话已切换") });
+    expect(ctx.prepareShadowCheckpoint).not.toHaveBeenCalled();
+    expect(ctx.resetTruncationRetries).not.toHaveBeenCalled();
+    expect(ctx.host.getBundle()!.session.prompt).not.toHaveBeenCalled();
+  });
+
   it("resets truncation retry counter for user-typed prompt", async () => {
     const result = await runSessionPrompt(ctx.host, { text: "hi" });
     expect(result).toEqual({ ok: true });

@@ -12,6 +12,22 @@ export function clampWidth(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/** Start actual drags at the visible edge while keeping an untouched preferred width intact. */
+export function getDraggedColumnWidth(options: {
+  startWidth: number;
+  displayedWidth?: number;
+  delta: number;
+  axis: ColumnResizeAxis;
+  min: number;
+  max: number;
+}): number {
+  const { startWidth, displayedWidth, delta, axis, min, max } = options;
+  if (delta === 0) return clampWidth(startWidth, min, max);
+  const visibleStart = typeof displayedWidth === "number" && Number.isFinite(displayedWidth) && displayedWidth > 0
+    ? displayedWidth : startWidth;
+  return clampWidth(axis === "grow-right" ? visibleStart + delta : visibleStart - delta, min, max);
+}
+
 export function useColumnResize(options: {
   initialWidth: number;
   min: number;
@@ -26,7 +42,7 @@ export function useColumnResize(options: {
     clampWidth(options.initialWidth, min, max),
   );
   const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const dragRef = useRef<{ startX: number; startW: number; displayedWidth?: number } | null>(null);
   const widthRef = useRef(width);
   const onCommitRef = useRef(onCommit);
 
@@ -45,9 +61,7 @@ export function useColumnResize(options: {
       const d = dragRef.current;
       if (!d) return;
       const delta = e.clientX - d.startX;
-      const next =
-        axis === "grow-right" ? d.startW + delta : d.startW - delta;
-      setWidth(clampWidth(next, min, max));
+      setWidth(getDraggedColumnWidth({ startWidth: d.startW, displayedWidth: d.displayedWidth, delta, axis, min, max }));
     };
 
     const onUp = () => {
@@ -67,7 +81,7 @@ export function useColumnResize(options: {
     };
   }, [dragging, axis, min, max]);
 
-  const onResizePointerDown = useCallback((e: ReactPointerEvent) => {
+  const onResizePointerDown = useCallback((e: ReactPointerEvent, displayedWidth?: number) => {
     e.preventDefault();
     e.stopPropagation();
     try {
@@ -75,7 +89,7 @@ export function useColumnResize(options: {
     } catch {
       /* ignore */
     }
-    dragRef.current = { startX: e.clientX, startW: widthRef.current };
+    dragRef.current = { startX: e.clientX, startW: widthRef.current, displayedWidth };
     setDragging(true);
     document.body.classList.add("is-resizing-column");
   }, []);

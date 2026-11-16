@@ -101,6 +101,10 @@ export interface ClientPrefs {
   tools: string[];
   /** Explicit DeepSeek credential profile for web tools, independent of the chat model. */
   deepseekWebProviderId: string | null;
+  /** Opt in to date and language metadata on official DeepSeek Flash requests. */
+  deepseekLatestReminder: boolean;
+  /** Opt in to DeepSeek's additional input/output safety review. */
+  deepseekSafetyCheck: boolean;
   /**
    * Skill ids excluded from the session `<available_skills>` index and slash menu.
    * Empty = all discovered skills enabled (after Godot / home filters).
@@ -199,6 +203,8 @@ export const DEFAULT_PREFS: ClientPrefs = {
   thinkingLevel: "high",
   tools: [...AVAILABLE_TOOLS],
   deepseekWebProviderId: null,
+  deepseekLatestReminder: false,
+  deepseekSafetyCheck: false,
   disabledSkills: [],
   godotEditorPath: null,
   godotEngines: [],
@@ -247,6 +253,8 @@ export const ClientPrefsSchema = Type.Object({
   ),
   tools: Type.Array(Type.String()),
   deepseekWebProviderId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 256 })]),
+  deepseekLatestReminder: Type.Boolean(),
+  deepseekSafetyCheck: Type.Boolean(),
   disabledSkills: Type.Array(Type.String()),
   godotEditorPath: Type.Union([Type.Null(), Type.String()]),
   godotEngines: Type.Array(GodotEngineConfigSchema, { maxItems: 128 }),

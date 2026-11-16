@@ -1,0 +1,118 @@
+/* Keep workspace geometry independent from legacy viewport overlays and preserve one usable conversation column. */
+.main-row[data-right-panel-mode] {
+  --workspace-layer-column: 0;
+  --workspace-layer-dock: 1;
+  --workspace-layer-backdrop: 2;
+  --workspace-layer-drawer: 3;
+  position: relative;
+  isolation: isolate;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.main-row[data-right-panel-mode="docked"] {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--right-panel-width);
+}
+
+.workspace-sidebar-column,
+.workspace-chat-column {
+  position: relative;
+  z-index: var(--workspace-layer-column);
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  grid-row: 1;
+}
+
+.workspace-sidebar-column { grid-column: 1; }
+.workspace-chat-column { grid-column: 2; }
+.workspace-sidebar-column > .sidebar,
+.workspace-chat-column > .chat-panel { flex: 1; min-width: 0; }
+
+.main-row[data-right-panel-mode="docked"] > .right-panel {
+  position: relative;
+  inset: auto;
+  grid-column: 3;
+  grid-row: 1;
+  width: auto;
+  z-index: var(--workspace-layer-dock);
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-sidebar);
+}
+
+.main-row[data-right-panel-mode="drawer"] > .right-panel,
+.workspace-sidebar-column.is-drawer {
+  position: absolute;
+  inset-block: 0;
+  z-index: var(--workspace-layer-drawer);
+  box-shadow: var(--shadow-modal);
+}
+
+.main-row[data-right-panel-mode="drawer"] > .right-panel {
+  inset-inline: auto 0;
+  width: var(--right-panel-width);
+  max-width: calc(100% - 32px);
+  border-left: 1px solid var(--border-primary);
+}
+
+.workspace-sidebar-column.is-drawer {
+  inset-inline: 0 auto;
+  width: var(--sidebar-drawer-width);
+  max-width: calc(100% - 32px);
+}
+
+.workspace-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: var(--workspace-layer-backdrop);
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: unset;
+  background: var(--overlay-bg);
+  cursor: pointer;
+}
+
+.right-panel .rp-nav {
+  gap: 6px;
+  align-items: stretch;
+  padding: 8px 8px 0;
+  min-width: 0;
+}
+
+.rp-nav-tabs {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rp-nav-tabs::-webkit-scrollbar { display: none; }
+.rp-nav-tabs .rp-nav-tab { flex: 1 0 44px; white-space: nowrap; }
+.right-panel .rp-nav-close {
+  flex: 0 0 32px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  align-self: flex-start;
+  margin: 4px 0 0;
+}
+
+.workspace-sidebar-column .sidebar.is-collapsed .sidebar-actions .btn {
+  width: 100%;
+  height: 36px;
+  min-width: 0;
+  padding: 0;
+  justify-content: center;
+}
+
+.workspace-sidebar-column.is-drawer .sidebar-actions .btn > span { display: inline; }
+.workspace-sidebar-column .sidebar-head-actions .btn { flex-shrink: 0; }
+.main-row[data-workspace-modal] > .right-panel[inert] { z-index: var(--workspace-layer-dock); }
+.right-panel-body { min-width: 0; overscroll-behavior: contain; }

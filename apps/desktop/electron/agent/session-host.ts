@@ -31,7 +31,6 @@ import {
   type SessionSlashItem,
   type SessionUsageSnapshot,
   type ThinkingLevel,
-  type TurnUsage,
   type UiAgentEvent,
 } from "../../shared/ipc";
 import type { SessionType } from "../../shared/session-type";
@@ -149,9 +148,7 @@ export class SessionHost {
   private toolDetails = new Map<string, ToolDetailRecord>();
   private fileTracker = new TurnFileTracker();
   private shadowCheckpoints = new ShadowCheckpointTracker();
-  /** Last successful assistant turn usage (for snapshot lastTurn). */
-  private lastTurnUsage: TurnUsage | undefined;
-  /** Whole user-run tokens for Goal budgets; lastTurnUsage remains a context snapshot. */
+  /** Whole user-run tokens for Goal budgets; context is read from Pi's active branch. */
   private userTurnTokenTotal = 0;
   /** Preserve per-user attribution when steering adds another prompt inside one run. */
   private userTurnTokensByEntry = new Map<string | null, number>();
@@ -262,12 +259,9 @@ export class SessionHost {
       setBaseAppendPrompt: (base) => {
         this.baseAppendPrompt = base;
       },
-      setLastTurnUsage: (u) => {
-        this.lastTurnUsage = u;
-        if (!u) {
-          this.userTurnTokenTotal = 0;
-          this.userTurnTokensByEntry.clear();
-        }
+      resetUserTurnUsage: () => {
+        this.userTurnTokenTotal = 0;
+        this.userTurnTokensByEntry.clear();
       },
       clearCompactionState: () => {
         this.compactionStatsBaseline = null;
@@ -322,7 +316,6 @@ export class SessionHost {
   private historyEmitDeps() {
     return {
       getBundle: () => this.bundle,
-      getLastTurnUsage: () => this.lastTurnUsage,
       getLastHistoryFingerprint: () => this.lastHistoryFingerprint,
       setLastHistoryFingerprint: (fp: string | null) => {
         this.lastHistoryFingerprint = fp;
@@ -456,9 +449,6 @@ export class SessionHost {
         currentUserEntryId: () => this.currentUserEntryId(),
       },
       usage: {
-        setLastTurnUsage: (usage) => {
-          this.lastTurnUsage = usage;
-        },
         setUserTurnTokenTotal: (tokens, byUser) => {
           this.userTurnTokenTotal = tokens;
           this.userTurnTokensByEntry = new Map(byUser);

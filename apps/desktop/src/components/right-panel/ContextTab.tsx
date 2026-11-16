@@ -3,6 +3,7 @@ import { Loader2, Minimize2 } from "lucide-react";
 import {
   cacheHitRatio,
   formatCacheHitRatio,
+  promptInputTokens,
 } from "@shared/cache-hit";
 import type { ContextSegmentId, SessionUsageSnapshot } from "@shared/ipc";
 import { SelectMenu } from "../SelectMenu";
@@ -31,6 +32,8 @@ const SEGMENT_ORDER: ContextSegmentId[] = [
   "skills",
   "tools",
   "messages",
+  "toolHistory",
+  "thinking",
   "overhead",
 ];
 
@@ -80,16 +83,13 @@ export function ContextTab({
   const turnCacheWrite = lastTurn?.tokens.cacheWrite ?? 0;
   const turnCache = turnCacheRead + turnCacheWrite;
   const turnHitRatio = lastTurn
-    ? cacheHitRatio({ input: turnInput, cacheRead: turnCacheRead })
+    ? cacheHitRatio(lastTurn.tokens)
     : null;
   const turnTotal = lastTurn
     ? lastTurn.tokens.total || turnInput + turnOutput + turnCache
     : 0;
   const sessionHitRatio = usage
-    ? cacheHitRatio({
-        input: usage.tokens.input,
-        cacheRead: usage.tokens.cacheRead,
-      })
+    ? cacheHitRatio(usage.tokens)
     : null;
 
   const onCompact = async () => {
@@ -116,7 +116,7 @@ export function ContextTab({
       <section className="rp-context-hero">
         <div className="rp-context-hero-top">
           <div className="rp-context-hero-copy">
-            <span className="rp-context-kicker">上下文占用</span>
+            <span className="rp-context-kicker" title="包含最近回复及后续新增内容；裁剪或压缩后重新估算">当前上下文预计占用</span>
             <div
               className={`rp-context-hero-value${isHigh ? " is-high" : isWarn ? " is-warn" : ""}`}
             >
@@ -128,6 +128,7 @@ export function ContextTab({
               </span>
               <span className="rp-context-sep">/</span>
               <span>{formatTokens(windowSize || null)} tokens</span>
+              <span className="rp-context-badge">{context?.source === "usage" ? "用量推算" : "文本估算"}</span>
             </div>
           </div>
         </div>
@@ -137,7 +138,7 @@ export function ContextTab({
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={percent != null ? Math.round(percent) : undefined}
+          aria-valuenow={percent != null ? Math.round(fill) : undefined}
           aria-label="上下文占用比例"
         >
           <div
@@ -200,7 +201,7 @@ export function ContextTab({
 
       <section className="rp-context-section">
         <div className="rp-context-section-head">
-          <h3 className="rp-context-label">本轮用量</h3>
+          <h3 className="rp-context-label">最近请求用量</h3>
           <span className="rp-context-badge">API</span>
         </div>
         {lastTurn && turnTotal > 0 ? (
@@ -227,9 +228,9 @@ export function ContextTab({
             </div>
             <div className="rp-context-metrics">
               <div className="rp-context-metric">
-                <span className="rp-context-metric-label">Input</span>
+                <span className="rp-context-metric-label">完整输入</span>
                 <span className="rp-context-metric-value">
-                  {formatTokens(turnInput)}
+                  {formatTokens(promptInputTokens(lastTurn.tokens))}
                 </span>
               </div>
               <div className="rp-context-metric">
@@ -276,9 +277,9 @@ export function ContextTab({
         {usage ? (
           <div className="rp-context-metrics">
             <div className="rp-context-metric">
-              <span className="rp-context-metric-label">Input</span>
+              <span className="rp-context-metric-label">完整输入</span>
               <span className="rp-context-metric-value">
-                {formatTokens(usage.tokens.input)}
+                {formatTokens(promptInputTokens(usage.tokens))}
               </span>
             </div>
             <div className="rp-context-metric">
@@ -336,14 +337,14 @@ export function ContextTab({
       <div className="rp-context-footer">
         {onAutoCompactPercentChange && (
           <div className="rp-context-auto field block-field">
-            <span>自动压缩阈值</span>
+            <span title="达到阈值后先裁剪再压缩；接近容量上限时仍会自动压缩">提前维护阈值</span>
             <SelectMenu
               variant="block"
               value={String(autoCompactPercent)}
               disabled={busy}
-              aria-label="自动压缩阈值"
+              aria-label="提前维护阈值"
               options={[
-                { value: "0", label: "关闭" },
+                { value: "0", label: "关闭提前维护" },
                 { value: "70", label: "70%" },
                 { value: "80", label: "80%" },
                 { value: "85", label: "85%" },

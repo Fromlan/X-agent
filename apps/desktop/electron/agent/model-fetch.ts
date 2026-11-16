@@ -4,6 +4,7 @@
 
 import {
   parseContextWindowFromApiModel,
+  parseMaxInputTokensFromApiModel,
   resolveModelContextWindow,
 } from "../../shared/model-context";
 import { validateOutboundHttpUrl } from "./external-url";
@@ -14,6 +15,8 @@ export interface FetchedModel {
   id: string;
   ownedBy?: string;
   contextWindow?: number;
+  contextWindowSource?: "api" | "catalog";
+  maxInputTokens?: number;
   /** DeepSeek `max_output_tokens` → 透传到 ProviderModelEntry.maxOutputTokens → Pi maxTokens */
   maxOutputTokens?: number;
   /** DeepSeek `input_modalities: ["text","image"]` 等 */
@@ -269,7 +272,7 @@ export function parseModelsJson(json: unknown, api?: ProviderApiKind): FetchedMo
           !model.supportedGenerationMethods.includes("generateContent")) continue;
       data.push({
         id: model.name.trim().replace(/^models\//, ""),
-        context_window: model.inputTokenLimit,
+        max_input_tokens: model.inputTokenLimit,
         max_output_tokens: model.outputTokenLimit,
       });
     }
@@ -304,6 +307,8 @@ export function parseModelsJson(json: unknown, api?: ProviderApiKind): FetchedMo
       id: id.trim(),
       ...(typeof ownedBy === "string" ? { ownedBy } : {}),
       ...(contextWindow != null ? { contextWindow } : {}),
+      ...(contextWindow != null ? { contextWindowSource: fromApi != null ? "api" as const : "catalog" as const } : {}),
+      ...(parseMaxInputTokensFromApiModel(entry) != null ? { maxInputTokens: parseMaxInputTokensFromApiModel(entry) } : {}),
       ...(maxOutputTokens != null ? { maxOutputTokens } : {}),
       ...(input ? { input } : {}),
       ...(output ? { output } : {}),

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentStatus, UiAgentEvent } from "../../shared/ipc";
 import type { SessionBundle } from "./session-lifecycle";
 import { SessionHost } from "./session-host";
@@ -35,21 +35,35 @@ function deferred() {
 }
 
 /** Build a minimal Pi session while keeping the host, bridge, locks and snip-first pipeline real. */
-function fixture(percent = 90) {
+function fixture(percent = 90, pressureAfterSnip = true) {
   const host = new SessionHost(() => null);
   const seam = host as unknown as HarnessHost;
   const order: string[] = [];
   let listener: (event: unknown) => void = () => undefined;
+  const manager = SessionManager.inMemory("D:/isolated-project");
+  manager.appendMessage({ role: "toolResult", toolCallId: "read-1", toolName: "read", isError: false,
+    content: [{ type: "text", text: "x".repeat(20_000) }], timestamp: 0 });
+  manager.appendMessage({ role: "user", content: pressureAfterSnip ? "x".repeat(34_000) : "ask", timestamp: 1 });
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], api: "openai-completions",
+    provider: "fixture", model: "fixture", stopReason: "stop", timestamp: 2,
+    usage: { input: percent * 100, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: percent * 100,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
   const session = {
     sessionId: "maintenance-session",
     isStreaming: false,
     isCompacting: false,
-    messages: [{ role: "toolResult", content: [{ type: "text", text: "x".repeat(20_000) }] }],
-    sessionManager: { getBranch: () => [], getLeafEntry: () => null },
+    messages: manager.buildSessionProjection().messages,
+    model: { provider: "fixture", id: "fixture", contextWindow: 10_000 },
+    agent: { state: { tools: [] } },
+    systemPrompt: "",
+    sessionManager: manager,
+    refreshContext: () => { session.messages = manager.buildSessionProjection().messages; },
     getContextUsage: () => ({ tokens: percent * 100, contextWindow: 10_000 }),
     compact: vi.fn(async () => {
       order.push("compact");
       percent = 20;
+      manager.appendCompaction("Summary", null, 9_000);
+      session.refreshContext();
       return { tokensBefore: 9_000, estimatedTokensAfter: 2_000 };
     }),
     prompt: vi.fn(async () => undefined),
@@ -116,7 +130,7 @@ describe("checkpoint → maintenance → idle → Goal", () => {
     expect(f.session.compact).not.toHaveBeenCalled();
     checkpoint.resolve();
     await vi.waitFor(() => expect(f.goal).toHaveBeenCalledTimes(1));
-    expect(f.session.messages[0]!.content[0]!.text.length).toBeLessThan(20_000);
+    expect(f.session.sessionManager.getBranch().some((entry) => entry.type === "context_edit")).toBe(true);
     expect(f.order).toEqual(["streaming", "flush", "compact", "idle", "goal"]);
   });
 
@@ -166,8 +180,7 @@ describe("checkpoint → maintenance → idle → Goal", () => {
   });
 
   it("skips summary compaction when snipping alone clears the pressure", async () => {
-    const f = fixture();
-    f.session.getContextUsage = () => ({ tokens: f.session.messages[0]!.content[0]!.text.length > 1_000 ? 9_000 : 2_000, contextWindow: 10_000 });
+    const f = fixture(90, false);
     f.runEnd(); f.settle();
     await vi.waitFor(() => expect(f.goal).toHaveBeenCalledTimes(1));
     expect(f.session.messages[0]!.content[0]!.text.length).toBeLessThan(1_000);

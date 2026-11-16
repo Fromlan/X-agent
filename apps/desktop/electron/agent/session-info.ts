@@ -7,6 +7,7 @@
  * standing up the full SessionHost.
  */
 import { getCachedPrefs } from "./prefs";
+import { supportsDeepSeekChatbot } from "../../shared/deepseek-capabilities";
 import {
   dedupeModelInfosForUi,
   filterModelsByCatalogEnabled,
@@ -60,6 +61,7 @@ export async function listModels(
     provider: m.provider,
     id: m.id,
     name: (m as { name?: string }).name ?? m.id,
+    deepseekChatbot: supportsDeepSeekChatbot(m),
     baseUrl: (m as { baseUrl?: string }).baseUrl,
     // 透传 Pi SDK `Model.input` (["text"] / ["text", "image"]) ——
     // 供 renderer 在 send 前判断当前 model 是否支持 image。

@@ -20,6 +20,23 @@ import {
 const PNG_DATA =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
+describe("authoritative provider completion", () => {
+  it("replaces a streamed answer and clears thinking after a safety refusal", () => {
+    let state = applyAgentEvent([], { type: "assistant_start", messageId: "answer" });
+    state = applyAgentEvent(state, { type: "text_delta", messageId: "answer", delta: "partial output" });
+    state = applyAgentEvent(state, { type: "thinking_delta", messageId: "answer", delta: "partial reasoning" });
+    state = applyAgentEvent(state, { type: "assistant_end", messageId: "answer", text: "拒答", thinking: "" });
+    expect(state[0]).toMatchObject({ kind: "assistant", text: "拒答", thinking: "", done: true });
+  });
+
+  it("publishes final source citations without duplicating streamed text", () => {
+    let state = applyAgentEvent([], { type: "assistant_start", messageId: "answer" });
+    state = applyAgentEvent(state, { type: "text_delta", messageId: "answer", delta: "回答" });
+    state = applyAgentEvent(state, { type: "assistant_end", messageId: "answer", text: "回答 [1](https://example.com)", thinking: "" });
+    expect(state[0]).toMatchObject({ text: "回答 [1](https://example.com)" });
+  });
+});
+
 function png(mimeType: string = "image/png"): ImageContent {
   return { type: "image", data: PNG_DATA, mimeType };
 }

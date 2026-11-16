@@ -15,6 +15,8 @@
  *    XAgentApi 直接含 13 facade + onEvent + notifyAppReady (无 flat 表面).
  */
 import type { IpcChannelKey } from "./ipc-channels";
+import type { DeepSeekTranscribeInput, DeepSeekTranscribeResult, DeepSeekSpeakInput, DeepSeekSpeakResult } from "./deepseek-voice";
+import type { DeepSeekFileUploadInput, DeepSeekFileUploadResult } from "./deepseek-documents";
 import type { SessionType } from "./session-type";
 import type { DiagnosticExportResult, DiagnosticSnapshot, RendererFailure } from "./diagnostics";
 import type {
@@ -131,6 +133,9 @@ export function isSenderUntrustedError(
 export type TurnApi = {
   prompt: IpcInvokeMap["prompt"];
   abort: IpcInvokeMap["abort"];
+  deepseekTranscribe: IpcInvokeMap["deepseekTranscribe"];
+  deepseekSpeak: IpcInvokeMap["deepseekSpeak"];
+  deepseekCancelVoice: IpcInvokeMap["deepseekCancelVoice"];
   previewRetract: IpcInvokeMap["previewRetract"];
   retract: IpcInvokeMap["retractToUserMessage"];
   editAndResend: IpcInvokeMap["editAndResend"];
@@ -214,6 +219,7 @@ export type GodotApi = {
  * 放进 files facade 比新开 system facade 更紧凑.
  */
 export type FilesApi = {
+  deepseekUpload: IpcInvokeMap["deepseekUploadFile"];
   list: IpcInvokeMap["listProjectDir"];
   read: IpcInvokeMap["readProjectFile"];
   reveal: IpcInvokeMap["revealInFolder"];
@@ -292,11 +298,15 @@ export type UsageApi = {
  * doc (为什么 `ok: false` 字段让 union narrowing 仍然 work).
  */
 export type IpcInvokeMap = {
+  deepseekUploadFile: (input: DeepSeekFileUploadInput) => Promise<DeepSeekFileUploadResult>;
   getWindowInfo: () => Promise<AppWindowInfo>;
   controlWindow: (action: AppWindowAction) => Promise<AppWindowInfo>;
   openProject: (path?: string, mode?: OpenProjectMode) => Promise<OpenProjectResult>;
   prompt: (payload: PromptPayload) => Promise<PromptResult>;
   abort: () => Promise<{ ok: boolean }>;
+  deepseekTranscribe: (input: DeepSeekTranscribeInput) => Promise<DeepSeekTranscribeResult>;
+  deepseekSpeak: (input: DeepSeekSpeakInput) => Promise<DeepSeekSpeakResult>;
+  deepseekCancelVoice: (requestId: string) => Promise<{ ok: boolean }>;
   previewRetract: (entryId: string) => Promise<RetractPreview>;
   retractToUserMessage: (entryId: string, options?: RetractOptions) => Promise<RetractResult>;
   editAndResend: (entryId: string, text: string, options?: RetractOptions) => Promise<RetractResult>;

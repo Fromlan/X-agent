@@ -26,6 +26,8 @@ import { registerAssetsIpc } from "./register-assets-ipc";
 import { registerWorkspaceIpc } from "./register-workspace-ipc";
 import { registerWindowIpc } from "./register-window-ipc";
 import { registerTurnIpc } from "./register-turn-ipc";
+import { registerDeepSeekVoiceIpc } from "./register-deepseek-voice-ipc";
+import { registerDeepSeekFilesIpc } from "./register-deepseek-files-ipc";
 import { registerPlanIpc } from "./register-plan-ipc";
 import { registerSessionConfigIpc } from "./register-session-config-ipc";
 import { registerProviderIpc } from "./register-provider-ipc";
@@ -77,6 +79,8 @@ export function registerIpcHandlers(deps: RegisterIpcDeps): void {
   registerWorkspaceIpc(ipcMain, sessionHost);
   registerWindowIpc(ipcMain, getMainWindow);
   registerTurnIpc(ipcMain, sessionHost);
+  registerDeepSeekVoiceIpc(ipcMain, sessionHost);
+  registerDeepSeekFilesIpc(ipcMain, sessionHost);
   registerPlanIpc(ipcMain, sessionHost);
   registerSessionConfigIpc(ipcMain, sessionHost);
   registerProviderIpc(ipcMain, sessionHost);

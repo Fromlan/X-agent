@@ -33,6 +33,7 @@ import { getXAgentSessionsRoot, isXAgentSessionPath } from "./session-paths";
 import { displaySessionName } from "./session-title";
 import { createGodotTools } from "./godot-tools";
 import { createDeepSeekWebTools } from "./deepseek-web-tools";
+import { wrapDeepSeekChatbotStream } from "./deepseek-chatbot";
 import { dbgLog } from "../../shared/debug-log";
 import {
   createDesktopExtensionUi,
@@ -340,6 +341,8 @@ export class SessionLifecycle {
       ...(!hasThinkingEntry ? { thinkingLevel: prefs.thinkingLevel } : {}),
     });
     onSessionCreated(session);
+    // Keep Pi's context/auth/tool loop authoritative; extend only eligible physical DeepSeek requests.
+    if (session.agent) session.agent.streamFunction = wrapDeepSeekChatbotStream(session.agent.streamFunction, session.sessionId, getCachedPrefs);
     // Initial active set = session-type derived from prefs (code = prefs.tools;
     // design = readonly core + write/edit, with write/edit path-checked by the
     // design-write-guard extension). Must run after createAgentSession so the
@@ -409,7 +412,7 @@ export class SessionLifecycle {
       sessionType: requestedType,
       ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
     };
-    this.a().setLastTurnUsage(undefined);
+    this.a().resetUserTurnUsage();
     this.a().emit({
       type: "session_info",
       sessionId: session.sessionId,
@@ -678,7 +681,7 @@ export class SessionLifecycle {
           this.a().setBundle(null);
           await this.disposeBundle(failed);
           this.clearResourceLoader();
-          this.a().setLastTurnUsage(undefined);
+          this.a().resetUserTurnUsage();
           await this.emitClosedWorkspace(cwd);
           this.a().emitReplaceableNotice("session", `会话已删除，但恢复其他会话失败：${err instanceof Error ? err.message : String(err)}`, "warn");
           return { ok: true };
@@ -753,7 +756,7 @@ export class SessionLifecycle {
       this.a().setBundle(null);
       await this.disposeBundle(doomed);
       this.clearResourceLoader();
-      this.a().setLastTurnUsage(undefined);
+      this.a().resetUserTurnUsage();
       this.a().clearCompactionState();
       await this.emitClosedWorkspace(cwd);
       return { ok: true };
@@ -863,7 +866,7 @@ export class SessionLifecycle {
       this.a().setBundle(null);
       await this.disposeBundle(doomed);
       this.clearResourceLoader();
-      this.a().setLastTurnUsage(undefined);
+      this.a().resetUserTurnUsage();
       this.a().clearCompactionState();
     });
   }

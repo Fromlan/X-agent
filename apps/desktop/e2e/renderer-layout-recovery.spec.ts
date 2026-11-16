@@ -99,6 +99,9 @@ test("a restored long conversation stays idle through delayed layout changes", a
       dialog.showMessageBox = () => { (globalThis as unknown as { recoveryDialogs: number }).recoveryDialogs++; return new Promise(() => {}); };
     });
     // Use the user-facing resume path: it updates session identity and forces the transcript to follow its tail.
+    // Constrained workspaces expose saved sessions through the rail's modal drawer.
+    await main.locator(".sidebar").getByRole("button", { name: "展开会话栏", exact: true }).click();
+    await expect(main.getByRole("dialog", { name: "会话栏", exact: true })).toBeVisible();
     await main.locator('.session-card-main[title="Restored layout fixture"]').click();
     await expect(main.locator(".message-stream-virtual")).toBeVisible();
     await expect(main.getByText("Restored reply 35", { exact: true })).toBeVisible();

@@ -266,7 +266,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       const resolved = lookupKnownContextWindow(row.id);
       if (resolved == null) return prev;
       const models = prev.models.slice();
-      models[index] = { ...row, contextWindow: resolved };
+      models[index] = { ...row, contextWindow: resolved, contextWindowSource: "catalog" };
       return { ...prev, models };
     });
   };
@@ -360,6 +360,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         id: m.id,
         name: m.id,
         ...(contextWindow != null ? { contextWindow } : {}),
+        ...(contextWindow != null ? { contextWindowSource: m.contextWindowSource ?? "api" } : {}),
+        ...(m.maxInputTokens != null ? { maxInputTokens: m.maxInputTokens } : {}),
         // DeepSeek `/v1/models` 扩展 schema 返回 input_modalities /
         // max_output_tokens / effort 等;fetch 阶段直接透传,saveProfile 时
         // 落 Pi models.json 的 input / maxTokens / thinkingLevelMap。
@@ -422,15 +424,11 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       const input: ProviderUpsertInput = {
         ...form,
         models: form.models
-          .map((m) => {
+          .map((m): ProviderModelEntry | null => {
             const id = m.id.trim();
             if (!id) return null;
             const name = m.name?.trim();
             const explicit = normalizePositiveInt(m.contextWindow);
-            const contextWindow = resolveModelContextWindow({
-              id,
-              explicit,
-            });
             // input 字段语义:
             //   - 用户在 chip 显式表态 (m.input 已定义) → 透传,落 Pi 覆盖 builtin
             //   - 未表态 (m.input === undefined) → guessDefaultInput 启发式兜底,
@@ -441,9 +439,10 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
             // 启发式兜底:未表态时按 model id 推断,保 vision 模型不被静默锁成 ["text"]
             const inputArr = userInput ?? guessDefaultInput(id);
             return {
+              ...m,
               id,
               ...(name ? { name } : {}),
-              ...(contextWindow != null ? { contextWindow } : {}),
+              contextWindow: explicit,
               ...(inputArr != null ? { input: inputArr } : {}),
             };
           })
@@ -919,6 +918,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                               if (!digits) {
                                 updateModelRow(index, {
                                   contextWindow: undefined,
+                                  contextWindowSource: undefined,
                                 });
                                 return;
                               }
@@ -926,11 +926,12 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                               if (n != null) {
                                 updateModelRow(index, {
                                   contextWindow: n,
+                                  contextWindowSource: "explicit",
                                 });
                               }
                             }}
                             placeholder="自动 / 128k"
-                            title="上下文窗口（tokens）"
+                            title={`上下文窗口（tokens） · ${row.contextWindowSource === "catalog" ? "型号推断" : row.contextWindowSource === "api" ? "供应商返回" : "手动配置"}`}
                           />
                         </td>
                         <td>

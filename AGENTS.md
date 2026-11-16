@@ -91,6 +91,7 @@ npm run dist             # electron-builder --win（仅 NSIS 安装包；不产�
 ## 编码与 UI 约定（与框架默认不同之处）
 
 - TypeScript 严格模式；生成代码时**加函数级注释**（新模块头部一句「做什么 + 为什么」）；注释/标识符以英文为主，用户面文案以 `README.md` / 设置页中文为准。
+- **UI 文案保持精简**：只保留操作标签、必要状态与错误提示，不常驻展示长篇解释、实现机制或重复的开发术语；具体约定见 `docs/agent.md` 的「UI 文案」。
 - 主题颜色 / 圆角 / 阴影全走 CSS 变量（`apps/desktop/src/styles/themes.css`），**组件 / JS 禁止硬编码**色值；图标用 `lucide-react` 不用 emoji；字重仅 400 / 500。
 - 几何：按钮 / chip / 单行 input 用 pill（`9999px`）；容器 12px、多行 8px；1px Board 边框；主元素 / hover / focus 阴影走主题 token，`contrast` 主题禁用阴影。设置页内容区需 `min-height: 0` + `overflow-y: auto`。
 - 完整规范见 `docs/design.md`（深色默认，`body[data-theme]` 覆盖浅色）。

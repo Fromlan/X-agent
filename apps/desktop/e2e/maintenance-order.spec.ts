@@ -45,7 +45,7 @@ export default function(pi) {
         const fixtureRequest = prompt.includes("pressure read fixture");
         const afterTool = fixtureRequest && context.messages.at(-1)?.role === "toolResult";
         const content = !fixtureRequest ? [{ type: "text", text: "Maintenance fixture" }] : afterTool ? [{ type: "text", text: "Offline maintenance read complete" }] : [{ type: "toolCall", id: "read-large-" + Date.now(), name: "read", arguments: { path: "large.txt" } }];
-        const input = afterTool ? (prompt.includes("high-pressure") ? 28800 : 8000) : 20;
+        const input = afterTool ? (prompt.includes("low-pressure") ? 8000 : 28800) : 20;
         const message = { role: "assistant", content, api: model.api, provider: model.provider, model: model.id, stopReason: fixtureRequest && !afterTool ? "toolUse" : "stop", timestamp: Date.now(), usage: { input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
         stream.push({ type: "start", partial: message });
         if (message.stopReason === "toolUse") stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: content[0], partial: message });
@@ -63,7 +63,7 @@ function metrics(project: string): Metric[] {
   return existsSync(path) ? readFileSync(path, "utf8").trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Metric) : [];
 }
 
-for (const pressure of ["high", "low"] as const) {
+for (const pressure of ["high", "snip-cleared", "low"] as const) {
   test(`10 real Pi ${pressure} pressure settlement preserves snip-first order and frontend compaction`, async () => {
     const project = mkdtempSync(join(tmpdir(), "x-agent-maintenance-e2e-"));
     mkdirSync(join(project, ".pi", "extensions"), { recursive: true });
@@ -85,7 +85,9 @@ for (const pressure of ["high", "low"] as const) {
         window.xAgent.onEvent((event) => (window as unknown as { maintenanceEvents: UiAgentEvent[] }).maintenanceEvents.push(event));
       });
       await expect(main.locator(".composer textarea")).toBeEnabled();
-      await main.locator(".composer textarea").fill(`${pressure}-pressure read fixture`);
+      // High pressure must survive pruning in the actual projection, not only in old provider usage.
+      const retainedBackground = pressure === "high" ? `\n${"x".repeat(104_000)}` : "";
+      await main.locator(".composer textarea").fill(`${pressure}-pressure read fixture${retainedBackground}`);
       await main.locator(".composer-send").click();
       await expect.poll(() => metrics(project).filter((event) => event.type === "agent_settled").length).toBe(1);
       if (pressure === "high") {
@@ -125,9 +127,30 @@ for (const pressure of ["high", "low"] as const) {
         expect(starts).toHaveLength(0);
         const sessionPath = (await main.evaluate(() => window.xAgent.workspace.getStatus())).sessionPath;
         expect(sessionPath).toBeTruthy();
-        const entries = readFileSync(sessionPath!, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as { type: string; message?: { role: string; content: { type: string; text?: string }[] } });
+        const entries = readFileSync(sessionPath!, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as {
+          type: string; id: string; targetId?: string; replacement?: unknown;
+          message?: { role: string; content: { type: string; text?: string }[] };
+        });
         const read = entries.find((entry) => entry.type === "message" && entry.message?.role === "toolResult");
+        // Canonical tool output remains intact; only an append-only context edit may prune it.
         expect(read?.message?.content.map((block) => block.text ?? "").join("")).not.toContain("tool result middle pruned");
+        const edits = entries.filter((entry) => entry.type === "context_edit");
+        if (pressure === "snip-cleared") {
+          expect(edits).toHaveLength(1);
+          expect(edits[0]?.targetId).toBe(read?.id);
+          const replacement = JSON.stringify(edits[0]?.replacement) ?? "";
+          expect(replacement).toContain("tool result middle pruned");
+          expect(replacement.length).toBeLessThan(1_000);
+          expect(events.some((event) => event.type === "usage_update" && (event.usage.context?.percent ?? 0) >= 80)).toBe(true);
+          const finalUsage = events.findLast((event) => event.type === "usage_update");
+          expect(finalUsage?.type).toBe("usage_update");
+          if (finalUsage?.type === "usage_update") {
+            expect(finalUsage.usage.context?.source).toBe("estimate");
+            expect(finalUsage.usage.context?.percent).toBeLessThan(80);
+          }
+        } else {
+          expect(edits).toHaveLength(0);
+        }
       }
       expect(readFileSync(join(project, "large.txt"), "utf8").length).toBe(20_000);
     } finally {

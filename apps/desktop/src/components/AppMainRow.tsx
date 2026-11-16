@@ -206,24 +206,31 @@ export function AppMainRow(props: AppMainRowProps) {
       });
       return list;
     }, [activeCwd, isGodotProject, prefs, chatActions]);
+  const rightDrawerOpen = layout.rightPanelMode === "drawer" && !layout.sidebarDrawerOpen;
+  const drawerOpen = layout.sidebarDrawerOpen || rightDrawerOpen;
 
   return (
     <div
+      ref={layout.workspaceRef}
       className={`main-row${prefs?.rightPanelOpen ? " with-right-panel" : ""}${layout.sidebarResizing || layout.rightPanelResizing ? " is-resizing" : ""}`}
+      data-right-panel-mode={layout.rightPanelMode}
+      data-workspace-modal={drawerOpen ? "true" : undefined}
       style={
         {
           "--sidebar-width": `${layout.layoutWidths.sidebar}px`,
           "--right-panel-width": `${layout.layoutWidths.right}px`,
+          "--sidebar-drawer-width": `${layout.sidebarDrawerWidth}px`,
         } as CSSProperties
       }
     >
+      <div className={`workspace-sidebar-column${layout.sidebarDrawerOpen ? " is-drawer" : ""}`} inert={rightDrawerOpen}>
       <Sidebar
         appVersion={props.appVersion}
         isGodotProject={isGodotProject}
         sessionType={sessionType}
-        onOpen={sidebarActions.onOpen}
-        onNew={sidebarActions.onNew}
-        onSettings={sidebarActions.onSettings}
+        onOpen={() => { layout.closeSidebarDrawer(); sidebarActions.onOpen(); }}
+        onNew={(type) => { layout.closeSidebarDrawer(); sidebarActions.onNew(type); }}
+        onSettings={() => { layout.closeSidebarDrawer(); sidebarActions.onSettings(); }}
         sessions={sessions}
         hiddenProjectKeys={hiddenProjectKeys}
         activeSessionId={activeSessionId}
@@ -232,8 +239,10 @@ export function AppMainRow(props: AppMainRowProps) {
         busy={busy}
         compacting={compacting}
         sessionsLoading={sessionsLoading}
-        collapsed={layout.sidebarCollapsed}
-        onResume={sidebarActions.onResume}
+        collapsed={layout.sidebarCollapsed && !layout.sidebarDrawerOpen}
+        modal={layout.sidebarDrawerOpen}
+        onCloseDrawer={layout.closeSidebarDrawer}
+        onResume={(path) => { layout.closeSidebarDrawer(); void sidebarActions.onResume(path); }}
         onDelete={sidebarActions.onDelete}
         onDeleteProjectSessions={sidebarActions.onDeleteProjectSessions}
         onHideProject={sidebarActions.onHideProject}
@@ -250,6 +259,8 @@ export function AppMainRow(props: AppMainRowProps) {
         }
         resizing={layout.sidebarResizing}
       />
+      </div>
+      <div className="workspace-chat-column" inert={drawerOpen}>
       <ChatPanel
         header={
           <ChatHeader
@@ -321,8 +332,14 @@ export function AppMainRow(props: AppMainRowProps) {
         onThinkingChange={chatActions.onThinkingChange}
         onToggleThinking={chatActions.onToggleThinking}
       />
+      </div>
+      {drawerOpen && <button type="button" className="workspace-panel-backdrop" tabIndex={-1}
+        aria-label={layout.sidebarDrawerOpen ? "关闭会话栏遮罩" : "关闭工具面板遮罩"}
+        onClick={() => { if (layout.sidebarDrawerOpen) layout.closeSidebarDrawer(); else void chatActions.onCloseRightPanel(); }} />}
       {prefs?.rightPanelOpen && (
         <RightPanel
+          modal={rightDrawerOpen}
+          inert={layout.sidebarDrawerOpen}
           isGodotProject={isGodotProject}
           rpcStatus={rpcStatus}
           cwd={activeCwd}
@@ -346,8 +363,8 @@ export function AppMainRow(props: AppMainRowProps) {
             void chatActions.onBuildPlan();
           }}
           onPlanPathChange={chatActions.onPlanPathChange}
-          onResizePointerDown={layout.onRightPanelResizePointerDown}
-          onResizeDoubleClick={layout.onRightPanelResizeDoubleClick}
+          onResizePointerDown={layout.rightPanelMode === "docked" ? layout.onRightPanelResizePointerDown : undefined}
+          onResizeDoubleClick={layout.rightPanelMode === "docked" ? layout.onRightPanelResizeDoubleClick : undefined}
           resizing={layout.rightPanelResizing}
         />
       )}

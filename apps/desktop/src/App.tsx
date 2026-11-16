@@ -37,7 +37,6 @@ import {
   collapseFileBlocksToAtPaths,
 } from "./lib/expandAtPaths";
 import { useAgentEventRouter } from "./hooks/useAgentEventRouter";
-import { useAutoCompact } from "./hooks/useAutoCompact";
 import { useAppActions } from "./hooks/useAppActions";
 import { useAppLayout } from "./hooks/useAppLayout";
 import { useComposer } from "./hooks/useComposer";
@@ -170,6 +169,7 @@ export default function App() {
   );
   const composer = useComposer({
     cwd, models, currentModelKey, status, sessionMode, goal,
+    sessionId,
     setError, setFollowNonce, setItems,
     goalDispatcher: goalDispatcherRef.current,
     refreshSessions,
@@ -248,15 +248,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  // ─── Auto compact (上下文接近上限自动 compact) ─────────────────
-  useAutoCompact({
-    thresholdPercent: prefs?.autoCompactPercent ?? 0,
-    usage: sessionUsage,
-    busy: busy || status === "streaming" || status === "retrying" || retractBusy,
-    compacting,
-    sessionId,
-  });
 
   // ─── 业务 callbacks (4 个) ─────────────────────────────────────
   const onBuildPlan = useCallback(async () => {

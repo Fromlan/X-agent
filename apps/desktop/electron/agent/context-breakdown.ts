@@ -3,6 +3,7 @@ import type {
   ContextSegment,
   ContextSegmentId,
 } from "../../shared/ipc";
+import { promptInputTokens, type PromptTokenUsage } from "../../shared/cache-hit";
 
 /** Match Pi compaction heuristic: ~4 chars per token. */
 export function estimateTextTokens(text: string): number {
@@ -14,15 +15,8 @@ export function estimateTextTokens(text: string): number {
  * Prompt-side context from a turn's usage (excludes assistant output).
  * Prefer this over usage.totalTokens for the right-panel occupancy bar.
  */
-export function promptTokensFromTurnUsage(usage: {
-  input: number;
-  cacheRead: number;
-}): number {
-  return Math.max(
-    0,
-    Math.round(Number(usage.input) || 0) +
-      Math.round(Number(usage.cacheRead) || 0),
-  );
+export function promptTokensFromTurnUsage(usage: PromptTokenUsage): number {
+  return promptInputTokens(usage);
 }
 
 const SEGMENT_LABELS: Record<ContextSegmentId, string> = {
@@ -33,7 +27,7 @@ const SEGMENT_LABELS: Record<ContextSegmentId, string> = {
   messages: "对话消息",
   toolHistory: "工具历史",
   thinking: "思考块",
-  overhead: "协议损耗",
+  overhead: "未归因差额",
 };
 
 export type SystemPromptParts = {
@@ -106,6 +100,9 @@ export type BuildContextBreakdownInput = {
   contextWindow: number;
   /** From getContextUsage().tokens — full prompt context, or null. */
   contextTokens: number | null;
+  source?: ContextBreakdown["source"];
+  /** Provider-visible JSON declarations, independent of prompt tool prose. */
+  toolSchemaTokens?: number;
   /**
    * Independent estimate of conversation messages (user/assistant/toolResult…).
    * Prefer summing Pi estimateTokens(message) over residual math.
@@ -211,7 +208,7 @@ export function buildContextBreakdown(
   let systemTokens = estimateTextTokens(parts.system);
   let projectTokens = estimateTextTokens(parts.project);
   let skillsTokens = estimateTextTokens(parts.skills);
-  let toolsTokens = estimateTextTokens(parts.tools);
+  let toolsTokens = estimateTextTokens(parts.tools) + Math.max(0, input.toolSchemaTokens ?? 0);
   let messagesTotal = Math.max(0, Math.round(input.messageTokens ?? 0));
   const toolHistoryRaw = Math.max(
     0,
@@ -309,5 +306,6 @@ export function buildContextBreakdown(
     percent,
     segments,
     estimated: true,
+    source: input.source ?? "unknown",
   };
 }

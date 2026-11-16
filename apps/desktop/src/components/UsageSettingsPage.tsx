@@ -115,10 +115,7 @@ export function UsageSettingsPage({ active }: Props) {
   const hasDays = Boolean(summary && summary.days.length > 0);
   const hasModels = Boolean(summary && summary.byModel.length > 0);
   const totalsHitRatio = summary
-    ? cacheHitRatio({
-        input: summary.totals.tokens.input,
-        cacheRead: summary.totals.tokens.cacheRead,
-      })
+    ? cacheHitRatio(summary.totals.tokens)
     : null;
 
   return (
@@ -160,7 +157,7 @@ export function UsageSettingsPage({ active }: Props) {
           </span>
         </div>
         <div className="usage-hero-card">
-          <span className="usage-hero-label">费用</span>
+          <span className="usage-hero-label">Token 估算费用</span>
           <span className="usage-hero-value">
             {summary ? formatCost(summary.totals.cost) : "—"}
           </span>
@@ -168,6 +165,7 @@ export function UsageSettingsPage({ active }: Props) {
       </div>
 
       <div className="settings-block usage-block">
+        <p className="modal-hint">费用仅按模型 Token 单价估算；DeepSeek 搜索、文件解析和语音等工具费用另计，以供应商账单为准。</p>
         <div className="usage-view-toggle" role="tablist" aria-label="用量视图">
           <button
             type="button"
@@ -212,10 +210,7 @@ export function UsageSettingsPage({ active }: Props) {
                       </td>
                       <td className="is-num">
                         {formatCacheHitRatio(
-                          cacheHitRatio({
-                            input: day.tokens.input,
-                            cacheRead: day.tokens.cacheRead,
-                          }),
+                          cacheHitRatio(day.tokens),
                         )}
                       </td>
                       <td className="is-num">{formatCost(day.cost)}</td>
@@ -266,10 +261,7 @@ export function UsageSettingsPage({ active }: Props) {
                         </td>
                         <td className="is-num">
                           {formatCacheHitRatio(
-                            cacheHitRatio({
-                              input: row.tokens.input,
-                              cacheRead: row.tokens.cacheRead,
-                            }),
+                            cacheHitRatio(row.tokens),
                           )}
                         </td>
                         <td className="is-num">{formatCost(row.cost)}</td>

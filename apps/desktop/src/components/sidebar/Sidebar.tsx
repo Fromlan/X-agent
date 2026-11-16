@@ -4,14 +4,17 @@
  */
 import { memo, useEffect, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftClose, PanelLeftOpen, RefreshCw, Settings } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, RefreshCw, Settings, X } from "lucide-react";
 import type { AgentStatus, SessionInfo, SessionType } from "@shared/ipc";
 import { SidebarWorkspace } from "./SidebarWorkspace";
 import { useSidebarState } from "./useSidebarState";
 import { SidebarGroupList } from "./SidebarGroupList";
 import { SidebarItemMenu } from "./SidebarItemMenu";
+import { useWorkspaceDrawer } from "../../hooks/useWorkspaceDrawer";
 
 interface Props {
+  modal?: boolean;
+  onCloseDrawer?: () => void;
   sessions: SessionInfo[];
   hiddenProjectKeys: string[];
   activeSessionId: string | null;
@@ -43,6 +46,8 @@ interface Props {
 }
 
 function SidebarImpl({
+  modal = false,
+  onCloseDrawer,
   sessions,
   hiddenProjectKeys,
   activeSessionId,
@@ -69,6 +74,7 @@ function SidebarImpl({
   onResizeDoubleClick,
   resizing = false,
 }: Props) {
+  const drawerRef = useWorkspaceDrawer(modal, () => onCloseDrawer?.());
   const [selectedType, setSelectedType] = useState<SessionType>(sessionType);
   useEffect(() => setSelectedType(sessionType), [sessionType, activeSessionId]);
   const state = useSidebarState({
@@ -96,7 +102,8 @@ function SidebarImpl({
     .join(" ");
 
   return (
-    <aside className={className} data-collapsed={collapsed ? "true" : undefined}>
+    <aside ref={drawerRef} className={className} data-collapsed={collapsed ? "true" : undefined}
+      aria-label="会话栏" role={modal ? "dialog" : undefined} aria-modal={modal || undefined} tabIndex={-1}>
       <SidebarWorkspace state={state} cwd={activeCwd} isGodotProject={isGodotProject} collapsed={collapsed} busy={busy} locked={locked} selectedType={selectedType} onOpen={onOpen} onNew={onNew} onResume={onResume} />
       <div className="sidebar-head">
         {!collapsed && <h2>会话</h2>}
@@ -112,7 +119,8 @@ function SidebarImpl({
               <RefreshCw size={13} />
             </button>
           )}
-          {onToggleCollapsed && (
+          {modal ? <button type="button" className="btn btn-ghost btn-icon" aria-label="关闭会话栏" title="关闭会话栏"
+            data-drawer-close onClick={onCloseDrawer}><X size={16} aria-hidden /></button> : onToggleCollapsed && (
             <button
               type="button"
               className="btn btn-ghost btn-icon"

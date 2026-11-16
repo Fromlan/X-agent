@@ -165,6 +165,8 @@ function normalizeLoadedPrefs(raw: RawPrefs): ClientPrefs {
     goalEvaluatorModel,
     deepseekWebProviderId: typeof rest.deepseekWebProviderId === "string" && rest.deepseekWebProviderId.trim()
       ? rest.deepseekWebProviderId.trim() : null,
+    deepseekLatestReminder: rest.deepseekLatestReminder === true,
+    deepseekSafetyCheck: rest.deepseekSafetyCheck === true,
     godotAutoConnect: typeof rest.godotAutoConnect === "boolean" ? rest.godotAutoConnect : true,
     godotEditorPath,
     godotProjectEditors,

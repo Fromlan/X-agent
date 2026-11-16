@@ -276,7 +276,7 @@ function makeHost(overrides: MockHostOverrides = {}) {
     },
     setResourceLoader: vi.fn((loader) => { currentLoader = loader; }),
     setBaseAppendPrompt: vi.fn((base) => { currentAppend = base; }),
-    setLastTurnUsage: vi.fn(),
+    resetUserTurnUsage: vi.fn(),
     clearCompactionState: vi.fn(),
     setAutoTitleInFlight: vi.fn(),
     setLastHistoryFingerprint: vi.fn(),

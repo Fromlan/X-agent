@@ -21,7 +21,8 @@ import {
   ArrowUp,
   AlertTriangle,
   Paperclip,
-  Brain,
+  Eye,
+  EyeOff,
   Flag,
   Hammer,
   Square,
@@ -40,6 +41,7 @@ import { useSlashMenu } from "../hooks/useSlashMenu";
 import { useAtCompletion, type AtPathCandidate } from "../hooks/useAtCompletion";
 import { ThinkingOrb } from "./ThinkingOrb";
 import { ComposerAttachments } from "./ComposerAttachments";
+import { DeepSeekVoiceControls } from "./DeepSeekVoiceControls";
 import { MAX_IMAGE_COUNT, type FileReference } from "../lib/file-attachment";
 import type { ReactNode, RefObject } from "react";
 
@@ -190,6 +192,9 @@ function ChatPanelImpl(props: Props) {
   }));
   const modelDisabled = props.disabled || streaming || props.models.length === 0;
   const thinkingDisabled = props.disabled || streaming;
+  const voiceEnabled = props.models.find((model) => `${model.provider}/${model.id}` === props.currentModelKey)?.deepseekChatbot === true;
+  const lastAnswer = props.items.findLast((item) => item.kind === "assistant" && item.done && !item.isError && item.text.trim());
+  const voiceAnswer = lastAnswer?.kind === "assistant" ? lastAnswer.text : "";
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -496,7 +501,6 @@ function ChatPanelImpl(props: Props) {
             onSelect={selectAtCandidate}
             onClose={() => dismissAtMenu()}
           />
-          <span className="composer-shortcut">Shift + Tab 切换模式</span>
           <textarea
             ref={textareaRef}
             value={props.input}
@@ -542,98 +546,104 @@ function ChatPanelImpl(props: Props) {
             }
             disabled={composerLocked}
             rows={2}
+            aria-label="消息内容"
             aria-disabled={composerLocked}
             aria-autocomplete="list"
             aria-expanded={menuOpen}
           />
           <div className="composer-toolbar" role="toolbar" aria-label="会话控制">
-            <div className="composer-mode-row" role="group" aria-label="会话模式">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={(event) => {
-                  const files = Array.from(event.currentTarget.files ?? []);
-                  if (files.length) props.onAddFiles?.(files);
-                  event.currentTarget.value = "";
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon composer-attach"
-                aria-label="添加附件"
-                title="添加图片或文件"
-                disabled={composerLocked || !props.onAddFiles}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Paperclip size={16} aria-hidden />
-              </button>
-              <SessionModeSelect
-                value={sessionMode}
-                disabled={modeSwitchDisabled}
-                onChange={props.onSessionModeChange}
-              />
-              {sessionMode === "plan" && props.planPath && (
+            <div className="composer-controls">
+              <div className="composer-mode-row" role="group" aria-label="会话模式">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(event) => {
+                    const files = Array.from(event.currentTarget.files ?? []);
+                    if (files.length) props.onAddFiles?.(files);
+                    event.currentTarget.value = "";
+                  }}
+                />
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm composer-build-plan"
-                  onClick={props.onBuildPlan}
-                  disabled={streaming || !props.onBuildPlan}
-                  title={props.planPath}
+                  className="btn btn-ghost btn-icon composer-attach"
+                  aria-label="添加附件"
+                  title="添加图片或文件"
+                  disabled={composerLocked || !props.onAddFiles}
+                  onClick={() => fileInputRef.current?.click()}
                 >
-                  <Hammer size={14} />
-                  执行计划
+                  <Paperclip size={16} aria-hidden />
                 </button>
-              )}
-            </div>
-            <div className="composer-model-row">
-              <div className="field" title="模型">
-                <span className="field-label">模型</span>
-                <SelectMenu
-                  variant="pill"
-                  className="select-menu-centered"
-                  value={props.currentModelKey}
-                  options={modelOptions}
-                  onChange={props.onModelChange}
-                  disabled={modelDisabled}
-                  aria-label="模型"
-                  placeholder="选择模型"
+                <SessionModeSelect
+                  value={sessionMode}
+                  disabled={modeSwitchDisabled}
+                  onChange={props.onSessionModeChange}
                 />
+                {voiceEnabled && <DeepSeekVoiceControls
+                  scopeKey={`${props.skillsRefreshKey ?? ""}:${props.currentModelKey}`}
+                  disabled={composerLocked || streaming}
+                  answer={voiceAnswer}
+                  onTranscript={(text) => props.setInput(`${props.input}${props.input.trim() ? "\n" : ""}${text}`)}
+                />}
+                {sessionMode === "plan" && props.planPath && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm composer-build-plan"
+                    onClick={props.onBuildPlan}
+                    disabled={streaming || !props.onBuildPlan}
+                    title={props.planPath}
+                  >
+                    <Hammer size={14} />
+                    执行计划
+                  </button>
+                )}
               </div>
-              <div className="field" title="Thinking">
-                <span className="field-label">Thinking</span>
-                <SelectMenu
-                  variant="pill"
-                  className="select-menu-compact select-menu-centered"
-                  value={props.thinkingLevel}
-                  options={thinkingOptions}
-                  onChange={(v) => {
-                    // DEBUG(thinking-switch #30): 渲染端 SelectMenu 选值时打点
-                    dbgLog("renderer", "thinking SelectMenu onChange", {
-                      picked: v,
-                      currentValue: props.thinkingLevel,
-                    });
-                    props.onThinkingChange(v as ThinkingLevel);
-                  }}
-                  disabled={thinkingDisabled}
-                  aria-label="Thinking"
-                />
+              <div className="composer-model-row" role="group" aria-label="模型与思考">
+                <div className="field" title="模型">
+                  <span className="field-label">模型</span>
+                  <SelectMenu
+                    variant="pill"
+                    className="composer-model-select"
+                    value={props.currentModelKey}
+                    options={modelOptions}
+                    onChange={props.onModelChange}
+                    disabled={modelDisabled}
+                    aria-label="模型"
+                    title={props.currentModelLabel || "选择模型"}
+                    placeholder="选择模型"
+                  />
+                </div>
+                <div className="field" title="Thinking">
+                  <span className="field-label">Thinking</span>
+                  <SelectMenu
+                    variant="pill"
+                    className="select-menu-compact select-menu-centered"
+                    value={props.thinkingLevel}
+                    options={thinkingOptions}
+                    onChange={(v) => {
+                      // DEBUG(thinking-switch #30): 渲染端 SelectMenu 选值时打点
+                      dbgLog("renderer", "thinking SelectMenu onChange", {
+                        picked: v,
+                        currentValue: props.thinkingLevel,
+                      });
+                      props.onThinkingChange(v as ThinkingLevel);
+                    }}
+                    disabled={thinkingDisabled}
+                    aria-label="Thinking"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={`thinking-toggle${props.showThinking ? " is-on" : ""}`}
+                  onClick={props.onToggleThinking}
+                  title={props.showThinking ? "隐藏回答中的思考过程" : "显示回答中的思考过程"}
+                  aria-pressed={props.showThinking}
+                  aria-label="切换展示思考"
+                >
+                  {props.showThinking ? <Eye size={16} aria-hidden /> : <EyeOff size={16} aria-hidden />}
+                </button>
               </div>
-              <button
-                type="button"
-                className={`thinking-toggle${props.showThinking ? " is-on" : ""}`}
-                onClick={props.onToggleThinking}
-                title={props.showThinking ? "关闭展示思考" : "开启展示思考"}
-                aria-pressed={props.showThinking}
-                aria-label="切换展示思考"
-              >
-                <Brain size={14} strokeWidth={2} />
-                <span className="thinking-toggle-label">展示思考</span>
-                <span className="thinking-toggle-state" aria-hidden="true">
-                  {props.showThinking ? "开" : "关"}
-                </span>
-              </button>
             </div>
             <div className="composer-actions">
               {streaming && (

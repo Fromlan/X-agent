@@ -8,6 +8,9 @@ export const IPC_CHANNELS = {
   openProject: "openProject",
   prompt: "prompt",
   abort: "abort",
+  deepseekTranscribe: "deepseekTranscribe",
+  deepseekSpeak: "deepseekSpeak",
+  deepseekCancelVoice: "deepseekCancelVoice",
   previewRetract: "previewRetract",
   retractToUserMessage: "retractToUserMessage",
   editAndResend: "editAndResend",
@@ -57,6 +60,7 @@ export const IPC_CHANNELS = {
   // project filesystem sandbox (see electron/app-runtime.ts)
   listProjectDir: "listProjectDir",
   readProjectFile: "readProjectFile",
+  deepseekUploadFile: "deepseekUploadFile",
   revealInFolder: "revealInFolder",
 
   // Godot RPC bridge + editor launch (see electron/ipc/register-godot-ipc.ts)

@@ -27,14 +27,18 @@ assert(
   lookupKnownContextWindow("deepseek-ai/DeepSeek-Flash") === 1_000_000,
   "flash prefixed",
 );
-assert(lookupKnownContextWindow("deepseek-chat") === 128_000, "chat 128k");
-assert(lookupKnownContextWindow("deepseek-reasoner") === 128_000, "reasoner 128k");
+assert(lookupKnownContextWindow("deepseek-chat") === undefined, "retired chat alias is unknown");
+assert(lookupKnownContextWindow("deepseek-reasoner") === undefined, "retired reasoner alias is unknown");
 assert(
   lookupKnownContextWindow("deepseek-ai/DeepSeek-V3") === 128_000,
   "v3 128k",
 );
 assert(lookupKnownContextWindow("claude-sonnet-4-5") === 200_000, "claude 200k");
 assert(lookupKnownContextWindow("claude-opus-4-7[1m]") === 1_000_000, "claude 1m");
+assert(lookupKnownContextWindow("claude-fable-5-2") === 1_000_000, "published fable 5.2 1m");
+assert(lookupKnownContextWindow("claude-opus-4-9") === undefined, "unknown Claude minor stays unknown");
+assert(lookupKnownContextWindow("claude-fictional-99[1m]") === undefined, "1m label cannot invent a Claude model");
+assert(lookupKnownContextWindow("claude-sonnet-4-5[1m]") === 200_000, "retired Sonnet 1m beta stays 200k");
 assert(lookupKnownContextWindow("gpt-4o") === 128_000, "gpt-4o");
 assert(lookupKnownContextWindow("kimi-k2.7-code") === 256_000, "kimi k2");
 assert(lookupKnownContextWindow("totally-unknown-xyz") === undefined, "unknown");

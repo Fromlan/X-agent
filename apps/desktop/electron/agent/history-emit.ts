@@ -15,13 +15,11 @@ import {
 import { emptyUsageSnapshot } from "./session-host-helpers";
 import type { HistoryItem, SessionUsageSnapshot, UiAgentEvent } from "../../shared/ipc";
 import type { SessionBundle } from "./session-lifecycle";
-import type { TurnUsage } from "../../shared/ipc";
 import type { ToolDetailRecord } from "./session-host-helpers";
 
 /** Snapshot deps for history / usage / compaction emission. */
 export interface HistoryEmitDeps {
   getBundle(): SessionBundle | null;
-  getLastTurnUsage(): TurnUsage | undefined;
   getLastHistoryFingerprint(): string | null;
   setLastHistoryFingerprint(fp: string | null): void;
   toolDetails: Map<string, ToolDetailRecord>;
@@ -37,7 +35,7 @@ export interface HistoryEmitDeps {
 export function buildUsageSnapshot(deps: HistoryEmitDeps): SessionUsageSnapshot | null {
   const bundle = deps.getBundle();
   if (!bundle) return null;
-  return buildUsageSnapshotFor(bundle.session, deps.getLastTurnUsage());
+  return buildUsageSnapshotFor(bundle.session);
 }
 
 /** Build the session branch as a HistoryItem list. */

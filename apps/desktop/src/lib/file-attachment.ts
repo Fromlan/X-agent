@@ -14,6 +14,7 @@
  * over IPC as part of `PromptPayload.images`.
  */
 import type { ImageContent } from "../../shared/ipc";
+import type { DeepSeekFilePurpose } from "../../shared/deepseek-documents";
 
 /** Whitelisted mime types. Anything else is treated as non-image. */
 export const SUPPORTED_IMAGE_MIME = new Set<string>([
@@ -55,6 +56,9 @@ export interface FileReference {
   absPath: string;
   /** Basename (e.g. "01_chess_pieces.csv"). */
   displayName: string;
+  /** Explicit browser attachment, uploaded only when the user sends with a supported DeepSeek model. */
+  deepseekFile?: File;
+  deepseekPurpose?: DeepSeekFilePurpose;
 }
 
 /** Result of splitting dropped / pasted files into image vs reference. */
@@ -105,6 +109,7 @@ export async function readFileAsImageContent(
  */
 export async function splitFilesForAttachment(
   items: FileInput[],
+  options: { deepseek?: boolean } = {},
 ): Promise<AttachmentSplit> {
   const images: ImageContent[] = [];
   const references: FileReference[] = [];
@@ -148,6 +153,9 @@ export async function splitFilesForAttachment(
     references.push({
       absPath: refPath,
       displayName,
+      ...(options.deepseek && /\.(pdf|docx?|pptx?|xlsx?|epub|mobi)$/i.test(file.name)
+        ? { deepseekFile: file, deepseekPurpose: /\.(xlsx?|epub|mobi)$/i.test(file.name) ? "user_data" as const : "rich_layout_recognition" as const }
+        : {}),
     });
   }
   if (imageSkipped > 0) {

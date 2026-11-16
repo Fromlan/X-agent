@@ -49,6 +49,8 @@ export interface ModelInfo {
   provider: string;
   id: string;
   name: string;
+  /** Main-process verified support for the official DeepSeek chatbot tools. */
+  deepseekChatbot?: boolean;
   /** Model context window in tokens (from Pi Model). */
   contextWindow?: number;
   /**
@@ -67,7 +69,7 @@ export interface ModelInfo {
   input?: ("text" | "image")[];
 }
 
-/** Per-turn / aggregate token counts (aligned with Pi Usage). */
+/** Pi Usage: input/cacheRead/cacheWrite are disjoint buckets; all three form complete input. */
 export interface TokenUsage {
   input: number;
   output: number;
@@ -100,7 +102,7 @@ export type ContextSegmentId =
   | "toolHistory"
   /** Assistant thinking blocks (reasoning effort ≠ off). */
   | "thinking"
-  /** API total minus text estimates: tool schemas + request framing. */
+  /** Unattributed difference between the context anchor and heuristic estimates. */
   | "overhead";
 
 export interface ContextSegment {
@@ -119,6 +121,8 @@ export interface ContextBreakdown {
   /** Heuristic segment split; tokens are estimates. */
   segments: ContextSegment[];
   estimated: true;
+  /** Current context estimate uses a valid request anchor or falls back to text estimates. */
+  source?: "usage" | "estimate" | "unknown";
 }
 
 /** Live session usage pushed to the renderer. */
@@ -385,6 +389,8 @@ export interface ImageContent {
 export interface PromptPayload {
   text: string;
   images?: ImageContent[];
+  /** Reject a delayed attachment submission after the owning chat has changed. */
+  expectedSessionId?: string;
 }
 
 /** Serializable chat history item shared by main → renderer. */
@@ -550,6 +556,9 @@ export type UiAgentEvent =
   | {
       type: "assistant_end";
       messageId: string;
+      /** Authoritative final projection for providers that add citations or replace a refused answer. */
+      text?: string;
+      thinking?: string;
       isError?: boolean;
       aborted?: boolean;
       errorMessage?: string;
@@ -826,6 +835,10 @@ export interface ProviderModelEntry {
   name?: string;
   /** Context window in tokens; written to Pi models.json as contextWindow. */
   contextWindow?: number;
+  /** Missing on legacy entries: preserve their value as user configuration. */
+  contextWindowSource?: "explicit" | "api" | "catalog";
+  /** Independent input ceiling; must not be renamed to contextWindow. */
+  maxInputTokens?: number;
   /**
    * 模型接受的输入类型。透传到 Pi `models.json` 的 `input` 字段。
    *
@@ -929,6 +942,8 @@ export interface FetchedProviderModel {
   ownedBy?: string;
   /** From API context_length / context_window / max_model_len when present. */
   contextWindow?: number;
+  contextWindowSource?: "api" | "catalog";
+  maxInputTokens?: number;
   /**
    * 单条响应输出 token 上限（DeepSeek `/v1/models` 返回的 `max_output_tokens`）。
    * fetch 透传到 ProviderModelEntry.maxOutputTokens → Pi models.json maxTokens。

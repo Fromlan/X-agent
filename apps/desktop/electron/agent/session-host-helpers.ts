@@ -4,6 +4,7 @@
  * so they can be unit-tested in isolation (see scripts/test-session-host-helpers.ts).
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { supportsDeepSeekChatbot } from "../../shared/deepseek-capabilities";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type {
   ModelInfo,
@@ -38,6 +39,7 @@ export function modelFromSession(session: AgentSession): ModelInfo | null {
     provider: model.provider,
     id: model.id,
     name: (model as { name?: string }).name ?? model.id,
+    deepseekChatbot: supportsDeepSeekChatbot(model),
     contextWindow:
       typeof model.contextWindow === "number" && model.contextWindow > 0
         ? model.contextWindow
@@ -107,12 +109,13 @@ export function emptyUsageSnapshot(): SessionUsageSnapshot {
   };
 }
 
-/** Sum Pi chars/4 estimates across current in-memory conversation messages. */
+/** Count conversation content only; structured system sections are accounted separately. */
 export function estimateMessageTokens(session: AgentSession): number {
   try {
     const messages = session.messages ?? [];
     let total = 0;
     for (const message of messages) {
+      if (message.role === "system") continue;
       try {
         total += estimateTokens(message);
       } catch {
