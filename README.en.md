@@ -84,7 +84,15 @@ Select the design session type in the sidebar before creating a session. The age
 
 Use `@` to reference project files and `/` to select skills, prompts, or commands. Paste or drag in images and files; image input requires a model that supports it.
 
-Web search and page fetching use DeepSeek's official API and can be called by different chat models. Add and enable an official DeepSeek provider profile, then select it under Settings → Tools → DeepSeek Web and enable search or fetching. Both are off by default. Queries and target URLs are sent to DeepSeek. Requests are billed separately and are not currently included in the app's model token cost totals.
+Web search and link reading use DeepSeek's official API and can be called by different chat models. Add and enable an official DeepSeek provider profile, then select it under Settings → Tools → DeepSeek Web and enable Web search or Link reading. Both are off by default. Queries and target URLs are sent to DeepSeek. Requests are billed separately and are not currently included in the app's model token cost totals.
+
+### DeepSeek application features
+
+The official `deepseek-flash` model enables native conversation titles. Date and language reminders and additional content safety checks are off by default and can be enabled separately under Settings → Tools → DeepSeek Web. The Web search and Link reading toggles use native server tools, with deep search when thinking is enabled. Source citations are clickable, and native tool results and link signatures persist with the conversation.
+
+PDF, Word, PowerPoint, spreadsheet and ebook attachments upload to the current DeepSeek account when you send. Documents use rich layout parsing; spreadsheets and ebooks use text conversion. Only file references enter the saved conversation. Microphone controls transcribe up to 120 seconds into an editable draft, and the latest completed answer can be read aloud with Stella or Tide and stopped at any time.
+
+These extensions require the exact `deepseek-flash` model ID on the official `api.deepseek.com` Chat Completions or Anthropic Messages endpoint. Other models and proxies receive no application extensions and show no voice controls. Documents must be uploaded again after changing provider or account. Search, parsing and speech have separate provider charges, excluded from the app's estimated token costs. See the [official guide](https://api-docs.deepseek.com/guides/build_a_chatbot/).
 
 ### Choose models and extensions
 

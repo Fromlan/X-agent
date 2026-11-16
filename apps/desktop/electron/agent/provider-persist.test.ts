@@ -163,6 +163,18 @@ describe("validateUpsertAsync", () => {
 });
 
 describe("upsertProviderProfile", () => {
+  it("preserves independent capacity limits and their provenance across save/reopen", async () => {
+    const result = await upsertProviderProfile(makeInput({ models: [{
+      id: "gpt-4.1", contextWindow: 800_000, contextWindowSource: "api", maxInputTokens: 700_000,
+      maxOutputTokens: 32_768, thinkingLevelMap: { off: "off", high: "high" },
+    }] }), paths);
+    expect(result.ok).toBe(true);
+    const restored = await getProviderProfile(result.profile!.id, paths);
+    expect(restored?.models[0]).toMatchObject({
+      contextWindow: 800_000, contextWindowSource: "api", maxInputTokens: 700_000, maxOutputTokens: 32_768,
+      thinkingLevelMap: { off: "off", high: "high" },
+    });
+  });
   it("新建档案 + 写入文件", async () => {
     // CI Windows runner 上 setSkipDnsForTests 仍会走少量异步路径
     // (atomic-write + JSON 序列化), 5s 默认 timeout 偶发不够。

@@ -24,7 +24,6 @@ import type {
   NoticeReplaceKey,
   PromptPayload,
   PromptResult,
-  TurnUsage,
   UiAgentEvent,
 } from "../../shared/ipc";
 // C-108: host family 显式 re-export 单一源,3 个子编排器经 host 类型间接拿到,
@@ -96,7 +95,7 @@ export interface CwdLock {
   setBundle(bundle: SessionBundle | null): void;
   setResourceLoader(loader: DefaultResourceLoader | null): void;
   setBaseAppendPrompt(base: string[]): void;
-  setLastTurnUsage(u: TurnUsage | undefined): void;
+  resetUserTurnUsage(): void;
   clearCompactionState(): void;
   setAutoTitleInFlight(v: boolean): void;
   setLastHistoryFingerprint(fp: string | null): void;

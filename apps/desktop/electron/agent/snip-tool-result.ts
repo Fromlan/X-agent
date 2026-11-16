@@ -1,3 +1,5 @@
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+
 /**
  * Stale tool-result snip (in-place content trim).
  *
@@ -52,7 +54,7 @@ const DEFAULT_MARKER =
 
 // --- duck-typed content / message shapes ---------------------------------
 
-type ContentBlock = { type?: string; text?: string; [k: string]: unknown };
+type ContentBlock = { type?: string; text?: string };
 
 type MaybeToolResult = {
   role?: string;
@@ -223,4 +225,33 @@ export function snipToolResultsInPlace(
     }
   }
   return { snippedCount, charsPruned };
+}
+
+/** Persist replacements through Pi so reload, request projection and usage invalidation agree. */
+export function snipSessionToolResults(
+  session: AgentSession,
+  opts: SnipOptions,
+  now: number = Date.now(),
+): SnipReport {
+  const report: SnipReport = { snippedCount: 0, charsPruned: 0 };
+  try {
+    for (const entry of session.sessionManager.buildSessionProjection().entries) {
+      for (const message of entry.messages) {
+        if (message.role !== "toolResult") continue;
+        // Never mutate the canonical entry: an append-only edit owns the replacement.
+        const replacement = structuredClone(message);
+        const before = measureToolResultChars(replacement);
+        if (!snipOne(replacement, opts, now)) continue;
+        const freed = before - measureToolResultChars(replacement);
+        if (freed <= 0) continue;
+        session.sessionManager.appendContextEdit(entry.sourceEntry.id, { content: replacement.content });
+        report.snippedCount += 1;
+        report.charsPruned += freed;
+      }
+    }
+  } finally {
+    // Refresh even if a later append failed: already-persisted edits remain authoritative.
+    if (report.snippedCount > 0) session.refreshContext();
+  }
+  return report;
 }

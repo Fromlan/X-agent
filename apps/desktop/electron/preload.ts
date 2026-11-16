@@ -92,6 +92,9 @@ const exposed: XAgentApi = {
   turn: {
     prompt: api.prompt,
     abort: api.abort,
+    deepseekTranscribe: api.deepseekTranscribe,
+    deepseekSpeak: api.deepseekSpeak,
+    deepseekCancelVoice: api.deepseekCancelVoice,
     previewRetract: api.previewRetract,
     retract: api.retractToUserMessage,
     editAndResend: api.editAndResend,
@@ -168,6 +171,7 @@ const exposed: XAgentApi = {
     onStatus: onUpdateStatus,
   },
   files: {
+    deepseekUpload: api.deepseekUploadFile,
     list: api.listProjectDir,
     read: api.readProjectFile,
     reveal: api.revealInFolder,

@@ -15,7 +15,7 @@
  *
  * 持久化 (prefs 写) 由 setPrefs 注入, hook 不直接持 prefs。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ClientPrefs } from "@shared/ipc";
 import {
   RIGHT_PANEL_WIDTH_DEFAULT,
@@ -24,10 +24,9 @@ import {
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
-  fitColumnWidths,
   useColumnResize,
 } from "./useColumnResize";
-import { useNarrowWindow } from "./useNarrowWindow";
+import { computeWorkspaceLayout, type WorkspaceLayout } from "../lib/workspace-layout";
 
 export type UseAppLayoutOpts = {
   prefs: ClientPrefs | null;
@@ -42,6 +41,11 @@ export type UseAppLayoutOpts = {
 export type UseAppLayoutResult = {
   /** CSS 变量, 给 main-row 用 */
   layoutWidths: { sidebar: number; right: number };
+  workspaceRef: RefObject<HTMLDivElement | null>;
+  rightPanelMode: WorkspaceLayout["rightPanelMode"];
+  sidebarDrawerOpen: boolean;
+  sidebarDrawerWidth: number;
+  closeSidebarDrawer: () => void;
   narrowWindow: boolean;
   sidebarCollapsed: boolean;
   /** sidebar resize 状态 */
@@ -65,8 +69,8 @@ export type UseAppLayoutResult = {
 export function useAppLayout(opts: UseAppLayoutOpts): UseAppLayoutResult {
   const { prefs, setPrefs } = opts;
 
-  const narrowWindow = useNarrowWindow(960);
-  const sidebarCollapsed = !narrowWindow && (prefs?.sidebarCollapsed ?? false);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
 
   // Sidebar 宽度持久化
   const commitSidebarWidth = useCallback(
@@ -89,7 +93,7 @@ export function useAppLayout(opts: UseAppLayoutOpts): UseAppLayoutResult {
   const {
     width: sidebarWidth,
     dragging: sidebarResizing,
-    onResizePointerDown: onSidebarResizePointerDown,
+    onResizePointerDown: beginSidebarResize,
     onResizeDoubleClick: onSidebarResizeDoubleClick,
   } = useColumnResize({
     initialWidth: prefs?.sidebarWidth ?? SIDEBAR_WIDTH_DEFAULT,
@@ -115,7 +119,7 @@ export function useAppLayout(opts: UseAppLayoutOpts): UseAppLayoutResult {
   const {
     width: rightPanelWidth,
     dragging: rightPanelResizing,
-    onResizePointerDown: onRightPanelResizePointerDown,
+    onResizePointerDown: beginRightPanelResize,
     onResizeDoubleClick: onRightPanelResizeDoubleClick,
   } = useColumnResize({
     initialWidth: prefs?.rightPanelWidth ?? RIGHT_PANEL_WIDTH_DEFAULT,
@@ -133,37 +137,32 @@ export function useAppLayout(opts: UseAppLayoutOpts): UseAppLayoutResult {
     () => (typeof window !== "undefined" ? window.innerWidth : 1280),
   );
   useEffect(() => {
-    const onResize = () => setViewportWidth(window.innerWidth);
+    const onResize = () => setViewportWidth(workspaceRef.current?.clientWidth ?? window.innerWidth);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
+    if (workspaceRef.current) observer?.observe(workspaceRef.current);
+    onResize();
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", onResize); };
   }, []);
 
-  const layoutWidths = useMemo(() => {
-    if (sidebarCollapsed) {
-      return fitColumnWidths({
-        viewportWidth,
-        sidebarWidth: 56,
-        rightPanelWidth,
-        rightPanelOpen: prefs?.rightPanelOpen ?? false,
-        sidebarFloor: 56,
-      });
-    }
-    return fitColumnWidths({
-      viewportWidth,
-      sidebarWidth,
-      rightPanelWidth,
-      rightPanelOpen: prefs?.rightPanelOpen ?? false,
-    });
-  }, [
-    viewportWidth,
-    sidebarWidth,
-    rightPanelWidth,
-    prefs?.rightPanelOpen,
-    sidebarCollapsed,
-  ]);
+  const geometry = useMemo(() => computeWorkspaceLayout({ width: viewportWidth, sidebarWidth, rightPanelWidth,
+    rightPanelOpen: prefs?.rightPanelOpen ?? false, sidebarCollapsed: prefs?.sidebarCollapsed ?? false }),
+  [viewportWidth, sidebarWidth, rightPanelWidth, prefs?.rightPanelOpen, prefs?.sidebarCollapsed]);
+  const sidebarCollapsed = geometry.sidebarCollapsed;
+  /** Feed the displayed edge into resizing without overwriting the user's saved width on a viewport change. */
+  const onSidebarResizePointerDown = useCallback((event: React.PointerEvent) => {
+    beginSidebarResize(event, geometry.sidebar);
+  }, [beginSidebarResize, geometry.sidebar]);
+  /** A clamped dock must respond to the first pixel dragged rather than its hidden preferred width. */
+  const onRightPanelResizePointerDown = useCallback((event: React.PointerEvent) => {
+    beginRightPanelResize(event, geometry.right);
+  }, [beginRightPanelResize, geometry.right]);
+  useEffect(() => { if (!geometry.sidebarAutoCollapsed) setSidebarDrawerOpen(false); }, [geometry.sidebarAutoCollapsed]);
+  const closeSidebarDrawer = useCallback(() => setSidebarDrawerOpen(false), []);
 
   const toggleRightPanel = useCallback(async () => {
     if (!prefs) return;
+    setSidebarDrawerOpen(false);
     const rightPanelOpen = !prefs.rightPanelOpen;
     setPrefs({ ...prefs, rightPanelOpen });
     const next = await window.xAgent.prefs.set({ rightPanelOpen });
@@ -171,19 +170,28 @@ export function useAppLayout(opts: UseAppLayoutOpts): UseAppLayoutResult {
   }, [prefs, setPrefs]);
 
   const ensureRightPanelOpen = useCallback(async () => {
+    setSidebarDrawerOpen(false);
     if (prefs?.rightPanelOpen) return;
     const next = await window.xAgent.prefs.set({ rightPanelOpen: true });
     setPrefs(next);
   }, [prefs, setPrefs]);
 
   const onToggleSidebarCollapsed = useCallback(
-    () => commitSidebarCollapsed(!sidebarCollapsed),
-    [commitSidebarCollapsed, sidebarCollapsed],
+    () => {
+      if (geometry.sidebarAutoCollapsed) { setSidebarDrawerOpen((open) => !open); return; }
+      return commitSidebarCollapsed(!prefs?.sidebarCollapsed);
+    },
+    [commitSidebarCollapsed, geometry.sidebarAutoCollapsed, prefs?.sidebarCollapsed],
   );
 
   return {
-    layoutWidths,
-    narrowWindow,
+    layoutWidths: { sidebar: geometry.sidebar, right: geometry.right },
+    workspaceRef,
+    rightPanelMode: geometry.rightPanelMode,
+    sidebarDrawerOpen,
+    sidebarDrawerWidth: geometry.sidebarDrawerWidth,
+    closeSidebarDrawer,
+    narrowWindow: geometry.sidebarAutoCollapsed,
     sidebarCollapsed,
     sidebarWidth,
     sidebarResizing,

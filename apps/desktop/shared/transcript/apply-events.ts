@@ -242,6 +242,8 @@ export function applyAgentEvent(
       return upsertAssistant(items, event.messageId, {
         done: true,
         isError: event.isError,
+        ...(event.text !== undefined ? { text: event.text } : {}),
+        ...(event.thinking !== undefined ? { thinking: event.thinking } : {}),
         ...(event.errorMessage
           ? {
               text: (() => {

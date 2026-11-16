@@ -127,7 +127,6 @@ describe("bridgeSessionEvents → notifyTruncation hook", () => {
         currentUserEntryId: () => undefined,
       },
       usage: {
-        setLastTurnUsage: () => {},
         setUserTurnTokenTotal: () => {},
         isCompactionRecording: () => false,
         setCompactionRecording: () => {},

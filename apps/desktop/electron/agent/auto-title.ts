@@ -8,6 +8,7 @@
  */
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { ensureSessionTitle } from "./session-title";
+import { getDeepSeekResponseTitle } from "./deepseek-chatbot";
 import { extractMessageText } from "../../shared/transcript";
 import type { SessionBundle } from "./session-lifecycle";
 import type { UiAgentEvent } from "../../shared/ipc";
@@ -43,13 +44,15 @@ export async function maybeAutoTitleSession(deps: AutoTitleDeps): Promise<void> 
   const messages = bundle.session.messages as readonly unknown[];
   let userText = "";
   let assistantText = "";
+  let nativeTitle: string | null = null;
   for (const msg of messages) {
     const role = (msg as { role?: string }).role;
     if (!userText && role === "user") {
       userText = extractMessageText(msg);
     } else if (userText && !assistantText && role === "assistant") {
       assistantText = extractMessageText(msg);
-      break;
+      nativeTitle = getDeepSeekResponseTitle(msg);
+      if (assistantText || nativeTitle) break;
     }
   }
 
@@ -60,6 +63,7 @@ export async function maybeAutoTitleSession(deps: AutoTitleDeps): Promise<void> 
       userText,
       assistantText,
       complete: async (prompt) => {
+        if (nativeTitle) return nativeTitle;
         const model = bundle.session.model;
         if (!model) return null;
         const runtime = await deps.ensureRuntime();

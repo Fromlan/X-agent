@@ -25,6 +25,7 @@ import { FilesTab } from "./right-panel/FilesTab";
 import { GodotTab } from "./right-panel/GodotTab";
 import { ContextTab } from "./right-panel/ContextTab";
 import { PlanTab } from "./right-panel/PlanTab";
+import { useWorkspaceDrawer } from "../hooks/useWorkspaceDrawer";
 
 const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
   { id: "context", label: "上下文", icon: BarChart3 },
@@ -35,6 +36,8 @@ const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
 ];
 
 interface Props {
+  modal?: boolean;
+  inert?: boolean;
   isGodotProject: boolean;
   rpcStatus: GodotRpcStatusDto | null;
   cwd: string | null;
@@ -57,6 +60,8 @@ interface Props {
 }
 
 export function RightPanel({
+  modal = false,
+  inert = false,
   isGodotProject,
   rpcStatus,
   cwd,
@@ -77,6 +82,7 @@ export function RightPanel({
   onResizeDoubleClick,
   resizing,
 }: Props) {
+  const panelRef = useWorkspaceDrawer(modal, onClose);
   const version = useSyncExternalStore(
     subscribeRightPanelStore,
     getRightPanelStoreVersion,
@@ -93,7 +99,8 @@ export function RightPanel({
   };
 
   return (
-    <aside className="right-panel" aria-label="工具面板">
+    <aside ref={panelRef} className="right-panel" aria-label="工具面板" role={modal ? "dialog" : undefined}
+      aria-modal={modal || undefined} tabIndex={-1} inert={inert}>
       {onResizePointerDown && (
         <div
           className={`column-resize-handle column-resize-handle--left${resizing ? " is-dragging" : ""}`}
@@ -106,6 +113,7 @@ export function RightPanel({
         />
       )}
       <nav className="rp-nav" aria-label="面板页签">
+        <div className="rp-nav-tabs">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -126,13 +134,14 @@ export function RightPanel({
             </button>
           );
         })}
-        <div className="rp-nav-spacer" aria-hidden />
+        </div>
         <button
           type="button"
           className="btn btn-ghost btn-sm btn-icon rp-nav-close"
           onClick={onClose}
           title="收起工具面板"
           aria-label="收起工具面板"
+          data-drawer-close
         >
           <PanelRightClose size={16} aria-hidden />
         </button>

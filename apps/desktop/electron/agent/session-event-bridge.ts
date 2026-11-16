@@ -12,6 +12,7 @@ import type { AgentStatus, TurnUsage, UiAgentEvent } from "../../shared/ipc";
 import {
   TRANSCRIPT_CAPS,
   extractMessageText,
+  thinkingFromContent,
   truncateTranscript,
 } from "../../shared/transcript";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
@@ -33,7 +34,6 @@ export interface SessionEventTurnFacet {
 
 /** Usage / compaction recording for the live session. */
 export interface SessionEventUsageFacet {
-  setLastTurnUsage(usage: TurnUsage | undefined): void;
   /** All paid assistant requests in one user run, including tool iterations and retries. */
   setUserTurnTokenTotal(tokens: number, byUser: ReadonlyMap<string | null, number>): void;
   isCompactionRecording(): boolean;
@@ -369,7 +369,6 @@ export function bridgeSessionEvents(
             recordedUsageMessages.add(message);
             if (requestId) recordedUsageIds.add(requestId);
             accumulateUserTurnUsage(paidUsage);
-            if (turnUsage) deps.usage.setLastTurnUsage(turnUsage);
             // Selection can change while a request is in flight; the returned
             // message identifies the model that actually produced its charge.
             const requestModel = event.message as { provider?: string; model?: string };
@@ -394,6 +393,10 @@ export function bridgeSessionEvents(
             isError,
             ...(isAborted ? { aborted: true } : {}),
             errorMessage: msg.errorMessage,
+            ...((event.message as { deepseekChatbot?: unknown }).deepseekChatbot ? {
+              text: extractMessageText(event.message),
+              thinking: thinkingFromContent((event.message as { content?: Array<{ type?: string; thinking?: string }> }).content),
+            } : {}),
             ...(turnUsage ? { usage: turnUsage } : {}),
           });
           if (isError && msg.errorMessage) {
@@ -538,9 +541,6 @@ export function bridgeSessionEvents(
           // existing atomic aggregate delta path, rather than recording it twice.
           if (!event.aborted) deps.usage.recordCompactionDelta();
           else deps.usage.clearCompactionBaseline();
-          // Successful compaction invalidates the last assistant's pre-summary
-          // pressure snapshot; the next usage update must use current context.
-          if (!event.aborted && result) deps.usage.setLastTurnUsage(undefined);
         }
         deps.usage.setCompactionRecording(false);
         deps.emit({

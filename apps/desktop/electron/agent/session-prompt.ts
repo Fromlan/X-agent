@@ -60,6 +60,9 @@ export async function runSessionPrompt(
     dbgLog("session", "prompt rejected: no bundle");
     return { ok: false, error: "尚未打开项目" };
   }
+  if (payload?.expectedSessionId !== undefined && payload.expectedSessionId !== bundle.session.sessionId) {
+    return { ok: false, error: "会话已切换，已取消延迟发送的消息。" };
+  }
   const text = (payload?.text ?? "").trim();
   const images = payload?.images;
   if (!text && (!images || images.length === 0)) {

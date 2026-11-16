@@ -61,7 +61,7 @@ import {
   UserBubble,
 } from "./chat/bubbles";
 import { ToolBatch } from "./chat/ToolBatch";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, ArrowUpRight } from "lucide-react";
 import { isDisplayableTranscriptItem } from "../lib/chat-transcript-items";
 
 function prefersReducedMotion(): boolean {
@@ -552,14 +552,13 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                   <span
                     className="empty-state-session-type"
                     data-session-type={props.sessionType ?? "code"}
-                    title={
-                      props.sessionType === "design"
-                        ? "策划会话：写只允许落到 game-design/，会话内可切 4 mode"
-                        : "代码会话（默认）：可读写项目任意路径"
-                    }
                   >
-                    {SESSION_TYPE_LABELS[props.sessionType ?? "code"]}模式
+                    {SESSION_TYPE_LABELS[props.sessionType ?? "code"]}会话
                   </span>
+                  <h2 className="empty-state-title">
+                    {props.sessionType === "design" ? "把想法整理成可执行的方案" : "从项目中的一个任务开始"}
+                  </h2>
+                  <p className="empty-state-hint">描述想完成的内容，或选择一个起点。</p>
                   {props.readinessHints && props.readinessHints.length > 0 && (
                     <div className="empty-ready-hints">
                       {props.readinessHints.map((hint) => (
@@ -583,7 +582,8 @@ export function ChatTranscript(props: ChatTranscriptProps) {
                           className="starter-chip"
                           onClick={() => props.onPickStarter?.(s.prompt)}
                         >
-                          {s.label}
+                          <span>{s.label}</span>
+                          <ArrowUpRight size={14} aria-hidden />
                         </button>
                       ))}
                     </div>

@@ -57,14 +57,14 @@ export function ComposerAttachments({
           key={`file:${f.absPath}:${i}`}
           className="composer-attachment-chip composer-attachment-chip-file"
           role="listitem"
-          title={f.absPath}
+          title={f.deepseekFile ? `${f.displayName} · 发送时上传到 DeepSeek（${f.deepseekPurpose === "user_data" ? "转换为文字" : "图文解析"}）` : f.absPath}
         >
           <FileText
             size={20}
             aria-hidden
             className="composer-attachment-file-icon"
           />
-          <span className="composer-attachment-file-name">{f.displayName}</span>
+          <span className="composer-attachment-file-name">{f.displayName}{f.deepseekFile ? " · DeepSeek" : ""}</span>
           <button
             type="button"
             aria-label={`移除文件附件：${f.displayName}`}

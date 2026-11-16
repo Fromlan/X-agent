@@ -26,6 +26,8 @@
 
 // ----- ipc-channels & session-type re-exports -----
 export type { RendererFailure } from "./diagnostics";
+export type { DeepSeekTranscribeInput, DeepSeekTranscribeResult, DeepSeekSpeakInput, DeepSeekSpeakResult } from "./deepseek-voice";
+export type { DeepSeekDocument, DeepSeekFilePurpose, DeepSeekFileUploadInput, DeepSeekFileUploadResult } from "./deepseek-documents";
 export type { IpcChannelKey } from "./ipc-channels";
 export type { GodotEngineConfig, GodotEngineMutation, GodotEngineMutationResult } from "./godot-engines";
 export {

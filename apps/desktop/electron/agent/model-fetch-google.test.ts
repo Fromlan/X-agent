@@ -37,7 +37,7 @@ describe("Gemini model discovery", () => {
     const result = await fetchProviderModels({ ...input, baseUrl });
     expect(result.ok).toBe(true);
     expect(result.models).toEqual([{
-      id: "gemini-2.5-flash", contextWindow: 1048576, maxOutputTokens: 65536,
+      id: "gemini-2.5-flash", contextWindow: 1_000_000, contextWindowSource: "catalog", maxInputTokens: 1048576, maxOutputTokens: 65536,
     }]);
     expect(publicHttpGet).toHaveBeenCalledTimes(1);
     const [url, headers] = vi.mocked(publicHttpGet).mock.calls[0]!;
@@ -58,7 +58,7 @@ describe("Gemini model discovery", () => {
         supportedGenerationMethods: ["generateContent"] },
     ] }, input.api)).toEqual([
       { id: "custom-chat" },
-      { id: "gemini-2.5-flash", contextWindow: 1048576, maxOutputTokens: 65536 },
+      { id: "gemini-2.5-flash", contextWindow: 1_000_000, contextWindowSource: "catalog", maxInputTokens: 1048576, maxOutputTokens: 65536 },
     ]);
   });
 

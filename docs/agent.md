@@ -1,6 +1,6 @@
 # 开发与验证速查
 
-本页只维护技术栈、验证命令和查阅入口。编码边界见 [AGENTS.md](../AGENTS.md)，协作与发布流程见 [CLAUDE.md](../CLAUDE.md)，模型上下文规则见 [agent-context.md](agent-context.md)。本页不会自动进入模型上下文。
+本页维护技术栈、UI 文案约定、验证命令和查阅入口。编码边界见 [AGENTS.md](../AGENTS.md)，协作与发布流程见 [CLAUDE.md](../CLAUDE.md)，模型上下文规则见 [agent-context.md](agent-context.md)。本页不会自动进入模型上下文。
 
 ## 技术栈
 
@@ -11,6 +11,13 @@
 - @earendil-works/pi-coding-agent ^1.4.0
 - Electron 43、React 19、TypeScript 7；开发环境 Node.js 24+。
 - 当前开发与发布平台为 Windows；真实编辑器集成检查固定 Godot 4.7.2。
+
+## UI 文案
+
+- 界面默认只保留简短的操作标签、必要状态和错误提示，不堆叠解释段落。
+- 不在中文标签后重复内部工具名、API 参数、请求机制或生效时机；这些内容放入开发文档。
+- 默认值由控件状态表达；仅在影响当前操作时提供简短提示，禁用原因可按需通过悬浮提示展示。
+- 新增或修改 UI 时先删减冗余文案，详细设计规范见 [设计系统](design.md)。
 
 ## 验证命令
 

@@ -183,7 +183,7 @@ function normalizeProfile(
     api: (p.api as ProviderApiKind) ?? "openai-completions",
     baseUrl: typeof p.baseUrl === "string" ? p.baseUrl : "",
     apiKey: dec.value,
-    models: Array.isArray(p.models) ? p.models : [],
+    models: Array.isArray(p.models) ? p.models.map(enrichModelEntry) : [],
     notes: typeof p.notes === "string" ? p.notes : undefined,
     updatedAt:
       typeof p.updatedAt === "string"
@@ -524,6 +524,10 @@ export async function upsertProviderProfile(
         id,
         ...(name ? { name } : {}),
         ...(explicit != null ? { contextWindow: explicit } : {}),
+        ...(m.contextWindowSource ? { contextWindowSource: m.contextWindowSource } : {}),
+        ...(normalizePositiveInt(m.maxInputTokens) ? { maxInputTokens: normalizePositiveInt(m.maxInputTokens) } : {}),
+        ...(normalizePositiveInt(m.maxOutputTokens) ? { maxOutputTokens: normalizePositiveInt(m.maxOutputTokens) } : {}),
+        ...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
         ...(inputArr != null ? { input: inputArr } : {}),
       });
     })

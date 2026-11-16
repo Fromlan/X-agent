@@ -1,0 +1,287 @@
+/* Keep voice input immediate while secondary audio choices stay in a contextual panel. */
+.deepseek-voice-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.deepseek-voice-controls:hover,
+.deepseek-voice-controls:focus-within {
+  border-color: var(--border-primary);
+  background: var(--bg-list-hover);
+}
+
+.deepseek-voice-primary,
+.deepseek-voice-menu-trigger,
+.deepseek-voice-close,
+.deepseek-voice-cancel,
+.deepseek-voice-read {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 34px;
+  padding: 0 9px;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.deepseek-voice-primary:hover:not(:disabled),
+.deepseek-voice-menu-trigger:hover:not(:disabled),
+.deepseek-voice-close:hover,
+.deepseek-voice-cancel:hover,
+.deepseek-voice-read:hover:not(:disabled) {
+  background: var(--bg-list-hover);
+  color: var(--text-primary);
+}
+
+.deepseek-voice-primary:focus-visible,
+.deepseek-voice-menu-trigger:focus-visible,
+.deepseek-voice-close:focus-visible,
+.deepseek-voice-cancel:focus-visible,
+.deepseek-voice-read:focus-visible,
+.deepseek-voice-choice:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.deepseek-voice-primary:disabled,
+.deepseek-voice-menu-trigger:disabled,
+.deepseek-voice-read:disabled,
+.deepseek-voice-voices:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.deepseek-voice-menu-trigger {
+  width: 32px;
+  padding: 0;
+}
+
+.deepseek-voice-menu-trigger[aria-expanded="true"] {
+  background: var(--bg-list-selected);
+  color: var(--text-primary);
+}
+
+.deepseek-voice-controls[data-phase="recording"] {
+  border-color: var(--accent-red);
+  background: var(--bg-list-selected);
+  color: var(--accent-red);
+}
+
+.deepseek-voice-controls[data-phase="transcribing"],
+.deepseek-voice-controls[data-phase="synthesizing"],
+.deepseek-voice-controls[data-phase="requesting-microphone"] {
+  color: var(--warning-accent);
+}
+
+.deepseek-voice-controls[data-phase="playing"] {
+  color: var(--accent-green);
+}
+
+.deepseek-voice-controls[data-error="true"] {
+  color: var(--text-error);
+}
+
+.deepseek-voice-panel {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-modal);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.deepseek-voice-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  font-weight: 500;
+}
+
+.deepseek-voice-close {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  color: var(--text-muted);
+}
+
+.deepseek-voice-read {
+  width: 100%;
+  min-height: 42px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.deepseek-voice-read-label,
+.deepseek-voice-read-hint {
+  display: block;
+}
+
+.deepseek-voice-read-label {
+  font-size: 13px;
+}
+
+.deepseek-voice-read-hint {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.deepseek-voice-voices {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.deepseek-voice-voices legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.deepseek-voice-choice-row {
+  display: flex;
+  gap: 8px;
+}
+
+.deepseek-voice-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1 1 0;
+  min-height: 36px;
+  padding: 0 10px;
+  gap: 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.deepseek-voice-choice:has(input:checked) {
+  border-color: var(--focus-ring);
+  background: var(--bg-list-selected);
+  color: var(--text-primary);
+}
+
+.deepseek-voice-choice > svg {
+  opacity: 0;
+}
+
+.deepseek-voice-choice:has(input:checked) > svg {
+  opacity: 1;
+}
+
+.deepseek-voice-voices:disabled .deepseek-voice-choice {
+  cursor: not-allowed;
+}
+
+.deepseek-voice-activity {
+  padding: 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.deepseek-voice-activity-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--warning-accent);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.deepseek-voice-activity[data-phase="recording"] .deepseek-voice-activity-label {
+  color: var(--accent-red);
+}
+
+.deepseek-voice-activity[data-phase="playing"] .deepseek-voice-activity-label {
+  color: var(--accent-green);
+}
+
+.deepseek-voice-activity p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.deepseek-voice-cancel {
+  margin-top: 8px;
+  padding: 0 8px;
+  color: var(--text-secondary);
+}
+
+.deepseek-voice-error {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--text-error);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.deepseek-voice-choice > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.deepseek-voice-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deepseek-voice-controls,
+  .deepseek-voice-primary,
+  .deepseek-voice-menu-trigger,
+  .deepseek-voice-close,
+  .deepseek-voice-cancel,
+  .deepseek-voice-read,
+  .deepseek-voice-choice {
+    transition: none;
+  }
+}

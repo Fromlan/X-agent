@@ -305,6 +305,9 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
     ]);
     expect(Object.keys(exposed.turn).sort()).toEqual([
       "abort",
+      "deepseekCancelVoice",
+      "deepseekSpeak",
+      "deepseekTranscribe",
       "editAndResend",
       "previewRetract",
       "prompt",
@@ -312,6 +315,7 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
       "retract",
     ]);
     expect(Object.keys(exposed.files).sort()).toEqual([
+      "deepseekUpload",
       "list",
       "openExternal",
       "read",

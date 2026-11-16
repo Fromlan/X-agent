@@ -9,6 +9,7 @@ import type {
   RetractResult,
 } from "../../shared/ipc";
 import { extractMessageText } from "../../shared/transcript";
+import { restoreEditedDeepSeekDocuments } from "../../shared/deepseek-documents";
 import { CompositeRestoreSource } from "./restore-source";
 import type { RetractOrchestratorHost } from "./host-interfaces";
 
@@ -203,7 +204,9 @@ export class RetractOrchestrator {
     text: string,
     options?: RetractOptions,
   ): Promise<RetractResult> {
-    const trimmed = text.trim();
+    const resolved = this.resolveUserEntryId(entryId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const trimmed = restoreEditedDeepSeekDocuments(resolved.editorText, text).trim();
     if (!trimmed) return { ok: false, error: "消息不能为空" };
 
     const retract = await this.retract(entryId, options);

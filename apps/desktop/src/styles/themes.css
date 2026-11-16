@@ -609,6 +609,8 @@ body,
   --ctx-skills: var(--accent-purple);
   --ctx-tools: var(--warning-accent);
   --ctx-overhead: var(--text-muted);
+  --ctx-tool-history: var(--warning-accent);
+  --ctx-thinking: var(--accent-purple);
   --ctx-turn-input: var(--ctx-system);
   --ctx-turn-output: var(--ctx-project);
   --ctx-turn-cache: var(--ctx-messages);

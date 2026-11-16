@@ -4,12 +4,59 @@
  */
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 // 仓库 `"type": "module"`：用 import.meta.url 定位 apps/desktop 根目录
 const APPS_DESKTOP = fileURLToPath(new URL("..", import.meta.url));
+
+/** Remove only this helper's temporary home, letting Windows release dictionary handles between retries. */
+async function cleanupFixtureHome(home: string): Promise<void> {
+  const target = resolve(home);
+  if (dirname(target).toLowerCase() !== resolve(tmpdir()).toLowerCase() || !basename(target).startsWith("x-agent-e2e-home-")) {
+    throw new Error("Refusing to remove an unexpected E2E fixture directory");
+  }
+  await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
+/** Keep cleanup failures separate from assertions and never block Electron's process-exit delivery. */
+function reportCleanupFailure(error: unknown): void {
+  console.warn("E2E fixture cleanup failed after Electron exited:", error);
+}
+
+/** Inspect live windows as well as future navigation so an early main-window event cannot be missed. */
+async function waitForRendererWindow(app: ElectronApplication): Promise<Page> {
+  return new Promise<Page>((resolveWindow, reject) => {
+    const nativeProcess = app.process();
+    /** Release every listener and timer before settling this one startup wait. */
+    const cleanup = (): void => {
+      clearInterval(poll);
+      clearTimeout(timeout);
+      app.off("close", onClose);
+    };
+    /** Fail promptly if native startup ends without a renderer instead of waiting the full timeout. */
+    const onClose = (): void => {
+      cleanup();
+      reject(new Error(`Electron exited before its renderer was ready (code=${nativeProcess.exitCode}, signal=${nativeProcess.signalCode})`));
+    };
+    /** Require the actual renderer URL, including windows already present when launch resolves. */
+    const inspect = (): void => {
+      const renderer = app.windows().find((page) => !page.isClosed() && page.url().includes("renderer/index.html"));
+      if (renderer) { cleanup(); resolveWindow(renderer); }
+      else if (nativeProcess.exitCode !== null || nativeProcess.signalCode !== null) onClose();
+    };
+    const poll = setInterval(inspect, 50);
+    const timeout = setTimeout(() => {
+      const windows = app.windows().map((page) => ({ url: page.url(), closed: page.isClosed() }));
+      cleanup();
+      reject(new Error(`Electron renderer window was not ready within 60000ms; observed windows: ${JSON.stringify(windows)}`));
+    }, 60_000);
+    app.once("close", onClose);
+    inspect();
+  });
+}
 
 export async function launchApp(options: { env?: Record<string, string>; args?: string[]; prepare?: (home: string) => void; cleanupOnClose?: boolean } = {}): Promise<{
   app: ElectronApplication;
@@ -31,18 +78,27 @@ export async function launchApp(options: { env?: Record<string, string>; args?: 
       PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
       ...options.env,
     },
-  }).catch((error: unknown) => {
-    rmSync(home, { recursive: true, force: true });
+  }).catch(async (error: unknown) => {
+    await cleanupFixtureHome(home).catch(reportCleanupFailure);
     throw error;
   });
-  if (options.cleanupOnClose !== false) app.on("close", () => rmSync(home, { recursive: true, force: true }));
-  // 启动有 splash 窗口；主窗口 URL 为 file://…/renderer/index.html
-  const main = await app.waitForEvent("window", {
-    predicate: (win) => win.url().includes("renderer/index.html"),
-    timeout: 60_000,
-  });
-  await main.waitForLoadState("domcontentloaded");
-  return { app, main, home };
+  // The application close event can precede native process termination and retained Windows file handles.
+  if (options.cleanupOnClose !== false) {
+    const nativeProcess = app.process();
+    const cleanup = () => { void cleanupFixtureHome(home).catch(reportCleanupFailure); };
+    if (nativeProcess.exitCode !== null || nativeProcess.signalCode !== null) cleanup();
+    else nativeProcess.once("close", cleanup);
+  }
+  try {
+    // 启动有 splash 窗口；主窗口 URL 为 file://…/renderer/index.html
+    const main = await waitForRendererWindow(app);
+    await main.waitForLoadState("domcontentloaded");
+    return { app, main, home };
+  } catch (error) {
+    // A failed bootstrap must not leave a native process behind or replace the original startup error.
+    await app.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 /** Secondary commands are reached through the visible workspace disclosure. */

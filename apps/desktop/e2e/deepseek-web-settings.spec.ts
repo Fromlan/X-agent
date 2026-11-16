@@ -8,6 +8,11 @@ test("web tools require a selected official provider and persist independent set
   const { app, main, home } = await launchApp({ prepare: (home) => {
     const agentDir = join(home, ".pi", "agent");
     mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: {
+      deepseek: { api: "openai-completions", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-offline-fixture",
+        models: [{ id: "deepseek-flash", name: "Flash fixture", reasoning: false, input: ["text"], contextWindow: 100_000, maxTokens: 1000 }] },
+    } }));
+    writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ deepseek: { type: "api_key", key: "sk-offline-fixture" } }));
     writeFileSync(join(agentDir, "x-agent-providers.json"), JSON.stringify({ version: 1, activeId: null, profiles: [
       { id: "official-web", name: "DeepSeek 网络测试", providerId: "deepseek", api: "openai-completions", baseUrl: "https://api.deepseek.com/v1",
         apiKey: "sk-offline-fixture", models: [{ id: "deepseek-flash" }], enabled: true, updatedAt: new Date().toISOString() },
@@ -21,8 +26,15 @@ test("web tools require a selected official provider and persist independent set
     await main.locator('[title="设置（Ctrl+,）"]').click();
     await main.locator(".settings-nav").getByRole("button", { name: "工具", exact: true }).click();
     const section = main.locator(".settings-block").filter({ has: main.getByRole("heading", { name: "DeepSeek 网络", exact: true }) });
-    const search = section.getByRole("checkbox", { name: "网页搜索（web_search）" });
-    const fetch = section.getByRole("checkbox", { name: "网页抓取（web_fetch）" });
+    const search = section.getByRole("checkbox", { name: "网页搜索", exact: true });
+    const fetch = section.getByRole("checkbox", { name: "链接阅读", exact: true });
+    const reminder = section.getByRole("checkbox", { name: "日期与语言信息", exact: true });
+    const safety = section.getByRole("checkbox", { name: "内容安全审核", exact: true });
+    await expect(reminder).not.toBeChecked();
+    await expect(safety).not.toBeChecked();
+    await expect.poll(() => main.evaluate(() => window.xAgent.prefs.get())).toMatchObject({
+      deepseekLatestReminder: false, deepseekSafetyCheck: false,
+    });
     await expect(search).not.toBeChecked();
     await expect(search).toBeDisabled();
     await section.getByRole("button", { name: "DeepSeek 网络供应商" }).click();
@@ -67,5 +79,100 @@ test("web tools require a selected official provider and persist independent set
     expect((await main.evaluate(() => window.xAgent.plan.getMode())).tools).toContain("web_fetch");
     expect((await main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new", "design"), project)).ok).toBe(true);
     expect((await main.evaluate(() => window.xAgent.plan.getMode())).tools).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+
+    // Optional conversation metadata and extra safety review stay off until explicitly enabled.
+    expect(await main.evaluate(() => window.xAgent.session.setModel("deepseek", "deepseek-flash"))).toMatchObject({ ok: true });
+    await main.locator('[title="设置（Ctrl+,）"]').click();
+    await main.locator(".settings-nav").getByRole("button", { name: "工具", exact: true }).click();
+    await expect(reminder).toBeEnabled();
+    await expect(safety).toBeEnabled();
+    await expect(reminder).not.toBeChecked();
+    await expect(safety).not.toBeChecked();
+    await reminder.click();
+    await expect(reminder).toBeChecked();
+    await expect.poll(() => main.evaluate(() => window.xAgent.prefs.get())).toMatchObject({
+      deepseekLatestReminder: true, deepseekSafetyCheck: false,
+    });
+    await safety.click();
+    await expect(safety).toBeChecked();
+    await expect.poll(() => main.evaluate(() => window.xAgent.prefs.get())).toMatchObject({
+      deepseekLatestReminder: true, deepseekSafetyCheck: true,
+    });
+    await main.locator(".settings-nav").getByRole("button", { name: "通用", exact: true }).click();
+    await main.locator(".settings-nav").getByRole("button", { name: "工具", exact: true }).click();
+    await expect(reminder).toBeChecked();
+    await expect(safety).toBeChecked();
+    await reminder.click();
+    await expect(reminder).not.toBeChecked();
+    await expect.poll(() => main.evaluate(() => window.xAgent.prefs.get())).toMatchObject({ deepseekLatestReminder: false });
+    await safety.click();
+    await expect(safety).not.toBeChecked();
+    await expect.poll(() => main.evaluate(() => window.xAgent.prefs.get())).toMatchObject({
+      deepseekLatestReminder: false, deepseekSafetyCheck: false,
+    });
+  } finally { await app.close(); }
+});
+
+test("native options support Pi models without GUI profiles and remain disabled for other models", async () => {
+  const { app, main, home } = await launchApp({ prepare: (home) => {
+    const agentDir = join(home, ".pi", "agent");
+    mkdirSync(agentDir, { recursive: true });
+    const model = { id: "deepseek-flash", name: "Pi Flash fixture", reasoning: false,
+      input: ["text"], contextWindow: 100_000, maxTokens: 1000 };
+    writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: {
+      "pi-direct": { api: "openai-completions", baseUrl: "https://api.deepseek.com/v1", apiKey: "offline-invalid-key",
+        models: [model, { ...model, id: "other-model", name: "Other model fixture" }] },
+      "pi-proxy": { api: "openai-completions", baseUrl: "https://proxy.example/v1", apiKey: "offline-invalid-key", models: [model] },
+    } }));
+    writeFileSync(join(agentDir, "auth.json"), JSON.stringify({
+      "pi-direct": { type: "api_key", key: "offline-invalid-key" },
+      "pi-proxy": { type: "api_key", key: "offline-invalid-key" },
+    }));
+    // An existing empty catalog must not import these Pi credentials as GUI profiles.
+    writeFileSync(join(agentDir, "x-agent-providers.json"), JSON.stringify({ version: 1, activeId: null, profiles: [] }));
+    writeFileSync(join(agentDir, "x-agent.json"), JSON.stringify({ provider: "pi-direct", model: "deepseek-flash",
+      rightPanelOpen: false, godotAutoConnect: false }));
+    mkdirSync(join(home, "pi-direct-project"));
+  } });
+  try {
+    expect(await main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new"), join(home, "pi-direct-project")))
+      .toMatchObject({ ok: true });
+    expect(await main.evaluate(() => window.xAgent.session.setModel("pi-direct", "deepseek-flash")))
+      .toMatchObject({ ok: true });
+    expect(await main.evaluate(() => window.xAgent.provider.listProfiles())).toEqual([]);
+    expect(await main.evaluate(async () => (await window.xAgent.session.listModels())
+      .find((model) => model.provider === "pi-direct" && model.id === "deepseek-flash")))
+      .toMatchObject({ deepseekChatbot: true });
+    await main.keyboard.press("Control+,");
+    await main.locator(".settings-nav").getByRole("button", { name: "工具", exact: true }).click();
+    const reminder = main.getByRole("checkbox", { name: "日期与语言信息", exact: true });
+    const safety = main.getByRole("checkbox", { name: "内容安全审核", exact: true });
+    await expect(reminder).toBeEnabled();
+    await expect(safety).toBeEnabled();
+    await expect(reminder).not.toBeChecked();
+    await expect(safety).not.toBeChecked();
+    await reminder.click();
+    await expect(reminder).toBeChecked();
+    await safety.click();
+    await expect(safety).toBeChecked();
+    await expect.poll(() => main.evaluate(() => window.xAgent.prefs.get())).toMatchObject({
+      deepseekLatestReminder: true, deepseekSafetyCheck: true,
+    });
+
+    for (const [provider, id] of [["pi-direct", "other-model"], ["pi-proxy", "deepseek-flash"]]) {
+      expect(await main.evaluate(({ provider, id }) => window.xAgent.session.setModel(provider, id), { provider, id }))
+        .toMatchObject({ ok: true });
+      await expect(reminder).toBeDisabled();
+      await expect(safety).toBeDisabled();
+    }
+    expect(await main.evaluate(() => window.xAgent.session.setModel("pi-direct", "deepseek-flash")))
+      .toMatchObject({ ok: true });
+    await expect(reminder).toBeEnabled();
+    await expect(safety).toBeEnabled();
+    await expect(reminder).toBeChecked();
+    await expect(safety).toBeChecked();
+    expect(JSON.parse(readFileSync(join(home, ".pi", "agent", "x-agent.json"), "utf8")))
+      .toMatchObject({ deepseekLatestReminder: true, deepseekSafetyCheck: true });
+    expect(await main.evaluate(() => window.xAgent.provider.listProfiles())).toEqual([]);
   } finally { await app.close(); }
 });

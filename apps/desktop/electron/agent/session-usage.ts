@@ -4,26 +4,24 @@
  * so they stay easy to reason about / test independently.
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { SessionUsageSnapshot, TurnUsage } from "../../shared/ipc";
-import {
-  buildContextBreakdown,
-  promptTokensFromTurnUsage,
-} from "./context-breakdown";
+import type { SessionUsageSnapshot } from "../../shared/ipc";
+import { buildContextBreakdown } from "./context-breakdown";
 import { modelUsageKey, recordTurnUsage } from "./usage-store";
 import {
   estimateMessageTokens,
   estimateThinkingTokens,
   estimateToolHistoryTokens,
-  estimateTrailingAfterLastAssistant,
 } from "./session-host-helpers";
+import { readSessionContext } from "./session-context";
 
+/** Read capacity from Pi's active context and request usage from its current branch. */
 export function buildUsageSnapshot(
   session: AgentSession,
-  lastTurnUsage: TurnUsage | undefined,
 ): SessionUsageSnapshot | null {
   try {
     const stats = session.getSessionStats();
-    const ctx = session.getContextUsage();
+    const ctx = readSessionContext(session);
+    const lastTurnUsage = ctx.lastTurn;
     const contextWindow =
       ctx?.contextWindow ??
       (typeof session.model?.contextWindow === "number"
@@ -34,13 +32,10 @@ export function buildUsageSnapshot(
         ? buildContextBreakdown({
             systemPrompt: session.systemPrompt ?? "",
             contextWindow,
-            // Pi's getContextUsage().tokens is often usage.totalTokens
-            // (includes output). Use prompt-only input+cacheRead, plus any
-            // trailing tool/user messages after the last assistant usage.
-            contextTokens: lastTurnUsage
-              ? promptTokensFromTurnUsage(lastTurnUsage.tokens) +
-                estimateTrailingAfterLastAssistant(session)
-              : null,
+            // Same post-response estimate used by main-process maintenance.
+            contextTokens: ctx.tokens,
+            source: ctx.source,
+            toolSchemaTokens: ctx.toolSchemaTokens,
             messageTokens: estimateMessageTokens(session),
             // Split toolCall args + toolResult bodies and assistant thinking
             // blocks out of the message total so the breakdown UI shows where

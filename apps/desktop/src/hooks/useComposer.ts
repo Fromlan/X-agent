@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSessionMode, AgentStatus, GoalInfo, ImageContent, ModelInfo } from "@shared/ipc";
 import type { FileReference } from "../lib/file-attachment";
 import { splitFilesForAttachment } from "../lib/file-attachment";
+import { prepareDeepSeekAttachments } from "../lib/deepseek-file-attachments";
 import { findCurrentModel, formatVisionModelExamples, modelSupportsImage } from "../lib/model-capability";
 import { expandAtPathsInPrompt } from "../lib/expandAtPaths";
 import { dbgLog, dbgTimer } from "@shared/debug-log";
@@ -67,6 +68,8 @@ export type ComposerApiStatus = {
 export type ComposerDeps = {
   /** 当前 cwd, send 闸门 */
   cwd: string | null;
+  sessionId?: string | null;
+  isCurrentScope?: () => boolean;
   /** 完整模型列表 + 当前 model key, 图片闸门 */
   models: ModelInfo[];
   currentModelKey: string;
@@ -115,6 +118,7 @@ export type ComposerApi = {
  * React state, 单元测试目标。
  */
 export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
+  const isCurrentScope = deps.isCurrentScope ?? (() => true);
   const {
     cwd,
     models,
@@ -142,6 +146,7 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
 
   /** Translate upstream failures while preserving already localized IPC messages. */
   const showRequestError = (error: unknown): void => {
+    if (!isCurrentScope()) return;
     const raw = error instanceof Error ? error.message : String(error);
     const inspected = inspectError(raw);
     setError(inspected.patternId ? inspected.message : raw || "发送失败");
@@ -194,6 +199,7 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     const currentFileRefs = fileRefs;
     /** Restore a failed submission without overwriting a draft entered during the request. */
     const restoreDraft = (): void => {
+      if (!isCurrentScope()) return;
       setInput((draft) => draft || input);
       setAttachments((draft) => draft.length > 0 ? draft : currentAttachments);
       setFileRefs((draft) => draft.length > 0 ? draft : currentFileRefs);
@@ -229,12 +235,16 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
       setItems((prev) => appendPendingUser(prev, text, id, currentAttachments));
 
       const doneExpand = dbgTimer("chat", "expandAtPathsInPrompt");
-      const expanded = await expandAtPathsInPrompt(text, currentFileRefs);
+      const prepared = await prepareDeepSeekAttachments(currentFileRefs, findCurrentModel(models, currentModelKey), { sessionId: deps.sessionId, isCurrent: isCurrentScope });
+      const localExpanded = await expandAtPathsInPrompt(text, prepared.local);
+      const expanded = prepared.blocks.length ? `${localExpanded}\n\n${prepared.blocks.join("\n")}` : localExpanded;
+      if (!isCurrentScope()) return false;
       doneExpand();
       const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
       const result = await window.xAgent.turn.prompt({
         text: expanded,
         images: currentAttachments.length > 0 ? currentAttachments : undefined,
+        ...(deps.sessionId ? { expectedSessionId: deps.sessionId } : {}),
       });
       doneRoundtrip();
       dbgLog("chat", "turn.prompt resolved", {
@@ -287,7 +297,9 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
       }
       return { file, absPath, fallbackName: file.name };
     });
-    const { images, references, notices } = await splitFilesForAttachment(items);
+    const { images, references, notices } = await splitFilesForAttachment(items, {
+      deepseek: findCurrentModel(models, currentModelKey)?.deepseekChatbot === true,
+    });
     if (images.length > 0) {
       setAttachments((prev) => [...prev, ...images]);
     }
@@ -360,6 +372,9 @@ export type UseComposerOpts = Omit<ComposerDeps, "input" | "attachments" | "file
  * - apiStatusView 给 ChatPanel 直接用
  */
 export function useComposer(opts: UseComposerOpts) {
+  const scope = `${opts.sessionId ?? ""}\n${opts.cwd ?? ""}\n${opts.currentModelKey}`;
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ImageContent[]>([]);
   const [fileRefs, setFileRefs] = useState<FileReference[]>([]);
@@ -393,6 +408,8 @@ export function useComposer(opts: UseComposerOpts) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const dispatcher = createComposerDispatcher({
     cwd: opts.cwd,
+    sessionId: opts.sessionId,
+    isCurrentScope: () => currentScope.current === scope,
     models: opts.models,
     currentModelKey: opts.currentModelKey,
     input,
