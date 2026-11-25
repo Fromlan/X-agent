@@ -82,6 +82,7 @@ const exposed: XAgentApi = {
     newSession: api.newSession,
     resume: api.resumeSession,
     listSessions: api.listSessions,
+    retainDraftSession: api.retainDraftSession,
     deleteSession: api.deleteSession,
     deleteProjectSessions: api.deleteProjectSessions,
     renameSession: api.renameSession,

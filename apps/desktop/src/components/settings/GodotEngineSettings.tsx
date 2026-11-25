@@ -3,12 +3,13 @@ import { useEffect, useState } from "react";
 import type { ClientPrefs, GodotEngineConfig, GodotEngineMutation } from "@shared/ipc";
 import { normalizeProjectKey } from "@shared/project-path";
 import { SelectMenu } from "../SelectMenu";
+import { useConfirm } from "../../lib/app-confirm";
+import { SettingsNotice } from "../SettingsNotice";
 
 type Props = {
   prefs: ClientPrefs;
   cwd: string | null;
   onPrefsChanged?: (prefs: ClientPrefs) => void;
-  onMessage: (message: string) => void;
 };
 
 /** Keep edits local until saved so typing never rewrites the preference store. */
@@ -34,8 +35,10 @@ function EngineRow({ engine, busy, onChange }: {
 }
 
 /** Apply one validated registry operation at a time and publish only persisted preferences. */
-export function GodotEngineSettings({ prefs, cwd, onPrefsChanged, onMessage }: Props) {
+export function GodotEngineSettings({ prefs, cwd, onPrefsChanged }: Props) {
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const confirm = useConfirm();
   const engines = prefs.godotEngines;
   const options = engines.map((engine) => ({ value: engine.path, label: `${engine.name}${engine.version ? ` · ${engine.version}` : ""}`, title: engine.path }));
   const projectEngine = cwd ? prefs.godotProjectEditors[normalizeProjectKey(cwd)] ?? "" : "";
@@ -46,15 +49,26 @@ export function GodotEngineSettings({ prefs, cwd, onPrefsChanged, onMessage }: P
   /** Surface cancellations quietly and retain the previous settings whenever persistence fails. */
   const changeEngine = async (input: GodotEngineMutation): Promise<void> => {
     if (busy) return;
+    if (input.action === "remove") {
+      const path = normalizeProjectKey(input.path);
+      const projects = Object.values(prefs.godotProjectEditors).filter((value) => normalizeProjectKey(value) === path).length;
+      const isDefault = normalizeProjectKey(prefs.godotEditorPath ?? "") === path;
+      const affected = [isDefault ? "默认引擎" : "", projects ? `${projects} 个项目的引擎选择` : ""].filter(Boolean);
+      if (affected.length && !await confirm({
+        title: "移除已使用的引擎？", message: `${affected.join("和")}将恢复自动选择。引擎文件会保留。`,
+        tone: "danger", confirmLabel: "移除引擎",
+      })) return;
+    }
     setBusy(true);
+    setNotice(null);
     try {
       const result = await window.xAgent.godot.manageEngine(input);
       if (result.canceled) return;
-      if (!result.ok || !result.prefs) { onMessage(result.error ?? "引擎配置保存失败"); return; }
+      if (!result.ok || !result.prefs) throw new Error(result.error ?? "引擎配置保存失败");
       onPrefsChanged?.(result.prefs);
-      onMessage(input.action === "remove" ? "引擎配置已移除，相关默认和项目选择已清除" : input.action === "project"
-        ? "项目引擎已保存；已打开的编辑器需关闭后重新连接以应用选择" : "引擎配置已保存");
-    } catch (error) { onMessage(error instanceof Error ? error.message : String(error)); }
+      setNotice({ text: input.action === "remove" ? "引擎配置已移除" : input.action === "project"
+        ? "项目引擎已保存，下次打开编辑器时生效" : "引擎配置已保存" });
+    } catch (error) { setNotice({ text: error instanceof Error ? error.message : String(error), error: true }); }
     finally { setBusy(false); }
   };
 
@@ -79,5 +93,6 @@ export function GodotEngineSettings({ prefs, cwd, onPrefsChanged, onMessage }: P
         value={selection(projectEngine)} options={[{ value: "", label: "使用默认引擎 / 自动检测" }, ...options]}
         onChange={(path) => void changeEngine({ action: "project", projectPath: cwd, path: path || null })} />
     </div>}
+    {notice && <SettingsNotice text={notice.text} tone={notice.error ? "error" : "neutral"} onDismiss={() => setNotice(null)} />}
   </div>;
 }

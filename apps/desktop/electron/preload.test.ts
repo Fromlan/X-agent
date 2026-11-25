@@ -263,6 +263,7 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
       "checkAuth",
       "checkPiCli",
       "listSessions",
+      "retainDraftSession",
       "resumeSession",
       "deleteSession",
       "deleteProjectSessions",
@@ -302,6 +303,7 @@ describe("preload surface (issue #2 flat-API 收尾)", () => {
       "open",
       "renameSession",
       "resume",
+      "retainDraftSession",
     ]);
     expect(Object.keys(exposed.turn).sort()).toEqual([
       "abort",

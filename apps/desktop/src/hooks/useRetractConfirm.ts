@@ -13,7 +13,7 @@ type ConfirmState = {
 type RetractDeps = {
   editDraft: string;
   setError: (error: string | null) => void;
-  setInput: (text: string) => void;
+  restoreText: (text: string) => void;
   setEditingEntryId: (id: string | null) => void;
   setEditDraft: (text: string) => void;
   refreshSessions: () => Promise<void>;
@@ -23,7 +23,7 @@ export function useRetractConfirm(deps: RetractDeps) {
   const {
     editDraft,
     setError,
-    setInput,
+    restoreText,
     setEditingEntryId,
     setEditDraft,
     refreshSessions,
@@ -77,7 +77,7 @@ export function useRetractConfirm(deps: RetractDeps) {
           result.editorText?.trim() ||
           confirmState.preview.editorText?.trim() ||
           "";
-        if (text) setInput(collapseFileBlocksToAtPaths(text));
+        if (text) restoreText(collapseFileBlocksToAtPaths(text));
       }
 
       const report = result.restoreReport;
@@ -99,7 +99,7 @@ export function useRetractConfirm(deps: RetractDeps) {
     setEditDraft,
     setEditingEntryId,
     setError,
-    setInput,
+    restoreText,
   ]);
 
   const cancelConfirm = useCallback(() => {

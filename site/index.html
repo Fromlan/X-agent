@@ -28,12 +28,11 @@
 
     <link rel="stylesheet" href="./assets/css/tokens.css" />
     <link rel="stylesheet" href="./assets/css/base.css" />
-    <link rel="stylesheet" href="./assets/css/motion.css" />
     <link rel="stylesheet" href="./assets/css/components.css" />
   </head>
 
   <body data-theme="dark">
-    <a class="skip-link" href="#product" style="position:absolute;left:-9999px;top:0;">Skip to content</a>
+    <a class="skip-link" href="#product" data-i18n="nav.skip">跳到主要内容</a>
 
     <!-- ============== TopBar ============== -->
     <header class="topbar" role="banner">
@@ -59,6 +58,16 @@
         </nav>
 
         <div class="topbar__actions">
+          <details class="topbar__sections">
+            <summary class="pill" data-i18n="nav.sections">目录</summary>
+            <nav class="topbar__sections-menu" aria-label="目录" data-i18n-label="nav.sections">
+              <a class="topbar__nav-link" href="#product" data-i18n="nav.product">产品</a>
+              <a class="topbar__nav-link" href="#modes" data-i18n="nav.modes">模式</a>
+              <a class="topbar__nav-link" href="#roles" data-i18n="nav.roles">场景</a>
+              <a class="topbar__nav-link" href="#timeline" data-i18n="nav.timeline">能力</a>
+              <a class="topbar__nav-link" href="#faq" data-i18n="nav.faq">FAQ</a>
+            </nav>
+          </details>
           <button
             class="pill"
             type="button"
@@ -80,7 +89,6 @@
             rel="noopener"
           >
             <span data-i18n="cta.download">下载</span>
-            <span data-version>v0.5.5</span>
           </a>
         </div>
       </div>
@@ -90,24 +98,20 @@
       <!-- ============== Hero ============== -->
       <section class="hero" id="product">
         <div class="hero__inner container">
-          <div class="hero__status" data-reveal data-reveal-delay="1" aria-label="Project status">
-            <span data-i18n="hero.status">Early Beta · v</span><span data-version>v0.5.5</span>
-          </div>
-          <h1 class="hero__title" data-reveal data-reveal-delay="2" data-i18n="hero.title">
+          <h1 class="hero__title" data-i18n="hero.title">
             Godot 4 项目的桌面编码 Agent：同会话里改代码、跑场景、撤回到任意一步。
           </h1>
-          <p class="hero__sub" data-reveal data-reveal-delay="3" data-i18n="hero.sub">
+          <p class="hero__sub" data-i18n="hero.sub">
             基于 Pi SDK · Windows 10/11 · 17 个 Godot 工具 · Shadow Git 撤回 · 4 模式 + 2 类型硬闸
           </p>
-          <div class="hero__cta" data-reveal data-reveal-delay="4">
+          <div class="hero__cta">
             <a
               class="pill pill--solid pill--lg"
               href="https://github.com/Fromlan/X-agent/releases/latest"
               data-version-href
               rel="noopener"
             >
-              <span data-i18n="cta.downloadWin">下载 Windows 安装包</span>
-              <span data-version>v0.5.5</span>
+              <span data-i18n="cta.downloadWin">查看 Windows 下载</span>
             </a>
             <a
               class="pill pill--lg"
@@ -122,7 +126,7 @@
               data-i18n="cta.readme"
             >看 README</a>
           </div>
-          <div class="hero__visual" data-reveal data-reveal-delay="5">
+          <div class="hero__visual">
             <img
               class="hero__logo"
               src="./assets/img/logo.png"
@@ -133,11 +137,11 @@
               decoding="async"
             />
           </div>
-          <a class="hero__scroll-hint" href="#pillars" aria-label="Scroll to features">
+          <a class="hero__scroll-hint" href="#pillars">
             <span class="hero__scroll-mouse" aria-hidden="true">
               <span class="hero__scroll-dot"></span>
             </span>
-            <span data-i18n="hero.scrollHint">scroll</span>
+            <span data-i18n="hero.scrollHint">查看功能</span>
           </a>
         </div>
       </section>
@@ -146,14 +150,14 @@
       <section class="section" id="pillars">
         <div class="container">
           <div class="center-text">
-            <span class="eyebrow" data-i18n="pillars.eyebrow" data-reveal>WHY X-AGENT</span>
-            <h2 class="section-title" data-i18n="pillars.title" data-reveal data-reveal-delay="1">三件其他 Agent 没做好的事</h2>
-            <p class="section-sub" data-i18n="pillars.sub" data-reveal data-reveal-delay="2">
+            <span class="eyebrow" data-i18n="pillars.eyebrow">WHY X-AGENT</span>
+            <h2 class="section-title" data-i18n="pillars.title">三件其他 Agent 没做好的事</h2>
+            <p class="section-sub" data-i18n="pillars.sub">
               每个支柱都链到 docs/agent.md 的详细机制；下面这些差异在 30 秒上手里就能感受到。
             </p>
           </div>
 
-          <div class="pillars" data-reveal-stagger>
+          <div class="pillars">
             <!-- Pillar 1: Godot integration -->
             <article class="card card--hover">
               <span class="card__index">01</span>
@@ -314,12 +318,12 @@
       <section class="section" id="modes" style="background: var(--bg-chrome); border-top: 1px solid var(--border-primary); border-bottom: 1px solid var(--border-primary);">
         <div class="container">
           <div class="center-text">
-            <span class="eyebrow" data-i18n="modes.eyebrow" data-reveal>4 模式 × 2 类型</span>
-            <h2 class="section-title" data-i18n="modes.title" data-reveal data-reveal-delay="1">互斥模式 × 正交类型</h2>
-            <p class="section-sub" data-i18n="modes.sub" data-reveal data-reveal-delay="2">会话模式决定能用哪些工具，会话类型决定写操作落到哪里。</p>
+            <span class="eyebrow" data-i18n="modes.eyebrow">4 模式 × 2 类型</span>
+            <h2 class="section-title" data-i18n="modes.title">互斥模式 × 正交类型</h2>
+            <p class="section-sub" data-i18n="modes.sub">会话模式决定能用哪些工具，会话类型决定写操作落到哪里。</p>
           </div>
 
-          <div class="modes" data-reveal data-reveal-delay="3">
+          <div class="modes">
             <div class="modes__row">
               <span class="modes__row-label" data-i18n="modes.row.modes">模式</span>
               <span class="modes__chip modes__chip--agent modes__chip--active"><span class="modes__chip-dot"></span><span class="modes__chip__index">01</span><span data-i18n="modes.mode.agent">Agent</span></span>
@@ -342,12 +346,12 @@
       <section class="section" id="roles">
         <div class="container">
           <div class="center-text">
-            <span class="eyebrow" data-i18n="roles.eyebrow" data-reveal>你要用 X-agent 做什么</span>
-            <h2 class="section-title" data-i18n="roles.title" data-reveal data-reveal-delay="1">四个常见场景，按"我是什么角色"选</h2>
-            <p class="section-sub" data-i18n="roles.sub" data-reveal data-reveal-delay="2">下面是按角色预热好的典型流程；具体 prompt 在 30 秒上手里。</p>
+            <span class="eyebrow" data-i18n="roles.eyebrow">你要用 X-agent 做什么</span>
+            <h2 class="section-title" data-i18n="roles.title">四个常见场景，按"我是什么角色"选</h2>
+            <p class="section-sub" data-i18n="roles.sub">下面是按角色预热好的典型流程；具体 prompt 在 30 秒上手里。</p>
           </div>
 
-          <div class="roles" data-reveal-stagger>
+          <div class="roles">
             <article class="card">
               <div class="role__step" data-i18n="role.dev.step">流程 4 步</div>
               <h3 class="card__title" data-i18n="role.dev.title">🎮 Godot 开发者 · 改代码 + 跑场景</h3>
@@ -409,12 +413,12 @@
       <section class="section" id="timeline" style="background: var(--bg-chrome); border-top: 1px solid var(--border-primary); border-bottom: 1px solid var(--border-primary);">
         <div class="container">
           <div class="center-text">
-            <span class="eyebrow" data-i18n="timeline.eyebrow" data-reveal>关键能力</span>
-            <h2 class="section-title" data-i18n="timeline.title" data-reveal data-reveal-delay="1">版本时间线 · 最新在上</h2>
-            <p class="section-sub" data-i18n="timeline.sub" data-reveal data-reveal-delay="2">完整列表见 CHANGELOG.md。</p>
+            <span class="eyebrow" data-i18n="timeline.eyebrow">关键能力</span>
+            <h2 class="section-title" data-i18n="timeline.title">版本时间线 · 最新在上</h2>
+            <p class="section-sub" data-i18n="timeline.sub">完整列表见 CHANGELOG.md。</p>
           </div>
 
-          <div class="timeline" data-reveal-stagger>
+          <div class="timeline">
             <div class="timeline__item">
               <div class="timeline__version">v0.5.5</div>
               <div class="timeline__body">
@@ -476,11 +480,11 @@
       <section class="section" id="faq">
         <div class="container">
           <div class="center-text">
-            <span class="eyebrow" data-i18n="faq.eyebrow" data-reveal>常见问题</span>
-            <h2 class="section-title" data-i18n="faq.title" data-reveal data-reveal-delay="1">6 个装之前最常问的</h2>
+            <span class="eyebrow" data-i18n="faq.eyebrow">常见问题</span>
+            <h2 class="section-title" data-i18n="faq.title">6 个装之前最常问的</h2>
           </div>
 
-          <div class="faq" data-reveal-stagger>
+          <div class="faq">
             <details class="faq__item">
               <summary class="faq__q" data-i18n="faq.q1">在线 / 离线能用吗？</summary>
               <div class="faq__a">
@@ -528,7 +532,7 @@
               <summary class="faq__q" data-i18n="faq.q6">macOS / Linux 呢？</summary>
               <div class="faq__a">
                 <div data-i18n-html="faq.a6">
-                  <p>当前 0.5.5 仅 Windows。Phase 3.4 路线图里有 macOS / Linux 安装包（详见 docs/roadmap.md）。</p>
+                  <p>目前提供 Windows 安装包。</p>
                 </div>
               </div>
             </details>
@@ -540,7 +544,7 @@
     <!-- ============== Footer ============== -->
     <footer class="footer" role="contentinfo">
       <div class="container">
-        <div class="footer__grid" data-reveal-stagger>
+        <div class="footer__grid">
           <div>
             <div class="footer__brand">
               <img
@@ -612,13 +616,7 @@
         });
       })();
     </script>
-    <script src="./assets/js/reveal.js" defer></script>
-    <script src="./assets/js/release.js" defer></script>
-    <script>
-      // Boot release fetcher after initial paint
-      window.addEventListener("DOMContentLoaded", () => {
-        try { window.XAgentRelease.initRelease(); } catch (e) { /* keep fallback */ }
-      });
-    </script>
+    <script src="./assets/js/navigation.js" defer></script>
+    <script src="./assets/js/download.js" defer></script>
   </body>
 </html>

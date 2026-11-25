@@ -10,7 +10,7 @@ import { SidebarWorkspace } from "./SidebarWorkspace";
 import { useSidebarState } from "./useSidebarState";
 import { SidebarGroupList } from "./SidebarGroupList";
 import { SidebarItemMenu } from "./SidebarItemMenu";
-import { useWorkspaceDrawer } from "../../hooks/useWorkspaceDrawer";
+import { useModalFocus } from "../../hooks/useModalFocus";
 
 interface Props {
   modal?: boolean;
@@ -74,7 +74,7 @@ function SidebarImpl({
   onResizeDoubleClick,
   resizing = false,
 }: Props) {
-  const drawerRef = useWorkspaceDrawer(modal, () => onCloseDrawer?.());
+  const drawerRef = useModalFocus(modal, () => onCloseDrawer?.());
   const [selectedType, setSelectedType] = useState<SessionType>(sessionType);
   useEffect(() => setSelectedType(sessionType), [sessionType, activeSessionId]);
   const state = useSidebarState({

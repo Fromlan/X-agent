@@ -32,6 +32,7 @@ export const IPC_CHANNELS = {
   getGoal: "getGoal",
   listModels: "listModels",
   listSessions: "listSessions",
+  retainDraftSession: "retainDraftSession",
   resumeSession: "resumeSession",
   deleteSession: "deleteSession",
   deleteProjectSessions: "deleteProjectSessions",

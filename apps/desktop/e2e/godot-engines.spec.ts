@@ -46,6 +46,11 @@ test("engine settings retain multiple installations and separate project binding
     await main.locator(".settings-nav").getByRole("button", { name: "Godot", exact: true }).click();
     await expect(main.getByRole("button", { name: "当前项目 Godot 引擎", exact: true })).toContainText("Godot 4.7");
     await main.getByRole("button", { name: "移除引擎 Godot 4.7", exact: true }).click();
+    const remove = main.getByRole("dialog", { name: "移除已使用的引擎？" });
+    await remove.getByRole("button", { name: "取消" }).click();
+    await expect(main.locator(".godot-engine-row")).toHaveCount(2);
+    await main.getByRole("button", { name: "移除引擎 Godot 4.7", exact: true }).click();
+    await remove.getByRole("button", { name: "移除引擎", exact: true }).click();
     await expect(main.locator(".godot-engine-row")).toHaveCount(1);
     await expect(main.getByRole("button", { name: "当前项目 Godot 引擎", exact: true })).toContainText("使用默认引擎");
     const prefs = await main.evaluate(() => window.xAgent.prefs.get());

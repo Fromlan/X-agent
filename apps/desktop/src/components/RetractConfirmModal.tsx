@@ -1,6 +1,7 @@
 import { AlertTriangle, FileMinus2, FilePenLine, MessageSquareDashed } from "lucide-react";
 import type { RetractPreview } from "@shared/ipc";
 import { DiffView } from "./DiffView";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 export type RetractConfirmMode = "retract" | "edit" | "regenerate";
 
@@ -32,6 +33,7 @@ const CONFIRM_LABELS: Record<RetractConfirmMode, string> = {
 
 export function RetractConfirmModal(props: Props) {
   const { preview, mode } = props;
+  const panelRef = useModalFocus<HTMLDivElement>(true, () => { if (!props.busy) props.onCancel(); });
   const restoreCount = preview.restorablePaths.length;
   const unrestorableCount = preview.unrestorablePaths.length;
   const hasFiles = restoreCount > 0 || unrestorableCount > 0;
@@ -43,9 +45,11 @@ export function RetractConfirmModal(props: Props) {
     Boolean(preview.warnings.length);
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={props.onCancel}>
+    <div className="modal-backdrop" role="presentation" onClick={() => { if (!props.busy) props.onCancel(); }}>
       <div
         className="modal-panel retract-confirm-modal"
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="retract-confirm-title"
@@ -156,6 +160,7 @@ export function RetractConfirmModal(props: Props) {
           <button
             type="button"
             className="btn btn-ghost"
+            data-modal-focus
             onClick={props.onCancel}
             disabled={props.busy}
           >

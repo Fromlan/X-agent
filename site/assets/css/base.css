@@ -1,7 +1,5 @@
 /* base.css — reset + global styles for X-agent site
  * Mirrors apps/desktop renderer baseline (Inter / 13px / 1.5 / Cindy near-monochrome)
- *
- * Premium upgrade: import motion.css for reveal/stagger utilities
  */
 
 *,
@@ -30,6 +28,25 @@ body {
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 64px; /* sticky TopBar offset */
+}
+
+.skip-link {
+  position: fixed;
+  inset: 8px auto auto 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  background: var(--bg-card-elev);
+  border-radius: var(--radius-pill);
+}
+
+.skip-link:not(:focus) { clip-path: inset(50%); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after, *::details-content {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 h1,

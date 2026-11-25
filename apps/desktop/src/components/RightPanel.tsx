@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import {
   BarChart3,
   Box,
@@ -25,7 +25,7 @@ import { FilesTab } from "./right-panel/FilesTab";
 import { GodotTab } from "./right-panel/GodotTab";
 import { ContextTab } from "./right-panel/ContextTab";
 import { PlanTab } from "./right-panel/PlanTab";
-import { useWorkspaceDrawer } from "../hooks/useWorkspaceDrawer";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
   { id: "context", label: "上下文", icon: BarChart3 },
@@ -38,6 +38,8 @@ const TABS: { id: RightPanelTab; label: string; icon: LucideIcon }[] = [
 interface Props {
   modal?: boolean;
   inert?: boolean;
+  surfaceRef?: RefObject<HTMLElement | null>;
+  leavingDrawer?: boolean;
   isGodotProject: boolean;
   rpcStatus: GodotRpcStatusDto | null;
   cwd: string | null;
@@ -62,6 +64,8 @@ interface Props {
 export function RightPanel({
   modal = false,
   inert = false,
+  surfaceRef,
+  leavingDrawer,
   isGodotProject,
   rpcStatus,
   cwd,
@@ -82,7 +86,12 @@ export function RightPanel({
   onResizeDoubleClick,
   resizing,
 }: Props) {
-  const panelRef = useWorkspaceDrawer(modal, onClose);
+  const panelRef = useModalFocus(modal, onClose);
+  /** The same surface owns both motion and keyboard focus. */
+  const bindPanel = useCallback((node: HTMLElement | null) => {
+    panelRef.current = node;
+    if (surfaceRef) surfaceRef.current = node;
+  }, [panelRef, surfaceRef]);
   const version = useSyncExternalStore(
     subscribeRightPanelStore,
     getRightPanelStoreVersion,
@@ -99,7 +108,8 @@ export function RightPanel({
   };
 
   return (
-    <aside ref={panelRef} className="right-panel" aria-label="工具面板" role={modal ? "dialog" : undefined}
+    <aside ref={bindPanel} className="right-panel" aria-label="工具面板" role={modal ? "dialog" : undefined}
+      data-leaving={leavingDrawer || undefined}
       aria-modal={modal || undefined} tabIndex={-1} inert={inert}>
       {onResizePointerDown && (
         <div

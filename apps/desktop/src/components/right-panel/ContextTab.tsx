@@ -143,7 +143,7 @@ export function ContextTab({
         >
           <div
             className={`rp-context-track-fill${isHigh ? " is-high" : isWarn ? " is-warn" : ""}`}
-            style={{ width: percent != null ? `${fill}%` : "0%" }}
+            style={{ transform: `scaleX(${fill / 100})` }}
           />
         </div>
       </section>

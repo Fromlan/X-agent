@@ -819,6 +819,18 @@ export class SessionLifecycle {
     });
   }
 
+  /** Pi defers file creation until the first prompt. Persist its setup before leaving a drafted conversation. */
+  retainDraftSession(expectedSessionId: string): void {
+    const manager = this.a().getBundle()?.session.sessionManager;
+    if (!manager || manager.getSessionId() !== expectedSessionId) return;
+    const file = manager.getSessionFile();
+    if (!file || existsSync(file)) return;
+    const entries = [manager.getHeader(), ...manager.getEntries()];
+    writeFileAtomicSync(file, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
+    // The same live manager can continue to accept prompts if navigation is canceled.
+    manager.setSessionFile(file);
+  }
+
   async listSessions(): Promise<SessionInfo[]> {
     try {
       const all = await SessionManager.listAll(getXAgentSessionsRoot());
@@ -837,7 +849,7 @@ export class SessionLifecycle {
           catch { invalidTypeRecords += 1; return []; }
           return [{
             id: s.id,
-            name: displaySessionName(s.name, s.firstMessage),
+            name: displaySessionName(s.name, s.messageCount > 0 ? s.firstMessage : ""),
             path: s.path,
             cwd: s.cwd ?? "",
             updatedAt: new Date(s.modified ?? s.created ?? Date.now()).toISOString(),

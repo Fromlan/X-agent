@@ -42,6 +42,7 @@
 }
 
 .main-row[data-right-panel-mode="drawer"] > .right-panel,
+.right-panel[data-leaving],
 .workspace-sidebar-column.is-drawer {
   position: absolute;
   inset-block: 0;
@@ -49,7 +50,8 @@
   box-shadow: var(--shadow-modal);
 }
 
-.main-row[data-right-panel-mode="drawer"] > .right-panel {
+.main-row[data-right-panel-mode="drawer"] > .right-panel,
+.right-panel[data-leaving] {
   inset-inline: auto 0;
   width: var(--right-panel-width);
   max-width: calc(100% - 32px);

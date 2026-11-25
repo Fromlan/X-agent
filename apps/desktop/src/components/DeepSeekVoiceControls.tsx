@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { AudioLines, Check, ChevronDown, Mic, Square, Volume2, X } from "lucide-react";
 import { DEEPSEEK_TTS_MAX_CHARACTERS } from "@shared/deepseek-voice";
 import { startPcmRecording, type PcmRecording } from "../lib/pcm-recording";
+import { useOverlayPresence } from "../hooks/useOverlayPresence";
 import "../styles/deepseek-voice.css";
 
 interface Props {
@@ -28,7 +29,7 @@ export function DeepSeekVoiceControls({ scopeKey, disabled, answer, onTranscript
   const statusId = useId();
   const voiceName = useId();
   const root = useRef<HTMLDivElement | null>(null);
-  const menu = useRef<HTMLDivElement | null>(null);
+  const { ref: menu, present: menuPresent } = useOverlayPresence<HTMLDivElement>(menuOpen);
   const menuTrigger = useRef<HTMLButtonElement | null>(null);
   const recording = useRef<PcmRecording | null>(null);
   const requestId = useRef<string | null>(null);
@@ -41,7 +42,6 @@ export function DeepSeekVoiceControls({ scopeKey, disabled, answer, onTranscript
   /** Dismiss the optional panel without interrupting an explicit voice operation. */
   const closeMenu = useCallback((restoreFocus = false): void => {
     setMenuOpen(false);
-    setMenuPosition(null);
     if (restoreFocus) menuTrigger.current?.focus();
   }, []);
 
@@ -75,7 +75,7 @@ export function DeepSeekVoiceControls({ scopeKey, disabled, answer, onTranscript
     const target = menu.current?.querySelector<HTMLElement>("[data-voice-initial-focus]:not(:disabled)")
       ?? menu.current?.querySelector<HTMLButtonElement>("button:not(:disabled)");
     target?.focus();
-  }, [menuOpen, menuReady]);
+  }, [menuOpen, menuReady, menu]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -103,7 +103,7 @@ export function DeepSeekVoiceControls({ scopeKey, disabled, answer, onTranscript
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
-  }, [menuOpen, closeMenu, updateMenuPosition]);
+  }, [menuOpen, closeMenu, updateMenuPosition, menu]);
 
   useEffect(() => {
     if (phase !== "recording") return;
@@ -275,8 +275,9 @@ export function DeepSeekVoiceControls({ scopeKey, disabled, answer, onTranscript
       </button>
       <span id={statusId} className="deepseek-voice-announcement" role="status" aria-live="polite">{error ?? status}</span>
     </div>
-    {menuOpen && menuPosition && createPortal(
+    {menuPresent && menuPosition && createPortal(
       <div ref={menu} id={menuId} className="deepseek-voice-panel" role="dialog" aria-label="语音选项" style={menuPosition}
+        inert={!menuOpen} data-side={menuPosition.bottom === undefined ? "below" : "above"}
         onKeyDown={(event) => {
           // Preserve native radio/Tab navigation without invoking the composer's Shift+Tab mode shortcut.
           if (event.key === "Tab") event.stopPropagation();

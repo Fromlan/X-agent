@@ -2,6 +2,8 @@ import { PluginScope } from "@shared/ipc";
 import { SelectMenu } from "../SelectMenu";
 import { kindLabel } from "./types";
 import type { PluginsState } from "./usePluginsState";
+import { useModalFocus } from "../../hooks/useModalFocus";
+import { useOverlayPresence } from "../../hooks/useOverlayPresence";
 
 interface Props {
   state: PluginsState;
@@ -10,16 +12,23 @@ interface Props {
 
 export function CreatePluginModal({ state, cwd }: Props) {
   const { createOpen, setCreateOpen, createName, setCreateName, createScope, setCreateScope, busy, kind, create } = state;
-  if (!createOpen) return null;
+  const { present, ref } = useOverlayPresence<HTMLDivElement>(createOpen);
+  const panelRef = useModalFocus<HTMLDivElement>(createOpen, () => setCreateOpen(false));
+  if (!present) return null;
   return (
     <div
+      ref={ref}
+      inert={!createOpen}
       className="modal-backdrop"
       role="presentation"
       onClick={() => setCreateOpen(false)}
     >
       <div
         className="modal-panel"
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
+        aria-modal="true"
         aria-label="新建插件"
         onClick={(e) => e.stopPropagation()}
       >
@@ -40,7 +49,7 @@ export function CreatePluginModal({ state, cwd }: Props) {
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
               placeholder="my-name"
-              autoFocus
+              data-modal-focus
             />
           </label>
           <div className="field block-field">

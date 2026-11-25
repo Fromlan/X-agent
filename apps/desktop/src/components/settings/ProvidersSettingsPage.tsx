@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
   Download,
   Import,
@@ -99,11 +99,17 @@ function toggleRowInput(
 }
 
 type Props = {
+  ref?: Ref<ProviderEditorHandle>;
   open: boolean;
   onProvidersChanged?: () => void;
 };
 
-export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
+export interface ProviderEditorHandle {
+  confirmDiscard: () => Promise<boolean>;
+}
+
+/** Keep unsaved credentials in memory for the lifetime of this settings dialog. */
+export function ProvidersSettingsPage({ ref, open, onProvidersChanged }: Props) {
   const confirm = useConfirm();
   const [profiles, setProfiles] = useState<ProviderProfileSummary[]>([]);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
@@ -111,7 +117,9 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<ProviderUpsertInput>(emptyForm());
+  const [form, setForm] = useState<ProviderUpsertInput>(emptyForm);
+  const originalForm = useRef(form);
+  const fetchVersion = useRef(0);
   const [showPresetPicker, setShowPresetPicker] = useState(false);
   const [presetQuery, setPresetQuery] = useState("");
   const [presetCategory, setPresetCategory] = useState<PresetCategory>("all");
@@ -121,6 +129,27 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     () => new Set(),
   );
   const [showFetchPanel, setShowFetchPanel] = useState(false);
+
+  /** Compare only on exit so large model tables incur no serialization cost while typing. */
+  const confirmDiscard = async (): Promise<boolean> => {
+    if (!editing) return true;
+    if (busy) return false;
+    if (JSON.stringify(form) === JSON.stringify(originalForm.current)) return true;
+    return confirm({
+      title: "放弃供应商更改？",
+      message: "本次编辑的供应商信息尚未保存。",
+      cancelLabel: "继续编辑",
+      confirmLabel: "放弃更改",
+      tone: "danger",
+    });
+  };
+  useImperativeHandle(ref, () => ({
+    confirmDiscard: async () => {
+      if (!await confirmDiscard()) return false;
+      if (editing) finishEditing();
+      return true;
+    },
+  }));
 
   const refreshProfiles = useCallback(async () => {
     setProfiles(await window.xAgent.provider.listProfiles());
@@ -142,21 +171,12 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       if (cancelled) return;
       setProfiles(list);
       setPresets(presetList);
-    })();
+    })().catch((err: unknown) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+    });
     return () => {
       cancelled = true;
     };
-  }, [open]);
-
-  useEffect(() => {
-    if (open) return;
-    setError(null);
-    setMessage(null);
-    setEditing(false);
-    setShowPresetPicker(false);
-    setShowFetchPanel(false);
-    setFetched([]);
-    setSelectedFetchIds(new Set());
   }, [open]);
 
   useAutoClearNotice(message, () => setMessage(null), 4500, !error);
@@ -183,21 +203,33 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   if (!open) return null;
 
   const resetFetchPanel = () => {
+    fetchVersion.current++;
+    setFetching(false);
     setShowFetchPanel(false);
     setFetched([]);
     setSelectedFetchIds(new Set());
   };
 
-  const openCreate = () => {
-    setForm(emptyForm());
+  /** Begin each draft with a fresh baseline, including edits to an existing subscription. */
+  const beginEditing = (initial: ProviderUpsertInput) => {
+    originalForm.current = initial;
+    setForm(initial);
     setEditing(true);
     setError(null);
     setShowPresetPicker(false);
     resetFetchPanel();
   };
 
+  /** Remove credential-bearing state as soon as a draft is saved or explicitly discarded. */
+  const finishEditing = () => {
+    originalForm.current = emptyForm();
+    setForm(originalForm.current);
+    setEditing(false);
+    resetFetchPanel();
+  };
+
   const openFromPreset = (preset: ProviderPreset) => {
-    setForm({
+    beginEditing({
       name: preset.name,
       providerId: preset.providerId,
       api: preset.api,
@@ -207,15 +239,11 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       models: preset.models.length
         ? preset.models.map((m) => ({
             ...m,
-            input: normalizeRowInput(m.input),
+            ...(m.input?.length ? { input: normalizeRowInput(m.input) } : {}),
           }))
         : [{ id: "", name: "" }],
       notes: preset.notes,
     });
-    setEditing(true);
-    setShowPresetPicker(false);
-    setError(null);
-    resetFetchPanel();
   };
 
   const openEdit = async (id: string) => {
@@ -224,7 +252,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       setError("档案不存在");
       return;
     }
-    setForm({
+    beginEditing({
       id: profile.id,
       name: profile.name,
       providerId: profile.providerId,
@@ -241,9 +269,6 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         : [{ id: "", name: "" }],
       notes: profile.notes,
     });
-    setEditing(true);
-    setError(null);
-    resetFetchPanel();
   };
 
   const updateModelRow = (
@@ -310,6 +335,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
   };
 
   const fetchModels = async () => {
+    const version = ++fetchVersion.current;
     setFetching(true);
     setError(null);
     setMessage(null);
@@ -319,6 +345,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
         apiKey: form.apiKey,
         api: form.api,
       });
+      if (version !== fetchVersion.current) return;
       if (!result.ok) {
         setError(result.error ?? "拉取模型失败");
         setShowFetchPanel(false);
@@ -339,9 +366,11 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       }
       setSelectedFetchIds(preselect);
       setShowFetchPanel(true);
-      setMessage(`已拉取 ${models.length} 个模型，勾选后点击「加入表格」`);
+      setMessage(`已获取 ${models.length} 个模型`);
+    } catch (err) {
+      if (version === fetchVersion.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setFetching(false);
+      if (version === fetchVersion.current) setFetching(false);
     }
   };
 
@@ -410,8 +439,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
     );
     if (conflict) {
       const proceed = await confirm({
-        title: "覆盖同 providerId",
-        message: `已有档案「${conflict.name}」使用相同 providerId「${providerId}」。保存后将覆盖顶栏中该 provider 的模型列表。是否继续？`,
+        title: "覆盖同一供应商的模型列表？",
+        message: `「${conflict.name}」也使用标识「${providerId}」。保存后，模型选择器将使用本次编辑的列表。`,
         confirmLabel: "继续保存",
       });
       if (!proceed) return;
@@ -455,13 +484,14 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       }
       setMessage(
         result.syncedToPi
-          ? `已保存：${result.profile.name}（已启用，模型在顶栏）`
+          ? `已保存并启用 ${result.profile.name}`
           : `已保存：${result.profile.name}`,
       );
       onProvidersChanged?.();
-      setEditing(false);
-      resetFetchPanel();
+      finishEditing();
       await refreshProfiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -482,8 +512,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       }
       setMessage(
         enabled
-          ? `已启用 ${profile.name}（模型已出现在顶栏）`
-          : `已关闭 ${profile.name}（已从顶栏移除）`,
+          ? `已启用 ${profile.name}`
+          : `已停用 ${profile.name}`,
       );
       await refreshProfiles();
       onProvidersChanged?.();
@@ -517,6 +547,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
       }
       await refreshProfiles();
       onProvidersChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -547,6 +579,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
           `已导入 ${result.imported} 条订阅，跳过 ${result.skipped} 条${sourceLabel}`,
         );
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -616,7 +650,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                onClick={openCreate}
+                onClick={() => beginEditing(emptyForm())}
               >
                 <Plus size={13} />
                 新建
@@ -697,8 +731,8 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               const toggleTitle = isLastEnabled
                 ? "至少需要保留一个启用的供应商"
                 : p.enabled
-                  ? "关闭后从顶栏移除"
-                  : "启用后出现在顶栏";
+                  ? "停用此供应商的模型"
+                  : "启用此供应商的模型";
               return (
               <div
                 key={p.id}
@@ -737,15 +771,15 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
                     disabled={busy}
                     title="编辑"
                     aria-label="编辑"
-                    onClick={() => void openEdit(p.id)}
+                    onClick={() => void openEdit(p.id).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))}
                   >
                     <Pencil size={14} />
                   </button>
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon"
-                    disabled={busy}
-                    title="删除"
+                    disabled={busy || isLastEnabled}
+                    title={isLastEnabled ? "至少需要保留一个启用的供应商" : "删除"}
                     aria-label="删除"
                     onClick={() => void remove(p)}
                   >
@@ -766,15 +800,16 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => {
-                setEditing(false);
-                resetFetchPanel();
+              disabled={busy}
+              onClick={async () => {
+                if (await confirmDiscard()) finishEditing();
               }}
             >
               返回列表
             </button>
           </div>
 
+          <fieldset className="provider-editor-fields" disabled={busy} inert={busy}>
           <label className="field block-field">
             显示名称
             <input
@@ -1089,6 +1124,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
             />
           </label>
 
+          </fieldset>
           <div className="modal-actions">
             <button
               type="button"
@@ -1096,7 +1132,7 @@ export function ProvidersSettingsPage({ open, onProvidersChanged }: Props) {
               disabled={busy}
               onClick={() => void saveProfile()}
             >
-              保存
+              {busy ? "正在保存…" : "保存"}
             </button>
           </div>
         </section>

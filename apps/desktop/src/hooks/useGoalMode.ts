@@ -89,11 +89,11 @@ export type GoalModeApi = {
    * (`!isRestorableGoalStatus(goal?.status)`), 则把整条 `text`
    * 直接作为完成条件, 跳过 slash 解析 —— 与原 App.tsx `send` 行为一致。
    */
-  handleGoalCommand: (text: string) => Promise<boolean>;
+  handleGoalCommand: (text: string, hasAttachments?: boolean) => Promise<boolean | "failed">;
   clearGoal: () => Promise<void>;
   pauseGoal: () => Promise<void>;
   resumeGoal: () => Promise<void>;
-  setGoalCondition: (condition: string) => Promise<void>;
+  setGoalCondition: (condition: string) => Promise<boolean>;
   changeSessionMode: (mode: AgentSessionMode) => Promise<void>;
   cycleSessionMode: () => Promise<void>;
 };
@@ -149,10 +149,11 @@ export function createGoalModeDispatcher(deps: GoalModeDeps): GoalModeApi {
     const result = await window.xAgent.plan.setGoal(condition);
     if (!result.ok) {
       setError(result.error ?? "设置目标失败");
-      return;
+      return false;
     }
     if (result.goal) setGoal(result.goal);
     setSessionMode("goal");
+    return true;
   };
 
   const changeSessionMode = async (mode: AgentSessionMode) => {
@@ -175,18 +176,15 @@ export function createGoalModeDispatcher(deps: GoalModeDeps): GoalModeApi {
     }
   };
 
-  const handleGoalCommand = async (text: string): Promise<boolean> => {
-    // goal 模式 + 目标未设完成条件 → 整条消息即 condition
-    if (
-      sessionMode === "goal" &&
-      !isRestorableGoalStatus(goal?.status)
-    ) {
-      await setGoalCondition(text);
-      return true;
-    }
-
-    const parsed = parseGoalCommand(text);
+  const handleGoalCommand: GoalModeApi["handleGoalCommand"] = async (text, hasAttachments) => {
+    const parsed: ParsedGoalCommand | null = sessionMode === "goal" && !isRestorableGoalStatus(goal?.status)
+      ? { kind: "set", condition: text }
+      : parseGoalCommand(text);
     if (!parsed) return false;
+    if (hasAttachments) {
+      setError("目标命令只接收文字。请移除附件后重试。");
+      return "failed";
+    }
 
     switch (parsed.kind) {
       case "show": {
@@ -209,8 +207,7 @@ export function createGoalModeDispatcher(deps: GoalModeDeps): GoalModeApi {
         await resumeGoal();
         return true;
       case "set":
-        await setGoalCondition(parsed.condition);
-        return true;
+        return await setGoalCondition(parsed.condition) ? true : "failed";
     }
   };
 

@@ -28,6 +28,14 @@ test("打开项目后可通过菜单和键盘切换四种会话模式", async ()
     await expect(picker).toHaveAttribute("aria-expanded", "false");
     await main.locator(".composer textarea").press("Shift+Tab");
     await expect(main.locator(".composer-mode-select")).toHaveAttribute("data-mode", "plan");
+    await picker.click();
+    await expect(main.getByRole("listbox")).toBeVisible();
+    await main.keyboard.press("Control+,");
+    await expect(main.getByRole("dialog", { name: "设置", exact: true })).toBeVisible();
+    await expect(main.getByRole("listbox")).toHaveCount(0);
+    await main.keyboard.press("ArrowDown");
+    await expect(main.locator(".composer-mode-select")).toHaveAttribute("data-mode", "plan");
+    await main.keyboard.press("Escape");
     await expect(main.locator("body")).toHaveAttribute("data-session-type", "code");
   } finally {
     await main.evaluate(() => window.xAgent.workspace.close()).catch(() => {});

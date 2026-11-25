@@ -16,6 +16,7 @@ import type {
   PrefsRecoveryNotice,
   RetractPreview,
   SecretCodecStatus,
+  SessionInfo,
   ThinkingLevel,
 } from "@shared/ipc";
 import type { SessionType } from "@shared/session-type";
@@ -48,7 +49,9 @@ export type UseWorkspaceSessionOpts = {
   setQueuedSteering: Dispatch<SetStateAction<string[]>>;
   setEditingEntryId: Dispatch<SetStateAction<string | null>>;
   setEditDraft: Dispatch<SetStateAction<string>>;
-  setInput: Dispatch<SetStateAction<string>>;
+  sessions: SessionInfo[];
+  hasDraft: () => boolean;
+  forgetDrafts: (ids: string[]) => void;
   setConfirmState: Dispatch<SetStateAction<RetractConfirmState>>;
   setFollowNonce: Dispatch<SetStateAction<number>>;
   setPrefs: Dispatch<SetStateAction<ClientPrefs | null>>;
@@ -80,7 +83,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setQueuedSteering,
     setEditingEntryId,
     setEditDraft,
-    setInput,
+    sessions,
+    hasDraft,
+    forgetDrafts,
     setConfirmState,
     setFollowNonce,
     setPrefs,
@@ -150,6 +155,19 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     setConfirmState(null);
   }, [setConfirmState, setEditDraft, setEditingEntryId]);
 
+  /** Save the session identity, leaving unsent text and attachments in renderer memory. */
+  const retainDraftSession = useCallback(async () => {
+    const active = sessionIdRef.current;
+    if (!active || !hasDraft() || sessions.some(({ id }) => id === active)) return true;
+    try {
+      await window.xAgent.workspace.retainDraftSession(active);
+      return true;
+    } catch {
+      setError("无法保留当前草稿，已停留在此会话。请重试。");
+      return false;
+    }
+  }, [hasDraft, sessionIdRef, sessions, setError]);
+
   const openProject = useCallback(
     async (path?: string) => {
       // TopBar may pass this as onClick; ignore non-string (e.g. MouseEvent).
@@ -160,6 +178,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         // Its transcript remains authoritative until the host replaces it.
         let result;
         try {
+          if (!await retainDraftSession()) return;
           result = await window.xAgent.workspace.open(projectPath);
         } catch (err) {
           await syncFromHost();
@@ -175,7 +194,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         }
         setQueuedSteering([]);
         clearComposerEditState();
-        setInput("");
         setCwd(result.cwd);
         setSessionId(result.sessionId);
         setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
@@ -188,12 +206,12 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     },
     [
       clearComposerEditState,
+      retainDraftSession,
       refreshProjectReadiness,
       refreshSessions,
       setBusy,
       setCwd,
       setError,
-      setInput,
       setPrefs,
       setQueuedSteering,
       setSessionId,
@@ -204,6 +222,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
   const newSession = useCallback(
     async (sessionType: SessionType = "code") => {
       await withBusyLifecycle(setBusy, setError, async () => {
+        if (!await retainDraftSession()) return;
         const result = await window.xAgent.workspace.newSession(sessionType);
         if (!result.ok) {
           setError(result.error ?? "新建会话失败");
@@ -212,7 +231,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         }
         setQueuedSteering([]);
         clearComposerEditState();
-        setInput("");
         setSessionId(result.sessionId);
         setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
         setFollowNonce((n) => n + 1);
@@ -221,11 +239,11 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     },
     [
       clearComposerEditState,
+      retainDraftSession,
       refreshSessions,
       setBusy,
       setError,
       setFollowNonce,
-      setInput,
       setQueuedSteering,
       setSessionId,
       setSessionType,
@@ -236,6 +254,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
   const resumeSession = useCallback(
     async (path: string) => {
       await withBusyLifecycle(setBusy, setError, async () => {
+        if (!await retainDraftSession()) return;
         const result = await window.xAgent.workspace.resume(path);
         if (!result.ok) {
           setError(result.error ?? "恢复会话失败");
@@ -244,7 +263,6 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         }
         setQueuedSteering([]);
         clearComposerEditState();
-        setInput("");
         setCwd(result.cwd);
         setSessionId(result.sessionId);
         setSessionType(result.sessionType ?? DEFAULT_SESSION_TYPE);
@@ -257,12 +275,12 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
     },
     [
       clearComposerEditState,
+      retainDraftSession,
       refreshSessions,
       setBusy,
       setCwd,
       setError,
       setFollowNonce,
-      setInput,
       setPrefs,
       setQueuedSteering,
       setSessionId,
@@ -281,12 +299,13 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
           setError(result.error ?? "删除失败");
           return;
         }
+        const removed = sessions.find((session) => session.path === path);
+        if (removed) forgetDrafts([removed.id]);
         if (deletingActive) {
           // Active delete: clear before abort races can re-inject bubbles.
           // Fallback resume (if any) re-fills via history_replace.
           setItems(createEmptyState());
           setQueuedSteering([]);
-          setInput("");
           clearComposerEditState();
         }
         await syncFromHost();
@@ -298,8 +317,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       refreshSessions,
       setBusy,
       setError,
-      setInput,
       setItems,
+      sessions,
+      forgetDrafts,
       setQueuedSteering,
       syncFromHost,
     ],
@@ -318,10 +338,11 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
           setError(result.error ?? "删除项目对话失败");
           return;
         }
+        const key = normalizeProjectKey(projectCwd);
+        forgetDrafts(sessions.filter((session) => normalizeProjectKey(session.cwd) === key).map((session) => session.id));
         if (activeInProject) {
           setItems(createEmptyState());
           setQueuedSteering([]);
-          setInput("");
           clearComposerEditState();
         }
         await syncFromHost();
@@ -333,8 +354,9 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       refreshSessions,
       setBusy,
       setError,
-      setInput,
       setItems,
+      sessions,
+      forgetDrafts,
       setQueuedSteering,
       syncFromHost,
     ],
@@ -342,6 +364,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
 
   const closeWorkspace = useCallback(async () => {
     await withBusyLifecycle(setBusy, setError, async () => {
+      if (!await retainDraftSession()) return;
       const closed = await window.xAgent.workspace.close();
       if (!closed.ok) {
         setError(closed.error ?? "关闭工作区失败");
@@ -349,7 +372,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       await syncFromHost();
       await refreshSessions();
     });
-  }, [refreshSessions, setBusy, setError, syncFromHost]);
+  }, [refreshSessions, retainDraftSession, setBusy, setError, syncFromHost]);
 
   const hideProject = useCallback(
     async (projectCwd: string) => {
@@ -359,6 +382,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
       setBusy(true);
       setError(null);
       try {
+        if (cwd && normalizeProjectKey(cwd) === key && !await retainDraftSession()) return;
         const hidden = new Set(
           (prefs.hiddenProjectKeys ?? []).map((k) => normalizeProjectKey(k)),
         );
@@ -380,7 +404,7 @@ export function useWorkspaceSession(opts: UseWorkspaceSessionOpts) {
         setBusy(false);
       }
     },
-    [cwd, prefs, refreshSessions, setBusy, setError, setPrefs, syncFromHost],
+    [cwd, prefs, refreshSessions, retainDraftSession, setBusy, setError, setPrefs, syncFromHost],
   );
 
   const renameSession = useCallback(

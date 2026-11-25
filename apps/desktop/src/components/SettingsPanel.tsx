@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Ref } from "react";
+import { useModalFocus } from "../hooks/useModalFocus";
 import {
   Boxes,
   ChartColumn,
@@ -20,7 +21,7 @@ import { UsageSettingsPage } from "./UsageSettingsPage";
 import { GeneralSettingsPage } from "./settings/GeneralSettingsPage";
 import { ToolsSettingsPage } from "./settings/ToolsSettingsPage";
 import { GodotSettingsPage } from "./settings/GodotSettingsPage";
-import { ProvidersSettingsPage } from "./settings/ProvidersSettingsPage";
+import { ProvidersSettingsPage, type ProviderEditorHandle } from "./settings/ProvidersSettingsPage";
 
 export type SettingsTab =
   | "general"
@@ -32,6 +33,7 @@ export type SettingsTab =
 
 interface Props {
   open: boolean;
+  backdropRef: Ref<HTMLDivElement>;
   prefs: ClientPrefs;
   cwd: string | null;
   onClose: () => void;
@@ -49,6 +51,7 @@ interface Props {
 
 export function SettingsPanel({
   open,
+  backdropRef,
   prefs,
   cwd,
   onClose,
@@ -62,36 +65,18 @@ export function SettingsPanel({
   initialTab,
 }: Props) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? "providers");
-  const panelRef = useRef<HTMLDivElement>(null);
-  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const providerEditor = useRef<ProviderEditorHandle>(null);
+
+  /** Keep provider edits when switching tabs; verify a discard only when closing settings. */
+  const requestClose = useCallback(async () => {
+    if (!providerEditor.current || await providerEditor.current.confirmDiscard()) onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (open && initialTab) setTab(initialTab);
   }, [open, initialTab]);
 
-  useEffect(() => {
-    if (!open) return;
-    previouslyFocusedRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    panelRef.current?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      previouslyFocusedRef.current?.focus();
-      previouslyFocusedRef.current = null;
-    };
-  }, [open, onClose]);
-
-  if (!open) return null;
+  const panelRef = useModalFocus<HTMLDivElement>(open, requestClose);
 
   const tabs: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
     { id: "general", label: "通用", icon: Settings2 },
@@ -103,7 +88,7 @@ export function SettingsPanel({
   ];
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div ref={backdropRef} className="modal-backdrop" inert={!open} role="presentation" onClick={() => void requestClose()}>
       <div
         ref={panelRef}
         className="modal-panel settings-modal"
@@ -115,7 +100,7 @@ export function SettingsPanel({
       >
         <div className="modal-head">
           <h2>设置</h2>
-          <button type="button" className="btn btn-ghost btn-icon" aria-label="关闭设置" title="关闭设置" onClick={onClose}>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="关闭设置" title="关闭设置" onClick={() => void requestClose()}>
             <X size={14} />
           </button>
         </div>
@@ -128,6 +113,7 @@ export function SettingsPanel({
                 <button
                   key={t.id}
                   type="button"
+                  aria-current={tab === t.id ? "page" : undefined}
                   className={
                     tab === t.id
                       ? "settings-nav-item active"
@@ -151,7 +137,7 @@ export function SettingsPanel({
           >
             {tab === "general" && (
               <GeneralSettingsPage
-                open={open && tab === "general"}
+                open={tab === "general"}
                 prefs={prefs}
                 onPrefsChanged={onPrefsChanged}
                 onBashChanged={onBashChanged}
@@ -176,7 +162,9 @@ export function SettingsPanel({
 
             {tab === "godot" && (
               <GodotSettingsPage
-                open={open && tab === "godot"}
+                key={cwd}
+                onOpenTools={() => setTab("tools")}
+                open={tab === "godot"}
                 prefs={prefs}
                 cwd={cwd}
                 onPrefsChanged={onPrefsChanged}
@@ -193,7 +181,8 @@ export function SettingsPanel({
             )}
 
             <ProvidersSettingsPage
-              open={open && tab === "providers"}
+              ref={providerEditor}
+              open={tab === "providers"}
               onProvidersChanged={onProvidersChanged}
             />
           </div>

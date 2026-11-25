@@ -17,6 +17,7 @@ import type {
 } from "@shared/ipc";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback } from "react";
+import { useOverlayPresence } from "../hooks/useOverlayPresence";
 
 export type AppSettingsPanelProps = {
   open: boolean;
@@ -64,9 +65,11 @@ export function AppSettingsPanel(props: AppSettingsPanelProps) {
     setAuth(await window.xAgent.prefs.checkAuth());
   }, [onProvidersChanged, setAuth]);
 
-  if (!open) return null;
+  const { present, ref } = useOverlayPresence<HTMLDivElement>(open);
+  if (!present) return null;
   return (
     <SettingsPanel
+      backdropRef={ref}
       open={open}
       prefs={prefs}
       cwd={cwd}
