@@ -13,6 +13,7 @@ test("打开项目后可通过菜单和键盘切换四种会话模式", async ()
     await expect(picker).toBeDisabled();
     expect((await main.evaluate((cwd) => window.xAgent.workspace.open(cwd, "new"), project)).ok).toBe(true);
     await expect(picker).toBeEnabled();
+    await expect(main.getByText(/No models available/)).toHaveCount(0);
     for (const [label, mode] of [["调研", "ask"], ["计划", "plan"], ["目标", "goal"], ["智能体", "agent"]]) {
       await picker.click();
       await expect(main.getByRole("listbox")).toBeVisible();
