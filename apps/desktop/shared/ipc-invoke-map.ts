@@ -87,6 +87,7 @@ export type WorkspaceApi = {
   newSession: IpcInvokeMap["newSession"];
   resume: IpcInvokeMap["resumeSession"];
   listSessions: IpcInvokeMap["listSessions"];
+  retainDraftSession: IpcInvokeMap["retainDraftSession"];
   deleteSession: IpcInvokeMap["deleteSession"];
   deleteProjectSessions: IpcInvokeMap["deleteProjectSessions"];
   renameSession: IpcInvokeMap["renameSession"];
@@ -330,6 +331,7 @@ export type IpcInvokeMap = {
   getGoal: () => Promise<GoalInfo | null>;
   listModels: () => Promise<ModelInfo[]>;
   listSessions: () => Promise<SessionInfo[]>;
+  retainDraftSession: (expectedSessionId: string) => Promise<void>;
   resumeSession: (sessionPath: string) => Promise<OpenProjectResult>;
   deleteSession: (sessionPath: string) => Promise<{ ok: boolean; error?: string }>;
   /** Delete all X-agent sessions for a project cwd. */

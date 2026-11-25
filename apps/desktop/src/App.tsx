@@ -178,7 +178,8 @@ export default function App() {
 
   // Composer owns the real draft; restore/switch hooks must share its setter.
   const { confirmState, retractBusy, beginConfirm, runConfirmedRetract, cancelConfirm, setConfirmState } = useRetractConfirm({
-    editDraft, setError, setInput: composer.setInput,
+    editDraft, setError,
+    restoreText: (input) => composer.restoreDraft({ input, attachments: [], fileRefs: [] }),
     setEditingEntryId, setEditDraft, refreshSessions,
   });
 
@@ -187,7 +188,9 @@ export default function App() {
     setItems, setStatus, setCwd, setSessionId, setError,
     setBusy, setSessionType, setSessionMode, setPlanPath, setGoal,
     setQueuedSteering, setEditingEntryId, setEditDraft,
-    setInput: composer.setInput,
+    sessions,
+    hasDraft: () => composer.needsSession() || items.some((item) => item.kind === "user" && !item.entryId),
+    forgetDrafts: composer.forgetDrafts,
     setConfirmState, setFollowNonce, setPrefs, setAvailableThinkingLevels,
     setPrefsRecovery, setSecretCodec, setBash, setGit, setAuth, setPiCli,
     refreshSessions, refreshModels, refreshProjectReadiness,
@@ -272,7 +275,7 @@ export default function App() {
     [composer],
   );
   const pickStarter = useCallback(
-    (prompt: string) => composer.setInput(prompt),
+    (prompt: string) => composer.setInput((draft) => draft.trim() ? `${draft}\n${prompt}` : prompt),
     [composer],
   );
   const onStartEdit = useCallback(
@@ -376,6 +379,7 @@ export default function App() {
         }}
         chatActions={{
           setInput: composer.setInput,
+          restoreNextDraft: composer.recoverableCount ? composer.restoreNextDraft : undefined,
           onSend: composer.send,
           onAbort: composer.abort,
           onAddFiles: composer.onAddFiles,
@@ -453,7 +457,7 @@ export default function App() {
           onConfirm={() => { void runConfirmedRetract(); }}
         />
       )}
-      {prefs && settingsOpen && (
+      {prefs && (
         <AppSettingsPanel
           open={settingsOpen}
           prefs={prefs}

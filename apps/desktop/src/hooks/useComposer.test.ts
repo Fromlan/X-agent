@@ -74,11 +74,11 @@ describe("buildImageUnsupportedMessage —— 模型能力闸门", () => {
     expect(buildImageUnsupportedMessage(models, "anthropic/claude-sonnet-4-5")).toBeNull();
   });
 
-  it("非 vision 模型 → 报错 + 含模型名 + 含 vision 例子", () => {
+  it("非图片模型的提示包含模型名和可执行的恢复操作", () => {
     const msg = buildImageUnsupportedMessage(models, "mistral/mistral-large-2411");
     expect(msg).not.toBeNull();
     expect(msg).toContain("mistral/mistral-large-2411");
-    expect(msg).toContain("vision");
+    expect(msg).toContain("切换到支持图片的模型，或移除图片");
   });
 
   it("未知 model key → 报错 (保守)", () => {
@@ -139,6 +139,8 @@ function setupSetters() {
   const setInput = vi.fn();
   const setAttachments = vi.fn();
   const setFileRefs = vi.fn();
+  const restoreDraft = vi.fn();
+  const beginAttachmentRead = () => () => undefined;
   const setError = vi.fn();
   const setFollowNonce = vi.fn();
   const setItems = vi.fn();
@@ -150,6 +152,8 @@ function setupSetters() {
     setInput,
     setAttachments,
     setFileRefs,
+    restoreDraft,
+    beginAttachmentRead,
     setError,
     setFollowNonce,
     setItems,
@@ -217,7 +221,7 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     setters.goalDispatcher.handleGoalCommand.mockResolvedValue(true);
     const ok = await d.send();
     expect(ok).toBe(true);
-    expect(setters.goalDispatcher.handleGoalCommand).toHaveBeenCalledWith("/goal clear");
+    expect(setters.goalDispatcher.handleGoalCommand).toHaveBeenCalledWith("/goal clear", false);
     expect(setters.setItems).not.toHaveBeenCalled();
   });
 
@@ -258,9 +262,7 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     await expect(d.send()).resolves.toBe(false);
     expect(setters.setItems).toHaveBeenCalledTimes(2);
     expect(setters.setError).toHaveBeenLastCalledWith(message === "Connection error." ? "网络异常：与供应商的连接中断" : "操作已中止");
-    const restore = setters.setInput.mock.calls.at(-1)![0] as (draft: string) => string;
-    expect(restore("")).toBe("hello world");
-    expect(restore("new draft")).toBe("new draft");
+    expect(setters.restoreDraft).toHaveBeenCalledWith({ input: "hello world", attachments: [], fileRefs: [] });
   });
 
   it("send: a rejected goal command does not escape the composer", async () => {
@@ -320,11 +322,12 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     expect(turnMock.abort).toHaveBeenCalled();
   });
 
-  it("abort: 抛错时不冒泡 (UI 静默吞掉, dbgLog)", async () => {
+  it("abort: 拒绝中止时显示错误并保留会话", async () => {
     const { turnMock } = installIpcMock();
-    const { d } = makeDispatcher();
+    const { d, setters } = makeDispatcher();
     turnMock.abort.mockRejectedValue(new Error("boom"));
     await expect(d.abort()).resolves.toBeUndefined();
+    expect(setters.setError).toHaveBeenCalledWith("boom");
   });
 
   it("onAddFiles: 0 文件 → no-op", async () => {
@@ -382,8 +385,7 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     const { d, setters } = makeDispatcher();
     await d.onClarifySelect("选 A");
     expect(setters.setError).toHaveBeenCalledWith("boom");
-    const restore = setters.setInput.mock.calls.at(-1)![0] as (draft: string) => string;
-    expect(restore("")).toBe("选 A");
+    expect(setters.restoreDraft).toHaveBeenCalledWith({ input: "选 A", attachments: [], fileRefs: [] });
   });
 
   it("onClarifySelect: rejected IPC restores the reply and remains retryable", async () => {
@@ -393,9 +395,7 @@ describe("createComposerDispatcher —— 行为契约 (useComposer 通过它实
     await expect(d.onClarifySelect("选 A")).resolves.toBeUndefined();
     expect(setters.setItems).toHaveBeenCalledTimes(2);
     expect(setters.setError).toHaveBeenLastCalledWith("操作已中止");
-    const restore = setters.setInput.mock.calls.at(-1)![0] as (draft: string) => string;
-    expect(restore("")).toBe("选 A");
-    expect(restore("new draft")).toBe("new draft");
+    expect(setters.restoreDraft).toHaveBeenCalledWith({ input: "选 A", attachments: [], fileRefs: [] });
   });
 
   it("canSend: 有内容 + cwd → true", () => {

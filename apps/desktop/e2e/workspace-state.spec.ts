@@ -79,12 +79,13 @@ async function send(main: Page, text: string) {
   } else await expect.poll(() => main.evaluate(async () => (await window.xAgent.workspace.getStatus()).status)).toBe("streaming");
 }
 
-test("07 retract button and confirmation restore the original composer text", async () => {
+test("07 retract preserves the active draft and makes the withdrawn text recoverable", async () => {
   const project = makeProject("retract");
   const { app, main } = await fixture(project);
   try {
     const original = "original prompt for retract";
     await send(main, original);
+    await main.locator(".composer textarea").fill("keep this separate draft");
     // Use the button's native keyboard activation so overlapping bubble chrome
     // cannot mask the state regression under test.
     const retract = main.locator(".bubble-user").getByRole("button", { name: "撤回", exact: true });
@@ -92,11 +93,15 @@ test("07 retract button and confirmation restore the original composer text", as
     await retract.press("Enter");
     await main.getByRole("dialog", { name: "撤回此轮对话" }).getByRole("button", { name: "撤回", exact: true }).click();
     await expect(main.getByRole("dialog", { name: "撤回此轮对话" })).not.toBeVisible();
+    await expect(main.locator(".composer textarea")).toHaveValue("keep this separate draft");
+    await main.getByRole("button", { name: "切换未发送草稿" }).click();
     await expect(main.locator(".composer textarea")).toHaveValue(original);
+    await main.getByRole("button", { name: "切换未发送草稿" }).click();
+    await expect(main.locator(".composer textarea")).toHaveValue("keep this separate draft");
   } finally { await app.close(); rmSync(project, { recursive: true, force: true }); }
 });
 
-test("07 successful new code/design, sidebar resume and folder-open buttons clear stale drafts", async () => {
+test("07 drafts and attachments follow their conversation through new, resume and project switches", async () => {
   const project = makeProject("session");
   const alternate = makeProject("alternate");
   const { app, main } = await fixture(project);
@@ -105,18 +110,28 @@ test("07 successful new code/design, sidebar resume and folder-open buttons clea
     const original = await main.evaluate(() => window.xAgent.workspace.getStatus());
     expect(original.sessionPath).toBeTruthy();
     await main.evaluate((path) => window.xAgent.workspace.renameSession(path, "history-to-resume"), original.sessionPath!);
+    await main.locator('.composer input[type="file"]').setInputFiles(join(project, "session.txt"));
+    await expect(main.getByRole("button", { name: "移除文件附件：session.txt" })).toBeVisible();
     for (const type of ["code", "design"]) {
       await main.locator(".composer textarea").fill(`${type} stale draft`);
       await main.locator(`.sidebar-session-types button[data-session-type="${type}"]`).click();
       await main.getByRole("button", { name: "新会话", exact: true }).click();
       await expect(main.getByRole("button", { name: "新会话", exact: true })).toBeEnabled();
       await expect(main.locator(".composer textarea")).toHaveValue("");
+      await expect(main.locator(".composer-attachments")).toHaveCount(0);
     }
+    const unsent = await main.evaluate(() => window.xAgent.workspace.getStatus());
     await main.locator('.sidebar-session-types button[data-session-type="code"]').click();
     await main.locator(".composer textarea").fill("resume stale draft");
     await main.locator(".session-card-main").filter({ hasText: "history-to-resume" }).click();
     await expect.poll(() => main.evaluate(async () => (await window.xAgent.workspace.getStatus()).sessionId)).toBe(original.sessionId);
-    await expect(main.locator(".composer textarea")).toHaveValue("");
+    await expect(main.locator(".composer textarea")).toHaveValue("code stale draft");
+    await expect(main.getByRole("button", { name: "移除文件附件：session.txt" })).toBeVisible();
+    const unsentRow = await main.evaluate(async (id) => (await window.xAgent.workspace.listSessions()).find((entry) => entry.id === id), unsent.sessionId);
+    expect(unsentRow?.sessionType).toBe("design");
+    await main.locator('.sidebar-session-types button[data-session-type="design"]').click();
+    await main.locator(".session-card-main").filter({ hasText: unsentRow!.name }).click();
+    await expect(main.locator(".composer textarea")).toHaveValue("resume stale draft");
     await main.locator(".composer textarea").fill("open stale draft");
     await chooseProject(app, alternate);
     await main.getByRole("button", { name: "打开项目", exact: true }).click();

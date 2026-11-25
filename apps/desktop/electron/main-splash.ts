@@ -9,8 +9,6 @@ import { join } from "node:path";
 
 /** 1.4: 30s → 15s。Splash 失败 fallback 兜底太长会让用户以为 app 卡死。 */
 const SPLASH_TIMEOUT_MS = 15_000;
-// 淡出动画时长需与 splash.html 中 body.leaving 的 transition 时长保持一致。
-const SPLASH_FADE_OUT_MS = 320;
 
 let splashWindow: BrowserWindow | null = null;
 let splashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -36,14 +34,19 @@ async function fadeOutSplash(): Promise<void> {
   const win = splashWindow;
   if (!alive(win)) return;
   try {
-    await win.webContents.executeJavaScript(
-      "document.body.classList.add('leaving');",
-    );
+    // A disabled transition (including reduced motion) resolves immediately.
+    // Bound the wait independently of the renderer, even if its first paint stalls.
+    await Promise.race([
+      win.webContents.executeJavaScript(`
+        document.body.classList.add('leaving');
+        Promise.allSettled(document.body.getAnimations().map(animation => animation.finished));
+      `),
+      new Promise<void>((resolve) => setTimeout(resolve, 200)),
+    ]);
   } catch {
     // 注入失败(页面尚未就绪)时直接销毁, 避免长时间白屏.
     return;
   }
-  await new Promise<void>((resolve) => setTimeout(resolve, SPLASH_FADE_OUT_MS));
 }
 
 export type RevealDeps = {

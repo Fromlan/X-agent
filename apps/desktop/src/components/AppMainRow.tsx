@@ -28,8 +28,9 @@ import { RightPanel } from "./RightPanel";
 import type { ChatItem } from "../stores/chat-store";
 import { hasGodotEditorToolsEnabled } from "../lib/ready-checklist";
 import { startersForProject, type ChatStarter } from "../lib/chat-starters";
-import { modelSupportsImage } from "../lib/model-capability";
+import { buildImageUnsupportedMessage } from "../hooks/useComposer";
 import { useAppLayout } from "../hooks/useAppLayout";
+import { useOverlayPresence } from "../hooks/useOverlayPresence";
 import { useMemo, type CSSProperties, type RefObject } from "react";
 import type { FileReference } from "../lib/file-attachment";
 
@@ -50,6 +51,7 @@ export type AppMainRowSidebarActions = {
 
 export type AppMainRowChatActions = {
   setInput: (v: string | ((prev: string) => string)) => void;
+  restoreNextDraft?: () => void;
   onSend: () => Promise<boolean>;
   onAbort: () => Promise<void>;
   onAddFiles: (files: File[]) => Promise<void>;
@@ -206,8 +208,13 @@ export function AppMainRow(props: AppMainRowProps) {
       });
       return list;
     }, [activeCwd, isGodotProject, prefs, chatActions]);
-  const rightDrawerOpen = layout.rightPanelMode === "drawer" && !layout.sidebarDrawerOpen;
+  const rightDrawerMode = layout.rightPanelMode === "drawer";
+  const rightDrawerOpen = rightDrawerMode && !layout.sidebarDrawerOpen;
   const drawerOpen = layout.sidebarDrawerOpen || rightDrawerOpen;
+  const rightDrawer = useOverlayPresence<HTMLElement>(rightDrawerMode);
+  const leftDrawer = useOverlayPresence<HTMLDivElement>(layout.sidebarDrawerOpen);
+  const drawerBackdrop = useOverlayPresence<HTMLButtonElement>(drawerOpen);
+  const rightDrawerClosing = layout.rightPanelMode === "closed" && rightDrawer.present;
 
   return (
     <div
@@ -218,12 +225,14 @@ export function AppMainRow(props: AppMainRowProps) {
       style={
         {
           "--sidebar-width": `${layout.layoutWidths.sidebar}px`,
-          "--right-panel-width": `${layout.layoutWidths.right}px`,
+          "--right-panel-width": `${rightDrawerClosing ? layout.rightPanelWidth : layout.layoutWidths.right}px`,
           "--sidebar-drawer-width": `${layout.sidebarDrawerWidth}px`,
         } as CSSProperties
       }
     >
-      <div className={`workspace-sidebar-column${layout.sidebarDrawerOpen ? " is-drawer" : ""}`} inert={rightDrawerOpen}>
+      <div ref={leftDrawer.ref} className={`workspace-sidebar-column${leftDrawer.present ? " is-drawer" : ""}`}
+        data-leaving={leftDrawer.present && !layout.sidebarDrawerOpen || undefined}
+        inert={rightDrawerOpen || (leftDrawer.present && !layout.sidebarDrawerOpen)}>
       <Sidebar
         appVersion={props.appVersion}
         isGodotProject={isGodotProject}
@@ -239,7 +248,7 @@ export function AppMainRow(props: AppMainRowProps) {
         busy={busy}
         compacting={compacting}
         sessionsLoading={sessionsLoading}
-        collapsed={layout.sidebarCollapsed && !layout.sidebarDrawerOpen}
+        collapsed={layout.sidebarCollapsed && !leftDrawer.present}
         modal={layout.sidebarDrawerOpen}
         onCloseDrawer={layout.closeSidebarDrawer}
         onResume={(path) => { layout.closeSidebarDrawer(); void sidebarActions.onResume(path); }}
@@ -288,6 +297,7 @@ export function AppMainRow(props: AppMainRowProps) {
         input={input}
         externalStreamRef={externalStreamRef}
         setInput={chatActions.setInput}
+        restoreNextDraft={chatActions.restoreNextDraft}
         onSend={chatActions.onSend}
         onAbort={chatActions.onAbort}
         attachments={attachments}
@@ -296,7 +306,8 @@ export function AppMainRow(props: AppMainRowProps) {
         onRemoveImage={chatActions.onRemoveImage}
         onRemoveFile={chatActions.onRemoveFile}
         disabled={!activeCwd}
-        modelSupportsImage={modelSupportsImage(models, currentModelKey)}
+        onOpenProject={busy ? undefined : sidebarActions.onOpen}
+        imageWarning={attachments.length ? buildImageUnsupportedMessage(models, currentModelKey) : null}
         currentModelLabel={currentModelKey}
         skillsRefreshKey={skillsRefreshKey}
         queuedSteering={queuedSteering}
@@ -333,13 +344,16 @@ export function AppMainRow(props: AppMainRowProps) {
         onToggleThinking={chatActions.onToggleThinking}
       />
       </div>
-      {drawerOpen && <button type="button" className="workspace-panel-backdrop" tabIndex={-1}
+      {drawerBackdrop.present && <button ref={drawerBackdrop.ref} type="button" className="workspace-panel-backdrop" tabIndex={-1}
+        inert={!drawerOpen} data-leaving={!drawerOpen || undefined}
         aria-label={layout.sidebarDrawerOpen ? "关闭会话栏遮罩" : "关闭工具面板遮罩"}
         onClick={() => { if (layout.sidebarDrawerOpen) layout.closeSidebarDrawer(); else void chatActions.onCloseRightPanel(); }} />}
-      {prefs?.rightPanelOpen && (
+      {(prefs?.rightPanelOpen || rightDrawerClosing) && (
         <RightPanel
           modal={rightDrawerOpen}
-          inert={layout.sidebarDrawerOpen}
+          surfaceRef={rightDrawer.ref}
+          leavingDrawer={rightDrawerClosing}
+          inert={layout.sidebarDrawerOpen || rightDrawerClosing}
           isGodotProject={isGodotProject}
           rpcStatus={rpcStatus}
           cwd={activeCwd}

@@ -17,19 +17,21 @@ const I18N = {
     "nav.roles": "场景",
     "nav.timeline": "能力",
     "nav.faq": "FAQ",
+    "nav.skip": "跳到主要内容",
+    "nav.sections": "目录",
     "cta.download": "下载",
     "cta.theme.toggle": "切换主题",
 
     // hero
-    "hero.status": "Early Beta · ",
     "hero.title": "X-agent",
     "hero.sub":
       "为 Godot 4 而生的桌面编码 Agent — 在同一会话里改代码、跑场景、撤回到任意一步,17 个 Godot 工具与 Shadow Git 撤回始终待命。",
-    "cta.downloadWin": "下载 Windows 安装包",
+    "cta.downloadWin": "查看 Windows 下载",
+    "cta.installWin": "下载 Windows 安装包",
     "cta.star": "GitHub Star",
     "cta.readme": "看 README",
 
-    "hero.scrollHint": "滚动",
+    "hero.scrollHint": "查看功能",
 
     // pillars
     "pillars.eyebrow": "WHY X-AGENT",
@@ -156,7 +158,7 @@ const I18N = {
       "<p>不会。升级保留 ~/.pi/agent/ 下所有内容。如需回滚到旧版，直接装旧 installer 覆盖。</p>",
     "faq.q6": "macOS / Linux 呢？",
     "faq.a6":
-      "<p>当前 0.5.5 仅 Windows。Phase 3.4 路线图里有 macOS / Linux 安装包（详见 docs/roadmap.md）。</p>",
+      "<p>目前提供 Windows 安装包。</p>",
 
     // footer
     "footer.about":
@@ -195,19 +197,21 @@ const I18N = {
     "nav.roles": "Use cases",
     "nav.timeline": "Changelog",
     "nav.faq": "FAQ",
+    "nav.skip": "Skip to main content",
+    "nav.sections": "Sections",
     "cta.download": "Download",
     "cta.theme.toggle": "Toggle theme",
 
     // hero
-    "hero.status": "Early Beta · ",
     "hero.title": "X-agent",
     "hero.sub":
       "A desktop coding agent built for Godot 4 — edit code, run scenes, and rewind to any step in the same session, with 17 Godot tools and Shadow Git rollback on standby.",
-    "cta.downloadWin": "Download for Windows",
+    "cta.downloadWin": "Windows downloads",
+    "cta.installWin": "Download Windows installer",
     "cta.star": "Star on GitHub",
     "cta.readme": "Read the README",
 
-    "hero.scrollHint": "scroll",
+    "hero.scrollHint": "Explore features",
 
     // pillars
     "pillars.eyebrow": "WHY X-AGENT",
@@ -336,7 +340,7 @@ const I18N = {
       "<p>No. Upgrades preserve everything under ~/.pi/agent/. To roll back, install an older installer over the current one.</p>",
     "faq.q6": "What about macOS / Linux?",
     "faq.a6":
-      "<p>0.5.5 is Windows-only. Phase 3.4 of the roadmap includes macOS / Linux installers (see docs/roadmap.md).</p>",
+      "<p>Windows installers are currently available.</p>",
 
     // footer
     "footer.about":
@@ -404,6 +408,11 @@ function applyLocale(locale) {
     el.textContent = t(el.getAttribute("data-i18n"));
   });
 
+  // Translate the accessible names of controls that already have their own contents.
+  document.querySelectorAll("[data-i18n-label]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.getAttribute("data-i18n-label")));
+  });
+
   // Update all data-i18n-html (allow inline HTML for rich content like <b>)
   document.querySelectorAll("[data-i18n-html]").forEach((el) => {
     const key = el.getAttribute("data-i18n-html");
@@ -422,5 +431,5 @@ function initLocale() {
   applyLocale(currentLocale);
 }
 
-// Expose for theme.js / release.js / inline handlers
+// Expose for theme.js / download.js / inline handlers
 window.XAgentI18n = { t, applyLocale, get currentLocale() { return currentLocale; } };

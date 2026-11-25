@@ -3,18 +3,7 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
 @import "./themes.css";
-
-/* Global reduced-motion safety net: any infinite animation not explicitly
- * handled by a local block (bubble-actions, api-status-line, etc.) gets
- * killed here. Keep this block at the top so it can override selectors
- * lower in the file via source order. */
-@media (prefers-reduced-motion: reduce) {
-  .status-icon-dot,
-  .stream-cursor::after,
-  .icon-spin {
-    animation: none !important;
-  }
-}
+@import "./motion.css";
 
 :root {
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "PingFang SC",
@@ -44,7 +33,7 @@ body {
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color var(--motion-control), color var(--motion-control);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -110,7 +99,7 @@ button:disabled {
   font-weight: 500;
   border: 1px solid transparent;
   background: transparent;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+  transition: background-color var(--motion-control), border-color var(--motion-control), color var(--motion-control), opacity var(--motion-control), scale var(--motion-press);
 }
 
 .btn-sm {
@@ -188,7 +177,7 @@ input:not([type]) {
   font: inherit;
   font-size: 13px;
   line-height: 1.3;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, color 0.12s;
+  transition: background-color var(--motion-control), border-color var(--motion-control), box-shadow var(--motion-control), color var(--motion-control);
 }
 
 .input:hover:not(:disabled):not(:read-only),
@@ -277,7 +266,7 @@ textarea:not(.plugins-editor) {
   font-size: 13px;
   line-height: 1.5;
   resize: vertical;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition: background-color var(--motion-control), border-color var(--motion-control), box-shadow var(--motion-control);
 }
 
 textarea:not(.plugins-editor):hover:not(:disabled):not(:read-only) {
@@ -405,7 +394,7 @@ input:not([type]):-webkit-autofill {
   line-height: 1.2;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  transition: background-color var(--motion-control), border-color var(--motion-control), color var(--motion-control), box-shadow var(--motion-control), scale var(--motion-press);
 }
 
 .select-menu-pill .select-menu-trigger {
@@ -503,7 +492,7 @@ input:not([type]):-webkit-autofill {
 .select-menu-caret {
   flex-shrink: 0;
   color: var(--text-muted);
-  transition: transform 0.12s, color 0.12s;
+  transition: transform var(--motion-control), color var(--motion-control);
 }
 
 .select-menu.is-open .select-menu-caret {
@@ -599,7 +588,7 @@ input:not([type]):-webkit-autofill {
   font-weight: 500;
   line-height: 1.2;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background-color var(--motion-control), border-color var(--motion-control), color var(--motion-control), scale var(--motion-press);
 }
 
 .thinking-toggle:hover {
@@ -779,7 +768,7 @@ body.is-resizing-column * {
   bottom: 0;
   width: 2px;
   background: transparent;
-  transition: background 0.12s;
+  transition: background-color var(--motion-control);
 }
 
 .column-resize-handle--right::after {
@@ -889,7 +878,7 @@ body.is-resizing-column * {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition: background-color var(--motion-control), color var(--motion-control), border-color var(--motion-control), box-shadow var(--motion-control), scale var(--motion-press);
 }
 
 .project-avatar:hover:not(:disabled) {
@@ -943,8 +932,7 @@ body.is-resizing-column * {
   text-align: center;
 }
 
-/* Skeleton placeholders rendered while `listSessions` is in flight.
- * Uses a soft shimmer; honors prefers-reduced-motion (see top of file). */
+/* Pulse the placeholder group on one layer while sessions load. */
 .session-skeleton {
   list-style: none;
   margin: 0;
@@ -952,32 +940,17 @@ body.is-resizing-column * {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 .session-skeleton-row {
   height: 28px;
   border-radius: var(--radius-control);
-  background: linear-gradient(
-    90deg,
-    var(--bg-input) 0%,
-    var(--bg-list-hover) 50%,
-    var(--bg-input) 100%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s linear infinite;
+  background: var(--bg-list-hover);
 }
 
 .session-skeleton-row.is-short {
   width: 60%;
-}
-
-@keyframes skeleton-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
 }
 
 .session-card {
@@ -990,7 +963,7 @@ body.is-resizing-column * {
   border-radius: var(--radius-md);
   padding: 0;
   color: var(--text-primary);
-  transition: background 0.12s;
+  transition: background-color var(--motion-control);
   position: relative;
 }
 
@@ -1233,7 +1206,7 @@ body[data-session-type="design"] .chat-panel {
   text-align: left;
   cursor: pointer;
   line-height: 1.5;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background-color var(--motion-control), border-color var(--motion-control), color var(--motion-control);
 }
 
 .starter-chip svg {
@@ -1570,7 +1543,7 @@ body[data-session-type="design"] .chat-panel {
   width: max-content;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--motion-control);
   padding: 3px;
   border-radius: var(--radius-pill);
   background: var(--bg-modal);
@@ -1583,9 +1556,8 @@ body[data-session-type="design"] .chat-panel {
   pointer-events: auto;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (hover: none) {
   .bubble-actions {
-    transition: none;
     opacity: 1;
     pointer-events: auto;
   }
@@ -1630,7 +1602,7 @@ body[data-session-type="design"] .chat-panel {
   gap: 8px;
 }
 
-.confirm-backdrop {
+.modal-backdrop.confirm-backdrop {
   z-index: 60;
 }
 
@@ -2044,7 +2016,7 @@ body[data-session-type="design"] .chat-panel {
 .user-file-ref-chevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-control);
 }
 
 .user-file-ref[open] .user-file-ref-chevron {
@@ -2271,7 +2243,7 @@ body[data-session-type="design"] .chat-panel {
 
 /* chevron 旋转 (与 .tool-chevron 一致) */
 .toolbatch-chevron {
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-control);
 }
 
 .bubble-tool-batch[open] .toolbatch-chevron {
@@ -2371,7 +2343,7 @@ body[data-session-type="design"] .chat-panel {
 .tool-chevron {
   flex-shrink: 0;
   color: var(--text-muted);
-  transition: transform 0.15s ease;
+  transition: transform var(--motion-control);
 }
 
 .bubble-tool[open] .tool-chevron {
@@ -2697,7 +2669,7 @@ body[data-session-type="design"] .chat-panel {
   border-radius: var(--radius-floating);
   background: var(--bg-card-elev);
   box-shadow: var(--shadow-soft);
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: box-shadow var(--motion-control), border-color var(--motion-control);
 }
 
 .composer-shell[data-session-mode="agent"] {
@@ -3267,7 +3239,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   color: var(--text-secondary);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--motion-control), background-color var(--motion-control);
 }
 
 .theme-card:hover {
@@ -3964,7 +3936,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   border: 1px solid var(--border-primary);
   border-radius: 999px;
   cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: background-color var(--motion-control), color var(--motion-control), border-color var(--motion-control);
   user-select: none;
 }
 
@@ -4409,6 +4381,15 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   margin-top: 18px;
 }
 
+.provider-editor-fields {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  display: grid;
+  gap: 12px;
+}
+
 .modal-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4846,7 +4827,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   color: var(--text-secondary);
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background-color var(--motion-control), color var(--motion-control);
 }
 
 .rp-nav-tab svg {
@@ -5065,7 +5046,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   font-size: 12.5px;
   line-height: 1.45;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color var(--motion-control), background-color var(--motion-control);
 }
 
 .clarify-option:hover:not(:disabled) {
@@ -5100,7 +5081,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   align-items: center;
   justify-content: center;
   color: transparent;
-  transition: all 0.12s ease;
+  transition: background-color var(--motion-control), border-color var(--motion-control), color var(--motion-control);
 }
 
 .clarify-option:hover:not(:disabled) .clarify-option-check {
@@ -5151,7 +5132,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   line-height: 1.5;
   font-family: inherit;
   resize: vertical;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition: border-color var(--motion-control), box-shadow var(--motion-control);
 }
 
 .clarify-custom-input::placeholder {
@@ -5394,7 +5375,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   height: 100%;
   border-radius: var(--radius-pill);
   background: var(--text-secondary);
-  transition: width 0.25s ease;
+  transform-origin: left;
+  transition: transform var(--motion-surface);
 }
 
 .rp-context-track-fill.is-warn,
@@ -6189,16 +6171,6 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
 
 /* Composer attachments (#42): 粘贴截图 / 拖放图片的缩略图 + 计数 */
 .composer-attachments {
@@ -6638,7 +6610,7 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 }
 .sidebar-head-actions {
   opacity: 0;
-  transition: opacity .12s;
+  transition: opacity var(--motion-control);
 }
 .sidebar-head-actions .btn-icon {
   width: 32px;
@@ -6803,7 +6775,8 @@ body[data-session-type="design"] .composer-shell[data-streaming="true"] {
 .workspace-context-meter > span {
   display: block;
   height: 100%;
-  width: var(--context-fill);
+  transform-origin: left;
+  transition: transform var(--motion-surface);
   background: var(--accent-green);
   border-radius: inherit;
 }

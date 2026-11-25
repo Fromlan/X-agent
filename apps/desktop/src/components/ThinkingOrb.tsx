@@ -16,7 +16,7 @@
  * representative frame.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { CanvasHTMLAttributes, CSSProperties } from "react";
 import { MODE_DRAWS, resolvePreset } from "../lib/thinking-orbs/presets";
 import type { OrbSize, OrbState } from "../lib/thinking-orbs/presets";
@@ -29,6 +29,18 @@ import {
 
 /** Crossfade duration between state switches (ms). */
 const TRANSITION_MS = 350;
+
+/** React to Windows animation preferences while a response is already streaming. */
+function subscribeMotionPreference(notify: () => void): () => void {
+  const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+  media.addEventListener("change", notify);
+  return () => media.removeEventListener("change", notify);
+}
+
+/** Read the current value when subscribing and after a system preference change. */
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 /** Default per-state screen-reader labels (overridable via aria-label). */
 const STATE_LABELS: Record<OrbState, string> = {
@@ -82,6 +94,8 @@ export function ThinkingOrb({
 } & CanvasHTMLAttributes<HTMLCanvasElement>) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const dark = useBodyDark();
+  const reduced = useSyncExternalStore(subscribeMotionPreference, prefersReducedMotion, () => true);
+  const staticState = reduced || paused ? state : null;
   // Display bookkeeping lives in refs so a state switch never rebuilds
   // the draw loop: stateRef = latest prop, displayedRef = fully shown
   // state, transRef = in-flight crossfade (null when settled).
@@ -114,8 +128,6 @@ export function ThinkingOrb({
     displayedRef.current = stateRef.current;
     transRef.current = null;
 
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
     // Paint one state into the shared context at a mixing alpha. Each
     // mode carries its own baked speed, so scaling happens per state.
     const drawState = (s: OrbState, tSec: number, alpha: number) => {
@@ -141,9 +153,9 @@ export function ThinkingOrb({
     };
 
     // reduced motion → one static frame of the target state, no transition
-    if (reduced) {
+    if (staticState) {
       transRef.current = null;
-      displayedRef.current = stateRef.current;
+      displayedRef.current = staticState;
       frame(0.6);
       return;
     }
@@ -166,12 +178,13 @@ export function ThinkingOrb({
       if (running) raf = requestAnimationFrame(loop);
     };
     const start = () => {
-      if (running || paused) return;
+      if (running) return;
       running = true;
       raf = requestAnimationFrame(loop);
     };
     const stop = () => {
       running = false;
+      lastTs = 0;
       cancelAnimationFrame(raf);
     };
 
@@ -197,7 +210,7 @@ export function ThinkingOrb({
       io.disconnect();
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [size, speed, paused, dark]);
+  }, [size, speed, staticState, dark]);
 
   return (
     <canvas

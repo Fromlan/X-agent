@@ -1,9 +1,12 @@
 import { AlertTriangle } from "lucide-react";
-import { useEffect } from "react";
+import type { Ref } from "react";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 export type ConfirmTone = "default" | "warn" | "danger";
 
 type Props = {
+  open: boolean;
+  backdropRef: Ref<HTMLDivElement>;
   title: string;
   message: string;
   confirmLabel?: string;
@@ -15,6 +18,8 @@ type Props = {
 };
 
 export function ConfirmDialog({
+  open,
+  backdropRef,
   title,
   message,
   confirmLabel = "确定",
@@ -24,17 +29,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: Props) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (busy) return;
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
+  const panelRef = useModalFocus<HTMLDivElement>(open, () => { if (!busy) onCancel(); });
 
   // 视觉权重：warn/danger 场景下，confirm（继续/确定）是用户主动选择的风险动作，
   // 应当更显眼（CTA），cancel 是安全兜底（ghost）。autoFocus 仍留在 cancel，
@@ -49,6 +44,8 @@ export function ConfirmDialog({
 
   return (
     <div
+      ref={backdropRef}
+      inert={!open}
       className="modal-backdrop confirm-backdrop"
       role="presentation"
       onClick={() => {
@@ -56,6 +53,8 @@ export function ConfirmDialog({
       }}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={`modal-panel confirm-modal tone-${tone}`}
         role="dialog"
         aria-modal="true"
@@ -78,7 +77,7 @@ export function ConfirmDialog({
             type="button"
             className={cancelClass}
             disabled={busy}
-            autoFocus={safeDefault}
+            data-modal-focus={safeDefault || undefined}
             onClick={onCancel}
           >
             {cancelLabel}
@@ -87,7 +86,7 @@ export function ConfirmDialog({
             type="button"
             className={confirmClass}
             disabled={busy}
-            autoFocus={!safeDefault}
+            data-modal-focus={!safeDefault || undefined}
             onClick={onConfirm}
           >
             {confirmLabel}

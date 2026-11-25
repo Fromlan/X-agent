@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { ConfirmDialog, type ConfirmTone } from "../components/ConfirmDialog";
+import { useOverlayPresence } from "../hooks/useOverlayPresence";
 
 export type ConfirmOptions = {
   title: string;
@@ -28,7 +29,9 @@ type Pending = ConfirmOptions & {
 };
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [options, setOptions] = useState<ConfirmOptions | null>(null);
+  const [open, setOpen] = useState(false);
+  const { ref, present } = useOverlayPresence<HTMLDivElement>(open);
   // 用 ref 持有当前 pending 的 resolve —— setState 只能异步触发渲染，
   // 而旧实现里 sync 覆盖 ref 会导致上一个 Promise 永远 pending。
   const pendingRef = useRef<Pending | null>(null);
@@ -48,14 +51,15 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     return new Promise<boolean>((resolve) => {
       const next: Pending = { ...options, resolve };
       pendingRef.current = next;
-      setPending(next);
+      setOptions(options);
+      setOpen(true);
     });
   }, []);
 
   const close = useCallback((value: boolean) => {
     const cur = pendingRef.current;
     pendingRef.current = null;
-    setPending(null);
+    setOpen(false);
     cur?.resolve(value);
   }, []);
 
@@ -64,13 +68,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   return (
     <ConfirmContext.Provider value={value}>
       {children}
-      {pending && (
+      {present && options && (
         <ConfirmDialog
-          title={pending.title}
-          message={pending.message}
-          confirmLabel={pending.confirmLabel}
-          cancelLabel={pending.cancelLabel}
-          tone={pending.tone}
+          {...options}
+          open={open}
+          backdropRef={ref}
           onCancel={() => close(false)}
           onConfirm={() => close(true)}
         />

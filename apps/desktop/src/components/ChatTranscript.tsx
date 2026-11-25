@@ -103,6 +103,7 @@ export interface ChatTranscriptProps {
   showThinking: boolean;
   status?: AgentStatus;
   disabledEmpty?: boolean;
+  onOpenProject?: () => void;
   /** Starters shown when project is open but transcript is empty. */
   starters?: ChatStarterChip[];
   readinessHints?: { label: string; onClick: () => void }[];
@@ -144,6 +145,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   const pinStateRef = useRef<ChatScrollPinState>(initialChatScrollPinState());
   const followScheduledRef = useRef(false);
+  const smoothJumpRef = useRef(false);
   const prevFollowKeyRef = useRef<string | undefined>(undefined);
   const [showJump, setShowJump] = useState(false);
 
@@ -281,19 +283,24 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     applyPin(reduceChatScrollPin(pinStateRef.current, { type: "force_pin" }));
     const resolved: ScrollBehavior =
       behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
+    smoothJumpRef.current = resolved === "smooth" && el.scrollHeight - el.clientHeight - el.scrollTop > 1;
+    setShowJump(false);
+    if (smoothJumpRef.current) {
+      // Native scrolling remains interruptible. Reconcile virtual row measurements on scrollend.
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      return;
+    }
     const last = renderItems.length - 1;
     if (useVirtualList && last >= 0) {
       virtualizer.scrollToIndex(last, {
         align: "end",
-        behavior: resolved === "smooth" ? "smooth" : "auto",
+        behavior: "auto",
       });
-    } else if (resolved === "smooth") {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     } else {
       el.scrollTop = el.scrollHeight;
     }
-    setShowJump(false);
     requestAnimationFrame(() => {
+      if (!shouldFollow(pinStateRef.current) || smoothJumpRef.current) return;
       el.scrollTop = el.scrollHeight;
       applyPin(
         reduceChatScrollPin(pinStateRef.current, {
@@ -311,6 +318,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
   };
 
   const followIfPinned = () => {
+    if (smoothJumpRef.current) return;
     if (!shouldFollow(pinStateRef.current)) {
       syncJumpVisibility();
       return;
@@ -323,6 +331,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
       }),
     );
     requestAnimationFrame(() => {
+      if (!shouldFollow(pinStateRef.current) || smoothJumpRef.current) return;
       el.scrollTop = el.scrollHeight;
       applyPin(
         reduceChatScrollPin(pinStateRef.current, {
@@ -353,6 +362,10 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     if (!el) return;
 
     const unpinFromUser = () => {
+      if (smoothJumpRef.current) {
+        smoothJumpRef.current = false;
+        el.scrollTo({ top: el.scrollTop, behavior: "instant" });
+      }
       applyPin(
         reduceChatScrollPin(pinStateRef.current, { type: "user_intent_unpin" }),
       );
@@ -367,6 +380,13 @@ export function ChatTranscript(props: ChatTranscriptProps) {
         }),
       );
       syncJumpVisibility();
+    };
+
+    /** Finish against the measured bottom once the user-requested motion has landed. */
+    const onScrollEnd = () => {
+      if (!smoothJumpRef.current) return;
+      smoothJumpRef.current = false;
+      followIfPinned();
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -423,6 +443,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("scrollend", onScrollEnd);
     el.addEventListener("wheel", onWheel, { passive: true, capture: true });
     el.addEventListener("pointerdown", onPointerDown, {
       passive: true,
@@ -443,6 +464,7 @@ export function ChatTranscript(props: ChatTranscriptProps) {
     el.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
       el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("scrollend", onScrollEnd);
       el.removeEventListener("wheel", onWheel, true);
       el.removeEventListener("pointerdown", onPointerDown, true);
       el.removeEventListener("touchstart", onTouchStart, true);
@@ -541,7 +563,9 @@ export function ChatTranscript(props: ChatTranscriptProps) {
           <div className="message-stream-inner message-stream-empty" ref={contentRef}>
             {props.disabledEmpty && (
               <div className="empty-state">
-                请先打开一个项目文件夹，然后开始对话。
+                <button type="button" className="btn btn-primary" onClick={props.onOpenProject} disabled={!props.onOpenProject}>
+                  选择项目文件夹
+                </button>
               </div>
             )}
 

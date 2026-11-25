@@ -692,6 +692,11 @@ export class SessionHost {
     return this.lifecycle.listSessions();
   }
 
+  /** Keep an unsent conversation reachable before the workspace replaces it. */
+  retainDraftSession(expectedSessionId: string): void {
+    this.lifecycle.retainDraftSession(expectedSessionId);
+  }
+
   async dispose(): Promise<void> {
     return this.lifecycle.dispose();
   }

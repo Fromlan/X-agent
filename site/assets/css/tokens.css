@@ -269,44 +269,15 @@ body[data-theme="light"] {
   );
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --motion-duration: 0ms;
-    --motion-fast: 0ms;
-    --motion-base: 0ms;
-    --motion-slow: 0ms;
-    --motion-slower: 0ms;
-    --stagger-tight: 0ms;
-    --stagger-base: 0ms;
-    --stagger-loose: 0ms;
-  }
-}
 
-/* ============================================
- * Premium upgrade — Motion system (NEW)
- * ============================================ */
+/* Shared with the desktop interaction timings. */
 :root {
-  /* Legacy single token (kept for backward compat in components.css) */
-  --motion-duration: 200ms;
-  --easing: cubic-bezier(0.22, 1, 0.36, 1);
-
-  /* Easing curves (NEW) */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-material: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /* Duration scale (NEW, replaces --motion-duration) */
-  --motion-fast: 120ms;
-  --motion-base: 200ms;
-  --motion-slow: 320ms;
-  --motion-slower: 480ms;
-
-  /* Stagger intervals (NEW) */
-  --stagger-tight: 40ms;
-  --stagger-base: 80ms;
-  --stagger-loose: 140ms;
-
-  /* Transform tokens for hover/press (NEW) */
+  --motion-duration: 110ms;
+  --motion-fast: 70ms;
+  --motion-base: 110ms;
+  --motion-slow: 150ms;
+  --easing: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --hover-lift: translateY(-2px);
   --hover-press: scale(0.97);
 }

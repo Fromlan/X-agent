@@ -1,0 +1,122 @@
+/* Timings describe user actions; geometry and streamed conversation text update directly. */
+:root {
+  --motion-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --motion-press: 70ms var(--motion-ease);
+  --motion-control: 110ms var(--motion-ease);
+  --motion-surface: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-backdrop,
+.select-menu-panel,
+.deepseek-voice-panel {
+  transition: opacity var(--motion-surface);
+}
+
+.modal-panel {
+  transition: translate var(--motion-surface);
+}
+
+.workspace-panel-backdrop {
+  transition: opacity var(--motion-control);
+}
+
+.main-row[data-right-panel-mode="drawer"] > .right-panel,
+.right-panel[data-leaving],
+.workspace-sidebar-column.is-drawer {
+  --drawer-entry: 8px;
+  transition: opacity var(--motion-surface), translate var(--motion-surface);
+}
+
+.workspace-sidebar-column.is-drawer { --drawer-entry: -8px; }
+
+:is(.right-panel, .workspace-sidebar-column, .workspace-panel-backdrop)[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 90ms;
+}
+
+:is(.right-panel, .workspace-sidebar-column)[data-leaving] { translate: var(--drawer-entry) 0; }
+
+.select-menu-panel,
+.deepseek-voice-panel {
+  --menu-offset: -4px;
+  transition: opacity var(--motion-surface), translate var(--motion-surface);
+}
+
+[data-side="above"] { --menu-offset: 4px; }
+
+.modal-backdrop[inert],
+.select-menu-panel[inert],
+.deepseek-voice-panel[inert] {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 90ms;
+}
+
+.modal-backdrop[inert] > .modal-panel { translate: 0 4px; }
+.select-menu-panel[inert],
+.deepseek-voice-panel[inert] { translate: 0 var(--menu-offset); }
+
+/* The menu stays anchored as the workspace changes size, including during an interrupted fade. */
+@starting-style {
+  .modal-backdrop,
+  .select-menu-panel,
+  .deepseek-voice-panel { opacity: 0; }
+  .modal-panel { translate: 0 4px; }
+  .select-menu-panel,
+  .deepseek-voice-panel { translate: 0 var(--menu-offset); }
+  .workspace-panel-backdrop { opacity: 0; }
+  .main-row[data-right-panel-mode="drawer"] > .right-panel,
+  .workspace-sidebar-column.is-drawer { opacity: 0; translate: var(--drawer-entry) 0; }
+}
+
+.workspace-menu::details-content {
+  opacity: 0;
+  transition: opacity var(--motion-control), content-visibility var(--motion-control) allow-discrete;
+}
+.workspace-menu[open]::details-content { opacity: 1; }
+.workspace-menu:not([open]) .workspace-menu-body { pointer-events: none; }
+
+/* Mount the selected page or new status once; live readings and streaming rows never restart a fade. */
+@media (prefers-reduced-motion: no-preference) {
+  .right-panel-body > :not(.workspace-summary),
+  .settings-content > :not([hidden]),
+  .settings-notice,
+  .banner,
+  .queue-banner,
+  .api-status-line,
+  .rp-banner-soft,
+  .skill-slash-menu,
+  .rp-context-menu,
+  .workspace-sidebar-column.is-drawer .sidebar-session-types {
+    animation: surface-appear var(--motion-control);
+  }
+
+  :is(.btn, .select-menu-trigger, .project-avatar, .thinking-toggle, .deepseek-voice-primary, .deepseek-voice-menu-trigger):enabled:active {
+    scale: 0.98;
+  }
+}
+
+@keyframes surface-appear {
+  from { opacity: 0; }
+}
+.toolbatch-head::after,
+.deepseek-voice-menu-trigger > svg {
+  transition: transform var(--motion-control);
+}
+.deepseek-voice-menu-trigger[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.workspace-context-heading,
+.workspace-context-tokens,
+.ready-strip-progress,
+.goal-banner-meta { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  *::details-content {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -16,6 +16,9 @@ export function registerWorkspaceIpc(
       sessionHost.newSession(coerceSessionType(sessionType) as SessionType),
   );
   handle(ipcMain, IPC_CHANNELS.listSessions, async () => sessionHost.listSessions());
+  handle(ipcMain, IPC_CHANNELS.retainDraftSession, (_e, expectedSessionId: string) =>
+    sessionHost.retainDraftSession(expectedSessionId),
+  );
   handle(ipcMain, IPC_CHANNELS.resumeSession, async (_e, sessionPath: string) =>
     sessionHost.resumeSession(sessionPath),
   );

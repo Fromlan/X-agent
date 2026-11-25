@@ -110,6 +110,11 @@ const PATTERNS: ErrorPattern[] = [
 
   // Model / context.
   {
+    id: "model_not_selected",
+    match: /^No model selected\.?$/i,
+    message: "请先在设置中配置供应商并选择模型。",
+  },
+  {
     id: "context_overflow",
     match:
       /(context[_ ]?(length|window)[_ ]?(exceeded|limit|too)|too[_ ]?many[_ ]?tokens|prompt[_ ]?(is[_ ]?)?too[_ ]?long|max[_ ]?tokens|input[_ ]?too[_ ]?long)/i,

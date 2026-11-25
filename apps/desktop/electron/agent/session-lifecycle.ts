@@ -294,14 +294,10 @@ export class SessionLifecycle {
       const available = await modelRuntime.getAvailable();
       selectedModel =
         available.find((m) => m.provider === "anthropic") ?? available[0];
-      if (selectedModel) {
-        const usedKey =
-          prefs.provider && prefs.model
-            ? `${prefs.provider}/${prefs.model}`
-            : "未配置";
+      if (selectedModel && prefs.provider && prefs.model) {
         this.a().emitReplaceableNotice(
           "model",
-          `偏好模型 ${usedKey} 不可用,已切换到 ${selectedModel.provider}/${selectedModel.id}`,
+          `已切换至模型「${selectedModel.name || selectedModel.id}」，首选模型暂不可用。`,
           "warn",
         );
       }
@@ -403,14 +399,17 @@ export class SessionLifecycle {
     // fails. Broadcast its identity/type/history before any remaining fallible
     // setup so the renderer cannot retain the disposed session's transcript.
     const history: HistoryItem[] = branchEntriesToHistory(session.sessionManager.getBranch());
+    const model = modelFromSession(session);
+    // Missing credentials already have a direct setup action in the readiness checklist.
+    const modelWarning = modelFallbackMessage && model ? `已切换至可用模型「${model.name || model.id}」。` : undefined;
     const info: OpenProjectResult = {
       ok: true,
       cwd,
       sessionId: session.sessionId,
-      model: modelFromSession(session),
+      model,
       thinkingLevel: effectiveThinking,
       sessionType: requestedType,
-      ...(modelFallbackMessage ? { warning: modelFallbackMessage } : {}),
+      ...(modelWarning ? { warning: modelWarning } : {}),
     };
     this.a().resetUserTurnUsage();
     this.a().emit({
@@ -478,8 +477,8 @@ export class SessionLifecycle {
     await this.a().shadowCheckpoints.setCwd(cwd);
     this.a().shadowCheckpoints.loadFromSession(session.sessionManager);
 
-    if (modelFallbackMessage) {
-      this.a().emitReplaceableNotice("model", modelFallbackMessage, "warn");
+    if (modelWarning) {
+      this.a().emitReplaceableNotice("model", modelWarning, "warn");
     }
     this.a().setStatus("idle");
     this.a().emitUsageUpdate();
@@ -819,6 +818,18 @@ export class SessionLifecycle {
     });
   }
 
+  /** Pi defers file creation until the first prompt. Persist its setup before leaving a drafted conversation. */
+  retainDraftSession(expectedSessionId: string): void {
+    const manager = this.a().getBundle()?.session.sessionManager;
+    if (!manager || manager.getSessionId() !== expectedSessionId) return;
+    const file = manager.getSessionFile();
+    if (!file || existsSync(file)) return;
+    const entries = [manager.getHeader(), ...manager.getEntries()];
+    writeFileAtomicSync(file, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
+    // The same live manager can continue to accept prompts if navigation is canceled.
+    manager.setSessionFile(file);
+  }
+
   async listSessions(): Promise<SessionInfo[]> {
     try {
       const all = await SessionManager.listAll(getXAgentSessionsRoot());
@@ -837,7 +848,7 @@ export class SessionLifecycle {
           catch { invalidTypeRecords += 1; return []; }
           return [{
             id: s.id,
-            name: displaySessionName(s.name, s.firstMessage),
+            name: displaySessionName(s.name, s.messageCount > 0 ? s.firstMessage : ""),
             path: s.path,
             cwd: s.cwd ?? "",
             updatedAt: new Date(s.modified ?? s.created ?? Date.now()).toISOString(),

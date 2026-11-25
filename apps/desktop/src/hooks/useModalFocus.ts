@@ -1,7 +1,7 @@
-/** Give responsive workspace drawers a keyboard boundary and return focus when their modal state ends. */
+/** Keep keyboard input in the foremost modal and return focus to its opener on close. */
 import { useEffect, useRef } from "react";
 
-const FOCUSABLE = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+const FOCUSABLE = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])";
 
 /** Ignore hidden or suspended dialogs so only the current modal owns keyboard focus. */
 function isAvailable(element: HTMLElement): boolean {
@@ -17,15 +17,14 @@ function isAvailable(element: HTMLElement): boolean {
   return true;
 }
 
-/** Settings and confirmation dialogs live outside the workspace drawer and take precedence over it. */
-function hasExternalModal(panel: HTMLElement): boolean {
-  return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))
-    .some((dialog) => dialog !== panel && !panel.contains(dialog) && isAvailable(dialog));
+/** Dialogs render after the workspace, with nested dialogs and global confirmations last. */
+function topModal(): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')).findLast(isAvailable);
 }
 
 /** Trap Tab/Escape only while modal; use a visible workspace entry if a menu trigger has already disappeared. */
-export function useWorkspaceDrawer(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLElement | null>(null);
+export function useModalFocus<T extends HTMLElement = HTMLElement>(open: boolean, onClose: () => void) {
+  const ref = useRef<T | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -35,12 +34,12 @@ export function useWorkspaceDrawer(open: boolean, onClose: () => void) {
     /** Exclude invisible menu entries and disabled background controls from the focus loop. */
     const controls = () => Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
       .filter((element) => element.tabIndex >= 0 && isAvailable(element));
-    const initial = panel.querySelector<HTMLElement>("[data-drawer-close]") ?? controls()[0] ?? panel;
+    const initial = panel.querySelector<HTMLElement>("[data-modal-focus], [data-drawer-close]") ?? controls()[0] ?? panel;
     // A viewport resize can turn a dock into a drawer while settings remain on top.
-    if (!panel.closest("[inert]") && !hasExternalModal(panel)) initial.focus();
+    if (topModal() === panel) initial.focus({ preventScroll: true });
     /** Keep keyboard navigation within the active drawer without affecting nonmodal docked panels. */
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || panel.closest("[inert]") || hasExternalModal(panel)) return;
+      if (event.defaultPrevented || (event.key !== "Escape" && event.key !== "Tab") || topModal() !== panel) return;
       if (event.key === "Escape") {
         event.preventDefault();
         closeRef.current();
@@ -61,7 +60,8 @@ export function useWorkspaceDrawer(open: boolean, onClose: () => void) {
       /** Check actual focus success because a formerly focused command may no longer accept focus. */
       const restoreFocus = (): boolean => {
         // The replacement modal may already be mounted before its focus effect runs.
-        if (hasExternalModal(panel)) return true;
+        const current = topModal();
+        if (current && current !== panel && !current.contains(previous)) return true;
         // Becoming a dock changes modality without hiding the focused editor or control.
         const active = document.activeElement;
         if (panel.isConnected && isAvailable(panel) && active instanceof HTMLElement

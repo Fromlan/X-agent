@@ -14,14 +14,6 @@
   border-bottom: 1px solid var(--border-primary);
   backdrop-filter: saturate(180%) blur(12px);
   -webkit-backdrop-filter: saturate(180%) blur(12px);
-  /* entrance */
-  animation: topbar-slide-in var(--motion-slow) var(--ease-out) both;
-  animation-delay: var(--stagger-base);
-}
-
-@keyframes topbar-slide-in {
-  from { opacity: 0; transform: translate3d(0, -8px, 0); }
-  to   { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
 .topbar__inner {
@@ -123,10 +115,43 @@
   gap: 8px;
 }
 
-@media (max-width: 768px) {
+.topbar__sections {
+  position: relative;
+  display: none;
+}
+
+.topbar__sections > summary { list-style: none; }
+.topbar__sections > summary::-webkit-details-marker { display: none; }
+
+.topbar__sections-menu {
+  position: absolute;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-start: 0;
+  min-inline-size: 112px;
+  display: grid;
+  padding: 4px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-container);
+  background: var(--bg-card-elev);
+  box-shadow: var(--shadow-modal);
+}
+
+.topbar__sections[open] > summary { background: var(--bg-list-selected); }
+
+@media (max-width: 880px) {
   .topbar__nav {
     display: none;
   }
+  .topbar__sections { display: block; }
+  .topbar__inner { gap: 8px; justify-content: space-between; }
+  .topbar__actions { gap: 4px; }
+  .topbar__actions .pill { padding-inline: 8px; min-block-size: 34px; }
+  .topbar__nav-link { min-block-size: 36px; }
+}
+
+@media (max-width: 380px) {
+  .topbar__inner { padding-inline: 10px; }
+  .topbar__brand-mark { display: none; }
 }
 
 /* ============================================
@@ -233,7 +258,6 @@
   pointer-events: none;
   z-index: 0;
   opacity: 0.85;
-  animation: hero-fade-in var(--motion-slower) var(--ease-out) both;
 }
 
 /* Floating ambient blob (top-right) — vw + min() so it scales with viewport but caps on 4K */
@@ -249,61 +273,11 @@
   pointer-events: none;
   z-index: 0;
   opacity: 0.45;
-  animation: hero-blob-float 14s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes hero-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 0.85; }
-}
-
-@keyframes hero-blob-float {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.45; }
-  50%      { transform: translate3d(-40px, 30px, 0) scale(1.06); opacity: 0.55; }
 }
 
 .hero > * {
   position: relative;
   z-index: 1;
-}
-
-.hero__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 12px;
-  margin-bottom: 20px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-header);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-soft);
-  transition: border-color var(--motion-base) var(--ease-out),
-              box-shadow var(--motion-base) var(--ease-out);
-}
-
-.hero__status:hover {
-  border-color: var(--blue-300);
-  box-shadow: 0 0 0 3px var(--blue-500-soft);
-}
-
-.hero__status::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--accent-yellow);
-  box-shadow: 0 0 0 0 var(--accent-yellow);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--accent-yellow); }
-  50% { box-shadow: 0 0 0 4px transparent; }
 }
 
 .hero__title {
@@ -345,16 +319,6 @@
   box-shadow: var(--shadow-modal);
   background: var(--bg-card-elev);
   padding: 16px;
-  transition: transform var(--motion-slow) var(--ease-out),
-              box-shadow var(--motion-slow) var(--ease-out);
-}
-
-.hero__visual .hero__logo:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow:
-    0 18px 50px rgba(0, 0, 0, 0.55),
-    0 0 0 1px var(--blue-500-soft),
-    0 0 32px var(--blue-500-glow);
 }
 
 /* ============================================
@@ -483,21 +447,6 @@ body[data-theme="light"] .hero::before {
   opacity: 0.65;
 }
 
-/* Reduced motion: the global tokens.css override zeros the duration of
- * the one-shot hero-fade-in (since it uses --motion-slower), but
- * hero-blob-float's 14s infinite loop is hard-coded and would still
- * run forever under prefers-reduced-motion. Kill it here. */
-@media (prefers-reduced-motion: reduce) {
-  .hero::before {
-    animation: none;
-    opacity: 0.85;  /* hold the post-fade-in end state */
-  }
-  .hero::after {
-    animation: none;
-    opacity: 0.45;  /* hold a stable position */
-  }
-}
-
 /* ============================================
  * Card (the main "elevated" primitive) — Premium
  * ============================================ */
@@ -515,36 +464,10 @@ body[data-theme="light"] .hero::before {
   isolation: isolate;
 }
 
-/* Border sweep on hover (--hover card) */
-.card--hover::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--gradient-border-sweep);
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity var(--motion-base) var(--ease-out);
-  animation: border-sweep 3.2s linear infinite;
-  animation-play-state: paused;
-  pointer-events: none;
-  z-index: -1;
-}
-
 .card--hover:hover {
   box-shadow: var(--shadow-strong);
   transform: var(--hover-lift);
   border-color: var(--text-muted);
-}
-
-.card--hover:hover::before {
-  opacity: 1;
-  animation-play-state: running;
 }
 
 .card--primary {
@@ -722,7 +645,6 @@ body[data-theme="light"] .hero::before {
   opacity: 0.5;
   pointer-events: none;
   z-index: -1;
-  animation: border-sweep 8s linear infinite;
 }
 
 .modes__row {
@@ -930,11 +852,6 @@ body[data-theme="light"] .hero::before {
   padding: 18px 0;
   border-bottom: 1px solid var(--border-primary);
   align-items: start;
-  transition: padding-left var(--motion-base) var(--ease-out);
-}
-
-.timeline__item:hover {
-  padding-left: 4px;
 }
 
 .timeline__item:last-child {
@@ -1054,31 +971,34 @@ body[data-theme="light"] .hero::before {
 }
 
 .faq__item[open] .faq__q::after {
-  content: "−";
+  transform: rotate(45deg);
   color: var(--blue-500);
 }
 
-/* Smooth expand using grid-template-rows trick */
+/* Native disclosure remains usable without motion or JavaScript. */
 .faq__a {
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.65;
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--motion-slow) var(--ease-out);
 }
 
 .faq__a > div {
-  overflow: hidden;
-  padding: 0 20px;
-}
-
-.faq__item[open] .faq__a {
-  grid-template-rows: 1fr;
-}
-
-.faq__item[open] .faq__a > div {
   padding: 0 20px 18px;
+}
+
+.faq__item::details-content,
+.topbar__sections::details-content {
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-out),
+              content-visibility var(--motion-base) allow-discrete;
+}
+
+.faq__item[open]::details-content,
+.topbar__sections[open]::details-content { opacity: 1; }
+
+.topbar__sections:not([open]) .topbar__sections-menu,
+.faq__item:not([open]) .faq__a {
+  pointer-events: none;
 }
 
 .faq__a p + p {
@@ -1248,218 +1168,6 @@ body[data-theme="light"] .hero::before {
 .mt-32 { margin-top: 32px; }
 .mt-40 { margin-top: 40px; }
 
-/* ============================================
- * Hero — splash-style card (mirrors apps/desktop/public/splash.html)
- * Premium: hover lift + border sweep
- * ============================================ */
-.hero__visual {
-  display: flex;
-  justify-content: center;
-  margin: 0 auto;
-}
-
-.hero__splash {
-  position: relative;
-  box-sizing: border-box;
-  width: 360px;
-  max-width: 100%;
-  padding: 26px 32px 22px;
-  border-radius: 20px;
-  border: 1px solid var(--border-primary);
-  background: radial-gradient(
-    ellipse 78% 60% at 50% 42%,
-    var(--bg-chrome) 0%,
-    var(--bg-app) 55%,
-    #0a0c12 100%
-  );
-  box-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.55),
-    0 2px 6px rgba(0, 0, 0, 0.35);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  transition: transform var(--motion-slow) var(--ease-out),
-              box-shadow var(--motion-slow) var(--ease-out);
-  overflow: hidden;
-  isolation: isolate;
-}
-
-/* Border sweep on hover */
-.hero__splash::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--gradient-border-sweep);
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity var(--motion-base) var(--ease-out);
-  animation: border-sweep 3.2s linear infinite;
-  animation-play-state: paused;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.hero__splash:hover {
-  transform: translateY(-4px);
-  box-shadow:
-    0 18px 50px rgba(0, 0, 0, 0.65),
-    0 4px 8px rgba(0, 0, 0, 0.40),
-    0 0 0 1px var(--blue-500-soft);
-}
-
-.hero__splash:hover::before {
-  opacity: 1;
-  animation-play-state: running;
-}
-
-@keyframes border-sweep {
-  to { transform: rotate(360deg); }
-}
-
-.hero__splash-halo {
-  position: absolute;
-  top: 32%;
-  left: 50%;
-  width: 220px;
-  height: 220px;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(
-    circle at center,
-    rgba(65, 124, 221, 0.22) 0%,
-    rgba(65, 124, 221, 0.08) 38%,
-    transparent 70%
-  );
-  filter: blur(8px);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.hero__splash-mark {
-  position: relative;
-  z-index: 1;
-  width: 88px;
-  height: 88px;
-  border-radius: 22px;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    rgba(120, 150, 200, 0.35) 0%,
-    rgba(200, 215, 235, 0.55) 45%,
-    rgba(120, 150, 200, 0.18) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
-  overflow: hidden;
-}
-
-.hero__splash-mark::before {
-  content: "";
-  position: absolute;
-  inset: 1px;
-  border-radius: 21px;
-  background: linear-gradient(180deg, #1a1d24 0%, #13151a 100%);
-  z-index: 0;
-}
-
-.hero__splash-mark img {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 20px;
-  object-fit: cover;
-}
-
-.hero__splash-title {
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  color: var(--text-primary);
-  text-shadow: 0 0 12px rgba(180, 200, 230, 0.08);
-}
-
-.hero__splash-sep {
-  display: inline-block;
-  margin: 0 0.42em;
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.hero__splash-slogan {
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  max-width: 280px;
-  font-size: 12px;
-  line-height: 1.55;
-  text-align: center;
-  color: var(--text-secondary);
-  letter-spacing: 0.01em;
-}
-
-.hero__splash-progress {
-  position: relative;
-  z-index: 1;
-  margin-top: 6px;
-  width: 132px;
-  height: 2px;
-  border-radius: 9999px;
-  background: #2a2a28;
-  overflow: hidden;
-}
-
-.hero__splash-bar {
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  border-radius: 9999px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent-blue) 50%,
-    transparent 100%
-  );
-  box-shadow: 0 0 6px rgba(65, 124, 221, 0.45);
-  animation: hero-progress-slide 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-}
-
-@keyframes hero-progress-slide {
-  0%   { transform: translateX(-110%); }
-  100% { transform: translateX(310%); }
-}
-
-.hero__splash-credit {
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  font-size: 10.5px;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-}
-
-.hero__splash-credit span {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-@media (max-width: 480px) {
-  .hero__splash {
-    width: 100%;
-  }
-}
-
 /* Scroll hint (subtle indicator below hero) */
 .hero__scroll-hint {
   display: inline-flex;
@@ -1474,8 +1182,6 @@ body[data-theme="light"] .hero::before {
   text-transform: uppercase;
   opacity: 0.7;
   transition: opacity var(--motion-base) var(--ease-out);
-  animation: scroll-hint-fade-in var(--motion-slower) var(--ease-out) both;
-  animation-delay: calc(var(--stagger-base) * 6);
 }
 
 .hero__scroll-hint:hover {
@@ -1498,15 +1204,4 @@ body[data-theme="light"] .hero::before {
   height: 5px;
   background: var(--text-muted);
   border-radius: 999px;
-  animation: scroll-dot-bounce 1.8s ease-in-out infinite;
-}
-
-@keyframes scroll-hint-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 0.7; }
-}
-
-@keyframes scroll-dot-bounce {
-  0%, 100% { transform: translateY(0); opacity: 1; }
-  50%      { transform: translateY(8px); opacity: 0.3; }
 }

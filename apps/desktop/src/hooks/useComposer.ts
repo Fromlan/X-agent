@@ -23,7 +23,7 @@ import type { AgentSessionMode, AgentStatus, GoalInfo, ImageContent, ModelInfo }
 import type { FileReference } from "../lib/file-attachment";
 import { splitFilesForAttachment } from "../lib/file-attachment";
 import { prepareDeepSeekAttachments } from "../lib/deepseek-file-attachments";
-import { findCurrentModel, formatVisionModelExamples, modelSupportsImage } from "../lib/model-capability";
+import { findCurrentModel, modelSupportsImage } from "../lib/model-capability";
 import { expandAtPathsInPrompt } from "../lib/expandAtPaths";
 import { dbgLog, dbgTimer } from "@shared/debug-log";
 import { inspectError } from "@shared/error-i18n";
@@ -34,6 +34,7 @@ import {
   type ChatItem,
 } from "../stores/chat-store";
 import type { GoalModeApi } from "./useGoalMode";
+import { useSessionDraft, type Draft } from "./useSessionDraft";
 
 /** 纯函数: 是否有可发送内容 (text / 图片 / 文件) */
 export function hasSendableContent(
@@ -51,11 +52,8 @@ export function buildImageUnsupportedMessage(
 ): string | null {
   if (modelSupportsImage(models, currentModelKey)) return null;
   const m = findCurrentModel(models, currentModelKey);
-  const label = m ? `${m.provider}/${m.id}` : currentModelKey || "(未知)";
-  return (
-    `当前模型 ${label} 不支持图片,Pi SDK 会把整条 user message 替换为占位文本,截图发过去 AI 也看不到。` +
-    `请切换到 vision 模型 (如 ${formatVisionModelExamples()}),或把图片以文件方式提供 (拖入或用 @ 引用路径)。`
-  );
+  const label = m?.name || m?.id || currentModelKey;
+  return `${label ? `模型「${label}」` : "当前模型"}不支持图片。请切换到支持图片的模型，或移除图片后发送。`;
 }
 
 /** ApiStatus (与 useAgentEventRouter.ApiStatus 同步) */
@@ -86,6 +84,8 @@ export type ComposerDeps = {
   setInput: (input: string | ((prev: string) => string)) => void;
   setAttachments: (a: ImageContent[] | ((prev: ImageContent[]) => ImageContent[])) => void;
   setFileRefs: (f: FileReference[] | ((prev: FileReference[]) => FileReference[])) => void;
+  restoreDraft: (draft: Draft) => void;
+  beginAttachmentRead: () => () => void;
   setError: (error: string | null) => void;
   setFollowNonce: (n: number | ((prev: number) => number)) => void;
   /** setItems: pending bubble 增 / 删 */
@@ -199,10 +199,7 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     const currentFileRefs = fileRefs;
     /** Restore a failed submission without overwriting a draft entered during the request. */
     const restoreDraft = (): void => {
-      if (!isCurrentScope()) return;
-      setInput((draft) => draft || input);
-      setAttachments((draft) => draft.length > 0 ? draft : currentAttachments);
-      setFileRefs((draft) => draft.length > 0 ? draft : currentFileRefs);
+      deps.restoreDraft({ input, attachments: currentAttachments, fileRefs: currentFileRefs });
     };
     setInput("");
     setAttachments([]);
@@ -219,7 +216,12 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     let pendingId: string | undefined;
     try {
       // Slash: /goal — 走 goal dispatcher
-      if (await goalDispatcher.handleGoalCommand(text)) {
+      const goalResult = await goalDispatcher.handleGoalCommand(text, currentAttachments.length + currentFileRefs.length > 0);
+      if (goalResult === "failed") {
+        restoreDraft();
+        return false;
+      }
+      if (goalResult) {
         // 注意: 走 /goal 路径不消耗 input(只清 goal / sessionMode), 但
         // App 原 send 已经在上面 setInput("") 清空, 这里不需再清
         return true;
@@ -238,7 +240,11 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
       const prepared = await prepareDeepSeekAttachments(currentFileRefs, findCurrentModel(models, currentModelKey), { sessionId: deps.sessionId, isCurrent: isCurrentScope });
       const localExpanded = await expandAtPathsInPrompt(text, prepared.local);
       const expanded = prepared.blocks.length ? `${localExpanded}\n\n${prepared.blocks.join("\n")}` : localExpanded;
-      if (!isCurrentScope()) return false;
+      if (!isCurrentScope()) {
+        setItems((prev) => removePendingUser(prev, id));
+        restoreDraft();
+        return false;
+      }
       doneExpand();
       const doneRoundtrip = dbgTimer("chat", "window.xAgent.turn.prompt roundtrip");
       const result = await window.xAgent.turn.prompt({
@@ -257,6 +263,7 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
         if (!result.ok) {
           showRequestError(result.error ?? "发送失败");
           restoreDraft();
+          return false;
         }
       }
     } catch (err) {
@@ -274,10 +281,12 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     dbgLog("chat", "abort invoked");
     const done = dbgTimer("chat", "window.xAgent.turn.abort roundtrip");
     try {
-      await window.xAgent.turn.abort();
+      const result = await window.xAgent.turn.abort();
+      if (!result.ok && isCurrentScope()) setError("未能停止当前回复，请重试。");
       done();
     } catch (err) {
       dbgLog("chat", "abort threw", err instanceof Error ? err.message : String(err));
+      showRequestError(err);
     }
   };
 
@@ -297,20 +306,16 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
       }
       return { file, absPath, fallbackName: file.name };
     });
-    const { images, references, notices } = await splitFilesForAttachment(items, {
-      deepseek: findCurrentModel(models, currentModelKey)?.deepseekChatbot === true,
-    });
-    if (images.length > 0) {
-      setAttachments((prev) => [...prev, ...images]);
-    }
-    if (references.length > 0) {
-      // 文件不进 input 文本 —— 由 ComposerAttachments 渲染成 chip
-      // (跟图片附件同区域). 绝对路径存 fileRefs state, send 时
-      // 走 expandAtPaths 展开成 <file> 块拼到 user message 末尾.
-      setFileRefs((prev) => [...prev, ...references]);
-    }
-    if (notices.length > 0) {
-      setError(notices.join("\n"));
+    const endRead = deps.beginAttachmentRead();
+    try {
+      const { images, references, notices } = await splitFilesForAttachment(items, {
+        deepseek: findCurrentModel(models, currentModelKey)?.deepseekChatbot === true,
+      });
+      if (images.length > 0) setAttachments((prev) => [...prev, ...images]);
+      if (references.length > 0) setFileRefs((prev) => [...prev, ...references]);
+      if (notices.length > 0 && isCurrentScope()) setError(notices.join("\n"));
+    } finally {
+      endRead();
     }
   };
 
@@ -331,17 +336,25 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
     setItems((prev) => appendPendingUser(prev, text, pendingId));
     try {
       const expanded = await expandAtPathsInPrompt(text);
-      const result = await window.xAgent.turn.prompt({ text: expanded });
+      if (!isCurrentScope()) {
+        setItems((prev) => removePendingUser(prev, pendingId));
+        deps.restoreDraft({ input: reply, attachments: [], fileRefs: [] });
+        return;
+      }
+      const result = await window.xAgent.turn.prompt({
+        text: expanded,
+        ...(deps.sessionId ? { expectedSessionId: deps.sessionId } : {}),
+      });
       if (!result.ok || result.silent) {
         setItems((prev) => removePendingUser(prev, pendingId));
         if (!result.ok) {
           showRequestError(result.error ?? "发送失败");
-          setInput((draft) => draft || reply);
+          deps.restoreDraft({ input: reply, attachments: [], fileRefs: [] });
         }
       }
     } catch (err) {
       setItems((prev) => removePendingUser(prev, pendingId));
-      setInput((draft) => draft || reply);
+      deps.restoreDraft({ input: reply, attachments: [], fileRefs: [] });
       showRequestError(err);
       return;
     }
@@ -360,7 +373,7 @@ export function createComposerDispatcher(deps: ComposerDeps): ComposerApi {
 }
 
 /** Composer api + view model. App 不传 input/attachments/fileRefs (hook 自有 state). */
-export type UseComposerOpts = Omit<ComposerDeps, "input" | "attachments" | "fileRefs" | "setInput" | "setAttachments" | "setFileRefs">;
+export type UseComposerOpts = Omit<ComposerDeps, "input" | "attachments" | "fileRefs" | "setInput" | "setAttachments" | "setFileRefs" | "restoreDraft" | "beginAttachmentRead">;
 
 /**
  * React hook —— 持有 composer state (input / attachments / fileRefs /
@@ -375,9 +388,10 @@ export function useComposer(opts: UseComposerOpts) {
   const scope = `${opts.sessionId ?? ""}\n${opts.cwd ?? ""}\n${opts.currentModelKey}`;
   const currentScope = useRef(scope);
   currentScope.current = scope;
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<ImageContent[]>([]);
-  const [fileRefs, setFileRefs] = useState<FileReference[]>([]);
+  const {
+    input, setInput, attachments, setAttachments, fileRefs, setFileRefs, forgetDrafts,
+    needsSession, beginAttachmentRead, restoreDraft, restoreNextDraft, recoverableCount,
+  } = useSessionDraft(opts.sessionId);
   // apiStatus: 状态在 App, router 端通过 ref-captured callback 推过来
   const apiStatusRef = useRef<(status: ComposerApiStatus) => void>(() => undefined);
   const [apiStatus, setApiStatus] = useState<ComposerApiStatus>(null);
@@ -421,6 +435,8 @@ export function useComposer(opts: UseComposerOpts) {
     setInput,
     setAttachments,
     setFileRefs,
+    restoreDraft,
+    beginAttachmentRead,
     setError: opts.setError,
     setFollowNonce: opts.setFollowNonce,
     setItems: opts.setItems,
@@ -453,6 +469,11 @@ export function useComposer(opts: UseComposerOpts) {
 
   return {
     // state (read + write for App)
+    forgetDrafts,
+    needsSession,
+    restoreDraft,
+    restoreNextDraft,
+    recoverableCount,
     input,
     setInput,
     attachments,

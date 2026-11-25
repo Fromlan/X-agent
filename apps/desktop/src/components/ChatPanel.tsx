@@ -16,7 +16,6 @@ import { AtMenu } from "./AtMenu";
 import { SelectMenu } from "./SelectMenu";
 import { SessionModeSelect } from "./SessionModeSelect";
 import { dbgLog } from "@shared/debug-log";
-import { formatVisionModelExamples } from "../lib/model-capability";
 import {
   ArrowUp,
   AlertTriangle,
@@ -50,6 +49,8 @@ const EMPTY_PATH_CANDIDATES: AtPathCandidate[] = [];
 
 interface Props {
   header?: ReactNode;
+  onOpenProject?: () => void;
+  restoreNextDraft?: () => void;
   items: ChatItem[];
   showThinking: boolean;
   status: AgentStatus;
@@ -114,12 +115,8 @@ interface Props {
   onRemoveFile?: (index: number) => void;
   /** 拖文件 / 粘贴文件 → 分类后入 attachments (图片) + fileRefs (其他). */
   onAddFiles?: (files: File[]) => void;
-  /**
-   * 当前模型是否支持 image 输入。若 false + 用户拖了图片,
-   * composer 上方会显示警告 chip (避免 send 时被 Pi SDK 静默替换为
-   * "(image omitted: model does not support images)" 占位文本)。
-   */
-  modelSupportsImage?: boolean;
+  /** User-facing explanation when the active model cannot send this draft. */
+  imageWarning?: string | null;
   /** 当前模型名 (e.g. "mistral/mistral-small-2603"),用于警告文案。 */
   currentModelLabel?: string;
 }
@@ -149,6 +146,9 @@ function ChatPanelImpl(props: Props) {
   const [isDragOver, setIsDragOver] = useState(false);
   const attachments = props.attachments ?? [];
   const fileRefs = props.fileRefs ?? [];
+  const hasContent = Boolean(props.input.trim() || attachments.length || fileRefs.length);
+  const canSend = !composerLocked && hasContent && !props.imageWarning
+    && !props.items.some((item) => item.kind === "user" && isPendingUserId(item.id) && !item.entryId);
   const maxAttachments = props.maxAttachmentCount ?? MAX_IMAGE_COUNT;
   const onShellDragOver = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -255,8 +255,15 @@ function ChatPanelImpl(props: Props) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Windows IMEs use these keys to accept candidates before committing text.
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+    if (e.key === "Tab" && e.shiftKey && !modeSwitchDisabled && props.onCycleSessionMode) {
+      e.preventDefault();
+      props.onCycleSessionMode();
+      return;
+    }
     // 1.6 @-补全菜单优先于 slash 菜单（@ 不会出现在 / 菜单中，但 / 菜单逻辑会先执行时可能误判）
-    if (atMenuOpen) {
+    if (atMenuOpen && atCandidates.length > 0) {
       if (e.key === "Escape") {
         e.preventDefault();
         dismissAtMenu();
@@ -281,7 +288,7 @@ function ChatPanelImpl(props: Props) {
         return;
       }
     }
-    if (menuOpen) {
+    if (menuOpen && (filtered.length > 0 || e.key === "Escape")) {
       if (e.key === "Escape") {
         e.preventDefault();
         dismissMenu();
@@ -309,12 +316,7 @@ function ChatPanelImpl(props: Props) {
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // 闸门认 text + attachments + fileRefs,纯图片也能 Enter 发送。
-      const hasContent =
-        props.input.trim().length > 0 ||
-        attachments.length > 0 ||
-        fileRefs.length > 0;
-      if (hasContent) props.onSend();
+      if (canSend && !e.repeat) props.onSend();
     }
   };
 
@@ -333,21 +335,6 @@ function ChatPanelImpl(props: Props) {
     el.focus();
   }, [sessionMode, props.disabled, props.forceFollowKey]);
 
-  // Shift+Tab cycles session modes (Cursor parity)
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Tab" || !e.shiftKey) return;
-      if (modeSwitchDisabled || !props.onCycleSessionMode) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
-        e.preventDefault();
-        props.onCycleSessionMode?.();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [modeSwitchDisabled, props.onCycleSessionMode]);
-
   return (
     <section className="chat-panel">
       {props.header}
@@ -356,9 +343,13 @@ function ChatPanelImpl(props: Props) {
         showThinking={props.showThinking}
         status={props.status}
         disabledEmpty={props.disabled}
+        onOpenProject={props.onOpenProject}
         starters={props.starters}
         readinessHints={props.readinessHints}
-        onPickStarter={props.onPickStarter}
+        onPickStarter={(prompt) => {
+          props.onPickStarter?.(prompt);
+          textareaRef.current?.focus();
+        }}
         sessionType={props.sessionType}
         forceFollowKey={props.forceFollowKey}
         onOpenToolInPanel={props.onOpenToolInPanel}
@@ -379,7 +370,7 @@ function ChatPanelImpl(props: Props) {
 
       {props.queuedSteering && props.queuedSteering.length > 0 && (
         <div className="queue-banner">
-          已排队 steer：{props.queuedSteering.map((t) => `"${t.slice(0, 40)}"`).join(" · ")}
+          等待发送的补充：{props.queuedSteering.map((t) => `「${t.slice(0, 40)}」`).join(" · ")}
         </div>
       )}
 
@@ -456,11 +447,18 @@ function ChatPanelImpl(props: Props) {
             onRemoveFile={(i) => props.onRemoveFile?.(i)}
             maxImageCount={maxAttachments}
           />
+          {props.restoreNextDraft && (
+            <div className="settings-inline-row">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => {
+                props.restoreNextDraft?.();
+                textareaRef.current?.focus();
+              }}>切换未发送草稿</button>
+            </div>
+          )}
           {/* 模型能力警告:用户拖了图但当前 model 不收图。
               真正阻断在 App.send() 里,这里只做"比 send 早一步"的视觉提醒,
               让用户知道下一步会被挡住 + 切哪个模型。 */}
-          {attachments.length > 0 &&
-            props.modelSupportsImage === false && (
+          {props.imageWarning && (
               <div
                 className="composer-model-warning"
                 role="status"
@@ -468,13 +466,7 @@ function ChatPanelImpl(props: Props) {
               >
                 <AlertTriangle size={16} className="composer-model-warning-icon" aria-hidden />
                 <span className="composer-model-warning-text">
-                  当前模型
-                  {props.currentModelLabel
-                    ? `「${props.currentModelLabel}」`
-                    : ""}{" "}
-                  不支持图片,发送会被拦截。请切换到 vision 模型
-                  ({formatVisionModelExamples()}),
-                  或把图片以文件方式提供。
+                  {props.imageWarning}
                 </span>
               </div>
             )}
@@ -491,7 +483,7 @@ function ChatPanelImpl(props: Props) {
             onClose={() => dismissMenu()}
           />
           <AtMenu
-            open={atMenuOpen}
+            open={atMenuOpen && atCandidates.length > 0}
             candidates={atCandidates}
             highlightIndex={Math.min(
               atHighlight,
@@ -541,7 +533,7 @@ function ChatPanelImpl(props: Props) {
                             ? "目标已暂停 — 点「继续」或清除…"
                             : "输入可验证的完成条件…"
                         : streaming
-                          ? "运行中：Enter 发送 steer…"
+                          ? "输入补充说明，按 Enter 发送…"
                           : "继续描述你的想法，或 @ 引用项目文件…"
             }
             disabled={composerLocked}
@@ -549,7 +541,7 @@ function ChatPanelImpl(props: Props) {
             aria-label="消息内容"
             aria-disabled={composerLocked}
             aria-autocomplete="list"
-            aria-expanded={menuOpen}
+            aria-expanded={menuOpen || (atMenuOpen && atCandidates.length > 0)}
           />
           <div className="composer-toolbar" role="toolbar" aria-label="会话控制">
             <div className="composer-controls">
@@ -659,24 +651,10 @@ function ChatPanelImpl(props: Props) {
               <button
                 type="button"
                 className="btn btn-cta btn-sm composer-send"
-                aria-label={streaming ? "Steer" : "发送"}
+                aria-label={streaming ? "发送补充" : "发送"}
                 title={streaming ? "发送补充指令" : "发送（Enter）"}
                 onClick={props.onSend}
-                disabled={
-                  props.disabled ||
-                  Boolean(props.editingEntryId) ||
-                  // 闸门认 text + attachments + fileRefs,纯图片 / 纯文件也能发。
-                  (!props.input.trim() &&
-                    attachments.length === 0 &&
-                    fileRefs.length === 0) ||
-                  // B7: 已有未确认的 pending 气泡时禁止再发（双 pending 会错位归并）
-                  props.items.some(
-                    (i) =>
-                      i.kind === "user" &&
-                      isPendingUserId(i.id) &&
-                      !i.entryId,
-                  )
-                }
+                disabled={!canSend}
               >
                 <ArrowUp size={18} aria-hidden />
               </button>

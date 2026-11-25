@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useOverlayPresence } from "../hooks/useOverlayPresence";
 import { Check, ChevronDown } from "lucide-react";
 import {
   isScrollInsidePanel,
@@ -63,9 +64,9 @@ export function SelectMenu(props: Props) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const highlightReasonRef = useRef<MenuHighlightReason>("open");
   const [open, setOpen] = useState(false);
+  const { present, ref: panelRef } = useOverlayPresence<HTMLDivElement>(open);
   const [pos, setPos] = useState<MenuPos | null>(null);
   const [highlight, setHighlight] = useState(-1);
 
@@ -92,7 +93,6 @@ export function SelectMenu(props: Props) {
 
   const close = useCallback(() => {
     setOpen(false);
-    setPos(null);
   }, []);
 
   const openMenu = useCallback(() => {
@@ -158,12 +158,19 @@ export function SelectMenu(props: Props) {
 
   useEffect(() => {
     if (!open) return;
+    /** A portaled menu only owns input while focus stays within its trigger or list. */
+    const owns = (target: EventTarget | null) => target instanceof Node
+      && (rootRef.current?.contains(target) || panelRef.current?.contains(target));
     const onPointerDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (rootRef.current?.contains(t) || panelRef.current?.contains(t)) return;
-      close();
+      if (!owns(e.target)) close();
     };
+    const onFocusIn = (e: FocusEvent) => { if (!owns(e.target)) close(); };
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!owns(e.target)) return;
+      if (e.key === "Tab") {
+        close();
+        return;
+      }
       if (e.key === "Escape") {
         e.preventDefault();
         close();
@@ -217,11 +224,13 @@ export function SelectMenu(props: Props) {
       updatePosition();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("focusin", onFocusIn);
     document.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onScroll, true);
@@ -267,7 +276,7 @@ export function SelectMenu(props: Props) {
         <ChevronDown size={14} className="select-menu-caret" aria-hidden />
       </button>
 
-      {open &&
+      {present &&
         pos &&
         createPortal(
           <div
@@ -276,6 +285,8 @@ export function SelectMenu(props: Props) {
             className={["select-menu-panel", className].filter(Boolean).join(" ")}
             role="listbox"
             aria-label={ariaLabel}
+            inert={!open}
+            data-side={pos.top == null ? "above" : "below"}
             style={{
               top: pos.top,
               bottom: pos.bottom,
